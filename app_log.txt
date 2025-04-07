@@ -1,0 +1,82 @@
+2025-04-05 00:04:28 - __main__ - WARNING - Port 5006 is already in use. Attempting to find an available port...
+2025-04-05 00:04:30 - __main__ - INFO - Found available port: 5007
+2025-04-05 00:04:30 - __main__ - INFO - Starting Noise Survey Analysis application...
+2025-04-05 00:04:30 - __main__ - INFO - Application directory: G:\My Drive\Programing\Noise Survey Analysis\noise_survey_analysis
+2025-04-05 00:04:30 - __main__ - INFO - Using port: 5007
+2025-04-05 00:04:30 - __main__ - INFO - Debug mode: False
+2025-04-05 00:04:31 - bokeh.server.server - INFO - Starting Bokeh server version 3.6.1 (running on Tornado 6.4.1)
+2025-04-05 00:04:31 - bokeh.server.tornado - INFO - User authentication hooks NOT provided (default user enabled)
+2025-04-05 00:04:31 - __main__ - INFO - Server started at http://localhost:5007
+2025-04-05 00:04:31 - tornado.application - ERROR - Uncaught exception GET / (::1)
+HTTPServerRequest(protocol='http', host='localhost:5007', method='GET', uri='/', version='HTTP/1.1', remote_ip='::1')
+Traceback (most recent call last):
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\tornado\web.py", line 1790, in _execute
+    result = await result
+             ^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\server\views\doc_handler.py", line 54, in get
+    session = await self.get_session()
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\server\views\session_handler.py", line 145, in get_session
+    session = await self.application_context.create_session_if_needed(session_id, self.request, token)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\server\contexts.py", line 240, in create_session_if_needed
+    self._application.initialize_document(doc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\application\application.py", line 190, in initialize_document
+    h.modify_document(doc)
+    ~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\application\handlers\function.py", line 140, in modify_document
+    self._func(doc)
+    ~~~~~~~~~~^^^^^
+  File "G:\My Drive\Programing\Noise Survey Analysis\run_app.py", line 93, in create_directory_browser_app
+    create_data_source_selector(doc, on_data_sources_selected)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\My Drive\Programing\Noise Survey Analysis\noise_survey_analysis\ui\data_source_selector.py", line 464, in create_data_source_selector
+    selector = DataSourceSelector(doc, on_data_sources_selected)
+  File "G:\My Drive\Programing\Noise Survey Analysis\noise_survey_analysis\ui\data_source_selector.py", line 57, in __init__
+    self._create_ui_components()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "G:\My Drive\Programing\Noise Survey Analysis\noise_survey_analysis\ui\data_source_selector.py", line 118, in _create_ui_components
+    self.data_table = DataTable(
+                      ~~~~~~~~~^
+        source=self.source_table_data,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        alternating_row_background="#f0f0f0" # Zebra striping
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\models\widgets\tables.py", line 767, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\models\widgets\tables.py", line 747, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\models\widgets\widget.py", line 57, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\models\layouts.py", line 102, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\models\ui\panes.py", line 50, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\models\ui\ui_element.py", line 107, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\models\ui\ui_element.py", line 63, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\model\model.py", line 119, in __init__
+    super().__init__(**kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\core\has_props.py", line 304, in __init__
+    setattr(self, name, value)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\core\has_props.py", line 342, in __setattr__
+    self._raise_attribute_error_with_matches(name, properties)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\bokeh\core\has_props.py", line 377, in _raise_attribute_error_with_matches
+    raise AttributeError(f"unexpected attribute {name!r} to {self.__class__.__name__}, {text} attributes are {nice_join(matches)}")
+AttributeError: unexpected attribute 'alternating_row_background' to DataTable, possible attributes are align, aspect_ratio, auto_edit, autosize_mode, columns, context_menu, css_classes, css_variables, disabled, editable, elements, fit_columns, flow_mode, frozen_columns, frozen_rows, header_row, height, height_policy, index_header, index_position, index_width, js_event_callbacks, js_property_callbacks, margin, max_height, max_width, min_height, min_width, name, reorderable, resizable, row_height, scroll_to_selection, selectable, sizing_mode, sortable, source, styles, stylesheets, subscribed_events, syncable, tags, view, visible, width or width_policy
+2025-04-05 00:04:31 - tornado.access - ERROR - 500 GET / (::1) 395.79ms

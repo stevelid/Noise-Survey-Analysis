@@ -236,101 +236,137 @@ def add_tap_interaction(charts, sources=None, bar_source=None, bar_x_range=None,
     return click_lines, labels
 
 
-def initialize_global_js(doc, charts, sources, clickLines, labels, playback_source=None, play_button=None, 
-                        pause_button=None, bar_source=None, bar_x_range=None, bar_chart=None, hover_info_div=None, 
-                        param_select=None, selected_param_holder=None, spectral_param_charts=None, 
-                        all_positions_spectral_data=None):
+def initialize_global_js(bokeh_models):
     """
     Initialize JavaScript environment by loading the unified app.js file 
     and calling NoiseSurveyApp.initialize with all models.
     
     Parameters:
-    doc (bokeh.document.Document): The Bokeh document to attach the JS to
-    charts (list): List of chart figures
-    sources (dict): Dictionary of data sources
-    clickLines (list): List of click line models
-    labels (list): List of label models
-    playback_source (ColumnDataSource, optional): Source for audio playback time
-    play_button (Button, optional): Play button model
-    pause_button (Button, optional): Pause button model
-    bar_source (ColumnDataSource, optional): Frequency bar chart data source
-    bar_x_range (Range, optional): X range for the frequency bar chart
-    bar_chart (Figure, optional): Frequency bar chart figure
-    hover_info_div (Div, optional): Div for displaying hover information
-    param_select (Select, optional): Dropdown for spectral parameter selection
-    selected_param_holder (Div, optional): Div holding the selected parameter
-    spectral_param_charts (dict, optional): Structure containing spectral parameter data by position
-    all_positions_spectral_data (dict, optional): Pre-calculated spectral data by position and parameter
+    bokeh_models (dict): Dictionary containing all Bokeh models needed for JS initialization
+    
+    Returns:
+    CustomJS: The JavaScript initialization callback that can be attached to a Bokeh model
     """
-    logger.debug("Initializing global JavaScript...")
-    combined_js = get_combined_js()
-
-    # --- Single CustomJS Callback to Initialize App ---
-    callback_code = """
-    // Wait for document ready for JS initialization to ensure all elements are in the DOM
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('DOM content loaded - initializing App...');
-        
-        if (typeof window.NoiseSurveyApp !== 'undefined') {
-            try {
-                // Create models object with all our models
-                const models = {
-                    charts: cb_obj.charts,
-                    sources: cb_obj.sources, 
-                    click_lines: cb_obj.clickLines,
-                    labels: cb_obj.labels,
-                    playback_source: cb_obj.playback_source,
-                    play_button: cb_obj.play_button,
-                    pause_button: cb_obj.pause_button,
-                    bar_source: cb_obj.bar_source,
-                    bar_x_range: cb_obj.bar_x_range,
-                    bar_chart: cb_obj.bar_chart,
-                    hover_info_div: cb_obj.hover_info_div,
-                    param_select: cb_obj.param_select,
-                    param_holder: cb_obj.selected_param_holder,
-                    spectral_param_charts: cb_obj.spectral_param_charts,
-                    all_positions_spectral_data: cb_obj.all_positions_spectral_data
-                };
-                
-                // Initialize app with models
-                const success = window.NoiseSurveyApp.init(models, {
-                    enableKeyboardNavigation: true
-                });
-                
-                if (success) {
-                    console.log('NoiseSurveyApp initialized successfully');
-                } else {
-                    console.error('NoiseSurveyApp initialization returned failure');
-                }
-            } catch (error) {
-                console.error('Error initializing NoiseSurveyApp:', error);
-            }
-        } else {
-            console.error('NoiseSurveyApp not found. Make sure app.js is loaded.');
-        }
-    });
-    """
-
+    logger.debug("Creating JavaScript initialization callback...")
+    
+    # --- Prepare args dictionary with all needed models ---
     args = {
-        'charts': charts,
-        'sources': sources,
-        'clickLines': clickLines,
-        'labels': labels,
-        'playback_source': playback_source,
-        'play_button': play_button,
-        'pause_button': pause_button,
-        'bar_source': bar_source,
-        'bar_x_range': bar_x_range,
-        'bar_chart': bar_chart,
-        'hover_info_div': hover_info_div,
-        'param_select': param_select,
-        'selected_param_holder': selected_param_holder,
-        'spectral_param_charts': spectral_param_charts,
-        'all_positions_spectral_data': all_positions_spectral_data
+        'all_sources': bokeh_models.get('all_sources', {}),
+        'all_charts': bokeh_models.get('all_charts', []),
+        'playback_source': bokeh_models.get('playback_source'),
+        'play_button': bokeh_models.get('playback_controls', {}).get('play_button'),
+        'pause_button': bokeh_models.get('playback_controls', {}).get('pause_button'),
+        'position_play_buttons': bokeh_models.get('position_play_buttons', {}),
+        'click_lines': bokeh_models.get('click_lines', {}),
+        'labels': bokeh_models.get('labels', {}),
+        'freq_bar_source': bokeh_models.get('freq_bar_source'),
+        'freq_bar_x_range': bokeh_models.get('freq_bar_x_range'),
+        'param_holder': bokeh_models.get('param_holder'),
+        'param_select': bokeh_models.get('param_select'),
+        'seek_command_source': bokeh_models.get('seek_command_source'),
+        'play_request_source': bokeh_models.get('play_request_source'),
+        'spectral_param_charts': bokeh_models.get('spectral_param_charts', {}),
+        # Add bar chart model itself if needed by JS _updateBarChart
+        'barChart': bokeh_models.get('freq_bar_chart')
     }
 
-    ready_callback = CustomJS(args=args, code=combined_js + "\n" + callback_code)
-    doc.on_event(DocumentReady, ready_callback)
-    logger.info("JavaScript initialization attached to DocumentReady event.")
+    # --- Filter out None values ---
+    args = {k: v for k, v in args.items() if v is not None}
+
+    # --- Prepare JS Code ---
+    combined_js = get_combined_js() # Get app.js content
+    full_js_code = """
+        console.log('DEBUG: Starting JavaScript initialization...');
+        
+        // Log what we received
+        console.log('DEBUG: Received models:', {
+            all_sources: !!all_sources,
+            all_charts: all_charts ? all_charts.length : 0,
+            playback_source: !!playback_source,
+            play_button: !!play_button,
+            pause_button: !!pause_button,
+            click_lines: !!click_lines,
+            labels: !!labels,
+            freq_bar_source: !!freq_bar_source,
+            freq_bar_x_range: !!freq_bar_x_range,
+            param_holder: !!param_holder,
+            param_select: !!param_select,
+            spectral_param_charts: !!spectral_param_charts
+        });
+        
+    """ + combined_js + """
+        console.log('DEBUG: Combined JS loaded, starting app initialization...');
+        
+        // Create models object with all the required references
+        const models = {};
+        models.sources = all_sources || {};
+        models.charts = all_charts ? (Array.isArray(all_charts) ? all_charts : Object.values(all_charts)) : [];
+        models.clickLines = click_lines ? (Array.isArray(click_lines) ? click_lines : Object.values(click_lines)) : [];
+        models.labels = labels ? (Array.isArray(labels) ? labels : Object.values(labels)) : [];
+        models.playback_source = playback_source;
+        models.seek_command_source = seek_command_source;
+        models.play_request_source = play_request_source;
+        models.play_button = play_button;
+        models.pause_button = pause_button;
+        models.position_play_buttons = position_play_buttons || {};
+        models.bar_source = freq_bar_source;
+        models.bar_x_range = freq_bar_x_range;
+        models.barChart = barChart;
+        models.param_select = param_select;
+        models.param_holder = param_holder;
+        models.spectral_param_charts = spectral_param_charts || {};
+        
+        console.log('DEBUG: Models prepared:', {
+            hasCharts: models.charts && models.charts.length > 0,
+            hasBarChart: !!models.barChart,
+            hasBarSource: !!models.bar_source,
+            hasBarXRange: !!models.bar_x_range,
+            positionCount: Object.keys(models.spectral_param_charts || {}).length
+        });
+
+        var initOptions = { enableKeyboardNavigation: true };
+
+        // Initialize the app
+        if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init === 'function') {
+            console.log('DEBUG: Found NoiseSurveyApp, calling init...');
+            window.NoiseSurveyApp.init(models, initOptions);
+            
+            // Ensure global handlers are properly exposed
+            window.interactions = window.NoiseSurveyApp.interactions || {};
+            window.NoiseFrequency = window.NoiseSurveyApp.frequency || {};
+            window.handleHover = function(hoverLines, cb_data) {
+                if (window.NoiseSurveyApp?.interactions?.handleHover) { 
+                    return window.NoiseSurveyApp.interactions.handleHover(hoverLines, cb_data); 
+                }
+                console.warn("NoiseSurveyApp.interactions.handleHover not available.");
+                return false;
+            };
+            window.handleTap = function(cb_obj) {
+                if (window.NoiseSurveyApp?.interactions?.handleTap) { 
+                    return window.NoiseSurveyApp.interactions.handleTap(cb_obj); 
+                }
+                console.warn("NoiseSurveyApp.interactions.handleTap not available.");
+                return false;
+            };
+            
+            window.NoiseSurveyAppInitialized = true;
+            console.log('DEBUG: NoiseSurveyApp initialization complete.');
+        } else {
+            console.error('DEBUG: NoiseSurveyApp not found or init method not available!');
+            console.log('DEBUG: window.NoiseSurveyApp =', window.NoiseSurveyApp);
+        }
+    """
+
+    # Create CustomJS callback
+    try:
+        # Pass necessary models directly into args for the JS init code
+        callback_args = {**args} # Pass all collected args
+
+        init_callback = CustomJS(args=callback_args, code=full_js_code)
+        logger.info("JavaScript initialization callback created.")
+        return init_callback
+    except Exception as e:
+        logger.error(f"Failed to create CustomJS callback: {e}", exc_info=True)
+        return None
 
 

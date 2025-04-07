@@ -69,6 +69,9 @@ PROCESSING_SETTINGS = {
     'smooth_window': 3,
 }
 
+# Default base directory for job files
+DEFAULT_BASE_JOB_DIR = "G:\\Shared drives\\Venta\\Jobs"
+
 # --- General Application Settings ---
 GENERAL_SETTINGS = {
     # Define the base path where corresponding audio/video media files might be found.
@@ -121,6 +124,13 @@ DEFAULT_DATA_SOURCES = [
         "parser_type": "nti",
         "enabled": False
     },
+    # Add audio path for *_Audio_*.wav files
+    {
+        "position_name": "SE",
+        "file_path": r"G:\Shared drives\Venta\Jobs\5793 Alton Road, Ross-on-wye\5793 Surveys\5793-1",
+        "parser_type": "audio",
+        "enabled": True,
+    }
 ]
 
 # Configuration dictionary (for backward compatibility)

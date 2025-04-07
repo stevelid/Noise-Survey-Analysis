@@ -46,7 +46,7 @@ class NoiseDataParser:
         Factory method to get the appropriate parser instance based on type.
         
         Parameters:
-        parser_type (str): Type of parser to create ('sentry', 'nti', 'svan')
+        parser_type (str): Type of parser to create ('sentry', 'nti', 'svan', 'audio')
         
         Returns:
         NoiseDataParser: An instance of the appropriate parser subclass
@@ -57,7 +57,8 @@ class NoiseDataParser:
         parser_mapping = {
             'sentry': NoiseSentryParser,
             'nti': NTiParser,
-            'svan': SvanParser
+            'svan': SvanParser,
+            'audio': AudioParser
         }
         parser_type_lower = parser_type.lower()
         if parser_type_lower not in parser_mapping:
@@ -645,4 +646,88 @@ def read_NTi(file_path):
 
 def get_parser(parser_type):
     """Get a parser instance by type."""
-    return NoiseDataParser.get_parser(parser_type) 
+    return NoiseDataParser.get_parser(parser_type)
+
+class AudioParser(NoiseDataParser):
+
+    """Parser for audio files and directories containing audio files."""
+    
+    def parse(self, path):
+        """
+        Parse a directory path containing audio files. Unlike other parsers, 
+        this one doesn't read data but scans a directory for audio files
+        and returns the directory path with metadata about available files.
+        
+        Parameters:
+        path (str): Path to the directory containing audio files
+        
+        Returns:
+        dict: Dictionary with the audio directory information and file metadata
+        """
+        if not isinstance(path, str):
+            raise ValueError(f"Invalid path: {path}")
+
+        logger.info(f'Processing audio path: {path}')
+        
+        # Check if path exists
+        if not os.path.exists(path):
+            logger.error(f"Audio path not found: {path}")
+            return None
+        
+        try:
+            # Handle both directory and file paths
+            if os.path.isdir(path):
+                # It's a directory - scan for audio files
+                audio_files = []
+                for filename in os.listdir(path):
+                    # Focus on *_Audio_*.wav files as specified
+                    if "_Audio_" in filename and filename.lower().endswith('.wav'):
+                        file_path = os.path.join(path, filename)
+                        file_stats = os.stat(file_path)
+                        audio_files.append({
+                            'filename': filename,
+                            'path': file_path,
+                            'size': file_stats.st_size,
+                            'size_mb': file_stats.st_size / (1024 * 1024),
+                            'modified': pd.to_datetime(file_stats.st_mtime, unit='s'),
+                            'created': pd.to_datetime(file_stats.st_ctime, unit='s')
+                        })
+                
+                # Sort files by modified time
+                audio_files.sort(key=lambda x: x['modified'])
+                
+                return {
+                    'type': 'audio',
+                    'path': path,
+                    'metadata': {
+                        'directory': path,
+                        'file_count': len(audio_files),
+                        'audio_files': audio_files
+                    }
+                }
+            else:
+                # It's a single file (backward compatibility)
+                if not path.lower().endswith(('.wav', '.mp3', '.ogg')):
+                    logger.warning(f"Path is not a directory or audio file: {path}")
+                    return None
+                
+                file_stats = os.stat(path)
+                return {
+                    'type': 'audio',
+                    'path': os.path.dirname(path),  # Use the directory containing the file
+                    'metadata': {
+                        'directory': os.path.dirname(path),
+                        'file_count': 1,
+                        'audio_files': [{
+                            'filename': os.path.basename(path),
+                            'path': path,
+                            'size': file_stats.st_size,
+                            'size_mb': file_stats.st_size / (1024 * 1024),
+                            'modified': pd.to_datetime(file_stats.st_mtime, unit='s'),
+                            'created': pd.to_datetime(file_stats.st_ctime, unit='s')
+                        }]
+                    }
+                }
+        except Exception as e:
+            logger.error(f"Error processing audio path {path}: {e}", exc_info=True)
+            return None 

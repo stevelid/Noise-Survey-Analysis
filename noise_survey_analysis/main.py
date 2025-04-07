@@ -4,6 +4,9 @@ from bokeh.layouts import LayoutDOM # Import base layout class for assertions
 from bokeh.models import Div, ColumnDataSource # Import for assertions and error messages
 import pandas as pd
 import numpy as np  # Import numpy for array operations
+import os
+from bokeh.resources import CDN
+from bokeh.embed import file_html  # Add import for standalone HTML generation
 
 # Don't reconfigure logging - use the configuration from the parent process
 logger = logging.getLogger(__name__)
@@ -39,10 +42,20 @@ except ImportError as e:
 _DEV_ASSERTS_ENABLED = True # TODO: Set to False for production deployment
 # ---
 
-def create_app(doc):
+def create_app(doc, custom_data_sources=None, enable_audio=True):
     """
     Sets up the Bokeh application document.
     Orchestrates data loading, visualization building, and callback attachment.
+    
+    Parameters:
+    -----------
+    doc : bokeh.document.Document
+        The Bokeh document to attach the UI components to.
+    custom_data_sources : list, optional
+        A list of data source dictionaries to use instead of the default ones.
+        If None, the default data sources from config will be used.
+    enable_audio : bool, optional
+        Whether to enable audio playback. Default is True.
     """
     # Don't override logging level here - it should be inherited from run_app.py
     logger.info("Setting up Bokeh application...")
@@ -50,7 +63,7 @@ def create_app(doc):
     # 1. Load and Process Data
     position_data = None
     try:
-        position_data = load_and_process_data() # Uses config internally
+        position_data = load_and_process_data(custom_data_sources) # Modified to use custom sources if provided
         if _DEV_ASSERTS_ENABLED:
             assert isinstance(position_data, dict), f"load_and_process_data returned type {type(position_data)}, expected dict"
 
@@ -77,17 +90,37 @@ def create_app(doc):
 
     # 2. Initialize Core Components (Audio Handler)
     audio_handler = None
-    media_path = GENERAL_SETTINGS.get("media_path")
-    if media_path:
-        try:
-            logger.info(f"Initializing AudioPlaybackHandler with media_path: {media_path}")
-            audio_handler = AudioPlaybackHandler(media_path)
-        except ImportError:
-             logger.warning("python-vlc library not found or failed to import. Audio playback will be disabled.", exc_info=False)
-        except Exception as e:
-            logger.error(f"Failed to initialize AudioPlaybackHandler (media_path='{media_path}'): {e}", exc_info=True)
-    else:
-        logger.warning("No 'media_path' found in GENERAL_SETTINGS (config.py). Audio playback will be disabled.")
+    
+    # Only initialize audio if enabled
+    if enable_audio:
+        # Check if any position has audio paths defined
+        positions_with_audio = {pos: data.get('audio') for pos, data in position_data.items() 
+                               if data.get('audio') and os.path.exists(data.get('audio'))}
+        
+        if len(positions_with_audio) > 0:
+            try:
+                # Use the first position's audio path as the default media path
+                pos, audio_path = next(iter(positions_with_audio.items()))
+                logger.info(f"Initializing AudioPlaybackHandler with position '{pos}' media path as default: {audio_path}")
+                audio_handler = AudioPlaybackHandler(audio_path)
+                
+                # Now add all position-specific audio paths
+                if audio_handler and positions_with_audio:
+                    for pos, audio_path in positions_with_audio.items():
+                        logger.info(f"Adding position-specific audio path for '{pos}': {audio_path}")
+                        audio_handler.add_position_media_path(pos, audio_path)
+                    
+                    # Log summary
+                    logger.info(f"AudioPlaybackHandler initialized with {len(positions_with_audio)} position-specific audio paths")
+                    
+            except ImportError:
+                 logger.warning("python-vlc library not found or failed to import. Audio playback will be disabled.", exc_info=False)
+                 audio_handler = None
+            except Exception as e:
+                logger.error(f"Failed to initialize AudioPlaybackHandler: {e}", exc_info=True)
+                audio_handler = None
+        else:
+            logger.warning("No audio paths found in position data and no 'media_path' in GENERAL_SETTINGS. Audio playback will be disabled.")
 
     if _DEV_ASSERTS_ENABLED:
         assert audio_handler is None or isinstance(audio_handler, AudioPlaybackHandler), f"Audio handler has unexpected type: {type(audio_handler)}"
@@ -221,9 +254,62 @@ def create_app(doc):
     logger.info("Bokeh application setup complete.")
 
 
+def generate_standalone_html(custom_data_sources=None, output_path='noise_survey_standalone.html'):
+    """
+    Generates a standalone HTML file of the Bokeh plots without audio functionality.
+    
+    Parameters:
+    -----------
+    custom_data_sources : list, optional
+        A list of data source dictionaries to use instead of the default ones.
+    output_path : str, optional
+        The path where the HTML file will be saved. Default is 'noise_survey_standalone.html'.
+        
+    Returns:
+    --------
+    str : The path to the generated HTML file.
+    """
+    from bokeh.plotting import Document
+    
+    logger.info(f"Generating standalone HTML at {output_path}...")
+    
+    # Create a new document
+    doc = Document()
+    
+    # Create the app with audio disabled
+    create_app(doc, custom_data_sources=custom_data_sources, enable_audio=False)
+    
+    # Generate HTML
+    html = file_html(doc, CDN, "Noise Survey Analysis")
+    
+    # Write to file
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html)
+    
+    logger.info(f"Standalone HTML file generated at {output_path}")
+    return output_path
+
+
 # --- Server Execution Logic ---
 if __name__.startswith('bokeh_app_'):
      # Use existing logging configuration instead of overriding it
      # This allows debugging level to propagate from run_app.py
      logger.info(f"Starting app creation for document: {curdoc()}")
      create_app(curdoc())
+
+# Command-line interface for generating standalone HTML
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Noise Survey Analysis Standalone HTML Generator")
+    parser.add_argument("--output", type=str, default="noise_survey_standalone.html",
+                        help="Path to save the generated HTML file")
+    args = parser.parse_args()
+    
+    # Set up logging for standalone mode
+    logging.basicConfig(level=logging.INFO, 
+                      format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # Generate the standalone HTML
+    output_path = generate_standalone_html(output_path=args.output)
+    print(f"Standalone HTML file generated at: {output_path}")

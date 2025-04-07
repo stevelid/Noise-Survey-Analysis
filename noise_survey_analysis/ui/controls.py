@@ -89,17 +89,35 @@ def create_parameter_selector(params: list[str], default_param: str | None) -> t
         name="param_holder" # Name for easier selection/debugging
     )
 
-    # Add direct JavaScript callback to update the param_holder and trigger chart updates
-    param_select.js_on_change('value', CustomJS(args=dict(param_holder=param_holder), code="""
-        // Update the hidden div directly from JS
-        param_holder.text = this.value;
-        
-        // Trigger chart updates if app is initialized
-        if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.handleParameterChange === 'function') {
-            window.NoiseSurveyApp.handleParameterChange(this.value);
-        }
-    """))
-
-    logger.info(f"Parameter selector created with direct JS callback. Default value: {selected_value}")
+    # JS callback is handled in the app_callbacks.py file.
+    
     return param_select, param_holder
+
+def create_position_play_button(position: str, audio_handler_available: bool) -> Button:
+    """
+    Creates a play button for a specific position.
+    
+    Args:
+        position (str): The position identifier (e.g., 'SW', 'SE')
+        audio_handler_available (bool): Whether audio playback is available
+        
+    Returns:
+        Button: The Bokeh Button widget
+    """
+    logger.debug(f"Creating position play button for {position}")
+    
+    play_button = Button(
+        label="► Play",
+        width=60,  # Smaller than main play button
+        height=25, # Smaller height for position headers
+        button_type="success" if audio_handler_available else "default",
+        disabled=not audio_handler_available,
+        name=f"position_{position}_play_button",
+        css_classes=["position-play-button"]
+    )
+    
+    # Store the position identifier in the button's tags list
+    play_button.tags = [position]
+    
+    return play_button
 

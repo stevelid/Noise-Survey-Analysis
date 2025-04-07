@@ -132,6 +132,7 @@ def load_and_process_data(data_sources=None):
         'spectral': None,
         'log': None,
         'spectral_log': None,
+        'audio': None,  # New field for audio file path
         'metadata': {}
     })
 
@@ -164,6 +165,13 @@ def load_and_process_data(data_sources=None):
                     data_type = result['type'] # e.g., 'RPT', 'RTA', 'RPT_LOG', 'RTA_LOG'
                     full_df = result['data']
                     metadata = result.get('metadata', {})
+                    
+                    # Handle audio path if included in the source_info
+                    if 'audio_path' in source_info and source_info['audio_path'] and os.path.exists(source_info['audio_path']):
+                        position_results[position]['audio'] = source_info['audio_path']
+                        logger.info(f"Added audio path for position '{position}': {source_info['audio_path']}")
+                        # Store audio path in metadata as well for consistency
+                        position_results[position]['metadata']['audio_path'] = source_info['audio_path']
 
                     df = _filter_dataframe_columns(full_df, data_type, path)
 
@@ -211,13 +219,38 @@ def load_and_process_data(data_sources=None):
                             logger.warning(f"Overwriting existing 'overview' data for position '{position}' with data from {parser_type}")
                             position_results[position]['overview'] = pd.concat([position_results[position]['overview'], result])
                         logger.info(f"Stored {parser_type} data as 'overview' for '{position}'. Shape: {result.shape}")
+                        
+                        # Handle audio path if included in the source_info
+                        if 'audio_path' in source_info and source_info['audio_path'] and os.path.exists(source_info['audio_path']):
+                            position_results[position]['audio'] = source_info['audio_path']
+                            logger.info(f"Added audio path for position '{position}': {source_info['audio_path']}")
+                        
                         # Store basic metadata
                         position_results[position]['metadata']['parser_type'] = parser_type
                         position_results[position]['metadata']['original_path'] = path
+                        if 'audio_path' in source_info and source_info['audio_path']:
+                            position_results[position]['metadata']['audio_path'] = source_info['audio_path']
                     else:
                          logger.warning(f"Parsing returned empty DataFrame for {parser_type} from {path}")
                 else:
                      logger.warning(f"Unexpected result format from {parser_type} parser for {path}: {result}")
+            
+            elif parser_type == 'audio':
+                # Handle audio parser result
+                if isinstance(result, dict) and result.get('type') == 'audio' and 'path' in result:
+                    audio_path = result['path']
+                    position_results[position]['audio'] = audio_path
+                    logger.info(f"Added audio file for position '{position}': {audio_path}")
+                    
+                    # Add metadata
+                    if 'metadata' in result:
+                        position_results[position]['metadata']['audio'] = result['metadata']
+                    
+                    # Also store the original path for consistency
+                    position_results[position]['metadata']['audio_path'] = audio_path
+                else:
+                    logger.warning(f"Unexpected result format from audio parser for {path}: {result}")
+            
             else:
                  logger.warning(f"Unhandled parser type '{parser_type}' for position '{position}'. Storing raw.")
                  position_results[position][f'{parser_type}_data'] = result # Fallback
@@ -258,19 +291,66 @@ def examine_data(position_data):
                         print("    (DataFrame is empty)")
                 else:
                      print(f"  - {key}: Expected DataFrame, got {type(df)}")
+                     
+        # Check for audio file path
+        if 'audio' in data_dict and data_dict['audio']:
+            audio_path = data_dict['audio']
+            if isinstance(audio_path, str):
+                file_exists = os.path.exists(audio_path)
+                print(f"  - audio: {audio_path}")
+                print(f"    Path exists: {file_exists}")
+                
+                # Display file details if exists
+                if file_exists:
+                    try:
+                        # Check if this is a directory
+                        if os.path.isdir(audio_path):
+                            # Check if we have audio files metadata
+                            audio_metadata = data_dict.get('metadata', {}).get('audio', {})
+                            if audio_metadata and 'audio_files' in audio_metadata:
+                                audio_files = audio_metadata.get('audio_files', [])
+                                print(f"    Directory containing {len(audio_files)} audio file(s)")
+                                
+                                # Print details about each audio file (up to 5)
+                                for i, file_info in enumerate(audio_files[:5]):
+                                    print(f"    [{i+1}] {file_info['filename']}")
+                                    print(f"        Size: {file_info['size_mb']:.2f} MB")
+                                    print(f"        Last modified: {file_info['modified']}")
+                                
+                                if len(audio_files) > 5:
+                                    print(f"    ... and {len(audio_files) - 5} more file(s)")
+                            else:
+                                # If metadata isn't available, just scan directory
+                                audio_files = [f for f in os.listdir(audio_path) 
+                                              if "_Audio_" in f and f.lower().endswith('.wav')]
+                                print(f"    Directory containing {len(audio_files)} matching audio file(s)")
+                                if audio_files and len(audio_files) <= 5:
+                                    print(f"    Files: {', '.join(audio_files)}")
+                        else:
+                            # It's a single file
+                            audio_stats = os.stat(audio_path)
+                            size_mb = audio_stats.st_size / (1024 * 1024)
+                            mod_time = pd.to_datetime(audio_stats.st_mtime, unit='s')
+                            print(f"    Size: {size_mb:.2f} MB")
+                            print(f"    Last modified: {mod_time}")
+                    except Exception as e:
+                        print(f"    Error getting audio details: {e}")
+            else:
+                print(f"  - audio: Unexpected type {type(audio_path)}")
 
         # Print Metadata
         if 'metadata' in data_dict and isinstance(data_dict['metadata'], dict):
              print(f"  - metadata: Dictionary with keys: {list(data_dict['metadata'].keys())}")
 
 # --- Optional: Directory Scanning Function (Example Structure) ---
-def scan_directory_for_sources(directory_path):
+def scan_directory_for_sources(directory_path, auto_group=True):
     """
     Scans a directory for potential noise survey files and suggests
-    a configuration list.
+    a configuration list. Can optionally group files by position.
 
     Parameters:
     directory_path (str): The path to the directory to scan.
+    auto_group (bool): Whether to automatically group files by position.
 
     Returns:
     list: A list of suggested data source dictionaries.
@@ -287,45 +367,192 @@ def scan_directory_for_sources(directory_path):
         '*.csv': 'sentry', # Assuming CSV is Sentry for now
         '*.xls': 'svan',
         '*.xlsx': 'svan',
-        '*_123_Rpt_Report.txt': 'nti',
-        '*_RTA_3rd_Rpt_Report.txt': 'nti',
-        '*_123_Log.txt': 'nti',
-        '*_RTA_3rd_Log.txt': 'nti',
+        '*_Rpt_Report.txt': 'nti',
+        '*_RTA_*_Rpt_Report.txt': 'nti',
+        '*_Log.txt': 'nti',
+        '*.wav': 'audio', # General audio parser
+        '*.mp3': 'audio', # General audio parser
+        '*.ogg': 'audio'  # General audio parser
     }
-
+    
+    # Dictionary to group files by position
+    position_groups = defaultdict(list)
+    
+    # First scan for regular files
     for root, _, files in os.walk(directory_path):
         for pattern, parser_type in patterns.items():
             import fnmatch # Use fnmatch for pattern matching
             for filename in fnmatch.filter(files, pattern):
                 full_path = os.path.join(root, filename)
 
-                # --- Guess position name (heuristic - needs refinement) ---
-                # Option 1: Use subdirectory name relative to initial path
+                # --- Guess position name using several methods ---
+                position_name_guess = None
+                
+                # Method 1: Try to extract from parent directory name
                 relative_dir = os.path.relpath(root, directory_path)
-                if relative_dir and relative_dir != '.':
-                    position_name_guess = relative_dir.split(os.path.sep)[0] # First subdir
+                parent_dir = os.path.basename(root)
+                
+                # If parent dir is not the base directory and looks like a position name
+                if parent_dir and parent_dir != os.path.basename(directory_path):
+                    if re.match(r'^[A-Za-z0-9_\-]+$', parent_dir):  # Simple check for valid position name
+                        position_name_guess = parent_dir
+                
+                # Method 2: Try to extract from filename (e.g., before '_SLM_' or '_Rpt_')
+                if not position_name_guess:
+                    # Common patterns in noise survey files
+                    name_patterns = [
+                        r"^([A-Za-z0-9_\-]+)_SLM_",
+                        r"^([A-Za-z0-9_\-]+)_Rpt_",
+                        r"^([A-Za-z0-9_\-]+)_RTA_",
+                        r"^([A-Za-z0-9_\-]+)_Log",
+                        r"^([A-Za-z0-9_\-]+)_Audio_",
+                        r"^([A-Za-z0-9_\-]+)[_\.]"  # More general fallback
+                    ]
+                    
+                    for pattern in name_patterns:
+                        match = re.match(pattern, filename)
+                        if match:
+                            position_name_guess = match.group(1)
+                            break
+                            
+                # Method 3: Fallback - use filename without extension
+                if not position_name_guess:
+                    position_name_guess = os.path.splitext(filename)[0]
+                    
+                # Clean up the position name - remove any remaining special chars
+                if position_name_guess:
+                    position_name_guess = re.sub(r'[^A-Za-z0-9_\-]', '_', position_name_guess)
                 else:
-                    # Option 2: Try to extract from filename (e.g., before '_SLM_')
-                    match = re.match(r"([^_]+?)_.*", filename)
-                    position_name_guess = match.group(1) if match else filename.split('.')[0]
+                    position_name_guess = "Unknown"
 
-                # Ensure position name is valid (e.g., replace spaces)
-                position_name_guess = re.sub(r'\W+', '_', position_name_guess)
+                # Determine data type
+                data_type = None
+                if parser_type == 'nti':
+                    if '_Rpt_Report.txt' in filename:
+                        data_type = 'overview'  # RPT files are overview (broadband) data
+                    elif '_RTA_' in filename:
+                        data_type = 'spectral'  # RTA files contain spectral data
+                    elif '_Log.txt' in filename:
+                        if '_RTA_' in filename:
+                            data_type = 'spectral_log'  # RTA log files
+                        else:
+                            data_type = 'log'  # RPT log files
+                elif parser_type in ['sentry', 'svan']:
+                    data_type = 'overview'  # Default for sentry/svan
+                elif parser_type == 'audio':
+                    data_type = 'audio'
 
                 source_entry = {
                     "position_name": position_name_guess,
                     "file_path": full_path,
                     "parser_type": parser_type,
-                    "enabled": True # Default to enabled
+                    "data_type": data_type,
+                    "filename": filename,
+                    "enabled": True  # Default to enabled
                 }
-                discovered_sources.append(source_entry)
-                logger.debug(f"Discovered: {source_entry}")
+                
+                if auto_group:
+                    # Group by position name
+                    position_groups[position_name_guess].append(source_entry)
+                else:
+                    discovered_sources.append(source_entry)
+                logger.debug(f"Discovered file: {source_entry}")
+    
+    # Also search for directories that might contain audio files
+    for root, dirs, _ in os.walk(directory_path):
+        for dirname in dirs:
+            dir_path = os.path.join(root, dirname)
+            # Check if this directory contains any audio files matching our pattern
+            has_audio_files = False
+            for filename in os.listdir(dir_path):
+                if "_Audio_" in filename and filename.lower().endswith('.wav'):
+                    has_audio_files = True
+                    break
+                    
+            if has_audio_files:
+                # Guess position name using similar methods as above
+                position_name_guess = None
+                
+                # Method 1: Try parent directory name
+                parent_dir = os.path.basename(os.path.dirname(dir_path))
+                if parent_dir and parent_dir != os.path.basename(directory_path):
+                    if re.match(r'^[A-Za-z0-9_\-]+$', parent_dir):
+                        position_name_guess = parent_dir
+                
+                # Method 2: Try dirname itself if it contains position-like pattern
+                if not position_name_guess:
+                    name_patterns = [
+                        r"^([A-Za-z0-9_\-]+)_Audio",
+                        r"^Audio_([A-Za-z0-9_\-]+)",
+                        r"^([A-Za-z0-9_\-]+)_Files"
+                    ]
+                    
+                    for pattern in name_patterns:
+                        match = re.match(pattern, dirname)
+                        if match:
+                            position_name_guess = match.group(1)
+                            break
+                
+                # Fallback: use directory name
+                if not position_name_guess:
+                    position_name_guess = dirname
+                
+                # Clean up the position name
+                position_name_guess = re.sub(r'[^A-Za-z0-9_\-]', '_', position_name_guess)
+                
+                source_entry = {
+                    "position_name": position_name_guess,
+                    "file_path": dir_path,
+                    "parser_type": "audio",
+                    "data_type": "audio",
+                    "filename": dirname,
+                    "enabled": True
+                }
+                
+                if auto_group:
+                    position_groups[position_name_guess].append(source_entry)
+                else:
+                    discovered_sources.append(source_entry)
+                logger.debug(f"Discovered audio directory: {source_entry}")
 
-    # Optional: Deduplicate or further refine the list here
-    # For example, group NTi files by a common base name if needed
+    # If auto_group is enabled, process the grouped sources
+    if auto_group:
+        # Process each position group
+        for position_name, entries in position_groups.items():
+            # Sort entries by data_type to prioritize certain types
+            entries.sort(key=lambda x: {
+                'overview': 0,
+                'spectral': 1,
+                'log': 2,
+                'spectral_log': 3,
+                'audio': 4
+            }.get(x.get('data_type', ''), 999))
+            
+            for entry in entries:
+                discovered_sources.append(entry)
 
     return discovered_sources
 
+# New function for UI: get file counts by position and type
+def summarize_scanned_sources(sources):
+    """
+    Summarizes scanned sources by position and data type.
+    
+    Parameters:
+    sources (list): List of source dictionaries from scan_directory_for_sources
+    
+    Returns:
+    dict: Summary of positions and their data types
+    """
+    summary = defaultdict(lambda: defaultdict(int))
+    
+    for source in sources:
+        position = source.get("position_name", "Unknown")
+        data_type = source.get("data_type", "unknown")
+        
+        summary[position][data_type] += 1
+        
+    return dict(summary)
 
 # --- FileSelector class remains the same conceptually ---
 class FileSelector:

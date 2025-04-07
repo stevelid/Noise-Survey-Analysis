@@ -2,7 +2,7 @@ import logging
 import pandas as pd
 import numpy as np
 from bokeh.plotting import figure # Ensure figure is imported if used directly
-from bokeh.layouts import column, row, gridplot, Spacer, LayoutDOM
+from bokeh.layouts import column, row, gridplot, Spacer, LayoutDOM, Row
 from bokeh.models import ColumnDataSource, Div, Spacer as BokehSpacer, RangeSlider, Tabs, TabPanel, CustomJS, Button
 from bokeh.events import Tap, DocumentReady
 from bokeh.io import curdoc
@@ -16,7 +16,7 @@ from .interactive import (
     initialize_global_js
 )
 # Import UI component creation functions
-from ..ui.controls import create_playback_controls, create_parameter_selector
+from ..ui.controls import create_playback_controls, create_parameter_selector, create_position_play_button
 # Import spectral data processing
 from ..core.data_processors import prepare_spectral_image_data
 from ..core.data_loaders import extract_spectral_parameters
@@ -157,20 +157,7 @@ class DashboardBuilder:
         # --- 6. Add interactions after all charts are created ---
         self._add_interactions()
         
-        # --- 7. Prepare JavaScript initialization ---
-        js_init_callback = self._prepare_js_init_data()
-        
-        # --- Add Test Button for JS Init ---
-        test_js_button = Button(label="Test JS Init", button_type="warning", name="test_js_button")
-        if js_init_callback:
-             test_js_button.js_on_click(js_init_callback)
-             logger.debug("Added JS init callback to test button's on_click event.")
-        else:
-             test_js_button.disabled = True
-             logger.warning("JS init callback is None, disabling test button.")
-        self.bokeh_models['test_js_button'] = test_js_button # Store the button
-        
-        # --- 8. Assemble the Main Layout ---
+        # --- 7. Assemble the Main Layout ---
         # Order: Title at top, followed by controls, then range selector,
         # then all position charts, and frequency analysis at the bottom.
         layout_components = []
@@ -205,10 +192,44 @@ class DashboardBuilder:
             *layout_components
         )
         
-        # Add the JavaScript init callback to the layout
+        # --- 8. Initialize JavaScript ---
+        # Import here to avoid circular import
+        from .interactive import initialize_global_js
+        
+        # Call initialize_global_js with bokeh_models
+        js_init_callback = initialize_global_js(bokeh_models=self.bokeh_models)
+        
+        # Attach JS init callback using a data source change to trigger it
         if js_init_callback:
-            logger.debug("Adding JavaScript init callback to layout...")
-            main_layout.js_on_event('document_ready', js_init_callback)
+            # Create a trigger source
+            from bokeh.models import ColumnDataSource
+            trigger_source = ColumnDataSource(data={'trigger': [0]}, name='js_init_trigger')
+            
+            # Add debug logging to the callback
+            debug_callback = CustomJS(args={'callback': js_init_callback}, code="""
+                console.log('DEBUG: Trigger source changed, about to execute initialization...');
+                callback.execute();
+                console.log('DEBUG: Initialization callback executed');
+            """)
+            
+            # Create callback that watches the trigger source
+            trigger_source.js_on_change('data', debug_callback)
+            
+            # Make sure trigger source is added to document
+            curdoc().add_root(trigger_source)
+            
+            # Schedule the data change after a short delay
+            curdoc().add_timeout_callback(
+                lambda: trigger_source.data.update({'trigger': [1]}), 
+                1000  # Increased delay to 1 second
+            )
+            logger.info("JavaScript initialization scheduled via data source trigger.")
+            
+            # Also attach to the test button for manual triggering if needed
+            test_button = self.bokeh_models.get('test_js_button')
+            if test_button:
+                test_button.js_on_click(js_init_callback)
+                logger.info("JavaScript initialization callback also attached to test button's click event.")
         
         logger.info("Dashboard build complete.")
         return main_layout
@@ -221,6 +242,17 @@ class DashboardBuilder:
 
         # Seek Command Source - For sending seek commands from JS to Python
         self.bokeh_models['seek_command_source'] = ColumnDataSource(data={'target_time': [None]}, name='seek_command_source')
+        
+        # Play Request Source - For handling position play button requests from JS to Python
+        self.bokeh_models['play_request_source'] = ColumnDataSource(data={'position': [None], 'time': [None]}, name='play_request_source')
+
+        # Test JS Button for manual initialization if needed
+        self.bokeh_models['test_js_button'] = Button(
+            label="Initialize JS", 
+            button_type="success", 
+            name="init_js_button"
+        )
+        logger.debug("Created test_js_button for manual JS initialization.")
 
         # Frequency Bar Chart & Source (created even if no spectral data initially)
         # This assumes create_frequency_bar_chart returns chart, source, x_range
@@ -261,19 +293,21 @@ class DashboardBuilder:
             'overview': (self._create_overview_chart, create_TH_chart, self.chart_settings["low_freq_height"], "Overview"),
             'log': (self._create_overview_chart, create_log_chart, self.chart_settings["high_freq_height"], "Log Data"),
         }
+        
+        # Store position play buttons in a dictionary
+        position_play_buttons = {}
+        
+        # Import necessary function
+        from ..ui.controls import create_position_play_button
 
         for position, data_dict in self.position_data.items():
-            logger.debug(f"Processing position: {position}")
-            position_charts = [] # Charts for layout
-            position_time_series_charts = [] # Time charts for linking
-
-            if not isinstance(data_dict, dict):
-                logger.warning(f"Skipping position {position}: Invalid data format {type(data_dict)}")
-                continue
+            position_charts = []
+            position_time_series_charts = []
             
-            # Create Overview/Log Charts
-            for data_key, (helper_func, creator_func, height, base_title) in chart_creators.items():
-                chart = helper_func(position, data_dict, data_key, creator_func, height, base_title)
+            # Create charts for each standard data type
+            for data_key, creator_info in chart_creators.items():
+                creator_method, chart_func, height, title = creator_info
+                chart = creator_method(position, data_dict, data_key, chart_func, height, title)
                 if chart:
                     position_charts.append(chart)
                     position_time_series_charts.append(chart)
@@ -289,11 +323,39 @@ class DashboardBuilder:
 
             # Add the position's charts to the overall list if any were created
             if position_charts:
+                # Check if this position has audio data
+                has_audio = 'audio' in data_dict and data_dict['audio'] is not None
+                
+                # Create header components
+                position_header_text = f"<h2 style='margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid #ddd; display: inline-block;'>{position}</h2>"
                 position_header = Div(
-                    text=f"<h2 style='margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid #ddd;'>{position}</h2>",
-                    sizing_mode="stretch_width"
+                    text=position_header_text,
+                    sizing_mode="stretch_width",
+                    css_classes=["position-header"]
                 )
-                all_elements.append(position_header)
+                
+                # If position has audio, create a play button for it
+                if has_audio and self.audio_handler_available:
+                    # Create a play button for this position
+                    position_play_button = create_position_play_button(position, self.audio_handler_available)
+                    
+                    # Store in models for access in callbacks
+                    if 'position_play_buttons' not in self.bokeh_models:
+                        self.bokeh_models['position_play_buttons'] = {}
+                    self.bokeh_models['position_play_buttons'][position] = position_play_button
+                    
+                    # Create a row with the header and play button
+                    header_row = Row(
+                        children=[position_header, position_play_button],
+                        css_classes=["position-header-row"],
+                        name=f"{position}_header_row"
+                    )
+                    all_elements.append(header_row)
+                else:
+                    # Just add the header without a play button
+                    all_elements.append(position_header)
+                
+                # Add charts and hover info
                 all_elements.extend(position_charts)
                 if hover_info_div is not None:
                     all_elements.append(hover_info_div)
@@ -570,15 +632,6 @@ class DashboardBuilder:
         # create_playback_controls returns a dict of models {'play_button': Button, ...}
         self.bokeh_models['playback_controls'] = create_playback_controls(self.audio_handler_available)
         # Arrange playback buttons in a row
-        playback_row = row(
-            # Ensure we handle potential missing keys gracefully if creation fails
-            self.bokeh_models['playback_controls'].get('play_button'),
-            self.bokeh_models['playback_controls'].get('pause_button'),
-            # Add other controls like seek slider here if implemented
-            name="playback_controls_row" # Name for easier debugging/styling
-        )
-        control_elements.append(playback_row)
-        logger.debug("Playback controls added to controls area.")
 
         # Spectral Parameter Selector (only if spectral parameters were found)
         spectral_params = sorted(list(self._all_spectral_params))
@@ -698,127 +751,3 @@ class DashboardBuilder:
             logger.error(f"Failed to add tap interactions: {e}", exc_info=True)
 
         logger.info("All interactions processed.") # General message covering both 
-
-    def _prepare_js_init_data(self) -> CustomJS:
-        """
-        Prepares JavaScript initialization data and creates the callback.
-        
-        Creates a CustomJS callback that will run when the document is ready
-        or when the test button is clicked, to initialize client-side JavaScript
-        functionality. The callback:
-        1. Injects the app.js code directly into the document
-        2. Collects references to all necessary Bokeh models
-        3. Sets up the JavaScript application with these models
-        4. Initializes event listeners and interactive behavior
-        
-        Returns:
-            CustomJS: A callback object to be attached to the document_ready event
-                      and the test button's on_click event. Returns None if setup fails.
-        """
-        logger.info("Preparing JavaScript initialization data...")
-
-        #HACK:
-        self.bokeh_models['charts_for_js'] = self.bokeh_models['all_charts']
-        
-        # Check if necessary components exist before creating the JS callback
-        required_models = [
-            self.bokeh_models.get('playback_source'),
-            self.bokeh_models.get('freq_bar_source'),
-            self.bokeh_models.get('freq_bar_x_range'),
-            # Play/Pause buttons might be None if audio is disabled, handle that in JS
-            # param_select/holder might be None if no spectral data, handle in JS
-        ]
-        if not all(required_models):
-            logger.error("Missing essential models for JS initialization. Cannot create callback.")
-            return None # Return None if essential models are missing
-
-        # We need to prepare a dictionary of all our models that JavaScript will need
-        js_args = {
-            'charts': self.bokeh_models.get('all_charts', []),
-            'sources': self.bokeh_models.get('all_sources', {}), # Pass all sources for lookup by name
-            'clickLines': self.bokeh_models.get('click_lines', []),
-            'labels': self.bokeh_models.get('labels', []),
-            'playback_source': self.bokeh_models.get('playback_source'),
-            'seek_command_source': self.bokeh_models.get('seek_command_source'), # New seek command source
-            'play_button': self.bokeh_models.get('playback_controls', {}).get('play_button'), # Use correct key
-            'pause_button': self.bokeh_models.get('playback_controls', {}).get('pause_button'),# Use correct key
-            'bar_source': self.bokeh_models.get('freq_bar_source'),
-            'bar_x_range': self.bokeh_models.get('freq_bar_x_range'),
-            'barChart': self.bokeh_models.get('freq_bar_chart'),
-            'param_select': self.bokeh_models.get('param_select'),
-            'param_holder': self.bokeh_models.get('param_holder'),
-            'spectral_param_charts': self.bokeh_models.get('spectral_param_charts', {}) # Pass precomputed data
-        }
-
-        # Add any options for the app
-        js_options = {
-            'enableKeyboardNavigation': self.visualization_settings.get('enable_keyboard_navigation', True)
-        }
-
-        # Combine args and options for the CustomJS call
-        callback_args = {**js_args, 'options': js_options}
-
-        combined_js = get_combined_js()
-        js_code = """
-            console.log('JS Init Callback Triggered.');
-            
-            // Debounce initialization - prevent multiple runs if triggered quickly
-            if (window.NoiseSurveyAppInitialized) {
-                 console.log('NoiseSurveyApp already initialized, skipping.');
-                 return;
-            }
-            
-           
-            // Check if NoiseSurveyApp is now available
-            if (typeof window.NoiseSurveyApp === 'undefined') {
-                console.error('NoiseSurveyApp not found after injection attempt. JS initialization failed.');
-                return;
-            }
-
-            try {
-                console.log('Calling NoiseSurveyApp.init...');
-
-                // Initialize models object
-                const models = {};
-
-                // --- Use passed arguments for specific components ---
-                // These are more reliable if they exist in the callback args
-                models.sources = sources || {}; // Use passed arg, default to empty array
-                models.charts = charts || []; // Use passed arg, default to empty array
-                models.clickLines = clickLines || []; // Use passed arg, default to empty array
-                models.labels = labels || [];           // Use passed arg, default to empty array
-                models.playback_source = playback_source; // Passed arg
-                models.seek_command_source = seek_command_source; // New seek command source
-                models.play_button = play_button;         // Passed arg
-                models.pause_button = pause_button;       // Passed arg
-                models.bar_source = bar_source;           // Passed arg
-                models.bar_x_range = bar_x_range;         // Passed arg
-                models.barChart = barChart;             // Passed arg
-                models.param_select = param_select;       // Passed arg
-                models.param_holder = param_holder;       // Passed arg
-                models.spectral_param_charts = spectral_param_charts || {}; // Passed arg
-
-                // --- Options ---
-                var initOptions = options || {}; // Use passed options
-
-                // --- Initialize ---
-                window.NoiseSurveyApp.init(models, initOptions);
-                window.NoiseSurveyAppInitialized = true; // Set flag
-                console.log('NoiseSurveyApp initialization complete.');
-
-            } catch (e) {
-                console.error('Error initializing NoiseSurveyApp:', e);
-                // Optionally reset flag if init fails critically
-                // delete window.NoiseSurveyAppInitialized;
-            }
-        """
-
-        # Create a CustomJS callback with all the necessary parameters
-        try:
-            init_callback = CustomJS(args=callback_args, code=combined_js + "\n" + js_code)
-            curdoc().on_event(DocumentReady, init_callback)
-            logger.info("JavaScript initialization callback created successfully.")
-            return init_callback
-        except Exception as e:
-            logger.error(f"Failed to create CustomJS callback: {e}", exc_info=True)
-            return None 

@@ -23,8 +23,8 @@ def modify_doc(doc):
     """
     Create the app and add a debug state monitor text box.
     """
-    # Use the standard app creation logic
-    create_app(doc)
+    # Use the standard app creation logic with default data sources
+    create_app(doc, custom_data_sources=None)  # Explicitly use default sources
     
     # Add a debug state monitor div
     state_monitor = Div(
