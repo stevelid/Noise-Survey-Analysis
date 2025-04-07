@@ -1,279 +1,147 @@
 # Noise Survey Analysis - Development & Refactoring Plan
 
+**(Updated: 2025-03-29)**
+
 ## Project Overview
 
-This document outlines the plan for refactoring the Noise Survey Analysis codebase to improve maintainability, enhance functionality, and support both Jupyter notebook-style cell execution and full application execution modes.
+This document outlines the plan for refactoring and enhancing the Noise Survey Analysis codebase. The goals are to improve maintainability, enhance functionality (including easier file input, annotations, data selection/stats, and export), stabilize interactive features, and support both standalone execution and potential future extensions.
 
-## Current System Analysis
+## Current System Analysis (Based on Provided Code)
 
 ### Core Components
 
-1. **plot_analysis.py**: Main orchestration file with data loading, processing, and visualization functions
-2. **js_callbacks.py**: JavaScript callback functions for interactive visualization features
-3. **visualization_components.py**: Chart creation and configuration components
+1.  **`core/`**: Handles backend logic.
+    * `config.py`: Centralized configuration for file paths, types, metrics, and chart settings.
+    * `data_loaders.py`: Manages loading data based on config, calling appropriate parsers, and aggregating results by position. Includes initial directory scanning logic.
+    * `data_parsers.py`: Contains parser classes (`NoiseSentryParser`, `SvanParser`, `NTiParser`) for different file formats.
+    * `data_processors.py`: Utilities for data manipulation, primarily time range synchronization.
+    * `audio_handler.py`: Manages audio playback using `python-vlc`, including synchronization logic and callbacks.
+2.  **`visualization/`**: Creates Bokeh visualization objects.
+    * `visualization_components.py`: Functions to create specific chart types (time history, log, spectrogram, frequency bar).
+    * `interactive.py`: Functions to add interactive elements (range selector, vertical lines, labels) and initialize JavaScript callbacks.
+3.  **`js/` & `static/js/`**: Client-side JavaScript for interactivity.
+    * `js/loader.py`: Utility to load JS files (potentially simplify/remove).
+    * `static/js/*.js`: Actual JavaScript files (`core.js`, `charts.js`, `frequency.js`, `audio.js`) containing logic for hover, tap, keyboard navigation, frequency updates, etc. Relies on global `window` variables and initialization via `DocumentReady`.
+4.  **`app.py`**: Main Bokeh application file. Orchestrates data loading, visualization creation, UI widget setup (buttons, dropdown), audio handler integration, and Python/JS callback definitions.
+5.  **`run_app.py`**: Simple script to launch the Bokeh server for `app.py`.
 
 ### Existing Functionality
 
-- Data import from multiple source formats (Noise Sentry, NTi, Svan)
-- Time series visualization of sound levels
-- Spectral analysis with spectrograms and frequency distribution charts
-- Interactive navigation with synchronized charts
-- Audio playback integration with visualization synchronization
-- Support for both cell-by-cell and full application execution
-
-## Detailed Component Analysis
-
-### Data Import and Parsing
-- **Purpose**: Loads noise survey data from different file formats
-- **Key Functions**: 
-  - `read_in_noise_sentry_file()` - Parses Noise Sentry CSV files
-  - `read_in_Svan_file()` - Parses Svan XLSX files
-  - `read_NTi()` - Parses NTi audio data files
-- **Current Implementation**: Invoked through `load_data()` function with file type selection
-
-### Data Processing
-- **Purpose**: Prepares and aligns data from different sources
-- **Key Functions**:
-  - `get_common_time_range()` - Identifies time overlaps between different data sources
-  - `filter_by_time_range()` - Filters data to focus on specific time periods
-  - `synchronize_time_range()` - Ensures all visualizations use the same time scale
-
-### Visualization Components
-- **Purpose**: Creates interactive charts for data exploration
-- **Key Functions**:
-  - `create_TH_chart()` - Creates time-history charts for sound level metrics
-  - `create_log_chart()` - Creates logging data charts
-  - `make_spectrogram()` / `make_rec_spectrogram()` - Creates spectral visualizations
-  - `create_frequency_bar_chart()` - Shows frequency distribution at selected points
-
-### Interactive Features
-- **Purpose**: Enables user interaction with visualizations
-- **Key Components**:
-  - JavaScript callbacks for hover, click, and keyboard navigation
-  - Vertical line synchronization between charts
-  - Chart visibility toggles via checkboxes
-  - Parameter selection for spectrograms
-
-### Audio Integration
-- **Purpose**: Syncs audio playback with visualizations
-- **Key Components**:
-  - `AudioPlaybackHandler` class manages VLC-based audio playback
-  - Tap events on charts for time-based navigation
-  - Periodic callback to update UI during playback
+* Data import from configured sources (Noise Sentry, NTi, Svan).
+* Time series and spectral visualization (image spectrograms, frequency slice bar chart).
+* Interactive vertical line linked across charts via hover/tap.
+* Basic keyboard navigation (left/right arrows).
+* Synchronized audio playback via VLC, linked to visualization time.
+* Support for Bokeh server execution.
 
 ## Identified Issues and Improvement Areas
 
-1. **Code Structure and Maintainability**
-   - Cell-based structure makes code flow difficult to follow
-   - Function responsibilities overlap between files
-   - Configuration settings are scattered throughout the code
+1.  **JavaScript Fragility:** The current JS initialization (`initialize_global_js`, `DocumentReady`, `window` variables) is complex and prone to timing issues. Global state management needs improvement.
+2.  **Callback Complexity:** Synchronization between Python audio state and JS interactions involves multiple layers of callbacks (`add_next_tick_callback`, `js_on_change`, `on_change`, periodic updates, Python seek handler), making debugging difficult.
+3.  **Limited UI/UX:** File input relies on editing `config.py`. No UI for adding annotations or selecting data ranges for analysis exists. Layout is functional but basic.
+4.  **State Management:** Application state (current time, active chart, potentially future notes/selections) is handled implicitly, which can become problematic as features grow.
+5.  **Lack of Testing:** No automated test suite, increasing the risk of regressions during refactoring or feature additions.
+6.  **Hardcoded Paths/Values:** Some values (e.g., `media_path`) are still hardcoded in `app.py`.
 
-2. **JavaScript Integration**
-   - `get_common_utility_functions()` initialization timing issues
-   - Lack of clear documentation for JavaScript callback interactions
-   - Global variables in JavaScript may cause issues with multiple instances
+## Proposed Architecture (Refinement)
 
-3. **User Interface**
-   - Need for file selection functionality
-   - Layout improvements for better usability
-   - More intuitive chart selection and configuration
+Maintain the modular structure (`core`, `visualization`, `static/js`) but focus on:
 
-4. **Data Handling**
-   - Support for additional data types and formats
-   - Better synchronization between different data sources
-   - More efficient processing of large datasets
+1.  **Simplifying JS Interaction:** Reduce reliance on global JS variables and complex initialization. Pass necessary data/models directly via `CustomJS` args where possible. Improve error handling.
+2.  **Introducing a UI Layer:** Gradually add UI components for new features (file selection, notes panel, stats display) possibly within `app.py` initially, or a dedicated `ui/` module later if complexity warrants it.
+3.  **Clearer State Handling:** Make application state (like selected files, current time, active notes) more explicit, possibly using dedicated Bokeh models or simple Python state variables managed within `app.py`.
+4.  **Robust Callbacks:** Simplify the Python <-> JS callback chain where possible, potentially using `CustomJS` more for client-side actions to avoid unnecessary Python round-trips.
 
-## Proposed Architecture
+## Refactoring & Enhancement Plan
 
-### New Module Structure
+### Phase 0: Stabilization & Foundation (Update/Refine Existing Plan's Phase 1)
 
-```
-noise_survey_analysis/
-├── __init__.py
-├── core/
-│   ├── __init__.py
-│   ├── config.py              # Centralized configuration
-│   ├── data_loaders.py        # Data import functions
-│   ├── data_processors.py     # Data processing utilities
-│   └── audio_handler.py       # Audio playback functionality
-├── visualization/
-│   ├── __init__.py
-│   ├── chart_factory.py       # Chart creation functions
-│   ├── interactive.py         # Interactive feature implementation
-│   └── layouts.py             # Layout management
-├── ui/
-│   ├── __init__.py
-│   ├── file_selector.py       # File selection UI
-│   ├── chart_controls.py      # UI for manipulating charts
-│   └── playback_controls.py   # Audio playback UI
-├── js/
-│   ├── common.js              # Common utility functions
-│   ├── hover.js               # Hover interaction code
-│   ├── navigation.js          # Keyboard navigation
-│   └── update.js              # Chart update functionality
-└── app.py                     # Main application entry point
-```
+1.  **Update `DEVELOPMENT_PLAN.md`:** (This document) Reflect current code state, integrate new features, adjust phases.
+2.  **Implement Testing:**
+    * Set up `pytest`.
+    * Write unit tests for `data_parsers.py`.
+    * Write unit tests for key functions in `data_processors.py`, `audio_handler.py`.
+    * Write basic integration tests for `app.py` loading default data.
+3.  **JS Management Refinement:**
+    * Consolidate all JS code into `static/js/` files.
+    * Simplify `initialize_global_js` and initialization flow. Pass models/data via `args` more explicitly. Reduce `window.*` usage.
+    * Improve JS error handling and logging.
+4.  **Configuration Cleanup:** Move any remaining hardcoded paths/values from `app.py` to `config.py` or handle dynamically.
 
-### Key Architectural Improvements
+### Phase 1: UI Structure & Enhanced File Input (Addresses New Feature: Directory Input)
 
-1. **Separation of Concerns**:
-   - Clear distinction between data handling, visualization, and UI
-   - Configuration centralized in one location
-   - JavaScript isolated in separate files for better maintainability
+1.  **Basic UI Layout:** Refine `app.py` layout (e.g., using `Tabs`, sidebar) for better organization.
+2.  **Directory Scanning Logic:** Improve `scan_directory_for_sources` heuristics (subfolder names, file patterns). Add error handling.
+3.  **File Selection UI:**
+    * Implement UI elements (e.g., Button + `TextInput` or potentially more advanced method) to allow user selection of a survey directory.
+    * Add UI to display scanned files/positions and allow user confirmation/selection.
+    * Modify `load_and_process_data` to use user selection.
 
-2. **Class-Based Design**:
-   - `DataSource` classes for different data types
-   - `ChartBuilder` class hierarchy for different visualization types
-   - `VisualizationManager` to coordinate chart interactions
+### Phase 2: Annotation / Notes System (Addresses New Feature: Notes)
 
-3. **Event-Driven Architecture**:
-   - Publish-subscribe pattern for communication between components
-   - Clear separation between UI events and data updates
+1.  **Data Model & Storage:**
+    * Define note structure (JSON: timestamp, position, text, levels).
+    * Implement Python functions (`core/notes_handler.py`?) for saving/loading notes relative to the survey folder.
+2.  **Bokeh Integration:**
+    * Add `notes_source = ColumnDataSource(...)`.
+    * Add glyphs (e.g., `Scatter`) to charts linked to `notes_source` for markers.
+3.  **Note Taking UI:**
+    * Implement "Make Note" button and associated Python callback.
+    * Callback reads current time/position/levels.
+    * Implement a modal dialog or panel (e.g., toggled `Div`) with `TextAreaInput`, pre-populated info, and Save/Cancel buttons.
+4.  **Saving/Loading:** Implement save logic in callback, update `notes_source`. Load notes on startup.
 
-4. **Support for Both Execution Modes**:
-   - Factory functions that work in both notebook and application contexts
-   - Jupyter notebook helpers for cell-by-cell execution
-   - Application-level orchestration for full execution
+### Phase 3: Data Range Selection & Statistics (Addresses New Feature: Range Stats)
 
-## Refactoring Plan
+1.  **Selection Mechanism:** Add `BoxSelectTool` (x-dimension) to time-history charts.
+2.  **Callback on Selection:** Implement Python callback triggered by selection changes.
+3.  **Statistics Calculation:** Python callback filters data for selected range, calculates overview stats and average spectrum.
+4.  **Display Results:** Add a `Div` to layout. Update `Div.text` in callback with formatted stats and copyable spectral data (`<textarea>`).
 
-### Phase 1: Foundation (Weeks 1-2)
+### Phase 4: Export & Polish (Addresses New Feature: HTML Export & General)
 
-#### Tasks:
-1. Set up development environment and branching strategy
-2. Create comprehensive tests for existing functionality
-3. Implement new module structure
-4. Move configuration to centralized location
-5. Refactor JavaScript to ensure proper initialization
-
-#### Deliverables:
-- Basic test suite covering core functionality
-- Initial reorganized codebase with clear separation of concerns
-- Consistent configuration mechanism
-- Properly scoped JavaScript with explicit initialization
-
-### Phase 2: Core Functionality (Weeks 3-4)
-
-#### Tasks:
-1. Implement class-based design for data sources
-2. Develop chart builders for different visualization types
-3. Create visualization manager for chart coordination
-4. Improve data processing pipeline
-5. Add file selection UI
-
-#### Deliverables:
-- Refactored data handling components
-- Improved visualization creation system
-- Basic file selection interface
-- Enhanced data processing capabilities
-
-### Phase 3: Interactive Features (Weeks 5-6)
-
-#### Tasks:
-1. Refine JavaScript event handling
-2. Improve chart synchronization
-3. Enhance keyboard navigation
-4. Optimize audio integration
-5. Implement improved layouts
-
-#### Deliverables:
-- More robust interactive features
-- Better chart coordination
-- Enhanced audio-visual synchronization
-- Improved UI layouts for better usability
-
-### Phase 4: Advanced Features (Weeks 7-8)
-
-#### Tasks:
-1. Add support for additional data formats
-2. Implement data export functionality
-3. Create reporting tools
-4. Optimize performance for large datasets
-5. Add advanced analysis options
-
-#### Deliverables:
-- Expanded data format support
-- Export and reporting capabilities
-- Performance improvements for large datasets
-- Advanced analysis tools
+1.  **HTML Export:** Add Button + Python callback using `bokeh.io.save` for static HTML snapshot. *Consider saving session config separately.*
+2.  **Code Cleanup:** Refactor complex functions, ensure consistency, address TODOs, improve docstrings.
+3.  **Documentation:** Update `README.md`, add code comments.
+4.  **UI Polish:** Improve layout, widget appearance, user feedback.
+5.  **Performance:** Profile and optimize if needed for large datasets.
 
 ## Risk Analysis and Mitigation
 
-### Risk: Breaking existing functionality
-**Mitigation**: 
-- Create comprehensive tests before refactoring
-- Implement changes incrementally with frequent testing
-- Maintain backward compatibility where possible
+### Risk: Breaking existing functionality during refactoring
+**Mitigation**: Comprehensive testing (Phase 0). Incremental changes. Frequent commits.
 
-### Risk: JavaScript initialization issues
-**Mitigation**: 
-- Create clear initialization patterns
-- Document JavaScript dependencies thoroughly
-- Implement error handling for JavaScript components
+### Risk: JavaScript interaction/timing issues persist
+**Mitigation**: Simplify JS initialization (Phase 0). Pass data via `args`. Add robust JS error handling. Test thoroughly across browsers if applicable.
 
-### Risk: Disrupting notebook-style execution
-**Mitigation**: 
-- Maintain cell-compatible API
-- Create wrapper functions for notebook use
-- Test both execution modes throughout refactoring
+### Risk: UI complexity becomes hard to manage in `app.py`
+**Mitigation**: Start simple. If needed, introduce dedicated `ui/` module later. Consider Panel library if advanced widgets are required.
 
-### Risk: Performance regression
-**Mitigation**: 
-- Benchmark current performance
-- Monitor performance during refactoring
-- Optimize critical paths
+### Risk: Performance bottlenecks with large files or complex interactions
+**Mitigation**: Profile during/after feature additions (Phase 4). Optimize data loading (use efficient Pandas operations) and rendering (aggregation if needed).
 
 ## Testing Strategy
 
-### Unit Tests
-- Test individual parsers with sample files
-- Test data processing functions with known inputs/outputs
-- Test chart generation functions with mock data
-
-### Integration Tests
-- Test end-to-end data loading and visualization
-- Test interaction between charts and data updates
-- Test audio synchronization with visualizations
-
-### UI Tests
-- Test user interactions with charts
-- Test file selection functionality
-- Test chart control operations
-
-### Performance Tests
-- Test with large datasets to ensure responsiveness
-- Test memory usage during extended operation
-- Test JavaScript performance with many interactive elements
+* **Unit Tests:** Use `pytest` for parsers, processors, core utilities. Mock external dependencies (like VLC).
+* **Integration Tests:** Test data loading -> processing -> visualization generation flow. Test callback chains (e.g., button click -> audio handler -> playback source update -> JS update).
+* **Manual UI Testing:** Verify chart interactions, file selection, note taking, stats display, audio sync behave as expected.
 
 ## Implementation Priorities
 
-### High Priority
-1. **Code Structure Reorganization**
-2. **JavaScript Initialization Improvements**
-3. **Data Loading Enhancement with File Selection**
-
-### Medium Priority
-1. **UI Layout Improvements**
-2. **Documentation Enhancement**
-3. **Additional Data Processing Options**
-
-### Lower Priority
-1. **Advanced Features (Export, Reports)**
-2. **Performance Optimizations**
-3. **Extended Format Support**
+1.  **Phase 0:** Stabilization, Testing Setup, JS Cleanup.
+2.  **Phase 1:** File Input UI & Logic.
+3.  **Phase 2/3 (Can be parallel):** Notes System / Range Selection & Stats (depending on user need).
+4.  **Phase 4:** Export & Polish.
 
 ## Development Approach
 
-This refactoring will follow a progressive enhancement approach:
-
-1. Begin with structural improvements that don't change functionality
-2. Add new capabilities incrementally without disrupting existing features
-3. Maintain compatibility with both execution modes throughout
-4. Continuously test to ensure quality and performance
+* **Incremental:** Apply changes phase by phase.
+* **Test-Driven:** Write tests before or alongside code changes where practical.
+* **Version Control:** Use Git with feature branches.
+* **Focus:** Prioritize stability and the requested new features.
 
 ## Next Steps
 
-1. Create development branch and set up testing infrastructure
-2. Document current API in detail
-3. Implement initial module reorganization
-4. Begin refactoring highest priority components 
+1.  Create development branch.
+2.  Set up `pytest` infrastructure.
+3.  Begin implementing Phase 0 tasks (JS cleanup, testing, config review).

@@ -13,8 +13,16 @@ from bokeh.models import (
     DatetimeTickFormatter, DatetimeTicker, RangeTool, Model
 )
 from bokeh.events import Tap, DocumentReady
-from core.config import CONFIG
-from noise_survey_analysis.js.loader import get_core_js, get_charts_js, get_frequency_js
+
+# Fix imports to use relative paths
+try:
+    # Try normal imports first (for when the module is properly installed)
+    from noise_survey_analysis.core.config import CONFIG
+    from noise_survey_analysis.js.loader import get_core_js, get_charts_js, get_frequency_js
+except ImportError:
+    # Use relative imports for Bokeh server mode
+    from ..core.config import CONFIG
+    from ..js.loader import get_core_js, get_charts_js, get_frequency_js
 
 # Configure Logging
 logger = logging.getLogger(__name__)
@@ -89,13 +97,19 @@ def link_x_ranges(charts):
     for chart in charts[1:]:
         chart.x_range = master_range
 
-def add_vertical_line_and_hover(charts, sources=None):
+def add_vertical_line_and_hover(charts, sources=None, bar_source=None, bar_x_range=None, 
+                         selected_param_holder=None, all_positions_spectral_data=None):
     """
     Add vertical line and hover functionality to charts.
     
     Parameters:
     charts (list): List of Bokeh figures to add vertical lines to
     sources (dict, optional): Dictionary of ColumnDataSource objects
+    bar_source (bokeh.models.ColumnDataSource): The frequency bar chart data source
+    bar_x_range (bokeh.models.FactorRange): The x range for the frequency bar chart
+    hover_info_div (bokeh.models.Div): The hover info div for spectrograms
+    selected_param_holder (bokeh.models.ColumnDataSource): The holder for selected parameter
+    all_positions_spectral_data (dict): Dictionary of pre-calculated spectral data
     
     Returns:
     list: The updated charts
@@ -161,13 +175,23 @@ def add_vertical_line_and_hover(charts, sources=None):
     # Hover Callback (operates on hover_lines models directly)
     hover_callback = CustomJS(
         args={
-            'hoverLines': hover_lines
+            'hoverLines': hover_lines,
+            'charts': charts,
+            'sources': sources,
+            'bar_source': bar_source,
+            'bar_x_range': bar_x_range,
+            'selected_param_holder': selected_param_holder,
+            'all_positions_spectral_data': all_positions_spectral_data
         },
         code="""
             if (typeof window.handleHover === 'function') {
-                window.handleHover(hoverLines, cb_data);
+                window.handleHover(hoverLines, cb_data, charts, sources, 
+                                   bar_source, bar_x_range, 
+                                   selected_param_holder, all_positions_spectral_data);
             } else if (typeof handleHover === 'function') {
-                handleHover(hoverLines, cb_data);
+                handleHover(hoverLines, cb_data, charts, sources,
+                           bar_source, bar_x_range,
+                           selected_param_holder, all_positions_spectral_data);
                 console.log('handleHover called');
             } else {
                 console.error('handleHover not defined!');
@@ -179,18 +203,26 @@ def add_vertical_line_and_hover(charts, sources=None):
     # Pass the Python lists directly. JS will receive them as arrays of BokehJS models.
     click_callback = CustomJS(
         args={
-            'charts': charts,
+            #'charts': charts,  # causes circular error, global references used in JS
             'clickLines': click_lines, # Pass the list of click_line models
             'labels': labels,         # Pass the list of label models
-            'sources': sources
+            'sources': sources,
+            'bar_source': bar_source,
+            'bar_x_range': bar_x_range,
+            'selected_param_holder': selected_param_holder,
+            'all_positions_spectral_data': all_positions_spectral_data
         },
         code="""
-            console.log('Tap callback executing.'); // Basic log
+
             if (typeof window.handleTap === 'function') {
                 // Pass the necessary args to the globally defined function
-                window.handleTap(cb_obj, charts, clickLines, labels, sources);
+                window.handleTap(cb_obj, clickLines, labels, sources,
+                                 bar_source, bar_x_range,
+                                 selected_param_holder, all_positions_spectral_data);
             } else if (typeof handleTap === 'function') {
-                handleTap(cb_obj, charts, clickLines, labels, sources);
+                handleTap(cb_obj, charts, clickLines, labels, sources,
+                         bar_source, bar_x_range,
+                         selected_param_holder, all_positions_spectral_data);
                 console.log('handleTap called');
             } else {
                 console.error('handleTap not defined!');
@@ -215,7 +247,9 @@ def add_vertical_line_and_hover(charts, sources=None):
 
     return charts, click_lines, labels
 
-def initialize_global_js(doc, charts, sources, clickLines, labels, playback_source, play_button, pause_button):
+def initialize_global_js(doc, charts, sources, clickLines, labels, playback_source, play_button, pause_button,
+                    bar_source=None, bar_x_range=None, hover_info_div=None, param_select=None, 
+                    selected_param_holder=None, spectral_figures=None, all_positions_spectral_data=None):
     """
     Combines all necessary JS files and initializes global references
     using a single CustomJS callback attached to DocumentReady.
@@ -229,6 +263,13 @@ def initialize_global_js(doc, charts, sources, clickLines, labels, playback_sour
     playback_source (bokeh.models.ColumnDataSource): The playback data source.
     play_button (bokeh.models.Button): The play button model.
     pause_button (bokeh.models.Button): The pause button model.
+    bar_source (bokeh.models.ColumnDataSource): The frequency bar chart data source.
+    bar_x_range (bokeh.models.FactorRange): The x range for the frequency bar chart.
+    hover_info_div (bokeh.models.Div): The hover info div for spectrograms.
+    param_select (bokeh.models.Select): The parameter selection dropdown.
+    selected_param_holder (bokeh.models.ColumnDataSource): The holder for selected parameter.
+    spectral_figures (dict): Dictionary of spectrogram figures by position.
+    all_positions_spectral_data (dict): Dictionary of pre-calculated spectral data.
 
     Returns:
     bokeh.document.Document: The document with the event handler attached.
@@ -259,7 +300,11 @@ def initialize_global_js(doc, charts, sources, clickLines, labels, playback_sour
             // Now, attempt to call the initialization function
             if (typeof initializeReferences === 'function') {
                 try {
-                    initializeReferences(charts, sources, clickLines, labels, playback_source, play_button, pause_button);
+                    initializeReferences(
+                        charts, sources, clickLines, labels, playback_source, play_button, pause_button,
+                        bar_source, bar_x_range, hover_info_div, param_select, selected_param_holder, 
+                        spectral_figures, all_positions_spectral_data
+                    );
                     console.log('SUCCESS: initializeReferences called.');
                     // Optionally enable keyboard nav here if it depends on init
                     if (typeof enableKeyboardNavigation === 'function') {
@@ -291,7 +336,14 @@ def initialize_global_js(doc, charts, sources, clickLines, labels, playback_sour
             'labels': labels,
             'playback_source': playback_source,
             'play_button': play_button,
-            'pause_button': pause_button
+            'pause_button': pause_button,
+            'bar_source': bar_source,
+            'bar_x_range': bar_x_range,
+            'hover_info_div': hover_info_div,
+            'param_select': param_select,
+            'selected_param_holder': selected_param_holder,
+            'spectral_figures': spectral_figures,
+            'all_positions_spectral_data': all_positions_spectral_data
         },
         # Execute the combined definitions AND the initialization call
         code=combined_js + initialization_call_js
