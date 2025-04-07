@@ -841,7 +841,7 @@ def create_range_selector(attached_chart, source, height=None, width=None):
          return None
 
     # --- Identify Metrics in Source ---
-    metrics = [col for col in source.data if col != 'Datetime' and isinstance(source.data[col], (list, np.ndarray))]
+    metrics = [col for col in source.data if col != 'Datetime' and isinstance(source.data[col], (pd.Series, np.ndarray))] #this was list before the refactor of the data structure to hirarchy structure. 
     if not metrics:
          logger.warning("No plottable metrics found in source for range selector.")
          # Still create selector, just without lines

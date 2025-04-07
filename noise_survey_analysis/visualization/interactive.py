@@ -13,17 +13,8 @@ from bokeh.models import (
     DatetimeTickFormatter, DatetimeTicker, RangeTool, Model
 )
 from bokeh.events import Tap, DocumentReady
-import os
-
-# Fix imports to use relative paths
-try:
-    # Try normal imports first (for when the module is properly installed)
-    from noise_survey_analysis.core.config import CONFIG
-    from noise_survey_analysis.js.loader import get_combined_js
-except ImportError:
-    # Use relative imports for Bokeh server mode
-    from ..core.config import CONFIG
-    from ..js.loader import get_combined_js
+from core.config import CONFIG
+from noise_survey_analysis.js.loader import get_core_js, get_charts_js, get_frequency_js
 
 # Configure Logging
 logger = logging.getLogger(__name__)
@@ -98,133 +89,194 @@ def link_x_ranges(charts):
     for chart in charts[1:]:
         chart.x_range = master_range
 
-# NEW function for Hover Interaction
-def add_hover_interaction(charts, sources=None, bar_source=None, bar_x_range=None,
-                          hover_info_div=None, selected_param_holder=None,
-                          all_positions_spectral_data=None):
+def add_vertical_line_and_hover(charts, sources=None):
     """
-    Adds vertical hover line and related callbacks to charts.
-
+    Add vertical line and hover functionality to charts.
+    
     Parameters:
-    charts (list): List of Bokeh figures to add interactions to.
-    sources (dict, optional): Dictionary of ColumnDataSource objects for charts.
-    bar_source (ColumnDataSource): Frequency bar chart data source.
-    bar_x_range (FactorRange): X-range for the frequency bar chart.
-    hover_info_div (Div): Div for displaying hover information (e.g., spectral data).
-    selected_param_holder (ColumnDataSource): Holder for the selected spectral parameter.
-    all_positions_spectral_data (dict): Dict of spectral sources {position: source}.
+    charts (list): List of Bokeh figures to add vertical lines to
+    sources (dict, optional): Dictionary of ColumnDataSource objects
+    
+    Returns:
+    list: The updated charts
     """
-    logger.debug("Adding hover interaction...")
-
-    valid_charts = [c for c in charts if c is not None]
-    if not valid_charts:
-        logger.warning("No valid charts provided for hover interaction.")
-        return
-
-    # Create hover lines (one for each chart)
+    
+    print("Adding click and hover lines")
+    
+    # Load charts JavaScript
+    charts_js = get_charts_js()
+    core_js = get_core_js()
+    
     hover_lines = [Span(location=0, dimension='height', line_color='grey',
-                        line_width=1, line_dash='dashed', name=f"hover_line_{i}")
-                   for i, _ in enumerate(valid_charts)]
+                       line_width=1, line_dash='dashed') for _ in charts]
+    click_lines = [Span(location=0, dimension='height', line_color='red',
+                       line_width=1, line_dash='solid', visible=True,
+                       line_alpha=0.7, name="click_line") for _ in charts]
+    
+    # Create labels for each chart that will appear on click
+    labels = []
+    for i, chart in enumerate(charts):
+        # Check if chart is a range selector by looking at its title
+        if (hasattr(chart, 'title') and chart.title.text == "Drag to select a time range"):
+            # Range selector has no visible label
+            label = Label(
+                x=0, y=0,
+                x_units='data', y_units='data',
+                text="",
+                text_font_size="0pt",
+                text_align="left",
+                text_baseline="top",
+                x_offset=0,
+                y_offset=0,
+                visible=True,
+                background_fill_alpha=0,
+                border_line_alpha=0
+            )
+        else:
+            label = Label(
+                x=0, y=0,  # Will be updated in the callback
+                x_units='data', y_units='data',
+                text="",
+                text_font_size="10pt",
+                text_align="left",
+                text_baseline="top",
+                x_offset=15,
+                background_fill_color="white",
+                background_fill_alpha=0.7,
+                border_line_color="black",
+                border_line_alpha=0.5,
+                visible=False
+            )
+            chart.add_layout(label, 'center')
+        
+        labels.append(label)    
 
-    # Add hover lines as layout to each chart
-    for chart, h_line in zip(valid_charts, hover_lines):
-        chart.add_layout(h_line)
+    # Add spans to charts AFTER creating them all
+    for chart, hover_line, click_line in zip(charts, hover_lines, click_lines):
+        chart.add_layout(hover_line)
+        chart.add_layout(click_line)
 
-    # --- JS Hover Callback ---
+    #---JS Callbacks---
+
+    # Hover Callback (operates on hover_lines models directly)
     hover_callback = CustomJS(
         args={
-            'hoverLinesModels': hover_lines,
+            'hoverLines': hover_lines
         },
         code="""
-            if (typeof window.NoiseSurveyApp?.interactions?.handleHover === 'function') {
-                window.NoiseSurveyApp.interactions.handleHover(hoverLinesModels, cb_data);
+            if (typeof window.handleHover === 'function') {
+                window.handleHover(hoverLines, cb_data);
+            } else if (typeof handleHover === 'function') {
+                handleHover(hoverLines, cb_data);
+                console.log('handleHover called');
             } else {
-                console.error('NoiseSurveyApp.interactions.handleHover not defined!');
+                console.error('handleHover not defined!');
             }
         """
     )
 
-    # --- Hover Tool Setup ---
-    hover_tool = HoverTool(
-        tooltips=None,  # We use the CustomJS callback for behavior
-        mode='vline',   # Trigger across the vertical line
-        callback=hover_callback,
-        description="Vertical Line on Hover",
-        name="hover_vertical_line" # Give the tool a name
-    )
-
-    # Add the hover tool to each chart
-    for chart in valid_charts:
-        # Skip frequency bar chart and spectrograms
-        if chart.name == 'frequency_bar' or '_spectral' in chart.name:
-            continue
-            
-        # Check if a similar tool already exists to avoid duplicates if run multiple times
-        existing_tool = next((t for t in chart.tools 
-                             if isinstance(t, HoverTool) and t.name == "hover_vertical_line"), None)
-        if not existing_tool:
-            chart.add_tools(hover_tool)
-        else:
-            logger.warning(f"Hover tool already exists on chart: {chart.name}. Skipping add.")
-
-    logger.debug(f"Hover interaction added to {len(valid_charts)} charts.")
-
-
-# NEW function for Tap Interaction
-def add_tap_interaction(charts, sources=None, bar_source=None, bar_x_range=None,
-                        hover_info_div=None, # Pass hover_info_div in case tap needs to update it too
-                        selected_param_holder=None, all_positions_spectral_data=None):
-    """
-    Adds click/tap interaction (vertical line, label) to charts.
-
-    Parameters:
-    charts (list): List of Bokeh figures to add interactions to.
-    sources (dict, optional): Dictionary of ColumnDataSource objects for charts.
-    bar_source (ColumnDataSource): Frequency bar chart data source.
-    bar_x_range (FactorRange): X-range for the frequency bar chart.
-    hover_info_div (Div): Div for displaying hover information.
-    selected_param_holder (ColumnDataSource): Holder for the selected spectral parameter.
-    all_positions_spectral_data (dict): Dict of spectral sources {position: source}.
-
-    Returns:
-    tuple(list, list): A tuple containing:
-                       - click_lines (list): List of Span models for click lines.
-                       - labels (list): List of Label models associated with click lines.
-    """
-    logger.debug("Adding tap/click interaction...")
-
-    valid_charts = [c for c in charts if c is not None]
-    if not valid_charts:
-        logger.warning("No valid charts provided for tap interaction.")
-        return [], []
-
-    # Create click lines (one for each chart)
-    click_lines = [Span(location=0, dimension='height', line_color='red',
-                         line_width=1, name=f"click_line_{i}")
-                   for i, _ in enumerate(valid_charts)]
-
-    # Create labels (one for each chart)
-    labels = [Label(x=0, y=0, text="", text_font_size='10pt', background_fill_color="white", 
-                    background_fill_alpha=0.6, text_baseline="middle", visible=False, name=f"click_label_{i}")
-                for i, _ in enumerate(valid_charts)]
-
-    # Add click lines and labels as layouts to each chart
-    for chart, c_line, label in zip(valid_charts, click_lines, labels):
-        chart.add_layout(c_line)
-        chart.add_layout(label)
-
-    # --- JS Tap Callback ---
-    tap_callback = CustomJS(
+    # Click Callback (operates on click_lines and labels models directly)
+    # Pass the Python lists directly. JS will receive them as arrays of BokehJS models.
+    click_callback = CustomJS(
         args={
-            # No need to pass all models if handleTap uses app state
-            # Focus on just passing what's needed for this specific callback
+            'charts': charts,
+            'clickLines': click_lines, # Pass the list of click_line models
+            'labels': labels,         # Pass the list of label models
+            'sources': sources
         },
         code="""
-            if (typeof window.NoiseSurveyApp?.interactions?.handleTap === 'function') {
-                window.NoiseSurveyApp.interactions.handleTap(cb_obj);
+            console.log('Tap callback executing.'); // Basic log
+            if (typeof window.handleTap === 'function') {
+                // Pass the necessary args to the globally defined function
+                window.handleTap(cb_obj, charts, clickLines, labels, sources);
+            } else if (typeof handleTap === 'function') {
+                handleTap(cb_obj, charts, clickLines, labels, sources);
+                console.log('handleTap called');
             } else {
-                console.error('NoiseSurveyApp.interactions.handleTap not defined!');
+                console.error('handleTap not defined!');
             }
+        """
+    )
+
+    #---Tool Setup---
+
+    hover_tool = HoverTool(
+        tooltips=None,
+        mode='vline',
+        callback=hover_callback,
+        description="Vertical Line on Hover",
+        name="Vertical Line on Hover"
+    )
+
+    # Add hover tool and register tap event
+    for chart in charts:
+        chart.add_tools(hover_tool)
+        chart.js_on_event('tap', click_callback) # Use js_on_event for CustomJS
+
+    return charts, click_lines, labels
+
+def initialize_global_js(doc, charts, sources, clickLines, labels, playback_source, play_button, pause_button):
+    """
+    Combines all necessary JS files and initializes global references
+    using a single CustomJS callback attached to DocumentReady.
+
+    Parameters:
+    doc (bokeh.document.Document): The Bokeh document.
+    charts (list): List of Bokeh chart models.
+    sources (dict): Dictionary of ColumnDataSource objects.
+    clickLines (list): List of Span models for click lines.
+    labels (list): List of Label models.
+    playback_source (bokeh.models.ColumnDataSource): The playback data source.
+    play_button (bokeh.models.Button): The play button model.
+    pause_button (bokeh.models.Button): The pause button model.
+
+    Returns:
+    bokeh.document.Document: The document with the event handler attached.
+    """
+    logger.info("Registering unified JavaScript initialization on DocumentReady.")
+
+    # 1. Load all required JS code
+    core_js = get_core_js()
+    charts_js = get_charts_js()
+    frequency_js = get_frequency_js()
+    #audio_js = get_audio_js() # Include if audio functions are needed globally
+
+    # 2. Combine JS in the correct order (definitions first)
+    # Ensure core_js comes first as it defines initializeReferences and other utils
+    combined_js = (
+        core_js + "\n\n// ---- CORE LOADED ----\n\n" +
+        charts_js + "\n\n// ---- CHARTS LOADED ----\n\n" +
+        frequency_js + "\n\n// ---- FREQUENCY LOADED ----\n\n"
+    )
+
+    # 3. Define the initialization call within the same script
+    initialization_call_js = """
+        console.log('DocumentReady event fired. All custom JS should be loaded.');
+        // Ensure Bokeh models passed as args are accessible
+        if (typeof charts !== 'undefined' && typeof sources !== 'undefined' &&
+            typeof clickLines !== 'undefined' && typeof labels !== 'undefined')
+        {
+            // Now, attempt to call the initialization function
+            if (typeof initializeReferences === 'function') {
+                try {
+                    initializeReferences(charts, sources, clickLines, labels, playback_source, play_button, pause_button);
+                    console.log('SUCCESS: initializeReferences called.');
+                    // Optionally enable keyboard nav here if it depends on init
+                    if (typeof enableKeyboardNavigation === 'function') {
+                       enableKeyboardNavigation(); // Call after init is confirmed
+                       console.log('Keyboard navigation enabled.');
+                    } else {
+                       console.warn('enableKeyboardNavigation not found after init.');
+                    }
+                } catch (e) {
+                    console.error('Error executing initializeReferences:', e);
+                }
+            } else {
+                console.error('CRITICAL ERROR: initializeReferences function not found even after loading core.js!');
+                // Log available window properties for debugging
+                // console.log('Window keys:', Object.keys(window));
+            }
+<<<<<<< Updated upstream
         """
     )
 
@@ -242,7 +294,8 @@ def initialize_global_js(bokeh_models):
     and calling NoiseSurveyApp.initialize with all models.
     
     Parameters:
-    bokeh_models (dict): Dictionary containing all Bokeh models needed for JS initialization
+    bokeh_models (dict or BokehModelsAdapter): Dictionary containing all Bokeh models needed for JS initialization
+                                              Can be either the old flat structure or the new hierarchical structure
     
     Returns:
     CustomJS: The JavaScript initialization callback that can be attached to a Bokeh model
@@ -250,36 +303,68 @@ def initialize_global_js(bokeh_models):
     logger.debug("Creating JavaScript initialization callback...")
     
     # --- Prepare args dictionary with all needed models ---
-    args = {
-        'all_sources': bokeh_models.get('all_sources', {}),
-        'all_charts': bokeh_models.get('all_charts', []),
-        'playback_source': bokeh_models.get('playback_source'),
-        'play_button': bokeh_models.get('playback_controls', {}).get('play_button'),
-        'pause_button': bokeh_models.get('playback_controls', {}).get('pause_button'),
-        'position_play_buttons': bokeh_models.get('position_play_buttons', {}),
-        'click_lines': bokeh_models.get('click_lines', {}),
-        'labels': bokeh_models.get('labels', {}),
-        'freq_bar_source': bokeh_models.get('freq_bar_source'),
-        'freq_bar_x_range': bokeh_models.get('freq_bar_x_range'),
-        'param_holder': bokeh_models.get('param_holder'),
-        'param_select': bokeh_models.get('param_select'),
-        'seek_command_source': bokeh_models.get('seek_command_source'),
-        'play_request_source': bokeh_models.get('play_request_source'),
-        'spectral_param_charts': bokeh_models.get('spectral_param_charts', {}),
-        # Add bar chart model itself if needed by JS _updateBarChart
-        'barChart': bokeh_models.get('freq_bar_chart')
-    }
+    # Check if we're using the new structure by looking for specific nested keys
+    using_new_structure = hasattr(bokeh_models, '_data') and 'charts' in bokeh_models._data and 'sources' in bokeh_models._data
+    
+    if using_new_structure:
+        logger.debug("Using new hierarchical bokeh_models structure for JS initialization")
+        args = {
+            # Maps from hierarchical structure to JS expected format
+            'all_sources': bokeh_models['sources']['data'],
+            'all_charts': bokeh_models['charts']['all'],
+            'playback_source': bokeh_models['sources']['playback']['position'],
+            'play_button': bokeh_models['ui']['controls']['playback'].get('play_button'),
+            'pause_button': bokeh_models['ui']['controls']['playback'].get('pause_button'),
+            'position_play_buttons': bokeh_models['ui']['controls']['playback'].get('position_buttons', {}),
+            'click_lines': bokeh_models['ui']['visualization']['click_lines'],
+            'labels': bokeh_models['ui']['visualization']['labels'],
+            'freq_bar_source': bokeh_models['sources']['frequency']['bar'],
+            'freq_bar_x_range': bokeh_models['frequency_analysis']['bar_chart']['x_range'],
+            'param_holder': bokeh_models['ui']['controls']['parameter']['holder'],
+            'param_select': bokeh_models['ui']['controls']['parameter']['select'],
+            'seek_command_source': bokeh_models['sources']['playback']['seek_command'],
+            'play_request_source': bokeh_models['sources']['playback']['play_request'],
+            'spectral_param_charts': bokeh_models['spectral_data'],
+            # Add bar chart model itself if needed by JS _updateBarChart
+            'barChart': bokeh_models['frequency_analysis']['bar_chart']['figure']
+        }
+    else:
+        # Legacy structure - keep as is for backward compatibility
+        logger.debug("Using legacy flat bokeh_models structure for JS initialization")
+        args = {
+            'all_sources': bokeh_models.get('all_sources', {}),
+            'all_charts': bokeh_models.get('all_charts', []),
+            'playback_source': bokeh_models.get('playback_source'),
+            'play_button': bokeh_models.get('playback_controls', {}).get('play_button'),
+            'pause_button': bokeh_models.get('playback_controls', {}).get('pause_button'),
+            'position_play_buttons': bokeh_models.get('position_play_buttons', {}),
+            'click_lines': bokeh_models.get('click_lines', {}),
+            'labels': bokeh_models.get('labels', {}),
+            'freq_bar_source': bokeh_models.get('freq_bar_source'),
+            'freq_bar_x_range': bokeh_models.get('freq_bar_x_range'),
+            'param_holder': bokeh_models.get('param_holder'),
+            'param_select': bokeh_models.get('param_select'),
+            'seek_command_source': bokeh_models.get('seek_command_source'),
+            'play_request_source': bokeh_models.get('play_request_source'),
+            'spectral_param_charts': bokeh_models.get('spectral_param_charts', {}),
+            # Add bar chart model itself if needed by JS _updateBarChart
+            'barChart': bokeh_models.get('freq_bar_chart')
+        }
 
     # --- Filter out None values ---
     args = {k: v for k, v in args.items() if v is not None}
 
+    # --- Add structure indicator to let JS know if we're using hierarchical structure ---
+    args['using_hierarchical_structure'] = using_new_structure
+
     # --- Prepare JS Code ---
-    combined_js = get_combined_js() # Get app.js content
+    combined_js = get_combined_js()
     full_js_code = """
         console.log('DEBUG: Starting JavaScript initialization...');
         
         // Log what we received
         console.log('DEBUG: Received models:', {
+            using_hierarchical_structure: using_hierarchical_structure,
             all_sources: !!all_sources,
             all_charts: all_charts ? all_charts.length : 0,
             playback_source: !!playback_source,
@@ -299,24 +384,50 @@ def initialize_global_js(bokeh_models):
         
         // Create models object with all the required references
         const models = {};
-        models.sources = all_sources || {};
-        models.charts = all_charts ? (Array.isArray(all_charts) ? all_charts : Object.values(all_charts)) : [];
-        models.clickLines = click_lines ? (Array.isArray(click_lines) ? click_lines : Object.values(click_lines)) : [];
-        models.labels = labels ? (Array.isArray(labels) ? labels : Object.values(labels)) : [];
-        models.playback_source = playback_source;
-        models.seek_command_source = seek_command_source;
-        models.play_request_source = play_request_source;
-        models.play_button = play_button;
-        models.pause_button = pause_button;
-        models.position_play_buttons = position_play_buttons || {};
-        models.bar_source = freq_bar_source;
-        models.bar_x_range = freq_bar_x_range;
-        models.barChart = barChart;
-        models.param_select = param_select;
-        models.param_holder = param_holder;
-        models.spectral_param_charts = spectral_param_charts || {};
+        
+        if (using_hierarchical_structure) {
+            // Pass the hierarchical structure to JS
+            models.hierarchical = true;
+            
+            // Create a compact structure for JS that matches what it expects
+            models.sources = all_sources || {};
+            models.charts = all_charts ? (Array.isArray(all_charts) ? all_charts : Object.values(all_charts)) : [];
+            models.clickLines = click_lines ? (Array.isArray(click_lines) ? click_lines : Object.values(click_lines)) : [];
+            models.labels = labels ? (Array.isArray(labels) ? labels : Object.values(labels)) : [];
+            models.playback_source = playback_source;
+            models.seek_command_source = seek_command_source;
+            models.play_request_source = play_request_source;
+            models.play_button = play_button;
+            models.pause_button = pause_button;
+            models.position_play_buttons = position_play_buttons || {};
+            models.bar_source = freq_bar_source;
+            models.bar_x_range = freq_bar_x_range;
+            models.barChart = barChart;
+            models.param_select = param_select;
+            models.param_holder = param_holder;
+            models.spectral_param_charts = spectral_param_charts || {};
+        } else {
+            // Legacy format
+            models.sources = all_sources || {};
+            models.charts = all_charts ? (Array.isArray(all_charts) ? all_charts : Object.values(all_charts)) : [];
+            models.clickLines = click_lines ? (Array.isArray(click_lines) ? click_lines : Object.values(click_lines)) : [];
+            models.labels = labels ? (Array.isArray(labels) ? labels : Object.values(labels)) : [];
+            models.playback_source = playback_source;
+            models.seek_command_source = seek_command_source;
+            models.play_request_source = play_request_source;
+            models.play_button = play_button;
+            models.pause_button = pause_button;
+            models.position_play_buttons = position_play_buttons || {};
+            models.bar_source = freq_bar_source;
+            models.bar_x_range = freq_bar_x_range;
+            models.barChart = barChart;
+            models.param_select = param_select;
+            models.param_holder = param_holder;
+            models.spectral_param_charts = spectral_param_charts || {};
+        }
         
         console.log('DEBUG: Models prepared:', {
+            hierarchical: models.hierarchical,
             hasCharts: models.charts && models.charts.length > 0,
             hasBarChart: !!models.barChart,
             hasBarSource: !!models.bar_source,
@@ -351,22 +462,33 @@ def initialize_global_js(bokeh_models):
             
             window.NoiseSurveyAppInitialized = true;
             console.log('DEBUG: NoiseSurveyApp initialization complete.');
+=======
+>>>>>>> Stashed changes
         } else {
-            console.error('DEBUG: NoiseSurveyApp not found or init method not available!');
-            console.log('DEBUG: window.NoiseSurveyApp =', window.NoiseSurveyApp);
+             console.error('CRITICAL ERROR: Bokeh models (charts, sources, etc.) not available in CustomJS args.');
         }
     """
 
-    # Create CustomJS callback
-    try:
-        # Pass necessary models directly into args for the JS init code
-        callback_args = {**args} # Pass all collected args
+    # 4. Create a SINGLE CustomJS callback
+    init_callback = CustomJS(
+        args={
+            # Pass the actual Bokeh models needed by initializeReferences
+            'charts': charts,
+            'sources': sources,
+            'clickLines': clickLines,
+            'labels': labels,
+            'playback_source': playback_source,
+            'play_button': play_button,
+            'pause_button': pause_button
+        },
+        # Execute the combined definitions AND the initialization call
+        code=combined_js + initialization_call_js
+    )
 
-        init_callback = CustomJS(args=callback_args, code=full_js_code)
-        logger.info("JavaScript initialization callback created.")
-        return init_callback
-    except Exception as e:
-        logger.error(f"Failed to create CustomJS callback: {e}", exc_info=True)
-        return None
+    # 5. Attach to DocumentReady
+    doc.on_event(DocumentReady, init_callback)
+
+    logger.info("Unified JS initialization callback attached to DocumentReady.")
+    return doc
 
 

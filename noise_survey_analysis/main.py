@@ -151,31 +151,66 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
             assert isinstance(main_layout, LayoutDOM), f"Dashboard builder.build() did not return a valid layout (got {type(main_layout)})"
 
             bokeh_models = dashboard_builder.bokeh_models
-            assert isinstance(bokeh_models, dict), f"Dashboard builder.bokeh_models is not a dictionary (got {type(bokeh_models)})"
+            from noise_survey_analysis.visualization.dashboard import BokehModelsAdapter
+            assert isinstance(bokeh_models, (dict, BokehModelsAdapter)), f"Dashboard builder.bokeh_models is not a dictionary or BokehModelsAdapter (got {type(bokeh_models)})"
 
-            # Essential keys checks...
-            essential_keys = ['all_charts', 'all_sources', 'charts_for_js', 'click_lines', 'labels']
+            # Check that essential keys exist in the hierarchical structure
+            required_structures = []
+            required_structures.extend([
+                ['charts', 'all'],
+                ['charts', 'time_series'],
+                ['charts', 'for_js_interaction'],
+                ['sources', 'data'],
+                ['ui', 'visualization', 'click_lines'],
+                ['ui', 'visualization', 'labels']
+            ])
+
             if audio_handler:
-                 essential_keys.extend(['playback_source', 'playback_controls'])
-            
+                required_structures.extend([
+                    ['sources', 'playback', 'position'],
+                    ['ui', 'controls', 'playback']
+                ])
+
             has_spectral = any(isinstance(pos_info.get('spectral'), pd.DataFrame) and not pos_info.get('spectral').empty 
                               for pos_info in position_data.values())
+            
             if has_spectral:
-                 essential_keys.extend(['param_select', 'param_holder', 'freq_bar_source', 'freq_bar_x_range'])
+                required_structures.extend([
+                    ['ui', 'controls', 'parameter', 'select'],
+                    ['ui', 'controls', 'parameter', 'holder'],
+                    ['sources', 'frequency', 'bar'],
+                    ['frequency_analysis', 'bar_chart', 'x_range']
+                ])
+            
+            # Verify all required structures exist
+            for path in required_structures:
+                value = bokeh_models
+                try:
+                    for key in path:
+                        value = value[key]
+                    # If we got here, the path exists
+                except (KeyError, TypeError):
+                    assert False, f"Required structure path {'.'.join(path)} is missing"
+            
+            logger.debug(f"Essential structure check passed.")
 
-            missing_keys = [key for key in essential_keys if key not in bokeh_models]
-            assert not missing_keys, f"Essential keys missing from models in dashboard_builder.bokeh_models: {missing_keys}"
-            logger.debug(f"Essential keys check passed. Found: {list(bokeh_models.keys())}")
-
-            # Type checks...
-            assert isinstance(bokeh_models.get('all_charts'), list), f"'all_charts' in models is not a list (got {type(bokeh_models.get('all_charts'))})"
-            assert isinstance(bokeh_models.get('all_sources'), dict), f"'all_sources' in models is not a dict (got {type(bokeh_models.get('all_sources'))})"
+            # Type checks using hierarchical structure
+            assert isinstance(bokeh_models['charts']['all'], list), f"'charts.all' is not a list (got {type(bokeh_models['charts']['all'])})"
+            assert isinstance(bokeh_models['sources']['data'], dict), f"'sources.data' is not a dict (got {type(bokeh_models['sources']['data'])})"
+            assert isinstance(bokeh_models['charts']['for_js_interaction'], list), f"'charts.for_js_interaction' is not a list (got {type(bokeh_models['charts']['for_js_interaction'])})"
+            assert isinstance(bokeh_models['ui']['visualization']['click_lines'], list), f"'ui.visualization.click_lines' is not a list (got {type(bokeh_models['ui']['visualization']['click_lines'])})"
+            assert isinstance(bokeh_models['ui']['visualization']['labels'], list), f"'ui.visualization.labels' is not a list (got {type(bokeh_models['ui']['visualization']['labels'])})"
+            
             if audio_handler:
-                assert isinstance(bokeh_models.get('playback_source'), ColumnDataSource), f"'playback_source' has wrong type (got {type(bokeh_models.get('playback_source'))})"
-                assert isinstance(bokeh_models.get('playback_controls'), dict), f"'playback_controls' is not a dict (got {type(bokeh_models.get('playback_controls'))})"
+                assert isinstance(bokeh_models['sources']['playback']['position'], ColumnDataSource), f"'sources.playback.position' has wrong type (got {type(bokeh_models['sources']['playback']['position'])})"
+                assert isinstance(bokeh_models['ui']['controls']['playback'], dict), f"'ui.controls.playback' is not a dict (got {type(bokeh_models['ui']['controls']['playback'])})"
+            
             if has_spectral:
-                 assert bokeh_models.get('param_select') is not None, "'param_select' is missing/None"
-                 assert bokeh_models.get('param_holder') is not None, "'param_holder' is missing/None"
+                assert bokeh_models['ui']['controls']['parameter']['select'] is not None, "'ui.controls.parameter.select' is missing/None"
+                assert bokeh_models['ui']['controls']['parameter']['holder'] is not None, "'ui.controls.parameter.holder' is missing/None"
+                assert bokeh_models['sources']['frequency']['bar'] is not None, "'sources.frequency.bar' is missing/None"
+                assert bokeh_models['frequency_analysis']['bar_chart']['x_range'] is not None, "'frequency_analysis.bar_chart.x_range' is missing/None"
+            
             logger.debug("DEV_ASSERTS on builder output passed.")
         # --- End Temporary Asserts ---
 
@@ -185,21 +220,22 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
 
     # 4. Setup Callbacks using AppCallbacks
     callback_manager = None
-    if audio_handler and 'playback_source' in bokeh_models and 'playback_controls' in bokeh_models:
+    
+    # Check for audio handler and required components in the hierarchical structure
+    has_playback_source = 'sources' in bokeh_models and 'playback' in bokeh_models['sources'] and 'position' in bokeh_models['sources']['playback']
+    
+    has_playback_controls = 'ui' in bokeh_models and 'controls' in bokeh_models['ui'] and 'playback' in bokeh_models['ui']['controls']
+    
+    if audio_handler and has_playback_source and has_playback_controls:
         logger.info("Audio handler and necessary models found, setting up callbacks...")
-        if _DEV_ASSERTS_ENABLED:
-            assert audio_handler is not None, "DEV_ASSERT: Pre-condition failed - audio_handler is None"
-            assert bokeh_models.get('playback_source') is not None, "DEV_ASSERT: Pre-condition failed - playback_source model is None"
-            assert bokeh_models.get('playback_controls') is not None, "DEV_ASSERT: Pre-condition failed - playback_controls model is None"
+        
         try:
             callback_manager = AppCallbacks(
                 doc=doc,
                 audio_handler=audio_handler,
                 models=bokeh_models
             )
-            if _DEV_ASSERTS_ENABLED:
-                assert isinstance(callback_manager, AppCallbacks), "AppCallbacks instantiation failed or returned wrong type"
-
+            
             callback_manager.attach_callbacks()
             logger.info("Application callbacks attached successfully.")
 
@@ -216,17 +252,13 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
     else:
          logger.warning("Skipping callback setup. Reasons: "
                         f"{'Audio handler not available' if not audio_handler else ''} "
-                        f"{'Playback source missing from models' if 'playback_source' not in bokeh_models else ''} "
-                        f"{'Playback controls missing from models' if 'playback_controls' not in bokeh_models else ''}")
-         if _DEV_ASSERTS_ENABLED:
-             logger.debug("DEV_ASSERT: Callback setup skipped as expected based on available components.")
+                        f"{'Playback source missing from models' if not has_playback_source else ''} "
+                        f"{'Playback controls missing from models' if not has_playback_controls else ''}")
 
     # 5. Add root layout to document
     if main_layout:
         try:
             doc.add_root(main_layout)
-            if _DEV_ASSERTS_ENABLED:
-                assert main_layout in doc.roots, "DEV_ASSERT: Main layout was not added to doc roots"
             logger.info("Main layout added to document.")
         except Exception as e:
             add_error_to_doc(doc, "Failed to add layout to document.", e)
@@ -236,19 +268,25 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
         return
 
     # 6. Add essential sources explicitly if not already referenced by the main layout
-    sources_to_ensure = ['playback_source', 'param_holder']
+    # Define sources to ensure using hierarchical paths
+    sources_to_ensure = [
+        ('sources.playback.position', lambda m: m['sources']['playback']['position']),
+        ('ui.controls.parameter.holder', lambda m: m['ui']['controls']['parameter']['holder'])
+    ]
+    
     layout_references = main_layout.references() if main_layout else set()
 
-    for key in sources_to_ensure:
-        source_model = bokeh_models.get(key)
-        if source_model and source_model not in layout_references:
-            try:
-                doc.add_root(source_model)
-                if _DEV_ASSERTS_ENABLED:
-                    assert source_model in doc.roots, f"DEV_ASSERT: Essential source '{key}' was not added to doc roots"
-                logger.info(f"Essential source '{key}' added explicitly to document roots.")
-            except Exception as e:
-                logger.error(f"Failed to add essential source '{key}' to document: {e}", exc_info=True)
+    for key_path, accessor in sources_to_ensure:
+        try:
+            source_model = accessor(bokeh_models)
+            if source_model and source_model not in layout_references:
+                try:
+                    doc.add_root(source_model)
+                    logger.info(f"Essential source '{key_path}' added explicitly to document roots.")
+                except Exception as e:
+                    logger.error(f"Failed to add essential source '{key_path}' to document: {e}", exc_info=True)
+        except Exception as e:
+            logger.warning(f"Could not access source at '{key_path}': {e}")
 
     doc.title = "Noise Survey Analysis"
     logger.info("Bokeh application setup complete.")
@@ -298,18 +336,4 @@ if __name__.startswith('bokeh_app_'):
      create_app(curdoc())
 
 # Command-line interface for generating standalone HTML
-if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Noise Survey Analysis Standalone HTML Generator")
-    parser.add_argument("--output", type=str, default="noise_survey_standalone.html",
-                        help="Path to save the generated HTML file")
-    args = parser.parse_args()
-    
-    # Set up logging for standalone mode
-    logging.basicConfig(level=logging.INFO, 
-                      format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    
-    # Generate the standalone HTML
-    output_path = generate_standalone_html(output_path=args.output)
-    print(f"Standalone HTML file generated at: {output_path}")
+# Removed the standalone generation code

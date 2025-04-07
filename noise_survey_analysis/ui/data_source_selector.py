@@ -15,6 +15,7 @@ from bokeh.models import (
     TextInput, Button, Div, Spacer # Added Spacer
 )
 from bokeh.events import ButtonClick
+import os.path
 
 from ..core.data_loaders import scan_directory_for_sources, summarize_scanned_sources
 from ..core.config import DEFAULT_BASE_JOB_DIR
@@ -50,7 +51,8 @@ class DataSourceSelector:
         self.on_data_sources_selected = on_data_sources_selected
         self.scanned_sources = []
         # Added 'original_position' to potentially help with renaming logic if needed later
-        self.source_table_data = ColumnDataSource({'index': [], 'position': [], 'path': [], 'type': [], 'include': [], 'original_position': []})
+        # Added 'file_size' to display file sizes in the table
+        self.source_table_data = ColumnDataSource({'index': [], 'position': [], 'path': [], 'type': [], 'include': [], 'original_position': [], 'file_size': []})
         self.current_job_directory = None
 
         # Create UI components
@@ -113,12 +115,13 @@ class DataSourceSelector:
             TableColumn(field="include", title="Include", editor=CheckboxEditor(), width=60), # Adjusted width
             TableColumn(field="position", title="Position", editor=StringEditor(), width=150), # Adjusted width
             TableColumn(field="type", title="Type", width=100),
+            TableColumn(field="file_size", title="Size", width=80), # New column for file size
             TableColumn(field="path", title="File/Directory Path", width=450) # Adjusted width
         ]
         self.data_table = DataTable(
             source=self.source_table_data,
             columns=self.table_columns,
-            width=800,
+            width=1200, # Increased width by 1.5x from 800
             height=350, # Adjusted height
             editable=True,
             index_position=None,
@@ -177,7 +180,7 @@ class DataSourceSelector:
             self.info_div, # Scan summary
             Spacer(height=20), # Add spacing
             self.action_button_row, # Load/Cancel buttons
-            width=850 # Slightly wider main layout
+            width=1250 # Increased width to accommodate wider table
         )
 
         # --- Event Handlers ---
@@ -277,6 +280,23 @@ class DataSourceSelector:
             types = [src.get("data_type", "unknown") for src in self.scanned_sources]
             # Default to included, user can deselect
             include = [src.get("enabled", True) for src in self.scanned_sources]
+            
+            # Get file sizes
+            file_sizes = []
+            for src in self.scanned_sources:
+                path = src["file_path"]
+                if os.path.isfile(path):
+                    size_bytes = os.path.getsize(path)
+                    # Format size to human-readable format
+                    if size_bytes < 1024:
+                        size_str = f"{size_bytes} B"
+                    elif size_bytes < 1024 * 1024:
+                        size_str = f"{size_bytes/1024:.1f} KB"
+                    else:
+                        size_str = f"{size_bytes/(1024*1024):.1f} MB"
+                    file_sizes.append(size_str)
+                else:
+                    file_sizes.append("Dir")  # For directories
 
             new_data = {
                 'index': indices,
@@ -284,7 +304,8 @@ class DataSourceSelector:
                 'path': paths,
                 'type': types,
                 'include': include,
-                'original_position': original_positions # Keep track if needed
+                'original_position': original_positions, # Keep track if needed
+                'file_size': file_sizes # Add file sizes
             }
             self.source_table_data.data = new_data # Update table data
             # --- End Populate Table ---
@@ -423,7 +444,7 @@ class DataSourceSelector:
 
     def _clear_table(self):
          """Clears the data table and disables relevant buttons."""
-         self.source_table_data.data = {'index': [], 'position': [], 'path': [], 'type': [], 'include': [], 'original_position': []}
+         self.source_table_data.data = {'index': [], 'position': [], 'path': [], 'type': [], 'include': [], 'original_position': [], 'file_size': []}
          self.load_button.disabled = True
          self.rename_button.disabled = True
          self.select_all_button.disabled = True

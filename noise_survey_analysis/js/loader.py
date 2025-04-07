@@ -71,15 +71,6 @@ def get_frequency_js():
     """
     return load_js_file('frequency.js')
 
-def get_app_js():
-    """
-    Get the unified app JavaScript.
-    
-    Returns:
-    str: Content of the app.js file
-    """
-    return load_js_file('app.js')
-
 def get_combined_js():
     """
     Get all JavaScript files combined.
@@ -87,11 +78,10 @@ def get_combined_js():
     Returns:
     str: Combined JavaScript content
     """
-    app_js = get_app_js()
     core_js = get_core_js()
     charts_js = get_charts_js()
     audio_js = get_audio_js()
     frequency_js = get_frequency_js()
     
-    combined = "\n// APP JS\n" + app_js + "\n\n// CORE JS\n" + core_js + "\n\n// CHARTS JS\n" + charts_js + "\n\n// AUDIO JS\n" + audio_js + "\n\n// FREQUENCY JS\n" + frequency_js
+    combined = "\n// CORE JS\n" + core_js + "\n\n// CHARTS JS\n" + charts_js + "\n\n// AUDIO JS\n" + audio_js + "\n\n// FREQUENCY JS\n" + frequency_js
     return combined 

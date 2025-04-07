@@ -132,7 +132,7 @@ window.NoiseSurveyApp = (function () {
         if (xStart === xEnd || yStart === yEnd) return; // Avoid division by zero or nonsensical ranges
 
         const middleX = xStart + (xEnd - xStart) / 2;
-        const topY = yEnd - (yEnd - yStart) / 6; // Position near top of chart
+        const topY = yEnd - (yEnd - yStart) / 5; // Position near top of chart
 
         // Position label to avoid overlapping the vertical line (x)
         if (x <= middleX) {
@@ -148,16 +148,15 @@ window.NoiseSurveyApp = (function () {
 
     function calculateStepSize(source) {
         const DEFAULT_STEP_SIZE = 300000; // 5 minutes
-        if (!source?.Datetime || !Array.isArray(source.Datetime) || source.Datetime.length < 2) {
+     
+        if (!source?.data?.Datetime || source.data.Datetime.length < 2) {
             console.warn("calculateStepSize: Invalid source data for step size calculation.");
             console.log("source.data:", source.data);
             return DEFAULT_STEP_SIZE;
         }
-        const times = source.Datetime;
+        const times = source.data.Datetime;
 
         const interval = times[5] - times[4];
-        console.log("interval:", interval);
-        console.log("times:", times[5], times[4]);
 
         // Step size: interval, clamped between 1s and 1hr
         return Math.max(1000, Math.min(3600000, Math.round(interval)));
@@ -470,9 +469,15 @@ window.NoiseSurveyApp = (function () {
 
     // --- Public API - Initialize App ---
     function initializeApp(models, options) {
-        console.info('NoiseSurveyApp - Initializing (v3.3 - Refactored Position Play)...');
+        console.info('NoiseSurveyApp - Initializing with hierarchical structure support...');
         try {
             console.log('Setting global models...');
+            
+            // Check if using hierarchical structure (passed from Python)
+            const usingHierarchicalStructure = models.hierarchical === true;
+            console.log(`Using ${usingHierarchicalStructure ? 'hierarchical' : 'legacy'} structure`);
+            
+            // Assign models from the structure provided
             _models.charts = models.charts || [];
             _models.sources = models.sources || {}; // Overview/log chart sources
             _models.clickLines = models.clickLines || [];

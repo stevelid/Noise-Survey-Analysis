@@ -182,13 +182,18 @@ if __name__ == "__main__":
                         help="Port to run the Bokeh server on (default: 5006)")
     parser.add_argument("--debug", action="store_true",
                         help="Enable debug mode for more detailed logging")
-    parser.add_argument("--generate-html", type=str, metavar="OUTPUT_PATH",
-                        help="Generate a standalone HTML file (without audio) and exit")
+    parser.add_argument("--generate-html", type=str, metavar="OUTPUT_PATH", nargs="?", const="auto",
+                        help="Generate a standalone HTML file (without audio) and exit. If no path is provided, will create in the surveys folder.")
     args = parser.parse_args()
     
     if args.generate_html:
         # Generate standalone HTML and exit
-        generate_standalone_html(args.generate_html, debug=args.debug)
+        if args.generate_html == "auto":
+            # Let the function determine the default output path
+            output_path = None
+        else:
+            output_path = args.generate_html
+        generate_standalone_html(output_path, debug=args.debug)
     else:
         # Run the Bokeh server as normal
         run_bokeh_server(port=args.port, debug=args.debug)
