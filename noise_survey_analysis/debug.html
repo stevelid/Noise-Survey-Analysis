@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Noise Survey Analysis - Debug View</title>
+    
+    <!-- Bokeh resources -->
+    {{ bokeh_css }}
+    {{ bokeh_js }}
+    
+    <!-- Application resources -->
+    <link rel="stylesheet" href="static/css/styles.css">
+    
+    <style>
+        /* Debug mode indicator */
+        .debug-mode-indicator {
+            position: fixed;
+            top: 0;
+            left: 0;
+            background-color: #f00;
+            color: white;
+            padding: 5px 10px;
+            font-weight: bold;
+            z-index: 9999;
+            font-family: monospace;
+        }
+        
+        /* Additional debug mode styles */
+        body.debug-mode {
+            margin-bottom: 50%;
+        }
+        
+        /* Always visible debug trigger button */
+        #debug-trigger-btn {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background-color: #f00;
+            color: white;
+            border: 2px solid yellow;
+            padding: 10px;
+            z-index: 999999;
+            font-weight: bold;
+            cursor: pointer;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+    </style>
+</head>
+<body class="debug-mode">
+    <div class="debug-mode-indicator">DEBUG MODE</div>
+    
+    <!-- Always visible trigger button -->
+    <button id="debug-trigger-btn" onclick="triggerDebugPanel()">SHOW DEBUG PANEL</button>
+    
+    <!-- Bokeh application will be inserted here -->
+    {{ plot_div|indent(8) }}
+    
+    <!-- Load the normal application JS -->
+    <script src="static/js/core.js"></script>
+    <script src="static/js/charts.js"></script>
+    <script src="static/js/frequency.js"></script>
+    <script src="static/js/audio.js"></script>
+    <script src="static/js/app.js"></script>
+    
+    <!-- Load the debug tools -->
+    <script src="static/js/debug.js"></script>
+    
+    <!-- Bokeh specific JS -->
+    {{ plot_script|indent(8) }}
+    
+    <script>
+        // Additional debug initialization can go here
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Debug mode: Noise Survey Analysis Debug View loaded");
+            
+            // Information about the window object
+            const debugInfo = document.createElement('div');
+            debugInfo.style.position = 'fixed';
+            debugInfo.style.top = '30px';
+            debugInfo.style.left = '0';
+            debugInfo.style.background = 'rgba(0,0,0,0.7)';
+            debugInfo.style.color = '#fff';
+            debugInfo.style.padding = '10px';
+            debugInfo.style.fontFamily = 'monospace';
+            debugInfo.style.fontSize = '12px';
+            debugInfo.style.zIndex = '9998';
+            
+            const windowKeys = Object.keys(window).filter(key => 
+                !key.startsWith('_') && 
+                typeof window[key] !== 'function' && 
+                !(window[key] instanceof Node)
+            ).slice(0, 15); // Limit to first 15 non-function keys
+            
+            debugInfo.innerHTML = `
+                <h3>Window Object Overview</h3>
+                <ul>
+                    ${windowKeys.map(key => `<li>${key}: ${typeof window[key]}</li>`).join('')}
+                    <li>...</li>
+                </ul>
+            `;
+            
+            document.body.appendChild(debugInfo);
+        });
+        
+        // Manual trigger function for debug panel
+        function triggerDebugPanel() {
+            console.log("Manual debug panel trigger clicked");
+            
+            if (window.NoiseSurveyDebug) {
+                window.NoiseSurveyDebug.initialize();
+                window.NoiseSurveyDebug.takeSnapshot();
+                
+                // Force create a visible panel if needed
+                const container = document.getElementById('debug-container');
+                if (!container || getComputedStyle(container).display === 'none') {
+                    const forcePanel = document.createElement('div');
+                    forcePanel.id = 'forced-debug-panel';
+                    forcePanel.style.position = 'fixed';
+                    forcePanel.style.bottom = '0';
+                    forcePanel.style.right = '0';
+                    forcePanel.style.width = '50%';
+                    forcePanel.style.height = '50%';
+                    forcePanel.style.background = 'rgba(255, 0, 0, 0.95)';
+                    forcePanel.style.color = 'white';
+                    forcePanel.style.zIndex = '9999999';
+                    forcePanel.style.padding = '20px';
+                    forcePanel.style.overflow = 'auto';
+                    forcePanel.innerHTML = `
+                        <h2>FORCED DEBUG PANEL</h2>
+                        <p>Time: ${new Date().toLocaleTimeString()}</p>
+                        <p>NoiseSurveyApp available: ${window.NoiseSurveyApp ? 'YES' : 'NO'}</p>
+                        <p>NoiseSurveyDebug available: ${window.NoiseSurveyDebug ? 'YES' : 'NO'}</p>
+                        <p>Bokeh available: ${typeof Bokeh !== 'undefined' ? 'YES' : 'NO'}</p>
+                        <button onclick="this.parentNode.remove()">CLOSE</button>
+                        <hr>
+                        <div id="debug-content">Loading debug data...</div>
+                    `;
+                    
+                    document.body.appendChild(forcePanel);
+                    
+                    // Try to get debug data
+                    if (window.NoiseSurveyApp && window.NoiseSurveyApp.getState) {
+                        setTimeout(() => {
+                            try {
+                                const state = window.NoiseSurveyApp.getState();
+                                const models = window.NoiseSurveyApp.getModels();
+                                document.getElementById('debug-content').innerHTML = `
+                                    <h3>App State:</h3>
+                                    <pre>${JSON.stringify(state, null, 2)}</pre>
+                                    <h3>Models:</h3>
+                                    <pre>${JSON.stringify(models, null, 2)}</pre>
+                                `;
+                            } catch (e) {
+                                document.getElementById('debug-content').innerHTML = `
+                                    <h3>Error getting debug data:</h3>
+                                    <pre>${e.message}</pre>
+                                `;
+                            }
+                        }, 500);
+                    }
+                }
+            } else {
+                alert("Debug tools not available! Check console for details.");
+                console.error("NoiseSurveyDebug not found in window object");
+            }
+        }
+    </script>
+</body>
+</html> 

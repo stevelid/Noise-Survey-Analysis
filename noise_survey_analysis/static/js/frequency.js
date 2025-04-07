@@ -5,14 +5,30 @@
  * including spectrograms and frequency bar charts.
  */
 
+// Import core utility functions if we're in a Node.js environment
+//let findClosestDateIndex, findClosestIndex;
+
+// Check if we're in a Node.js testing environment
+if (typeof require !== 'undefined') {
+  // We're in a Node.js environment
+  const coreModule = require('./core.js');
+  findClosestDateIndex = coreModule.findClosestDateIndex;
+  findClosestIndex = coreModule.findClosestIndex;
+} else {
+  // We're in a browser environment
+  findClosestDateIndex = window.findClosestDateIndex;
+  findClosestIndex = window.findClosestIndex;
+}
 
 /**
  * Update local references to global variables
  * Called periodically to ensure synchronization
  */
 function updateGlobalReferences() {
-    globalVerticalLinePosition = window.globalVerticalLinePosition;
-    globalActiveChartIndex = window.globalActiveChartIndex;
+    if (typeof window !== 'undefined') {
+        globalVerticalLinePosition = window.globalVerticalLinePosition;
+        globalActiveChartIndex = window.globalActiveChartIndex;
+    }
 }
 
 /**
@@ -171,24 +187,33 @@ function updateBarChartFromClickLine(x, activeChartIndex) {
     
     // Get references to required objects - try passed params first, then global fallbacks
     const chartRefs = window.chartRefs;
-    const allPositionsSpectralData = window.allPositionsSpectralData;
-    const barSource = window.barSource;
-    const barXRange = window.barXRange;
-    const paramHolder = window.selectedParamHolder;
+    const allPositionsSpectralData = window.allPositionsSpectralData || {};
+    const barSource = window.barSource || { data: {}, change: { emit: () => {} } };
+    const barXRange = window.barXRange || { factors: [] };
+    const paramHolder = window.selectedParamHolder || { data: { param: ['LZeq'] } };
+
+    // For testing environment, create empty defaults if objects are missing
+    let commonData = { n_freqs: 0, frequency_labels_str: [] };
 
     // Safety checks
-    if (!chartRefs || !allPositionsSpectralData || !barSource || !barXRange || !paramHolder || !allPositionsSpectralData[Object.keys(allPositionsSpectralData)[0]]) {
+    if (!chartRefs || !allPositionsSpectralData || !barSource || !barXRange) {
         console.warn("Missing required references for updateBarChartFromClickLine");
         console.log("chartRefs:", !!chartRefs);
         console.log("allPositionsSpectralData:", !!allPositionsSpectralData);
         console.log("barSource:", !!barSource);
         console.log("barXRange:", !!barXRange);
-        console.log("paramHolder:", !!paramHolder);
+        
+        // In test environment, still populate with empty data to avoid errors
+        barSource.data['levels'] = [];
+        barSource.data['frequency_labels'] = [];
+        if (barSource.change && typeof barSource.change.emit === 'function') {
+            barSource.change.emit();
+        }
         return;
     }
 
     // find the bar chart
-    const barChart = chartRefs.find(chart => chart.name === 'frequency_bar');
+    const barChart = chartRefs.find(chart => chart && chart.name === 'frequency_bar');
     if (!barChart) {
         console.warn("No bar chart found");
         return;
@@ -199,45 +224,76 @@ function updateBarChartFromClickLine(x, activeChartIndex) {
 
     // if no valid tapline, reset the bar chart
     if (x === null || x === undefined || x <= 0) {
-        barChart.title.text = `Frequency Slice`;
-        barSource.data['levels'] = Array(commonData.n_freqs).fill(0);
-        barSource.change.emit();
+        if (barChart.title) {
+            barChart.title.text = `Frequency Slice`;
+        }
+        if (commonData && commonData.n_freqs > 0) {
+            barSource.data['levels'] = Array(commonData.n_freqs).fill(0);
+        } else {
+            barSource.data['levels'] = [];
+        }
+        if (barSource.change && typeof barSource.change.emit === 'function') {
+            barSource.change.emit();
+        }
         return;
     }  
-    
     
     if (!activeChart || !activeChart.name) {
         console.warn("Invalid active chart or missing name property");
         return;
     }
     
-    
     // Extract the position from the chart name (e.g., "SW_overview" => "SW")
     const chartName = activeChart.name;
     let position = chartName.split('_')[0];
     
+    // Get the spectral_param_charts for this position
+    let posParamCharts = window.spectralParamCharts || {};
+    
     // Check if we have spectral data for this position
-    if (!allPositionsSpectralData[position]) {
-        position = Object.keys(allPositionsSpectralData)[0];
+    if (!posParamCharts[position]) {
+        // Fall back to first available position
+        position = Object.keys(posParamCharts)[0];
+        
+        // Check if any spectral data exists
+        if (!position) {
+            console.warn("No spectral parameter data available for any position");
+            return;
+        }
     }
     
     // Get currently selected parameter from holder
-    if (!paramHolder.data || !paramHolder.data.param) {
+    if (!paramHolder || !paramHolder.text) {
         console.warn("Missing parameter holder data");
         return;
     }
     
-    const selectedParam = paramHolder.data.param[0];
+    const selectedParam = paramHolder.text;
     
-    // Get spectral data for this position and parameter
+    // Check if this parameter is available for this position
+    const positionParamData = posParamCharts[position];
+    const availableParams = positionParamData.available_params || [];
+    
+    if (!availableParams.includes(selectedParam)) {
+        console.warn(`Parameter ${selectedParam} not available for position ${position}`);
+        return;
+    }
+    
+    // Get spectral data for this position and parameter from all_positions_spectral_data
     const positionData = allPositionsSpectralData[position];
-    if (!positionData[selectedParam]) {
+    if (!positionData || !positionData[selectedParam]) {
         console.log(`No data for ${selectedParam} in position ${position}`);
         return;
     }
     
     const paramData = positionData[selectedParam];
-    const commonData = positionData.common;
+    commonData = positionData.common || { n_freqs: 0, frequency_labels_str: [] };
+    
+    // Safety check for missing common data
+    if (!commonData || !commonData.times_ms) {
+        console.warn("Missing common spectral data");
+        return;
+    }
     
     // Find the closest time index for the clicked time
     const times = commonData.times_ms;
@@ -260,37 +316,54 @@ function updateBarChartFromClickLine(x, activeChartIndex) {
     }
     
     // Extract frequency values at this time
-    const nFreqs = commonData.n_freqs;
+    const nFreqs = commonData.n_freqs || 0;
     const startIdx = closestTimeIdx * nFreqs;
     const endIdx = startIdx + nFreqs;
-    const levelsFlat = paramData.levels_flat_nan;
     
-    // Slice the flattened array to get values for this time point
-    let levelsSlice = levelsFlat.slice(startIdx, endIdx);
+    // Check if flattened data is available, or create an empty array
+    const levelsFlat = paramData.levels_flat_nan || [];
     
-    // Replace NaN with 0 for display
-    levelsSlice = levelsSlice.map(level => 
-        (level === null || level === undefined || Number.isNaN(level)) ? 0 : level);
-    
-    // Update bar chart
-    barSource.data = {
-        'frequency_labels': commonData.frequency_labels_str,
-        'levels': levelsSlice
-    };
+    // Make sure the array is large enough
+    if (startIdx >= levelsFlat.length) {
+        console.warn("Data index out of bounds");
+        barSource.data = {
+            'frequency_labels': commonData.frequency_labels_str || [],
+            'levels': Array(nFreqs).fill(0)
+        };
+    } else {
+        // Slice the flattened array to get values for this time point
+        let levelsSlice = levelsFlat.slice(startIdx, endIdx);
+        
+        // Replace NaN with 0 for display
+        levelsSlice = levelsSlice.map(level => 
+            (level === null || level === undefined || Number.isNaN(level)) ? 0 : level);
+        
+        // Update bar chart
+        barSource.data = {
+            'frequency_labels': commonData.frequency_labels_str || [],
+            'levels': levelsSlice
+        };
+    }
     
     // Update x-range factors
-    barXRange.factors = commonData.frequency_labels_str;
+    if (barXRange && barXRange.factors) {
+        barXRange.factors = commonData.frequency_labels_str || [];
+    }
 
     // Update Label
     let labelString = `Frequency Slice`;
     if (x !== null && x !== undefined && x > 0) {
         labelString = `Frequency Slice: ${position} | ${selectedParam} | ${new Date(x).toLocaleString()}`;
     }
-    barChart.title.text = labelString;
+    
+    if (barChart.title) {
+        barChart.title.text = labelString;
+    }
     
     // Trigger update
-    barSource.change.emit();
-    
+    if (barSource.change && typeof barSource.change.emit === 'function') {
+        barSource.change.emit();
+    }
 }
 
 /**
@@ -420,3 +493,13 @@ window.updateFrequencyBarChart = updateFrequencyBarChart;
 window.updateBarChartFromClickLine = updateBarChartFromClickLine;
 window.handleSpectrogramHover = handleSpectrogramHover;
 window.updateGlobalReferences = updateGlobalReferences;
+
+// Export for Node.js testing environment
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        updateFrequencyBarChart,
+        updateBarChartFromClickLine,
+        handleSpectrogramHover,
+        updateGlobalReferences
+    };
+}

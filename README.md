@@ -1,111 +1,94 @@
 # Noise Survey Analysis Tool
 
-A tool for loading, analyzing, and visualizing noise survey data from different sound meter models (Noise Sentry, NTi, and Svan).
+An interactive Bokeh application for loading, analyzing, and visualizing noise survey data from various sound level meters.
 
 ## Overview
 
-This application provides an interactive dashboard for analyzing noise survey data, with features including:
+This tool provides a dashboard for analyzing noise survey data, featuring:
 
-- Data import from multiple source formats
-- Time series visualization of sound levels
-- Spectral analysis with spectrograms and frequency distribution charts
-- Interactive navigation with synchronized charts
-- Audio playback integration with visualization synchronization
+* Data import from multiple source formats (currently Noise Sentry CSV, NTi TXT, Svan XLSX).
+* Configuration via `noise_survey_analysis/core/config.py`.
+* Time series visualization of broadband sound levels (e.g., LAeq, LAF90).
+* Spectral analysis including image-based spectrograms and interactive frequency slice bar charts.
+* Interactive chart navigation: synchronized zooming/panning, hover/tap to inspect data points.
+* Keyboard navigation (arrow keys for time stepping, spacebar for play/pause).
+* Synchronized audio playback (requires VLC) linked to the visualization timeline.
 
-## Project Structure
+## Project Structure (Post-Refactoring Target)
 
-The project has been organized with a modular structure:
-
-```
-noise_survey_analysis/
-├── core/                    # Core functionality
-│   ├── config.py            # Centralized configuration
-│   ├── data_loaders.py      # Data import functions
-│   ├── data_processors.py   # Data processing utilities
-│   └── audio_handler.py     # Audio playback functionality
-├── visualization/           # Visualization components
-│   ├── interactive.py       # Interactive feature implementation
-│   └── ...                  # (More modules to be added in Phase 2)
-├── js/                      # JavaScript components
-│   ├── callbacks.py         # JavaScript callbacks for interactivity
-│   └── ...                  # (More modules to be added in Phase 2)
-└── app.py                   # Main application entry point
-```
-
-## Usage
-
-### Running the Full Application
-
-To run the application as a Bokeh server:
-
-```
-python run_app.py
-```
-
-Or use the Bokeh command directly:
-
-```
-bokeh serve --show noise_survey_analysis/app.py
-```
-
-### Using in Jupyter Notebook / Interactive Mode
-
-The code is structured to support cell-by-cell execution in Jupyter notebooks or IDE cells (like VS Code with Python extension).
-
-```python
-# Import required modules
-from noise_survey_analysis.core.config import CONFIG
-from noise_survey_analysis.core.data_loaders import define_file_paths_and_types, load_data
-from noise_survey_analysis.core.data_processors import synchronize_time_range
-
-# Define data files
-file_paths = {
-    'Position1': 'path/to/file1.csv',
-    'Position2': 'path/to/file2.csv'
-}
-file_types = {
-    'Position1': 'sentry',
-    'Position2': 'nti'
-}
-
-# Load data
-file_paths, file_types = define_file_paths_and_types(file_paths, file_types)
-position_data = load_data(file_paths, file_types)
-
-# Process data
-if CONFIG["chart_settings"]["sync_charts"]:
-    position_data = synchronize_time_range(position_data)
-
-# Create and display visualizations
-from noise_survey_analysis.app import create_visualizations
-from bokeh.io import output_notebook, show
-output_notebook()  # For Jupyter notebooks
-layout, _, _ = create_visualizations(position_data)
-show(layout)
-```
-
-## Development Plan
-
-This project is being refactored according to the [Development Plan](DEVELOPMENT_PLAN.md), which outlines:
-
-- Current system analysis
-- Identified issues and improvement areas
-- Proposed architecture
-- Phased refactoring plan
-- Risk analysis and mitigation strategies
+├── noise_survey_analysis/
+│   ├── core/                 # Core functionality (config, loading, parsing, processing, audio, callbacks)
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── data_loaders.py
+│   │   ├── data_parsers.py
+│   │   ├── data_processors.py
+│   │   ├── audio_handler.py
+│   │   └── app_callbacks.py    # NEW: Handles Python-side callbacks
+│   ├── visualization/        # Bokeh visualization components & orchestration
+│   │   ├── __init__.py
+│   │   ├── components.py       # RENAMED: Creates individual chart figures/sources
+│   │   ├── interactive.py      # Adds interactive elements (lines, hover), JS init setup
+│   │   └── dashboard.py        # NEW: Orchestrates viz creation, builds layout
+│   ├── ui/                   # NEW: UI Widget Creation
+│   │   ├── __init__.py
+│   │   └── controls.py         # Functions to create Bokeh widget sets
+│   ├── static/js/            # Client-side JavaScript files for interactivity
+│   │   ├── core.js
+│   │   ├── charts.js
+│   │   ├── frequency.js
+│   │   └── audio.js
+│   ├── __init__.py
+│   └── app.py                # Main Bokeh application *entry point* and *orchestrator*
+├── tests/                      # Pytest tests (mirroring structure)
+│   ├── core/
+│   ├── visualization/
+│   ├── ui/
+│   └── test_app.py
+├── DEVELOPMENT_PLAN.md       # Refactoring and enhancement plan
+├── README.md                 # This file
+└── run_app.py                # Script to run the Bokeh server
 
 ## Requirements
 
-- Python 3.6+
-- Bokeh
-- pandas
-- numpy
-- vlc (for audio playback)
+* Python 3.8+
+* Bokeh (`pip install bokeh`)
+* Pandas (`pip install pandas`)
+* NumPy (`pip install numpy`)
+* python-vlc (`pip install python-vlc`)
+* VLC media player (must be installed separately on your system for audio playback)
+* `openpyxl` (for reading Svan `.xlsx` files: `pip install openpyxl`)
+
+## Usage
+
+1.  **Configure Data:** Edit `noise_survey_analysis/core/config.py` to define your `DEFAULT_DATA_SOURCES`, specifying the `position_name`, `file_path`, `parser_type`, and `enabled` status for each data file. **TODO:** Move the `media_path` definition from `noise_survey_analysis/app.py` into `config.py`.
+2.  **Run the Application:** Execute the `run_app.py` script from your terminal in the project's root directory:
+    ```bash
+    python run_app.py
+    ```
+    This will start the Bokeh server and open the application in your default web browser.
+3.  **Interact:**
+    * Use checkboxes to toggle chart visibility.
+    * Use the range selector at the bottom to zoom into specific time periods.
+    * Hover over charts to see a vertical line and details (in spectrogram hover div).
+    * Click on a chart to set the red vertical line and update the frequency slice chart.
+    * Use the playback controls (Play, Pause, Stop, Speed) to listen to audio synchronized with the red line.
+    * Use keyboard arrow keys (Left/Right) to step the red line through time.
+    * Use the Spacebar to toggle Play/Pause.
+    * Use the "Parameter" dropdown (if spectral data is present) to change the spectrogram display.
+
+## Development Plan
+
+This project is undergoing refactoring and enhancement according to the [Development Plan](DEVELOPMENT_PLAN.md). Key goals include:
+
+* Improved code structure and maintainability.
+* Improved JavaScript stability and state handling.
+* Enhanced file/directory input UI.
+* Annotation/note-taking features.
+* Data range selection for statistical analysis.
+* Static HTML export options.
+* Addition of automated tests.
 
 ## License
 
-This project is intended for internal use only.
-
-## Acknowledgements
-
-Original code developed for noise survey analysis by Venta Acoustics. 
+This project is intended for internal use.

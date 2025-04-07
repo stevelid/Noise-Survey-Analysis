@@ -8,6 +8,30 @@
  * and keyboard navigation.
  */
 
+// Import core utility functions if we're in a Node.js environment
+//let findClosestDateIndex, createLabelText, positionLabel, calculateStepSize;
+
+// Check if we're in a Node.js testing environment
+if (typeof require !== 'undefined') {
+  // We're in a Node.js environment
+  const coreModule = require('./core.js');
+  findClosestDateIndex = coreModule.findClosestDateIndex;
+  createLabelText = coreModule.createLabelText;
+  positionLabel = coreModule.positionLabel;
+  calculateStepSize = coreModule.calculateStepSize;
+} else {
+  // We're in a browser environment
+  findClosestDateIndex = window.findClosestDateIndex;
+  createLabelText = window.createLabelText;
+  positionLabel = window.positionLabel;
+  calculateStepSize = window.calculateStepSize;
+}
+
+// Global state for tracking initialized state and other references
+//const globalInitialized = typeof window !== 'undefined' && !!window.chartRefs;
+//let globalChartRefs = typeof window !== 'undefined' ? window.chartRefs || [] : [];
+//let activeChartIndex = typeof window !== 'undefined' ? window.activeChartIndex || -1 : -1;
+
 /**
  * Update a single chart's line model and label model properties at given x position.
  * Uses chart.name to find the correct data source.
@@ -34,7 +58,7 @@ function updateChartLine(chart, clickLineModel, labelModel, x, chartIndex) {
 
     // Exclude charts that shouldn't have this type of label/source lookup
     // e.g., range selector, frequency bar, potentially spectrograms
-    if (!sourceKey || sourceKey === 'range_selector' || sourceKey === 'frequency_bar' || sourceKey.includes('_spectral')) {
+    if (!sourceKey || sourceKey === 'range_selector' || sourceKey === 'shared_range_selector' || sourceKey === 'frequency_bar' || sourceKey.includes('_spectral')) {
         // console.log(`Skipping label update for chart '${sourceKey || chart.title?.text}'`);
         labelModel.visible = false; // Ensure label is hidden for these types
         // Still return true because the line was updated
@@ -59,7 +83,7 @@ function updateChartLine(chart, clickLineModel, labelModel, x, chartIndex) {
         let label_text = createLabelText(source, closest_idx); // Uses the correctly found source
 
         // Position the label model (uses chart for range info)
-        positionLabel(labelModel, chart, x); // Pass the model
+        positionLabel(x, chart, labelModel); // Pass the model
 
         // Update label model text and visibility
         labelModel.text = label_text;
@@ -153,7 +177,7 @@ function handleHover(hoverLinesModels, cb_data, charts, sources, bar_source, bar
             const chart = charts[i];
             
             // Skip range_selector or frequency_bar charts
-            if (chart.name === 'range_selector' || chart.name === 'frequency_bar') continue;
+            if (chart.name === 'range_selector' || chart.name === 'shared_range_selector' || chart.name === 'frequency_bar') continue;
             
             // Check if hover position is within chart bounds
             const inXRange = hoveredX >= chart.x_range.start && hoveredX <= chart.x_range.end;
@@ -289,15 +313,36 @@ function getActiveChartIndex(cb_obj, charts) {
     return activeChartIndex;
 }
 
-function hideAllLinesAndLabels(clickLineModels, labelModels) {
-    // Hide all lines and labels
-    console.log("Invalid x position from tap event.");
-    for (let i = 0; i < clickLineModels.length; i++) {
-        if (clickLineModels[i]) clickLineModels[i].visible = false;
-        if (labelModels[i]) labelModels[i].visible = false;
+/**
+ * Hides all click lines and labels
+ * @param {Array} clickLines - Array of click line models
+ * @param {Array} labels - Array of label models
+ */
+function hideAllLinesAndLabels(clickLines, labels) {
+  if (!clickLines || !labels) {
+    console.warn("Missing clickLines or labels for hideAllLinesAndLabels");
+    return;
+  }
+  
+  try {
+    // Hide all click lines
+    for (let i = 0; i < clickLines.length; i++) {
+      if (clickLines[i]) {
+        clickLines[i].visible = false;
+      }
     }
-
-    return activeChartIndex;
+    
+    // Hide all labels
+    for (let i = 0; i < labels.length; i++) {
+      if (labels[i]) {
+        labels[i].visible = false;
+      }
+    }
+    
+    console.log("All lines and labels hidden");
+  } catch (error) {
+    console.error("Error in hideAllLinesAndLabels:", error);
+  }
 }
 
 function updatePlaybackSource(x) {
@@ -508,4 +553,24 @@ window.updateTapLinePositions = updateTapLinePositions;
 window.handleHover = handleHover;
 window.handleTap = handleTap;
 window.enableKeyboardNavigation = enableKeyboardNavigation;
+window.updateChartLine = updateChartLine;
+window.getActiveChartIndex = getActiveChartIndex;
+window.hideAllLinesAndLabels = hideAllLinesAndLabels;
+window.updatePlaybackSource = updatePlaybackSource;
+window.handleKeyPress = handleKeyPress;
+
+// Export for Node.js testing environment
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        updateChartLine,
+        updateTapLinePositions,
+        handleHover,
+        handleTap,
+        getActiveChartIndex,
+        hideAllLinesAndLabels,
+        updatePlaybackSource,
+        handleKeyPress,
+        enableKeyboardNavigation
+    };
+}
  

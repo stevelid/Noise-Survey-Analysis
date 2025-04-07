@@ -542,20 +542,24 @@ def make_rec_spectrogram(param, df, title=-1, height=None, colormap=None, font_s
 
     return spec, source
 
-def make_image_spectrogram(param, df, bar_source, bar_x_range, position, title=-1, height=None, colormap=None, font_size='9pt'):
+def make_image_spectrogram(param, df, bar_source, bar_x_range, position, title=-1, height=None, colormap=None, font_size='9pt', prepared_data=None):
     """
     Create a high-performance spectrogram using the `image` glyph.
     Hover information is displayed in a separate Div updated via CustomJS.
 
     Parameters:
     param (str): Base parameter name (e.g., 'LZeq').
-    df (pd.DataFrame): DataFrame with frequency data. Must contain 'Datetime'.
+    df (pd.DataFrame): DataFrame with frequency data. Must contain 'Datetime'. 
+                       Not used if prepared_data is provided.
     bar_source (bokeh.models.ColumnDataSource): Source for the frequency bar chart
     bar_x_range (bokeh.models.FactorRange): X range for the frequency bar chart
+    position (str): Position name for JavaScript callbacks
     title (str or int): Chart title. Defaults to parameter name.
     height (int, optional): Chart height. Defaults to config.
     colormap (str, optional): Colormap name. Defaults to config.
     font_size (str): Font size for axis labels.
+    prepared_data (dict, optional): Pre-processed data dict from prepare_spectral_image_data.
+                                   If provided, will skip data processing steps.
 
     Returns:
     tuple: (bokeh.plotting.figure, bokeh.models.ColumnDataSource, bokeh.models.Div)
@@ -563,108 +567,51 @@ def make_image_spectrogram(param, df, bar_source, bar_x_range, position, title=-
     """
     height = height if height is not None else CHART_SETTINGS['spectrogram_height']
     width = CHART_SETTINGS['spectrogram_width']
-    lower_band_idx = CHART_SETTINGS['lower_freq_band']
-    upper_band_idx = CHART_SETTINGS['upper_freq_band'] # Can be negative
     colormap = colormap if colormap is not None else CHART_SETTINGS['colormap']
     tools = CHART_SETTINGS['tools'] # Keep base tools
     active_drag = CHART_SETTINGS['active_drag']
     active_scroll = CHART_SETTINGS['active_scroll']
-
-    # --- Input Validation ---
-    if df is None or df.empty:
-        logger.warning(f"Empty DataFrame provided for image spectrogram '{param}'")
-        return None, None, None
-    if 'Datetime' not in df.columns:
-         logger.error(f"Missing 'Datetime' column for image spectrogram '{param}'")
-         return None, None, None
-    if not pd.api.types.is_datetime64_any_dtype(df['Datetime']):
-        df['Datetime'] = pd.to_datetime(df['Datetime'], errors='coerce')
-        df.dropna(subset=['Datetime'], inplace=True)
-        if df.empty: return None, None, None # Bail if no valid dates
-
-    # --- Find and Sort Frequency Columns ---
-    freq_cols_found = []
-    all_frequencies = []
-    for col in df.columns:
-         if col.startswith(param + '_') and col.split('_')[-1].replace('.', '', 1).isdigit():
-              try:
-                   freq = float(col.split('_')[-1])
-                   freq_cols_found.append(col)
-                   all_frequencies.append(freq)
-              except (ValueError, IndexError): continue
-
-    if not freq_cols_found:
-        logger.error(f"No frequency columns found for parameter '{param}' in image spectrogram.")
-        return None, None, None
-
-    sorted_indices = np.argsort(all_frequencies)
-    frequencies = np.array(all_frequencies)[sorted_indices]
-    freq_columns = np.array(freq_cols_found)[sorted_indices]
-
-    # --- Apply Band Slicing ---
-    if upper_band_idx is None or upper_band_idx == -1: upper_band_idx = len(frequencies)
-    selected_frequencies = frequencies[lower_band_idx:upper_band_idx]
-    selected_freq_columns = freq_columns[lower_band_idx:upper_band_idx]
-
-    if len(selected_frequencies) == 0:
-        logger.error(f"No frequencies after band slicing for image spectrogram '{param}'.")
-        return None, None, None
-    n_freqs = len(selected_frequencies)
-    logger.info(f"Using {n_freqs} frequencies for '{param}' image spectrogram.")
-
-    frequency_labels_str = [(str(int(f)) if f >= 10 else f"{f:.1f}") + " Hz" for f in selected_frequencies]
-
-    # --- Prepare Data for `image` Glyph ---
-    levels_matrix = df[selected_freq_columns].values # Shape: (n_times, n_freqs)
-    times_dt = df['Datetime'].values
-    n_times = len(times_dt)
-
-    if n_times == 0:
-        logger.warning(f"No time points for image spectrogram '{param}'")
-        return None, None, None
-
-    # Convert times to milliseconds epoch (numeric) for x coordinate
-    times_ms = pd.to_datetime(times_dt).astype('int64') // 10**6
-    #times_ms = (times_dt - np.datetime64('1970-01-01T00:00:00Z')) / np.timedelta64(1, 'ms')
-
-    # Y coordinate: Use simple linear indices [0, 1, ..., n_freqs-1]
-    freq_indices = np.arange(n_freqs)
-
-    # Handle NaNs in the data matrix: replace with a value outside the range (e.g., low)
-    # or use image_rgba later. Replacing is simpler for image.
-    valid_levels = levels_matrix[~np.isnan(levels_matrix)]
-    if len(valid_levels) > 0:
-        min_val = np.min(valid_levels)
-        max_val = np.max(valid_levels)
-        nan_replace_val = min_val - 20 # Choose a value clearly outside range
-    else: # All NaNs?
-        min_val, max_val = 0, 100
-        nan_replace_val = -100
-    levels_matrix = np.nan_to_num(levels_matrix, nan=nan_replace_val)
-
-    # **Important for `image`:** The data array needs to match the axis order.
-    # Bokeh `image` expects the array oriented as `(rows, cols)`, where rows correspond
-    # to the y-axis and cols to the x-axis.
-    # Our `levels_matrix` is currently (n_times, n_freqs).
-    # We need to transpose it to (n_freqs, n_times) for plotting.
-    levels_matrix_transposed = levels_matrix.T # Shape: (n_freqs, n_times)
+    
+    # --- Use Prepared Data if Provided, Otherwise Process Data ---
+    if prepared_data is None:
+        # Import the data preparation function 
+        try:
+            from ..core.data_processors import prepare_spectral_image_data
+            prepared_data = prepare_spectral_image_data(df, param, CHART_SETTINGS)
+            if prepared_data is None:
+                logger.error(f"Failed to prepare spectral data for '{param}'")
+                return None, None, None
+        except ImportError:
+            logger.error("Failed to import prepare_spectral_image_data, falling back to in-function processing")
+            # In-function data processing would go here, but since we've moved it, 
+            # this fallback is unlikely to work well. Consider proper error handling.
+            return None, None, None
+    
+    # --- Extract Values from Prepared Data ---
+    selected_frequencies = prepared_data['frequencies']
+    frequency_labels_str = prepared_data['frequency_labels']
+    times_ms = prepared_data['times_ms']
+    levels_matrix = prepared_data['levels_matrix']  # Original for data access
+    levels_matrix_transposed = prepared_data['levels_matrix_transposed']  # For image glyph
+    freq_indices = prepared_data['freq_indices']
+    min_val = prepared_data['min_val']
+    max_val = prepared_data['max_val']
+    n_freqs = prepared_data['n_freqs']
+    n_times = prepared_data['n_times']
 
     # --- Create Source ---
-    # Source ONLY holds the 2D image data. Other arrays passed via JS args.
-    source = ColumnDataSource(data={'image': [levels_matrix_transposed]}) # Pass as a list containing the 2D array
+    source = ColumnDataSource(data={'image': [levels_matrix_transposed]})
 
     # --- Color Mapper ---
-    # Adjust range slightly if all NaNs were replaced
-    if len(valid_levels) == 0:
-        mapper_low, mapper_high = min_val, max_val
-    elif min_val == max_val: # Handle single value case
-         mapper_low, mapper_high = min_val - 1, max_val + 1
+    if min_val == max_val:  # Handle single value case
+        mapper_low, mapper_high = min_val - 1, max_val + 1
     else:
-         mapper_low, mapper_high = min_val, max_val
-    color_mapper = LinearColorMapper(palette=colormap, low=mapper_low, high=mapper_high, nan_color='#00000000') # Transparent NaN
+        mapper_low, mapper_high = min_val, max_val
+    color_mapper = LinearColorMapper(palette=colormap, low=mapper_low, high=mapper_high, nan_color='#00000000')
 
     # --- Create Figure ---
-    if title == -1: title = f"Spectrogram ({param})"
+    if title == -1: 
+        title = f"{position} - {param} Spectral Data"
 
     # Define explicit ranges for image positioning
     x_range = (times_ms[0], times_ms[-1]) if n_times > 0 else (0, 1)
@@ -713,10 +660,17 @@ def make_image_spectrogram(param, df, bar_source, bar_x_range, position, title=-
     spec.yaxis.axis_label_text_font_size = font_size
     spec.ygrid.visible = False
     spec.xgrid.visible = False
+
     # --- Color Bar ---
     color_bar = ColorBar(
-        color_mapper=color_mapper, title=f'{param} (dB)', # ... other properties ...
-        major_label_text_font_size=font_size, title_text_font_size=font_size
+        color_mapper=color_mapper, 
+        title=f'{param} (dB)',
+        location=(0, 0),
+        title_standoff=12,
+        border_line_color=None,
+        background_fill_alpha=0.7,
+        major_label_text_font_size=font_size, 
+        title_text_font_size=font_size
     )
     spec.add_layout(color_bar, 'right')
 
@@ -726,15 +680,15 @@ def make_image_spectrogram(param, df, bar_source, bar_x_range, position, title=-
         text="Hover over spectrogram for details",
         width=width,
         height=30,
-        name="spectrogram_hover_div",
+        name=f"{position}_spectrogram_hover_div",
         styles={'text-align': 'center', 'margin': '0 auto', 'display': 'block'}
     )
 
     # 2. Create CustomJS callback
     hover_callback = CustomJS(args=dict(
         hover_div=hover_info_div,
-        bar_source = bar_source,
-        bar_x_range = bar_x_range,
+        bar_source=bar_source,
+        bar_x_range=bar_x_range,
         times_array=times_ms, # Pass numeric times
         freqs_array=selected_frequencies, # Pass original frequencies
         freq_labels_array=frequency_labels_str, # Pass original frequencies
@@ -743,20 +697,23 @@ def make_image_spectrogram(param, df, bar_source, bar_x_range, position, title=-
         fig_x_range=spec.x_range, # Pass figure range for bounds checking
         position_name=position # Pass position name for title update
     ), code="""
-        // Call the dedicated hover handling function from frequency.js
-        window.handleSpectrogramHover(
-            cb_data, 
-            hover_div, 
-            bar_source, 
-            bar_x_range, 
-            position_name,
-            times_array, 
-            freqs_array, 
-            freq_labels_array, 
-            levels_matrix, 
-            levels_flat_array, 
-            fig_x_range
-        );
+        if (typeof window.NoiseSurveyApp?.frequency?.handleSpectrogramHover === 'function') {
+            window.NoiseSurveyApp.frequency.handleSpectrogramHover(
+                cb_data, 
+                hover_div, 
+                bar_source, 
+                bar_x_range, 
+                position_name,
+                times_array, 
+                freqs_array, 
+                freq_labels_array, 
+                levels_matrix, 
+                levels_flat_array, 
+                fig_x_range
+            );
+        } else {
+            console.error('NoiseSurveyApp.frequency.handleSpectrogramHover not defined!');
+        }
     """)
 
     # 3. Create HoverTool and attach callback
@@ -853,6 +810,8 @@ def create_frequency_bar_chart(title="Frequency Slice", height=None, width=None)
     p.xaxis.axis_label_text_font_size = "10pt"
     p.yaxis.axis_label_text_font_size = "10pt"
 
+    p.name = "frequency_bar_chart"
+
     return p, source, x_range
 
 def create_range_selector(attached_chart, source, height=None, width=None):
@@ -901,7 +860,6 @@ def create_range_selector(attached_chart, source, height=None, width=None):
         tools="", # No tools needed on the selector itself
         toolbar_location=None,
         background_fill_color="#efefef", # Lighter background
-        sizing_mode="stretch_width" # Allow width adjustment
     )
 
     # --- Add Subtle Lines ---
@@ -930,7 +888,7 @@ def link_x_ranges(charts):
     Parameters:
     charts (list): List of Bokeh figures to link.
     """
-    valid_charts = [c for c in charts if hasattr(c, 'x_range')]
+    valid_charts = [c for c in charts if hasattr(c, 'x_range') and c.name != 'shared_range_selector']
     if len(valid_charts) <= 1:
         logger.debug("Less than 2 valid charts provided for x-range linking.")
         return # Nothing to link

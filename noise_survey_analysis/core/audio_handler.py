@@ -34,9 +34,32 @@ class AudioPlaybackHandler:
         """
         self.media_path = media_path
         self.file_info = self._index_audio_files()
-        self.vlc_instance = vlc.Instance('--no-xlib')
-        self.player = self.vlc_instance.media_player_new()
-        self.is_playing = False
+
+        # Initialize VLC instance
+        try:
+            self.vlc_instance = vlc.Instance('--no-xlib', '--quiet')
+        except Exception as e:
+             logger.error(f"Failed to initialize VLC instance: {e}", exc_info=True)
+             raise RuntimeError(f"Failed to initialize VLC instance: {e}. "
+                                "Ensure VLC is installed correctly and accessible.") from e
+
+        # Check if instance creation was successful
+        if self.vlc_instance is None:
+            logger.error("VLC instance creation returned None. Cannot initialize player.")
+            raise RuntimeError("VLC instance creation returned None. "
+                               "Ensure VLC is installed, accessible, and architecture matches Python.")
+
+        # Now create the player
+        try:
+            self.player = self.vlc_instance.media_player_new()
+            if self.player is None:
+                 logger.error("Failed to create VLC media player from instance.")
+                 raise RuntimeError("Failed to create VLC media player. Check VLC installation.")
+        except Exception as e:
+             logger.error(f"Failed to create VLC media player: {e}", exc_info=True)
+             raise RuntimeError(f"Failed to create VLC media player: {e}") from e
+
+        self._is_playing = False
         self.current_file = None
         self.media_start_time = None
         self.playback_monitor = None
@@ -96,6 +119,8 @@ class AudioPlaybackHandler:
         return None, 0, None
 
 
+    
+    
     def play(self, timestamp: datetime.datetime, position_callback: Optional[Callable] = None) -> bool:
         """
         Play audio starting at the specified timestamp, subject to a time lockout.
@@ -130,7 +155,7 @@ class AudioPlaybackHandler:
             filepath, offset_seconds, file_start_time = self._find_file_for_timestamp(timestamp)
             if not filepath:
                 logger.warning(f"No audio file found for timestamp: {timestamp}")
-                self.is_playing = False # Ensure state is correct
+                self._is_playing = False # Ensure state is correct
                 return False # Indicate failure
 
             # Output the current file being played to terminal
@@ -148,7 +173,7 @@ class AudioPlaybackHandler:
                 media = self.vlc_instance.media_new(filepath)
                 if not media:
                     logger.error(f"VLC failed to create media for: {filepath}")
-                    self.is_playing = False
+                    self._is_playing = False
                     return False
                 self.player.set_media(media)
                 media.release()
@@ -157,7 +182,7 @@ class AudioPlaybackHandler:
                 play_result = self.player.play()
                 if play_result == -1:
                     logger.error("VLC failed to play media.")
-                    self.is_playing = False
+                    self._is_playing = False
                     return False
 
                 # Wait briefly for state update
@@ -179,10 +204,10 @@ class AudioPlaybackHandler:
 
             except Exception as e:
                 logger.error(f"Error during VLC media setup/play/seek: {e}", exc_info=True)
-                self.is_playing = False
+                self._is_playing = False
                 return False # Indicate failure
 
-            self.is_playing = True
+            self._is_playing = True
             self.stop_monitor = False
 
             # Start the monitor thread (ensure previous one is stopped)
@@ -201,19 +226,19 @@ class AudioPlaybackHandler:
 
     def pause(self):
         # ... (implementation unchanged)
-        if self.is_playing and self.player.is_playing():
+        if self._is_playing and self.player.is_playing():
             self.player.pause()
-            self.is_playing = False
+            self._is_playing = False
             logger.info("Playback paused")
             return True
         return False
 
     def resume(self):
         # ... (implementation unchanged)
-        if not self.is_playing and self.player.get_media():
+        if not self._is_playing and self.player.get_media():
             if self.player.get_state() == vlc.State.Paused:
                  self.player.play()
-                 self.is_playing = True
+                 self._is_playing = True
                  logger.info("Playback resumed")
                  return True
             else:
@@ -251,7 +276,7 @@ class AudioPlaybackHandler:
             logger.error(f"Error stopping VLC player: {e}")
 
         # Update state
-        self.is_playing = False
+        self._is_playing = False
 
         if was_playing_or_paused:
             logger.info("Playback stopped")
@@ -274,6 +299,38 @@ class AudioPlaybackHandler:
              logger.error("Cannot calculate current position, media_start_time is not set.")
              return None
 
+    def release(self):
+        """
+        Properly releases all VLC resources.
+        Should be called when the audio handler is no longer needed.
+        """
+        logger.info("Releasing VLC resources...")
+        try:
+            # Stop any ongoing playback first
+            self.stop()
+            
+            # Release the player
+            if self.player:
+                self.player.release()
+                logger.debug("VLC player released")
+            
+            # Release the VLC instance
+            if self.vlc_instance:
+                self.vlc_instance.release()
+                logger.debug("VLC instance released")
+            
+            # Clear references
+            self.player = None
+            self.vlc_instance = None
+            self._is_playing = False
+            self.current_file = None
+            self.media_start_time = None
+            self.position_callback = None
+            
+            logger.info("VLC resources released successfully")
+        except Exception as e:
+            logger.error(f"Error releasing VLC resources: {e}", exc_info=True)
+            # Don't re-raise - we want to continue cleanup even if release fails
 
     # --- _monitor_playback remains the same (uses self.play which is now locked out) ---
     def _monitor_playback(self):
@@ -283,7 +340,7 @@ class AudioPlaybackHandler:
             current_state = self.player.get_state()
             if current_state in [vlc.State.Ended, vlc.State.Stopped, vlc.State.Error]:
                 logger.info(f"Monitor: Playback ended/stopped/errored (State: {current_state}). Stopping monitor.")
-                self.is_playing = False
+                self._is_playing = False
                 break
             if current_state not in [vlc.State.Playing, vlc.State.Paused, vlc.State.Buffering]:
                  logger.debug(f"Monitor: Player in unexpected state: {current_state}")
@@ -347,3 +404,85 @@ class AudioPlaybackHandler:
             return self.player.get_rate()
         except:
             return 1.0
+
+    def get_time(self):
+        return self.player.get_time()
+
+    def is_playing(self) -> bool:
+        """
+        Returns whether audio is currently playing.
+        
+        Returns:
+            bool: True if audio is playing, False otherwise
+        """
+        return self._is_playing
+        
+    def is_in_terminal_state(self) -> bool:
+        """
+        Checks if the player is in a terminal state (Ended, Stopped, Error).
+        
+        Returns:
+            bool: True if in terminal state, False otherwise
+        """
+        if not self.player:
+            return True
+            
+        try:
+            current_state = self.player.get_state()
+            return current_state in [vlc.State.Ended, vlc.State.Stopped, vlc.State.Error]
+        except Exception as e:
+            logger.error(f"Error checking player state: {e}")
+            return True  # Assume terminal state on error
+            
+    def seek_to_time(self, timestamp: datetime.datetime, position_callback: Optional[Callable] = None) -> bool:
+        """
+        Seeks to the specified timestamp, optimizing for seeking within the current file.
+        Unlike play(), this method:
+        1. Doesn't have a lockout mechanism for successive calls
+        2. Avoids full stop/restart when seeking within the current file
+        
+        Parameters:
+        timestamp: Datetime object for the desired seek position
+        position_callback: Optional callback function to report playback position
+        
+        Returns:
+        bool: True if seek was successful, False otherwise
+        """
+        # Find the correct file and offset for the timestamp
+        filepath, offset_seconds, file_start_time = self._find_file_for_timestamp(timestamp)
+        if not filepath:
+            logger.warning(f"No audio file found for timestamp: {timestamp}")
+            return False
+            
+        # Check if we're seeking within the current file
+        if filepath == self.current_file and self.player.get_media():
+            logger.debug(f"Seeking within current file to {offset_seconds:.2f}s offset")
+            
+            # Update the position callback if provided
+            if position_callback:
+                self.position_callback = position_callback
+                
+            # Set the time position in milliseconds
+            set_time_result = self.player.set_time(int(offset_seconds * 1000))
+            if set_time_result == -1:
+                logger.warning(f"VLC failed to set time to {int(offset_seconds * 1000)}ms.")
+                return False
+                
+            # If the player was paused, keep it paused
+            was_playing = self.player.is_playing()
+            
+            # Short pause for VLC processing
+            time.sleep(0.05)
+            
+            if not was_playing and self._is_playing:
+                # If we were supposed to be playing but weren't, ensure we're playing
+                play_result = self.player.play()
+                if play_result == -1:
+                    logger.error("VLC failed to resume playback after seek.")
+                    return False
+                    
+            return True
+        else:
+            # Different file or no current media - use regular play method
+            logger.debug(f"Seeking requires file change, using full play method")
+            return self.play(timestamp, position_callback)

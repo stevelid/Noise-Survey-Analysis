@@ -41,32 +41,88 @@ This document outlines the plan for refactoring and enhancing the Noise Survey A
 3.  **Limited UI/UX:** File input relies on editing `config.py`. No UI for adding annotations or selecting data ranges for analysis exists. Layout is functional but basic.
 4.  **State Management:** Application state (current time, active chart, potentially future notes/selections) is handled implicitly, which can become problematic as features grow.
 5.  **Lack of Testing:** No automated test suite, increasing the risk of regressions during refactoring or feature additions.
-6.  **Hardcoded Paths/Values:** Some values (e.g., `media_path`) are still hardcoded in `app.py`.
+6.  **Hardcoded Paths/Values:** ~~Some values (e.g., `media_path`) are still hardcoded in `app.py`.~~ (Resolved)
 
-## Proposed Architecture (Refinement)
+## Proposed Architecture (Refinement) -> Implemented Architecture
 
-Maintain the modular structure (`core`, `visualization`, `static/js`) but focus on:
+The application now follows a more modular structure:
 
-1.  **Simplifying JS Interaction:** Reduce reliance on global JS variables and complex initialization. Pass necessary data/models directly via `CustomJS` args where possible. Improve error handling.
-2.  **Introducing a UI Layer:** Gradually add UI components for new features (file selection, notes panel, stats display) possibly within `app.py` initially, or a dedicated `ui/` module later if complexity warrants it.
-3.  **Clearer State Handling:** Make application state (like selected files, current time, active notes) more explicit, possibly using dedicated Bokeh models or simple Python state variables managed within `app.py`.
-4.  **Robust Callbacks:** Simplify the Python <-> JS callback chain where possible, potentially using `CustomJS` more for client-side actions to avoid unnecessary Python round-trips.
+1.  **`core/`**: Handles backend logic.
+    * `config.py`: Centralized configuration (includes `GENERAL_SETTINGS` with `media_path`).
+    * `data_loaders.py`, `data_parsers.py`, `data_processors.py`: Data handling (Largely unchanged structure).
+    * `audio_handler.py`: Audio playback class (Unchanged structure).
+    * **`app_callbacks.py`**: **NEW:** Defines the `AppCallbacks` class, responsible for handling Bokeh model events (button clicks, source changes) and interacting with `audio_handler`. Includes session cleanup logic.
+2.  **`visualization/`**: Creates Bokeh visualization objects.
+    * **`components.py`**: **RENAMED** (from `visualization_components.py`): Functions to create individual chart figures/sources.
+    * `interactive.py`: Adds interactive elements (lines, hover), sets up JS initialization.
+    * **`dashboard.py`**: **NEW:** Contains the `DashboardBuilder` class, orchestrating visualization creation by calling `components.py` and `ui/controls.py`, assembling the layout (Tabs, controls), and managing Bokeh models.
+3.  **`ui/`**: **NEW:** Contains UI widget creation logic.
+    * `controls.py`: Functions (`create_playback_controls`, `create_parameter_selector`, `create_hover_info_div`) to generate Bokeh widgets.
+4.  **`static/js/`**: Client-side JavaScript for interactivity (Structure unchanged, internal logic may need refinement).
+5.  **`app.py`**: Main Bokeh application *entry point* and *orchestrator*. Significantly simplified, delegates tasks to `DashboardBuilder` and `AppCallbacks`. Handles initial setup, data loading calls, and connects the main components.
+6.  **`run_app.py`**: Script to launch the Bokeh server (Updated to target the `noise_survey_analysis` directory).
+
+Focus areas achieved/in progress:
+
+1.  **Simplifying JS Interaction:** Foundation laid by centralizing model creation in `DashboardBuilder` and callback logic in `AppCallbacks`. Further JS refinement needed.
+2.  **Introducing a UI Layer:** Achieved with the `ui/controls.py` module for widget creation.
+3.  **Clearer State Handling:** Improved by separating concerns. `AppCallbacks` manages interaction state, `DashboardBuilder` manages visualization models. Explicit `playback_source` and `param_holder` used.
+4.  **Robust Callbacks:** Centralized in `AppCallbacks` class, simplifying `app.py`. Includes session cleanup.
+
+## wanted features: 
+1. Enhanced File/Directory Input:
+
+-Allow selecting a parent directory instead of manually listing each file path in the config.
+Scan the selected directory (and subdirectories) for relevant noise survey files (based on configurable criteria like filename patterns, file types: .csv, .txt, .xlsx, etc., potentially size).
+-Present the identified files to the user.
+-Allow the user to select which files to include in the analysis.
+-Automatically suggest or allow user assignment of "position names" (e.g., based on subfolder names where files are located).
+
+2. Chart Annotation / Note-Taking System:
+
+-Ability to add notes directly linked to specific points in time on the charts.
+-Display unobtrusive visual markers on the charts indicating where notes exist.
+-Provide an easy-to-use interface for taking notes (e.g., a popup dialog or side panel).
+-When creating a note, automatically pre-populate it with relevant context from the chart at the selected time (e.g., timestamp, position name, key sound levels like LAeq, LAF90).
+-Define a clear UI trigger to initiate note creation (e.g., button click when the red vertical line is active, right-click menu option on the line, dedicated key press).
+-Save the notes persistently, associated with the specific survey data/job folder (e.g., in a JSON or CSV file within that folder).
+-Automatically load existing notes for a survey when the data is loaded in a new session.
+
+3. Data Range Selection and Statistical Analysis:
+
+Al-low users to select a specific range of data directly on the time-history charts (e.g., by dragging handles on the range selector, using a box select tool).
+-Calculate and display statistical results for the selected data range (e.g., overall LAeq, L10, L90, Lmax for the period).
+-Calculate and display the average frequency spectrum for the selected time range.
+-Provide an easy way to copy the calculated statistics and spectral data (e.g., formatted text in a display area or <textarea> for easy pasting into reports).
+-Potentially integrate the display/copying of these statistics within the note-taking feature for the selected range.
+
+4. Export and Session Management:
+
+-Option to save the current view (charts and layout) as a standalone HTML file (understanding this will be static, without audio or server-side interactivity).
+-Explore saving the configuration of a specific analysis session (selected files, chosen views, possibly notes) associated with the job folder.
+-Explore functionality to reload a saved session configuration, automatically setting up the Bokeh server with the previously selected files and settings for that specific job.
+
 
 ## Refactoring & Enhancement Plan
 
-### Phase 0: Stabilization & Foundation (Update/Refine Existing Plan's Phase 1)
+### Phase 0: Core Refactoring & Foundation (Completed/In Progress)
 
-1.  **Update `DEVELOPMENT_PLAN.md`:** (This document) Reflect current code state, integrate new features, adjust phases.
-2.  **Implement Testing:**
+1.  **Refactor `app.py`:** Orchestration role achieved. **(Done)**
+2.  **Create `DashboardBuilder` (`visualization/dashboard.py`):** Centralized layout and model creation. **(Done)**
+3.  **Create `AppCallbacks` (`core/app_callbacks.py`):** Centralized callback logic and state management. **(Done)**
+4.  **Create `ui/controls.py`:** Centralized widget creation. **(Done)**
+5.  **Configuration Cleanup:** Moved `media_path` to `GENERAL_SETTINGS` in `config.py`. **(Done)**
+6.  **Update `run_app.py`:** Targets the application directory. **(Done)**
+7.  **Update `DEVELOPMENT_PLAN.md` & `README.md`:** Reflect refactoring. **(Done)**
+8.  **JS Management Refinement:** (Ongoing / Next Step)
+    * Review `initialize_global_js` and JS files (`static/js/*.js`).
+    * Simplify initialization flow. Pass models/data via `args` more explicitly where possible. Reduce `window.*` usage.
+    * Improve JS error handling and logging. Verify interactions with refactored Python structure.
+9.  **Implement Testing:** (Next Step)
     * Set up `pytest`.
-    * Write unit tests for `data_parsers.py`.
-    * Write unit tests for key functions in `data_processors.py`, `audio_handler.py`.
-    * Write basic integration tests for `app.py` loading default data.
-3.  **JS Management Refinement:**
-    * Consolidate all JS code into `static/js/` files.
-    * Simplify `initialize_global_js` and initialization flow. Pass models/data via `args` more explicitly. Reduce `window.*` usage.
-    * Improve JS error handling and logging.
-4.  **Configuration Cleanup:** Move any remaining hardcoded paths/values from `app.py` to `config.py` or handle dynamically.
+    * Write unit tests for `data_parsers.py`, `data_processors.py`, `audio_handler.py`, `ui/controls.py`.
+    * Write integration tests for `DashboardBuilder` and `AppCallbacks`.
+    * Write basic integration tests for `app.py` orchestration.
 
 ### Phase 1: UI Structure & Enhanced File Input (Addresses New Feature: Directory Input)
 
@@ -102,7 +158,7 @@ Maintain the modular structure (`core`, `visualization`, `static/js`) but focus 
 
 1.  **HTML Export:** Add Button + Python callback using `bokeh.io.save` for static HTML snapshot. *Consider saving session config separately.*
 2.  **Code Cleanup:** Refactor complex functions, ensure consistency, address TODOs, improve docstrings.
-3.  **Documentation:** Update `README.md`, add code comments.
+3.  **Documentation:** Update `README.md`, add code comments. **(Partially Done)**
 4.  **UI Polish:** Improve layout, widget appearance, user feedback.
 5.  **Performance:** Profile and optimize if needed for large datasets.
 
@@ -128,7 +184,7 @@ Maintain the modular structure (`core`, `visualization`, `static/js`) but focus 
 
 ## Implementation Priorities
 
-1.  **Phase 0:** Stabilization, Testing Setup, JS Cleanup.
+1.  **Phase 0:** Core Refactoring **(Largely Done)**, JS Refinement & Testing Setup **(Next)**.
 2.  **Phase 1:** File Input UI & Logic.
 3.  **Phase 2/3 (Can be parallel):** Notes System / Range Selection & Stats (depending on user need).
 4.  **Phase 4:** Export & Polish.
@@ -142,6 +198,8 @@ Maintain the modular structure (`core`, `visualization`, `static/js`) but focus 
 
 ## Next Steps
 
-1.  Create development branch.
-2.  Set up `pytest` infrastructure.
-3.  Begin implementing Phase 0 tasks (JS cleanup, testing, config review).
+1.  Create development branch (If not already done).
+2.  **Review and Refine JS:** Adapt `static/js/*.js` and `visualization/interactive.py::initialize_global_js` to work reliably with the refactored Python structure (models passed via `args`, potentially simplified global state).
+3.  **Set up `pytest` infrastructure.**
+4.  **Begin implementing Phase 0 Testing tasks.**
+5.  Proceed to Phase 1 (Enhanced File Input).

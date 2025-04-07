@@ -332,3 +332,30 @@ class FileSelector:
     """UI-independent file selection utility class."""
     # Implementation would go here if needed
     pass
+
+def extract_spectral_parameters(spectral_df):
+    """
+    Extracts available spectral parameters from a spectral DataFrame.
+    
+    Consistently identifies parameter names like 'LZeq', 'LAF90', etc. from column names
+    that follow the pattern 'LZeq_1000Hz', 'LAF90_250Hz', etc.
+    
+    Args:
+        spectral_df (pd.DataFrame): DataFrame containing spectral data with columns
+                                   following the pattern 'Parameter_Frequency'
+                                   
+    Returns:
+        list: Sorted list of unique parameter names found in the DataFrame
+    """
+    if not isinstance(spectral_df, pd.DataFrame) or spectral_df.empty:
+        return []
+        
+    parameters = []
+    for col in spectral_df.columns:
+        # Look for columns matching 'Parameter_Frequency' pattern
+        if '_' in col and col.split('_')[0].startswith('L'):
+            param = col.split('_')[0]
+            parameters.append(param)
+            
+    # Return a sorted list of unique parameters
+    return sorted(list(set(parameters)))

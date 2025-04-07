@@ -1,0 +1,62 @@
+Directory Structure and File Samples
+Parent Directory: G:\Shared drives\Venta\Jobs\5770 Unit 3, 3 Station Road, Hayling Island\5770 Surveys
+Generated on: March 29, 2025
+==================================================
+
+Directory Tree:
+--------------------------------------------------
+├── 5770 971-2
+│   ├── 5770 Overview.xlsx
+│   └── L254.SVL
+├── 5770 Overview.xlsm
+├── 5770 Photos
+└── 5770 Unit 3, 3 Station Road, Ha_2025_03_07__14h42m55s.cil
+
+==================================================
+
+File Samples:
+==================================================
+
+==================================================
+File: G:\Shared drives\Venta\Jobs\5770 Unit 3, 3 Station Road, Hayling Island\5770 Surveys\5770 971-2\5770 Overview.xlsx
+Format: .xlsx
+First 30 lines (or less if shorter):
+--------------------------------------------------
+   L254 : Total results           Unnamed: 1    Unnamed: 2              Unnamed: 3        Unnamed: 4      Unnamed: 5                Unnamed: 6                Unnamed: 7
+0                   NaN                  NaN           NaN                     NaN               NaN             NaN                       NaN                       NaN
+1                   NaN                  NaN           NaN                     NaN      P1 (A, Fast)     P1 (A, Lin)               P1 (A, Lin)               P1 (A, Lin)
+2                   NaN                  NaN           NaN                     NaN  LAFmax (SR) [dB]  LAeq (SR) [dB]  LAeq Histogram (SR) [dB]  LAeq Histogram (SR) [dB]
+3                   No.    Start date & time      Duration                    Name               NaN             NaN                       L10                       L90
+4                     1  05/03/2025 10:30:00  00:05:00.000  Integration period 5 m             88.71           65.89                      67.6                      47.4
+5                     2  05/03/2025 10:35:00  00:05:00.000  Integration period 5 m             87.67           62.99                        61                      50.2
+6                     3  05/03/2025 10:40:00  00:05:00.000  Integration period 5 m             85.91           58.72                      56.4                        48
+7                     4  05/03/2025 10:45:00  00:05:00.000  Integration period 5 m             72.42           55.32                      57.2                      47.4
+8                     5  05/03/2025 10:50:00  00:05:00.000  Integration period 5 m             64.91           53.93                        57                        49
+9                     6  05/03/2025 10:55:00  00:05:00.000  Integration period 5 m             67.75           54.78                      57.4                      47.9
+10                    7  05/03/2025 11:00:00  00:05:00.000  Integration period 5 m             65.36           54.75                      57.7                        49
+11                    8  05/03/2025 11:05:00  00:05:00.000  Integration period 5 m             71.74           55.16                      56.6                        49
+12                    9  05/03/2025 11:10:00  00:05:00.000  Integration period 5 m             81.46           58.48                      56.7                      46.6
+13                   10  05/03/2025 11:15:00  00:05:00.000  Integration period 5 m             78.21           59.01                      60.4                      46.8
+14                   11  05/03/2025 11:20:00  00:05:00.000  Integration period 5 m             64.02              54                      56.7                      49.3
+15                   12  05/03/2025 11:25:00  00:05:00.000  Integration period 5 m             67.38           51.75                      54.2                      47.1
+16                   13  05/03/2025 11:30:00  00:05:00.000  Integration period 5 m             63.12           52.34                      55.5                      46.5
+17                   14  05/03/2025 11:35:00  00:05:00.000  Integration period 5 m             63.88           51.52                      54.2                      46.9
+18                   15  05/03/2025 11:40:00  00:05:00.000  Integration period 5 m             70.72           54.44                      56.9                      47.4
+19                   16  05/03/2025 11:45:00  00:05:00.000  Integration period 5 m             63.94           53.09                      56.1                      48.2
+20                   17  05/03/2025 11:50:00  00:05:00.000  Integration period 5 m             63.71           53.96                      57.6                      48.2
+21                   18  05/03/2025 11:55:00  00:05:00.000  Integration period 5 m             71.38           54.89                      56.8                      46.9
+22                   19  05/03/2025 12:00:00  00:05:00.000  Integration period 5 m             78.02           55.76                      56.3                      48.3
+23                   20  05/03/2025 12:05:00  00:05:00.000  Integration period 5 m             73.43           55.62                      56.8                      48.6
+24                   21  05/03/2025 12:10:00  00:05:00.000  Integration period 5 m             63.41           52.25                      55.6                        46
+25                   22  05/03/2025 12:15:00  00:05:00.000  Integration period 5 m             69.95           51.84                      54.6                      46.4
+26                   23  05/03/2025 12:20:00  00:05:00.000  Integration period 5 m             64.55           53.14                      55.8                      46.9
+27                   24  05/03/2025 12:25:00  00:05:00.000  Integration period 5 m             63.13           52.41                      55.7                      47.4
+28                   25  05/03/2025 12:30:00  00:05:00.000  Integration period 5 m             60.33           52.47                      55.3                      47.5
+29                   26  05/03/2025 12:35:00  00:05:00.000  Integration period 5 m             63.23           52.15                      55.1                      46.6
+...
+    L254 : Total results           Unnamed: 1    Unnamed: 2              Unnamed: 3 Unnamed: 4 Unnamed: 5 Unnamed: 6 Unnamed: 7
+557                  554  07/03/2025 08:35:00  00:05:00.000  Integration period 5 m      64.23      55.23       58.2       50.8
+558                  555  07/03/2025 08:40:00  00:05:00.000  Integration period 5 m      63.01      53.14       55.9       48.3
+559                  556  07/03/2025 08:45:00  00:05:00.000  Integration period 5 m      63.76      53.58       56.6       48.8
+560                  557  07/03/2025 08:50:00  00:05:00.000  Integration period 5 m      65.59      55.24       58.1       50.3
+561                  558  07/03/2025 08:55:00  00:05:00.000  Integration period 5 m      66.88      54.17         57       49.2
