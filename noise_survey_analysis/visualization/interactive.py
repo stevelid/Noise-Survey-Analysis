@@ -215,79 +215,6 @@ def add_vertical_line_and_hover(charts, sources=None):
 
     return charts, click_lines, labels
 
-def initialize_global_js(doc, charts, sources, clickLines, labels, playback_source, play_button, pause_button):
-    """
-    Combines all necessary JS files and initializes global references
-    using a single CustomJS callback attached to DocumentReady.
-
-    Parameters:
-    doc (bokeh.document.Document): The Bokeh document.
-    charts (list): List of Bokeh chart models.
-    sources (dict): Dictionary of ColumnDataSource objects.
-    clickLines (list): List of Span models for click lines.
-    labels (list): List of Label models.
-    playback_source (bokeh.models.ColumnDataSource): The playback data source.
-    play_button (bokeh.models.Button): The play button model.
-    pause_button (bokeh.models.Button): The pause button model.
-
-    Returns:
-    bokeh.document.Document: The document with the event handler attached.
-    """
-    logger.info("Registering unified JavaScript initialization on DocumentReady.")
-
-    # 1. Load all required JS code
-    core_js = get_core_js()
-    charts_js = get_charts_js()
-    frequency_js = get_frequency_js()
-    #audio_js = get_audio_js() # Include if audio functions are needed globally
-
-    # 2. Combine JS in the correct order (definitions first)
-    # Ensure core_js comes first as it defines initializeReferences and other utils
-    combined_js = (
-        core_js + "\n\n// ---- CORE LOADED ----\n\n" +
-        charts_js + "\n\n// ---- CHARTS LOADED ----\n\n" +
-        frequency_js + "\n\n// ---- FREQUENCY LOADED ----\n\n"
-    )
-
-    # 3. Define the initialization call within the same script
-    initialization_call_js = """
-        console.log('DocumentReady event fired. All custom JS should be loaded.');
-        // Ensure Bokeh models passed as args are accessible
-        if (typeof charts !== 'undefined' && typeof sources !== 'undefined' &&
-            typeof clickLines !== 'undefined' && typeof labels !== 'undefined')
-        {
-            // Now, attempt to call the initialization function
-            if (typeof initializeReferences === 'function') {
-                try {
-                    initializeReferences(charts, sources, clickLines, labels, playback_source, play_button, pause_button);
-                    console.log('SUCCESS: initializeReferences called.');
-                    // Optionally enable keyboard nav here if it depends on init
-                    if (typeof enableKeyboardNavigation === 'function') {
-                       enableKeyboardNavigation(); // Call after init is confirmed
-                       console.log('Keyboard navigation enabled.');
-                    } else {
-                       console.warn('enableKeyboardNavigation not found after init.');
-                    }
-                } catch (e) {
-                    console.error('Error executing initializeReferences:', e);
-                }
-            } else {
-                console.error('CRITICAL ERROR: initializeReferences function not found even after loading core.js!');
-                // Log available window properties for debugging
-                // console.log('Window keys:', Object.keys(window));
-            }
-<<<<<<< Updated upstream
-        """
-    )
-
-    # --- Add tap event handler to each chart ---
-    for chart in valid_charts:
-        chart.js_on_event('tap', tap_callback)
-
-    logger.debug(f"Tap interaction added to {len(valid_charts)} charts.")
-    return click_lines, labels
-
-
 def initialize_global_js(bokeh_models):
     """
     Initialize JavaScript environment by loading the unified app.js file 
@@ -462,8 +389,6 @@ def initialize_global_js(bokeh_models):
             
             window.NoiseSurveyAppInitialized = true;
             console.log('DEBUG: NoiseSurveyApp initialization complete.');
-=======
->>>>>>> Stashed changes
         } else {
              console.error('CRITICAL ERROR: Bokeh models (charts, sources, etc.) not available in CustomJS args.');
         }
