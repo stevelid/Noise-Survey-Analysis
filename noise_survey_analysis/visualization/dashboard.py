@@ -30,28 +30,47 @@ from ..ui.controls import create_position_play_button, create_playback_controls,
 logger = logging.getLogger(__name__)
 
 
-class BokehModelsAdapter:
+class DashboardBuilder:
     """
-    Adapter class for Bokeh models dictionary to support transition from flat to hierarchical structure.
+    Builds the Bokeh dashboard layout, including charts, widgets, and interactions.
+    Orchestrates the creation of visualization components and UI elements.
     
-    This class implements the adapter pattern to:
-    1. Provide backward compatibility with the flat dictionary structure
-    2. Support the new hierarchical structure for better organization
-    3. Log warnings when legacy keys are accessed to help identify code that needs updating
+    This builder class handles the entire process of:
+    1. Loading and processing data
+    2. Creating charts and visualizations
+    3. Setting up UI controls and interactions
+    4. Assembling the final layout
+    5. Setting up JavaScript interactions
     
-    Usage:
-        self.bokeh_models = BokehModelsAdapter()
-        
-        # Old style access will still work but log warnings
-        self.bokeh_models['all_charts'].append(chart)
-        
-        # New style access is preferred
-        self.bokeh_models['charts']['all'].append(chart)
+    The builder maintains its state in the bokeh_models dictionary, which collects
+    all created Bokeh objects for later use in layouts and JavaScript callbacks.
     """
-    def __init__(self):
-        """Initialize the adapter with the new hierarchical structure."""
-        # New hierarchical structure
-        self._data = {
+    def __init__(self, position_data: dict, chart_settings: dict, visualization_settings: dict, audio_handler_available: bool):
+        """
+        Initializes the DashboardBuilder.
+
+        Args:
+            position_data (dict): Dictionary containing processed data for each position.
+                                 Expected structure:
+                                 {
+                                     'Position1': {
+                                         'overview': DataFrame,  # Time series data for overview
+                                         'log': DataFrame,       # Logging data with timestamps
+                                         'spectral': DataFrame   # Spectral data with frequencies
+                                     },
+                                     'Position2': { ... }
+                                 }
+            chart_settings (dict): Configuration for chart appearance (heights, etc.).
+            visualization_settings (dict): Configuration for visualization behavior.
+            audio_handler_available (bool): Flag indicating if audio playback is enabled.
+        """
+        self.position_data = position_data
+        self.chart_settings = chart_settings
+        self.visualization_settings = visualization_settings
+        self.audio_handler_available = audio_handler_available
+
+        # Initialize the hierarchical structure directly
+        self.bokeh_models = {
             'charts': {
                 'all': [],                    # All Bokeh Figure objects
                 'time_series': [],            # Time-based charts for synchronization
@@ -105,196 +124,6 @@ class BokehModelsAdapter:
                 # }
             }
         }
-        
-        # Mapping from legacy (flat) keys to new hierarchical structure
-        # Using references to the actual objects in the new structure
-        self._legacy_mapping = {
-            # Charts and Sources
-            'all_charts': self._data['charts']['all'],
-            'time_series_charts': self._data['charts']['time_series'],
-            'all_sources': self._data['sources']['data'],
-            'charts_for_js': self._data['charts']['for_js_interaction'],
-            'position_elements': self._data['ui']['position_elements'],
-            
-            # Interactive Elements
-            'click_lines': self._data['ui']['visualization']['click_lines'],
-            'labels': self._data['ui']['visualization']['labels'],
-            'range_selectors': self._data['ui']['visualization']['range_selectors'],
-            'playback_source': self._data['sources']['playback']['position'],
-            'seek_command_source': self._data['sources']['playback']['seek_command'],
-            'play_request_source': self._data['sources']['playback']['play_request'],
-            
-            # UI Controls
-            'playback_controls': self._data['ui']['controls']['playback'],
-            'param_select': self._data['ui']['controls']['parameter']['select'],
-            'param_holder': self._data['ui']['controls']['parameter']['holder'],
-            'init_js_button': self._data['ui']['controls']['init_js'],
-            
-            # Frequency Analysis
-            'freq_bar_chart': self._data['frequency_analysis']['bar_chart']['figure'],
-            'freq_bar_source': self._data['sources']['frequency']['bar'],
-            'freq_bar_x_range': self._data['frequency_analysis']['bar_chart']['x_range'],
-            'freq_table_source': self._data['sources']['frequency']['table'],
-            
-            # Spectral Data - special case, direct use of old structure for compatibility
-            'spectral_param_charts': self._data['spectral_data']
-        }
-        
-        # Tracking of legacy keys that have been accessed
-        self._accessed_legacy_keys = set()
-    
-    def __getitem__(self, key):
-        """
-        Override dictionary access to support both old and new structure.
-        Logs a warning when legacy keys are accessed.
-        """
-        # Check if it's a legacy key access
-        if key in self._legacy_mapping:
-            if key not in self._accessed_legacy_keys:
-                # Log warning with stack trace to identify the calling code
-                logger.warning(f"LEGACY ACCESS: Accessing bokeh_models with legacy key '{key}'. "
-                               f"Consider using the new hierarchical structure.")
-                # Get a short stack trace (3 levels) to identify where the legacy access is coming from
-                stack = traceback.extract_stack(limit=3)
-                caller = stack[-2]  # The caller of this method
-                logger.warning(f"Called from: {caller.filename}:{caller.lineno} in {caller.name}")
-                # Add to set of accessed keys to avoid duplicate warnings
-                self._accessed_legacy_keys.add(key)
-            
-            # Return the value from the legacy mapping
-            return self._legacy_mapping[key]
-        
-        # Regular access to the new structure
-        return self._data[key]
-    
-    def __setitem__(self, key, value):
-        """
-        Override dictionary item setting to support both old and new structure.
-        Logs a warning when legacy keys are accessed.
-        """
-        # Check if it's a legacy key access
-        if key in self._legacy_mapping:
-            if key not in self._accessed_legacy_keys:
-                # Log warning with stack trace to identify the calling code
-                logger.warning(f"LEGACY ACCESS: Setting bokeh_models with legacy key '{key}'. "
-                               f"Consider using the new hierarchical structure.")
-                # Get a short stack trace (3 levels) to identify where the legacy access is coming from
-                stack = traceback.extract_stack(limit=3)
-                caller = stack[-2]  # The caller of this method
-                logger.warning(f"Called from: {caller.filename}:{caller.lineno} in {caller.name}")
-                # Add to set of accessed keys to avoid duplicate warnings
-                self._accessed_legacy_keys.add(key)
-            
-            # Update in the legacy mapping
-            # This is a special case as some values are direct references (lists, dicts)
-            # and others are actual values (None, objects)
-            if isinstance(self._legacy_mapping[key], list) and isinstance(value, list):
-                self._legacy_mapping[key][:] = value  # Update in-place for lists
-            elif isinstance(self._legacy_mapping[key], dict) and isinstance(value, dict):
-                self._legacy_mapping[key].clear()
-                self._legacy_mapping[key].update(value)  # Update in-place for dicts
-            else:
-                # For direct value updates, update both the legacy mapping and the actual location
-                self._legacy_mapping[key] = value
-                
-                # Also update the actual location in the hierarchical structure
-                # This is where we need to handle each legacy key specifically
-                if key == 'playback_source':
-                    self._data['sources']['playback']['position'] = value
-                elif key == 'seek_command_source':
-                    self._data['sources']['playback']['seek_command'] = value
-                elif key == 'play_request_source':
-                    self._data['sources']['playback']['play_request'] = value
-                elif key == 'param_select':
-                    self._data['ui']['controls']['parameter']['select'] = value
-                elif key == 'param_holder':
-                    self._data['ui']['controls']['parameter']['holder'] = value
-                elif key == 'init_js_button':
-                    self._data['ui']['controls']['init_js'] = value
-                elif key == 'freq_bar_chart':
-                    self._data['frequency_analysis']['bar_chart']['figure'] = value
-                elif key == 'freq_bar_source':
-                    self._data['sources']['frequency']['bar'] = value
-                elif key == 'freq_bar_x_range':
-                    self._data['frequency_analysis']['bar_chart']['x_range'] = value
-                elif key == 'freq_table_source':
-                    self._data['sources']['frequency']['table'] = value
-        else:
-            # Regular access to the new structure
-            self._data[key] = value
-    
-    def __contains__(self, key):
-        """Support 'in' operator for both legacy and new keys."""
-        return key in self._legacy_mapping or key in self._data
-    
-    def keys(self):
-        """Return all keys (both legacy and new structure)."""
-        return set(self._legacy_mapping.keys()).union(self._data.keys())
-    
-    def get(self, key, default=None):
-        """Support get() method for both legacy and new keys."""
-        if key in self:
-            return self[key]
-        return default
-    
-    def items(self):
-        """
-        Return items from the new structure, plus any legacy items
-        that don't have a 1:1 mapping to the new structure.
-        """
-        # Start with items from the new structure
-        items_dict = dict(self._data)
-        
-        # Add legacy items that might have direct values
-        for key, value in self._legacy_mapping.items():
-            if isinstance(value, (list, dict)):
-                # Skip references to mutable collections that are already in the new structure
-                continue
-            items_dict[key] = value
-            
-        return items_dict.items()
-
-class DashboardBuilder:
-    """
-    Builds the Bokeh dashboard layout, including charts, widgets, and interactions.
-    Orchestrates the creation of visualization components and UI elements.
-    
-    This builder class handles the entire process of:
-    1. Loading and processing data
-    2. Creating charts and visualizations
-    3. Setting up UI controls and interactions
-    4. Assembling the final layout
-    5. Setting up JavaScript interactions
-    
-    The builder maintains its state in the bokeh_models dictionary, which collects
-    all created Bokeh objects for later use in layouts and JavaScript callbacks.
-    """
-    def __init__(self, position_data: dict, chart_settings: dict, visualization_settings: dict, audio_handler_available: bool):
-        """
-        Initializes the DashboardBuilder.
-
-        Args:
-            position_data (dict): Dictionary containing processed data for each position.
-                                 Expected structure:
-                                 {
-                                     'Position1': {
-                                         'overview': DataFrame,  # Time series data for overview
-                                         'log': DataFrame,       # Logging data with timestamps
-                                         'spectral': DataFrame   # Spectral data with frequencies
-                                     },
-                                     'Position2': { ... }
-                                 }
-            chart_settings (dict): Configuration for chart appearance (heights, etc.).
-            visualization_settings (dict): Configuration for visualization behavior.
-            audio_handler_available (bool): Flag indicating if audio playback is enabled.
-        """
-        self.position_data = position_data
-        self.chart_settings = chart_settings
-        self.visualization_settings = visualization_settings
-        self.audio_handler_available = audio_handler_available
-
-        # Use the new adapter class for bokeh_models to support transition from flat to hierarchical structure
-        self.bokeh_models = BokehModelsAdapter()
         
         # Collect all available spectral parameters across all positions
         self._all_spectral_params = set()

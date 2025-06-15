@@ -106,72 +106,7 @@ The application loads data through the `load_and_process_data()` function in `da
 
 ### Bokeh Models Dictionary (`bokeh_models`)
 
-The application has transitioned from a flat to a hierarchical structure for `bokeh_models` using an adapter pattern to maintain backward compatibility while encouraging better organization. The `DashboardBuilder` class maintains this dictionary for all Bokeh objects.
-
-#### Legacy Flat Structure (Backward Compatible)
-
-```
-{
-    # Charts and Sources
-    'all_charts': [],                  # List of all Bokeh Figure objects
-    'time_series_charts': [],          # Charts with a time-based x-axis 
-    'all_sources': {},                 # Dictionary of {source_key: ColumnDataSource}
-    'position_elements': {},           # UI elements organized by position
-    
-    # Interactive Elements
-    'click_lines': {},                 # Vertical lines for clicked positions
-    'labels': {},                      # Text labels for data at clicked positions
-    'range_selectors': {},             # Range selectors for zooming time series
-    'playback_source': None,           # Data source for playback position
-    'seek_command_source': None,       # Source for sending seek commands
-    'play_request_source': None,       # Source for play requests from JS
-    
-    # UI Controls
-    'playback_controls': {},           # Play/pause buttons
-    'param_select': None,              # Dropdown for spectral parameter selection
-    'param_holder': None,              # Hidden Div holding selected parameter
-    
-    # Frequency Analysis
-    'freq_bar_chart': None,            # Frequency bar chart
-    'freq_bar_source': None,           # Data source for frequency bar chart
-    'freq_bar_x_range': None,          # X range for frequency bar chart
-    'freq_table_source': None,         # Source for frequency data table
-    
-    # Spectral Data
-    'spectral_param_charts': {         # Position and parameter specific data
-        'position': {
-            'available_params': [...],  # List of available params
-            'current_param': 'LZeq',    # Currently selected param
-            'prepared_data': {          # Pre-processed data by param
-                'LZeq': {
-                    'frequencies': ndarray,     # Array of frequency values (e.g. [25, 31.5, 40, ...])
-                    'frequency_labels': list,   # List of formatted frequency labels (e.g. ["25 Hz", "31.5 Hz", ...])
-                    'times_ms': ndarray,        # Array of timestamps in milliseconds (epoch time)
-                    'times_dt': ndarray,        # Array of datetime64 objects
-                    'levels_matrix': ndarray,   # 2D matrix of sound levels in shape (n_times, n_freqs)
-                    'levels_matrix_transposed': ndarray, # Transposed matrix (n_freqs, n_times) for Bokeh image glyph
-                    'freq_indices': ndarray,    # Array of frequency indices [0, 1, 2, ...]
-                    'min_val': float,           # Minimum level value for color mapping
-                    'max_val': float,           # Maximum level value for color mapping
-                    'n_times': int,             # Number of time points
-                    'n_freqs': int,             # Number of frequency bands
-                    'x': float,                 # X coordinate for Bokeh image glyph (start time)
-                    'y': float,                 # Y coordinate for Bokeh image glyph (typically -0.5)
-                    'dw': float,                # Width for Bokeh image glyph (time span)
-                    'dh': float                 # Height for Bokeh image glyph (frequency span)
-                },
-                'LAF90': { ... }
-            }
-        }
-    },
-    
-    # JavaScript Integration
-    'charts_for_js': [],              # Charts that need JS interactions
-    'init_js_button': None            # Button to manually initialize JS if needed
-}
-```
-
-#### New Hierarchical Structure (Preferred)
+The application uses a well-organized hierarchical structure for `bokeh_models` to maintain all Bokeh UI components. The `DashboardBuilder` class maintains this dictionary for all Bokeh objects using the following structure:
 
 ```
 {
@@ -223,9 +158,22 @@ The application has transitioned from a flat to a hierarchical structure for `bo
             'available_params': [],   # Available spectral parameters
             'current_param': 'LZeq',  # Currently selected parameter
             'prepared_data': {        # Pre-processed data by parameter
-                'param_name': {       # Same detailed structure as shown in legacy version
-                    'frequencies': ndarray,
-                    // Additional fields as above
+                'param_name': {       # Detailed parameter data
+                    'frequencies': ndarray,     # Array of frequency values (e.g. [25, 31.5, 40, ...])
+                    'frequency_labels': list,   # List of formatted frequency labels (e.g. ["25 Hz", "31.5 Hz", ...])
+                    'times_ms': ndarray,        # Array of timestamps in milliseconds (epoch time)
+                    'times_dt': ndarray,        # Array of datetime64 objects
+                    'levels_matrix': ndarray,   # 2D matrix of sound levels in shape (n_times, n_freqs)
+                    'levels_matrix_transposed': ndarray, # Transposed matrix (n_freqs, n_times) for Bokeh image glyph
+                    'freq_indices': ndarray,    # Array of frequency indices [0, 1, 2, ...]
+                    'min_val': float,           # Minimum level value for color mapping
+                    'max_val': float,           # Maximum level value for color mapping
+                    'n_times': int,             # Number of time points
+                    'n_freqs': int,             # Number of frequency bands
+                    'x': float,                 # X coordinate for Bokeh image glyph (start time)
+                    'y': float,                 # Y coordinate for Bokeh image glyph (typically -0.5)
+                    'dw': float,                # Width for Bokeh image glyph (time span)
+                    'dh': float                 # Height for Bokeh image glyph (frequency span)
                 }
             }
         }
@@ -233,23 +181,17 @@ The application has transitioned from a flat to a hierarchical structure for `bo
 }
 ```
 
-The `BokehModelsAdapter` class manages this transition, providing backward compatibility by logging warnings when legacy keys are accessed, helping identify code that needs updating to the new structure.
-
 #### Using the Hierarchical Structure
-
-The application includes adapter classes to support a gradual transition from the flat to hierarchical structure:
 
 **Python Example**:
 ```python
-# Access the data with the new structure
-# These are equivalent:
-old_style = builder.bokeh_models['all_charts']          # Legacy access
-new_style = builder.bokeh_models['charts']['all']       # New hierarchical access
+# Access the charts with the hierarchical structure
+charts = builder.bokeh_models['charts']['all']
 
 # Creating a frequency chart
 chart, source = create_frequency_bar_chart()
-builder.bokeh_models['frequency_analysis']['bar_chart']['figure'] = chart  # New way
-builder.bokeh_models['freq_bar_source'] = source                           # Legacy way also works
+builder.bokeh_models['frequency_analysis']['bar_chart']['figure'] = chart
+builder.bokeh_models['sources']['frequency']['bar'] = source
 
 # Access spectral data for a position 
 param_data = builder.bokeh_models['spectral_data']['NE']['prepared_data']['LZeq']
@@ -257,22 +199,17 @@ param_data = builder.bokeh_models['spectral_data']['NE']['prepared_data']['LZeq'
 
 **JavaScript Example**:
 ```javascript
-// The JS initialization has been updated to handle both structures
+// The JS initialization receives this structure
 function initializeApp(models, options) {
-    // Check if using new structure
-    const usingHierarchicalStructure = models.hierarchical === true;
+    // All models are passed in the hierarchical structure
+    const charts = models.charts || [];
+    const sources = models.sources || {};
+    const barChart = models.barChart;
     
-    // Updated initialization logic for either structure
-    _models.charts = models.charts || [];
-    _models.sources = models.sources || {};
-    _models.barChart = models.barChart || models.charts.find(c => c?.name === 'frequency_bar');
-    
-    console.log(`Using ${usingHierarchicalStructure ? 'hierarchical' : 'legacy'} structure`);
+    console.log(`Initializing app with ${charts.length} charts`);
     // ... rest of initialization
 }
 ```
-
-The adapter class (`BokehModelsAdapter`) displays warning logs when legacy keys are accessed, helping identify code that needs updating while maintaining backward compatibility during the transition.
 
 ## Development Plan
 

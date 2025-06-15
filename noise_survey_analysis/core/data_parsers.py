@@ -8,6 +8,8 @@ import numpy as np
 import re
 import os
 import logging # Use logging
+from io import StringIO
+from collections import Counter
 
 logger = logging.getLogger(__name__) # Setup logger for this module
 
@@ -138,121 +140,334 @@ class NoiseSentryParser(NoiseDataParser):
 
 
 class SvanParser(NoiseDataParser):
-    """Parser for Svan Excel files."""
-    
+    """
+    Parses Svan CSV files using a heuristic based on finding the 'Date & Time' row
+    and combining it with the row above for header information.
+    Extracts Datetime, LAeq, LAmax, LA10, LA90, and Spectral Leq/Lmax data.
+    """
+
+    # Regex for cleaning combined headers
+    CLEAN_PAT = re.compile(r'\s*\((?:SR|TH|Lin|Fast|Slow)\)|\[dB\]|\s*Histogram|\s*1/3\s+Oct', flags=re.IGNORECASE)
+    # Regex to identify potential frequency columns in the second header row
+    FREQ_PAT = re.compile(r'^\s*(\d+(?:\.\d+)?)\s?Hz\s*$', flags=re.IGNORECASE)
+
+
     def parse(self, file_path):
         """
-        Parse a Svan Excel file into a DataFrame.
-        
-        Parameters:
-        file_path (str): Path to the Excel file
-        
-        Returns:
-        pd.DataFrame: DataFrame containing parsed data
+        Parses Svan CSV files using the two-row combination heuristic.
         """
-        if not isinstance(file_path, str) or not file_path.lower().endswith(('.xls', '.xlsx')):
-            raise ValueError(f"Invalid file path or type for Svan parser: {file_path}")
+        if not isinstance(file_path, str) or not file_path.lower().endswith(('.csv', '.txt')): # Allow txt
+             raise ValueError(f"Invalid file path or type for Svan parser: {file_path}")
 
-        logger.info(f'Reading Svan file: {file_path}')
+        logger.info(f'Parsing Svan file with heuristic: {file_path}')
+
         try:
-            df = pd.read_excel(file_path)
+            # --- 1. Read Header Lines ---
+            max_header_read = 20 # Read enough lines to find headers
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    header_lines = [f.readline() for _ in range(max_header_read)]
+                    if not header_lines:
+                        logger.warning(f"Svan file appears empty: {file_path}")
+                        return pd.DataFrame()
+            except Exception as e:
+                logger.error(f"Could not read initial lines of Svan file: {file_path}. Error: {e}", exc_info=True)
+                return pd.DataFrame()
 
-            # Find header rows robustly
-            header_start_row = -1
-            unit_row = -1
-            for i, row in enumerate(df.itertuples()):
-                 # Look for common header indicators like 'Date & time' or 'LAeq'
-                 if any(str(cell).strip() == 'Date & time' for cell in row[1:]):
-                      header_start_row = i
-                      # Assume unit row is right below
-                      if i + 1 < len(df):
-                          unit_row = i + 1
-                      break
-                 elif i > 20: # Stop searching after a reasonable number of rows
-                     break
+            # --- 2. Find 'Date & Time' Row (headerRow2) ---
+            header_row2_idx = -1
+            for idx, line in enumerate(header_lines):
+                line_lower = line.lower().strip()
+                # Check if it starts with date & time pattern (flexible check)
+                if line_lower.startswith('date & time') or line_lower.startswith('start date & time'):
+                    # Check if the *first column* specifically contains it more reliably
+                    try:
+                         first_cell = line.split(',')[0].strip().lower()
+                         if 'date & time' in first_cell:
+                              header_row2_idx = idx
+                              logger.debug(f"Found 'Date & Time' row marker at index {header_row2_idx}")
+                              break
+                    except IndexError:
+                         continue # Ignore lines that can't be split
 
-            if header_start_row == -1 or unit_row == -1:
-                 logger.error(f"Could not reliably determine header rows in Svan file: {file_path}")
+            if header_row2_idx == -1:
+                logger.error(f"Could not find 'Date & Time' or 'Start Date & Time' row within first {max_header_read} lines of {file_path}")
+                return pd.DataFrame()
+
+            # --- 3. Identify headerRow1 ---
+            header_row1_idx = header_row2_idx - 1
+            if header_row1_idx < 0:
+                logger.error(f"Header structure error: 'Date & Time' row found at index 0, no preceding header row in {file_path}")
+                return pd.DataFrame()
+
+            # --- 4. Parse and Combine Header Rows ---
+            try:
+                # Use pandas read_csv on StringIO for robust parsing of the two header lines
+                row1_content = pd.read_csv(StringIO(header_lines[header_row1_idx]), header=None, low_memory=False).iloc[0].fillna('').astype(str).tolist()
+                row2_content = pd.read_csv(StringIO(header_lines[header_row2_idx]), header=None, low_memory=False).iloc[0].fillna('').astype(str).tolist()
+            except Exception as e:
+                 logger.error(f"Error parsing header line content using pandas for {file_path}: {e}", exc_info=True)
                  return pd.DataFrame()
 
-            header_vals = df.iloc[header_start_row].fillna('').astype(str)
-            unit_vals = df.iloc[unit_row].fillna('').astype(str)
+            num_cols = max(len(row1_content), len(row2_content))
+            row1_content += [''] * (num_cols - len(row1_content))
+            row2_content += [''] * (num_cols - len(row2_content))
 
-            headers = []
-            for h, u in zip(header_vals, unit_vals):
-                h = h.strip()
-                u = u.strip()
-                if h == 'Date & time':
-                    headers.append('Datetime')
-                    continue
-                if 'Histogram' in h or not h: # Skip histogram summaries or empty headers
-                    headers.append(f"_col_{len(headers)}") # Placeholder for empty
-                    continue
+            combined_headers = [
+                f"{r1.strip().rstrip()}_{r2.strip().lstrip()}" for r1, r2 in zip(row1_content, row2_content)
+            ]
+            # Remove trailing underscores if row2 was empty
+            combined_headers = [h[:-1] if h.endswith('_') else h for h in combined_headers]
+            # Remove leading underscores if row1 was empty
+            combined_headers = [h[1:] if h.startswith('_') else h for h in combined_headers]
 
-                # Clean up units and combine
-                u = u.replace('(TH)', '').replace('[dB]', '').strip()
-                h = h.replace('.0%', '') # Clean percentages if any
-                h = re.sub(r'\s*\(SR\)', '', h) # Remove (SR)
-                h = re.sub(r'1/3 Oct\s*', '', h) # Remove 1/3 Oct prefix
 
-                # Standardize common metrics
-                if h == 'Leq': h = 'LAeq' # Assuming A-weighted if not specified
-                elif h == 'L10': h = 'LAF10'
-                elif h == 'L90': h = 'LAF90'
-                elif h == 'Lmax': h = 'LAFmax'
+            # --- 5. Clean Combined Headers ---
+            # Skip columns with empty headers
+            cleaned_headers = []
+            valid_indices = []
+            
+            for i, header in enumerate(combined_headers):
+                # First apply regex cleanup
+                cleaned_header = self.CLEAN_PAT.sub('', header).strip()
+                
+                # Then ensure no spaces before underscores
+                cleaned_header = re.sub(r'\s+_', '_', cleaned_header)
+                
+                if cleaned_header: # Skip empty headers
+                    cleaned_headers.append(cleaned_header)
+                    valid_indices.append(i)
+                    
+            logger.debug(f"Cleaned combined headers: {cleaned_headers}")
 
-                # Handle frequency columns (e.g., 'LZeq', '31.5 Hz')
-                if h.endswith(' Hz'):
-                    freq = h[:-3].strip()
-                    param = u if u else 'L?' # Use unit row or placeholder 'L?'
-                    headers.append(f"{param}_{freq}")
-                elif u.endswith(' Hz'): # Sometimes freq is in unit row
-                    freq = u[:-3].strip()
-                    param = h if h else 'L?'
-                    headers.append(f"{param}_{freq}")
+            # --- 6. Standardize Headers ---
+            # Map cleaned headers to final standard names
+            final_standard_names = []
+            processed_indices = set() # Track original indices to avoid re-mapping
+            for idx, (i, header) in enumerate(zip(valid_indices, cleaned_headers)):
+                standard_name = None
+                # --- Prioritized Mapping ---
+                # Datetime (must be first column according to heuristic)
+                if idx == 0 and ('date & time' in header.lower() or 'start date & time' in header.lower()):
+                    standard_name = 'Datetime'
+                # Broadband LAeq
+                elif re.match(r'^LAeq\s*\*?$', header, re.IGNORECASE):
+                    standard_name = 'LAeq'
+                # Broadband LAmax
+                elif re.match(r'^LAFmax\s*\*?$', header, re.IGNORECASE):
+                    standard_name = 'LAmax'
+                # Broadband L10
+                elif re.match(r'^LAeq\s*LN\s*\*?_L10$', header, re.IGNORECASE):
+                    standard_name = 'LA10'
+                # Broadband L90
+                elif re.match(r'^LAeq\s*LN\s*\*?_L90$', header, re.IGNORECASE):
+                    standard_name = 'LA90'
+                # Spectral Data (Check if row2 was a frequency)
                 else:
-                     # Combine header and unit if unit is not frequency
-                     full_header = f"{h}_{u}" if u and h != u else h
-                     headers.append(full_header if full_header else f"_col_{len(headers)}")
+                    # Use the header parts directly instead of rechecking row2_content
+                    parts = header.split('_')
+                    if len(parts) > 1:
+                        freq_match = self.FREQ_PAT.match(parts[1])
+                        if freq_match:
+                            freq = freq_match.group(1)
+                            base_param_cleaned = parts[0]
+                            # Standardize base parameter
+                            if base_param_cleaned.upper().startswith('LAEQ') or base_param_cleaned.upper().startswith('LEQ'):
+                                standard_name = f"LZeq_{freq}"  # Changed to LZeq to match REQUIRED_SPECTRAL_PREFIXES
+                            elif base_param_cleaned.upper().startswith('LAFMAX') or base_param_cleaned.upper().startswith('LFMAX'):
+                                standard_name = f"LZFmax_{freq}"  # Changed to LZFmax to match REQUIRED_SPECTRAL_PREFIXES
+                            elif base_param_cleaned.upper().startswith('LA90') or base_param_cleaned.upper().startswith('L90'):
+                                standard_name = f"LZF90_{freq}"  # Added to match REQUIRED_SPECTRAL_PREFIXES
+                            elif base_param_cleaned.upper().startswith('LA10') or base_param_cleaned.upper().startswith('L10'):
+                                standard_name = f"LZF10_{freq}"  # Added for consistency
+                            else:
+                                # For other parameters, try to convert to expected format
+                                # Extract weighting and parameter type
+                                weighting_match = re.match(r'^L([A-Z])[F]?(.+)$', base_param_cleaned, re.IGNORECASE)
+                                if weighting_match:
+                                    # Replace with Z weighting for consistency
+                                    param_type = weighting_match.group(2)
+                                    standard_name = f"LZ{param_type}_{freq}"
+                                else:
+                                    standard_name = f"{base_param_cleaned}_{freq}"  # Fallback, removed Hz suffix
+                    # If we couldn't extract frequency from header parts, use the original header
+                    if not standard_name:
+                        standard_name = header # Keep cleaned name if no standard match
 
-            data_start_row = unit_row + 1
-            df_data = df.iloc[data_start_row:].copy()
-            if df_data.empty:
-                 logger.warning(f"No data rows found after headers in Svan file: {file_path}")
+                # Store the final name
+                if standard_name:
+                    final_standard_names.append(standard_name)
+                    processed_indices.add(i)
+                else:
+                    # Should not happen if standard_name = header fallback works
+                    logger.warning(f"Could not determine standard name for cleaned header: '{header}' at original index {i}")
+                    final_standard_names.append(f"_unknown_{i}") # Placeholder
+
+
+            # --- 7. Prepare for Reading ---
+            if 'Datetime' not in final_standard_names:
+                 logger.error(f"Critical: 'Datetime' column could not be standardized in {file_path}. Standard names: {final_standard_names}")
+                 # Attempt fallback: If first column wasn't mapped, assume it's Datetime
+                 if cleaned_headers and 0 not in processed_indices:
+                      logger.warning("Applying fallback: Assuming first column is Datetime.")
+                      final_standard_names[0] = 'Datetime'
+                 else:
+                      return pd.DataFrame() # Fail if no datetime
+
+            # Check for duplicate standard names before reading
+            name_counts = Counter(final_standard_names)
+            duplicates = {item: count for item, count in name_counts.items() if count > 1}
+            if duplicates:
+                logger.warning(f"Duplicate standard column names generated for {file_path}: {duplicates}. Implementing renaming strategy.")
+                
+                # Implement renaming strategy by appending _1, _2, etc.
+                renamed_headers = []
+                counter_dict = {}
+                
+                for header in final_standard_names:
+                    if header in duplicates:
+                        # Initialize counter if this is the first occurrence
+                        if header not in counter_dict:
+                            counter_dict[header] = 1
+                        
+                        # Append counter to duplicate name
+                        new_name = f"{header}+{counter_dict[header]}"
+                        renamed_headers.append(new_name)
+                        
+                        # Increment counter for next occurrence
+                        counter_dict[header] += 1
+                    else:
+                        # Non-duplicate names pass through unchanged
+                        renamed_headers.append(header)
+                
+                # Replace the original headers with renamed ones
+                final_standard_names = renamed_headers
+                
+                logger.debug(f"Renamed duplicate headers: {final_standard_names}")
+                # No need to return empty DataFrame, we've fixed the issue
+                
+            # Final cleanup - ensure no spaces before underscores in any column names
+            final_standard_names = [re.sub(r'\s+_', '_', name) for name in final_standard_names]
+
+            logger.debug(f"Final standard names: {final_standard_names}")
+
+            # --- 8. Read Data ---
+            data_start_row = header_row2_idx + 1
+            try:
+                # We need to use usecols to select only the columns with valid headers
+                df = pd.read_csv(
+                    file_path,
+                    header=None,
+                    names=range(num_cols),  # Temporary numeric names
+                    skiprows=data_start_row,
+                    low_memory=False,
+                    encoding='utf-8',
+                    on_bad_lines='warn',
+                    skip_blank_lines=True
+                )
+                
+                # Select only the columns with valid headers and rename them
+                df = df.iloc[:, valid_indices].copy()
+                df.columns = final_standard_names
+            except ValueError as ve:
+                 if "names implies" in str(ve) and "columns" in str(ve):
+                       logger.error(f"Column count mismatch error reading data for {file_path}. "
+                                    f"Expected {len(final_standard_names)} columns based on headers. Check file structure or header parsing. Error: {ve}")
+                       return pd.DataFrame()
+                 else: raise # Re-raise other ValueErrors
+            except Exception as e:
+                 logger.error(f"Error during pandas read_csv for Svan data {file_path}: {e}", exc_info=True)
                  return pd.DataFrame()
 
-            # Assign cleaned headers, ensuring length matches
-            if len(headers) == df_data.shape[1]:
-                 df_data.columns = headers
-            else:
-                 logger.warning(f"Header length mismatch ({len(headers)}) vs data columns ({df_data.shape[1]}) in {file_path}. Using numbered columns.")
-                 df_data.columns = [f"_col_{j}" for j in range(df_data.shape[1])]
-                 # Attempt to find Datetime column again if headers failed
-                 for j, col in enumerate(df_data.columns):
-                      if 'Date & time' in str(df.iloc[header_start_row, j]):
-                           df_data.rename(columns={col: 'Datetime'}, inplace=True)
-                           break
+            # --- 9. Post-process ---
+            # Filter summary rows (heuristic: check if Datetime looks valid)
+            if 'Datetime' in df.columns:
+                original_rows = len(df)
+                # Attempt conversion to datetime, coercing errors
+                dt_converted = pd.to_datetime(df['Datetime'], errors='coerce')
+                # Keep rows where conversion was successful
+                df = df[dt_converted.notna()].copy() # Use .copy() to avoid SettingWithCopyWarning
+                df['Datetime'] = dt_converted[dt_converted.notna()] # Assign back the converted values
+                if len(df) < original_rows:
+                     logger.info(f"Removed {original_rows - len(df)} potential summary/invalid rows based on Datetime conversion in {file_path}")
 
+            if df.empty:
+                logger.warning(f"DataFrame is empty after reading/filtering summary rows: {file_path}")
+                return df
 
-            if 'Datetime' not in df_data.columns:
-                 logger.error(f"Could not find 'Datetime' column in Svan file: {file_path}")
-                 return pd.DataFrame()
+            # Apply remaining post-processing (numeric conversion)
+            df = self._post_process_data(df, file_path)
 
-            df_data['Datetime'] = pd.to_datetime(df_data['Datetime'], dayfirst=True, errors='coerce')
-            df_data.dropna(subset=['Datetime'], inplace=True)
+            return df
 
-            df_data = safe_convert_to_float(df_data)
-
-            # Drop placeholder columns if they exist
-            df_data = df_data[[col for col in df_data.columns if not str(col).startswith('_col_')]]
-
-            return df_data
         except FileNotFoundError:
-            logger.error(f"Svan file not found: {file_path}")
-            return pd.DataFrame()
+             logger.error(f"Svan file not found: {file_path}")
+             return pd.DataFrame()
         except Exception as e:
-            logger.error(f"Error parsing Svan file {file_path}: {e}", exc_info=True)
+            logger.error(f"General error parsing Svan file {file_path} with heuristic: {e}", exc_info=True)
             return pd.DataFrame()
+
+    def _post_process_data(self, df, file_path):
+        """ Post-processing specific to this parser (mainly numeric conversion)."""
+        if df.empty: return df
+
+        # Datetime conversion already attempted during summary row filtering
+
+        # Additional standardization for spectral columns
+        from .config import REQUIRED_SPECTRAL_PREFIXES
+        
+        # First, standardize any remaining spectral columns that might have been missed
+        renamed_columns = {}
+        for col in df.columns:
+            if col != 'Datetime':
+                # Check if this is a spectral column (has frequency in the name)
+                parts = col.split('_')
+                if len(parts) > 1 and parts[1].isnumeric():
+                    # Try to extract frequency value
+                    freq_match = re.search(r'(\d+(?:\.\d+)?)', parts[-1])
+                    if freq_match:
+                        freq = freq_match.group(1)
+                        base_param = '_'.join(parts[:-1])
+                        
+                        # Standardize to required format
+                        if base_param.upper().startswith('LAEQ') or base_param.upper().startswith('LEQ'):
+                            new_name = f"LZeq_{freq}"
+                        elif base_param.upper().startswith('LAFMAX') or base_param.upper().startswith('LFMAX'):
+                            new_name = f"LZFmax_{freq}"
+                        elif base_param.upper().startswith('LA90') or base_param.upper().startswith('L90'):
+                            new_name = f"LZF90_{freq}"
+                        elif base_param.upper().startswith('LA10') or base_param.upper().startswith('L10'):
+                            new_name = f"LZF10_{freq}"
+                        elif base_param.upper().startswith('L'):
+                            # Try to extract weighting and parameter type
+                            weighting_match = re.match(r'^L([A-Z])[F]?(.+)$', base_param, re.IGNORECASE)
+                            if weighting_match:
+                                param_type = weighting_match.group(2)
+                                new_name = f"LZ{param_type}_{freq}"
+                            else:
+                                # Keep original but remove Hz suffix if present
+                                new_name = f"{base_param}_{freq}"
+                        else:
+                            # Keep original but remove Hz suffix if present
+                            new_name = f"{base_param}_{freq}"
+                        
+                        # Remove Hz suffix if present and clean up any trailing spaces
+                        new_name = re.sub(r'Hz\s*$', '', new_name).strip()
+                        
+                        if new_name != col:
+                            renamed_columns[col] = new_name
+        
+        # Apply column renames if any
+        if renamed_columns:
+            logger.info(f"Standardizing {len(renamed_columns)} spectral column names in {file_path}")
+            df = df.rename(columns=renamed_columns)
+
+        # Convert other columns to numeric
+        numeric_cols = [col for col in df.columns if col != 'Datetime']
+        df = safe_convert_to_float(df, columns=numeric_cols)
+
+        logger.info(f"Post-processing complete for {file_path}. Final shape: {df.shape}")
+        return df
 
 class NTiParser(NoiseDataParser):
     """Parser for individual NTi sound meter data files (RPT, RTA, LOG)."""

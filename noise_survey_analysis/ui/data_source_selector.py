@@ -2,17 +2,20 @@
 data_source_selector.py
 
 Browser-based UI for selecting data sources for the Noise Survey Analysis application.
+Includes a dual-pane transfer list UI for selecting files.
 """
 
 import os
 import glob
 import logging
+import json
 from collections import defaultdict
 from bokeh.plotting import figure
-from bokeh.layouts import column, row, layout
+from bokeh.layouts import column, row, layout, grid
 from bokeh.models import (
     ColumnDataSource, DataTable, TableColumn, StringEditor, CheckboxEditor,
-    TextInput, Button, Div, Spacer # Added Spacer
+    TextInput, Button, Div, Spacer, Select, MultiSelect, CustomJS, Panel, Tabs,
+    HTMLTemplateFormatter
 )
 from bokeh.events import ButtonClick
 import os.path
@@ -33,6 +36,7 @@ if not os.path.isdir(DEFAULT_BASE_JOB_DIR):
 class DataSourceSelector:
     """
     Bokeh UI component for selecting data sources using Job Number and Base Directory.
+    Features a dual-pane transfer list UI for selecting files.
     """
 
     def __init__(self, doc, on_data_sources_selected):
@@ -50,11 +54,41 @@ class DataSourceSelector:
         self.doc = doc
         self.on_data_sources_selected = on_data_sources_selected
         self.scanned_sources = []
-        # Added 'original_position' to potentially help with renaming logic if needed later
-        # Added 'file_size' to display file sizes in the table
-        self.source_table_data = ColumnDataSource({'index': [], 'position': [], 'path': [], 'type': [], 'include': [], 'original_position': [], 'file_size': []})
+        
+        # Data sources for the dual-pane interface
+        self.available_files_source = ColumnDataSource({
+            'index': [], 
+            'position': [], 
+            'relpath': [], 
+            'fullpath': [], 
+            'type': [], 
+            'file_size': [],
+            'group': []
+        })
+        
+        self.included_files_source = ColumnDataSource({
+            'index': [], 
+            'position': [], 
+            'relpath': [], 
+            'fullpath': [], 
+            'type': [], 
+            'file_size': [],
+            'group': []
+        })
+        
+        # Keep the original table data source for backward compatibility
+        self.source_table_data = ColumnDataSource({
+            'index': [], 
+            'position': [], 
+            'path': [], 
+            'type': [], 
+            'include': [], 
+            'original_position': [], 
+            'file_size': []
+        })
+        
         self.current_job_directory = None
-
+        
         # Create UI components
         self._create_ui_components()
 
@@ -104,29 +138,97 @@ class DataSourceSelector:
             styles={'color': 'blue', 'font-style': 'italic', 'margin-top': '10px'} # Added margin
         )
 
-        # --- Table Controls (Select/Deselect All) ---
-        self.select_all_button = Button(label="Select All", width=120, button_type="default", disabled=True)
-        self.deselect_all_button = Button(label="Deselect All", width=120, button_type="default", disabled=True)
-        self.table_controls_row = row(self.select_all_button, self.deselect_all_button)
-        # --- End Table Controls ---
-
-        # Results table
+        # --- Dual-Pane File Selector Controls ---
+        # Available Files Panel
+        self.available_files_label = Div(text="<b>Available Files:</b>", width=400)
+        
+        # Create columns for the available files table
+        self.available_files_columns = [
+            TableColumn(field="group", title="Folder", width=120),
+            TableColumn(field="relpath", title="File Path", width=250),
+            TableColumn(field="type", title="Type", width=80),
+            TableColumn(field="position", title="Position", width=120),
+            TableColumn(field="file_size", title="Size", width=80)
+        ]
+        
+        # Create the available files table
+        self.available_files_table = DataTable(
+            source=self.available_files_source,
+            columns=self.available_files_columns,
+            width=650,
+            height=350,
+            editable=False,
+            index_position=None,
+            autosize_mode="force_fit",
+            selectable=True,
+            sortable=True
+        )
+        
+        # Transfer buttons
+        self.add_button = Button(label="Add ▶", width=100, button_type="success", disabled=True)
+        self.remove_button = Button(label="◀ Remove", width=100, button_type="danger", disabled=True)
+        self.transfer_buttons = column(
+            Spacer(height=120),
+            self.add_button,
+            Spacer(height=20),
+            self.remove_button,
+            Spacer(height=120),
+            width=120
+        )
+        
+        # Included Files Panel
+        self.included_files_label = Div(text="<b>Included Files:</b>", width=400)
+        
+        # Create columns for the included files table
+        self.included_files_columns = [
+            TableColumn(field="relpath", title="File Path", width=250),
+            TableColumn(field="type", title="Type", width=80),
+            TableColumn(field="position", title="Position", editor=StringEditor(), width=120),
+            TableColumn(field="file_size", title="Size", width=80)
+        ]
+        
+        # Create the included files table
+        self.included_files_table = DataTable(
+            source=self.included_files_source,
+            columns=self.included_files_columns,
+            width=650,
+            height=350,
+            editable=True,  # Allow editing position
+            index_position=None,
+            autosize_mode="force_fit",
+            selectable=True,
+            sortable=True
+        )
+        
+        # Arrange the dual-pane interface
+        self.dual_pane_layout = row(
+            column(self.available_files_label, self.available_files_table),
+            self.transfer_buttons,
+            column(self.included_files_label, self.included_files_table)
+        )
+        
+        # For backward compatibility, keep the old table but hide it
         self.table_columns = [
-            TableColumn(field="include", title="Include", editor=CheckboxEditor(), width=60), # Adjusted width
-            TableColumn(field="position", title="Position", editor=StringEditor(), width=150), # Adjusted width
+            TableColumn(field="include", title="Include", editor=CheckboxEditor(), width=60),
+            TableColumn(field="position", title="Position", editor=StringEditor(), width=150),
             TableColumn(field="type", title="Type", width=100),
-            TableColumn(field="file_size", title="Size", width=80), # New column for file size
-            TableColumn(field="path", title="File/Directory Path", width=450) # Adjusted width
+            TableColumn(field="file_size", title="Size", width=80),
+            TableColumn(field="path", title="File/Directory Path", width=450)
         ]
         self.data_table = DataTable(
             source=self.source_table_data,
             columns=self.table_columns,
-            width=1200, # Increased width by 1.5x from 800
-            height=350, # Adjusted height
+            width=1200,
+            height=0,  # Hidden
             editable=True,
             index_position=None,
-            autosize_mode="force_fit" # Try to fit columns
+            autosize_mode="force_fit"
         )
+        
+        # Select All/Deselect All buttons for backward compatibility
+        self.select_all_button = Button(label="Select All", width=120, button_type="default", disabled=True)
+        self.deselect_all_button = Button(label="Deselect All", width=120, button_type="default", disabled=True)
+        self.table_controls_row = row(self.select_all_button, self.deselect_all_button, visible=False)  # Hidden
 
         # --- Rename Group Controls ---
         self.rename_info_div = Div(text="<b>Rename Position Group:</b>", width=800)
@@ -171,8 +273,7 @@ class DataSourceSelector:
             self.input_row,
             self.status_div,
             Spacer(height=10), # Add spacing
-            self.table_controls_row, # Add select/deselect buttons
-            self.data_table,
+            self.dual_pane_layout, # Add the dual-pane interface
             Spacer(height=10), # Add spacing
             self.rename_info_div, # Add rename controls title
             self.rename_controls_row, # Add rename controls
@@ -180,7 +281,7 @@ class DataSourceSelector:
             self.info_div, # Scan summary
             Spacer(height=20), # Add spacing
             self.action_button_row, # Load/Cancel buttons
-            width=1250 # Increased width to accommodate wider table
+            width=1450 # Increased width to accommodate dual-pane interface
         )
 
         # --- Event Handlers ---
@@ -190,6 +291,14 @@ class DataSourceSelector:
         self.select_all_button.on_click(self._select_all)
         self.deselect_all_button.on_click(self._deselect_all)
         self.rename_button.on_click(self._rename_position_group)
+        
+        # Add handlers for the transfer buttons
+        self.add_button.on_click(self._add_selected_files)
+        self.remove_button.on_click(self._remove_selected_files)
+        
+        # Enable transfer buttons when selections change
+        self.available_files_table.source.selected.on_change('indices', self._on_available_selection_change)
+        self.included_files_table.source.selected.on_change('indices', self._on_included_selection_change)
 
         # Optional: Update rename fields when a position cell is edited
         # This requires more complex handling of Bokeh events if desired
@@ -270,21 +379,34 @@ class DataSourceSelector:
                 self._clear_table()
                 return
 
-            # --- Populate Table ---
+            # --- Prepare Data for Dual-Pane Interface ---
             summary = summarize_scanned_sources(self.scanned_sources)
             indices = list(range(len(self.scanned_sources)))
             positions = [src["position_name"] for src in self.scanned_sources]
-            # Store original position separately in case needed for complex rename logic later
-            original_positions = [src["position_name"] for src in self.scanned_sources]
-            paths = [src["file_path"] for src in self.scanned_sources]
+            fullpaths = [src["file_path"] for src in self.scanned_sources]
             types = [src.get("data_type", "unknown") for src in self.scanned_sources]
-            # Default to included, user can deselect
-            include = [src.get("enabled", True) for src in self.scanned_sources]
+            
+            # Generate relative paths excluding the base directory
+            relpaths = []
+            groups = []
+            for path in fullpaths:
+                # Create relative path from scan_target_dir
+                if os.path.isabs(path) and path.startswith(scan_target_dir):
+                    relpath = os.path.relpath(path, scan_target_dir)
+                    relpaths.append(relpath)
+                    # Extract folder as the group
+                    folder = os.path.dirname(relpath)
+                    if not folder:
+                        folder = "Root"
+                    groups.append(folder)
+                else:
+                    # Fallback if path is not under scan_target_dir
+                    relpaths.append(os.path.basename(path))
+                    groups.append("Other")
             
             # Get file sizes
             file_sizes = []
-            for src in self.scanned_sources:
-                path = src["file_path"]
+            for path in fullpaths:
                 if os.path.isfile(path):
                     size_bytes = os.path.getsize(path)
                     # Format size to human-readable format
@@ -298,17 +420,49 @@ class DataSourceSelector:
                 else:
                     file_sizes.append("Dir")  # For directories
 
-            new_data = {
+            # Sort the data by group (folder) to keep files from the same folder together
+            sorted_data = list(zip(indices, positions, relpaths, fullpaths, types, file_sizes, groups))
+            sorted_data.sort(key=lambda x: x[6])  # Sort by group (folder)
+            
+            # Unzip the sorted data
+            sorted_indices, sorted_positions, sorted_relpaths, sorted_fullpaths, sorted_types, sorted_file_sizes, sorted_groups = zip(*sorted_data) if sorted_data else ([], [], [], [], [], [], [])
+            
+            # Populate available files source with sorted data
+            available_data = {
+                'index': sorted_indices,
+                'position': sorted_positions,
+                'relpath': sorted_relpaths,
+                'fullpath': sorted_fullpaths,
+                'type': sorted_types,
+                'file_size': sorted_file_sizes,
+                'group': sorted_groups
+            }
+            self.available_files_source.data = available_data
+            
+            # Clear included files
+            self.included_files_source.data = {
+                'index': [], 
+                'position': [], 
+                'relpath': [], 
+                'fullpath': [], 
+                'type': [], 
+                'file_size': [],
+                'group': []
+            }
+            
+            # For backward compatibility, also update the old table data source
+            old_data = {
                 'index': indices,
                 'position': positions,
-                'path': paths,
+                'path': fullpaths,
                 'type': types,
-                'include': include,
-                'original_position': original_positions, # Keep track if needed
-                'file_size': file_sizes # Add file sizes
+                'include': [True] * len(indices),
+                'original_position': positions.copy(),
+                'file_size': file_sizes
             }
-            self.source_table_data.data = new_data # Update table data
+            self.source_table_data.data = old_data
             # --- End Populate Table ---
+
 
             # Enable buttons
             self.load_button.disabled = False
@@ -331,42 +485,111 @@ class DataSourceSelector:
         # --- End Scan Target Directory ---
 
 
+    # --- Transfer List Methods ---
+    def _on_available_selection_change(self, attr, old, new):
+        """Enable/disable the Add button based on selection in available files table."""
+        self.add_button.disabled = len(new) == 0
+    
+    def _on_included_selection_change(self, attr, old, new):
+        """Enable/disable the Remove button based on selection in included files table."""
+        self.remove_button.disabled = len(new) == 0
+    
+    def _add_selected_files(self, event=None):
+        """Add selected files from available to included."""
+        # Get the selected indices
+        selected_indices = self.available_files_table.source.selected.indices
+        if not selected_indices:
+            return
+        
+        # Get the data from the available files source
+        available_data = self.available_files_source.data
+        
+        # Get the current data from the included files source
+        included_data = self.included_files_source.data.copy()
+        
+        # For each selected index, add the data to the included files
+        for i in selected_indices:
+            # Check if the file is already in the included files (by fullpath)
+            fullpath = available_data['fullpath'][i]
+            if fullpath in included_data.get('fullpath', []):
+                continue  # Skip if already included
+            
+            # Add to each list in the included data
+            for key in included_data.keys():
+                if key == 'index':
+                    # Use the original index from available files
+                    included_data[key].append(available_data[key][i])
+                else:
+                    included_data[key].append(available_data[key][i])
+        
+        # Update the included files source
+        self.included_files_source.data = included_data
+        
+        # Clear the selection in the available files table
+        self.available_files_table.source.selected.indices = []
+        
+        # Update status
+        self._update_status(f"Added {len(selected_indices)} file(s) to included files.", 'green')
+    
+    def _remove_selected_files(self, event=None):
+        """Remove selected files from included files."""
+        # Get the selected indices
+        selected_indices = self.included_files_table.source.selected.indices
+        if not selected_indices:
+            return
+        
+        # Get the data from the included files source
+        included_data = self.included_files_source.data.copy()
+        
+        # Create new data without the selected indices
+        new_included_data = {k: [] for k in included_data.keys()}
+        
+        # Keep only the non-selected indices
+        for i in range(len(included_data['index'])):
+            if i not in selected_indices:
+                for key in included_data.keys():
+                    new_included_data[key].append(included_data[key][i])
+        
+        # Update the included files source
+        self.included_files_source.data = new_included_data
+        
+        # Clear the selection in the included files table
+        self.included_files_table.source.selected.indices = []
+        
+        # Update status
+        self._update_status(f"Removed {len(selected_indices)} file(s) from included files.", 'green')
+    
     def _load_selected_data(self, event=None):
         """Handle the load selected data button click event."""
         if not self.scanned_sources:
             self._update_status("No data sources to load.", 'orange')
             return
 
-        table_data = self.source_table_data.data
+        # Get the included files data
+        included_data = self.included_files_source.data
+        
+        if not included_data['index']:
+            self._update_status("No files included. Please add files to the 'Included Files' list.", 'orange')
+            return
+        
         selected_sources = []
-        included_count = 0
-
-        for i in range(len(table_data['index'])):
-            if table_data['include'][i]:
-                included_count += 1
-                # Find the original source using the index stored in the table
-                original_source_index = table_data['index'][i]
-                # Ensure index is valid
-                if 0 <= original_source_index < len(self.scanned_sources):
-                    source = self.scanned_sources[original_source_index].copy()
-                    # Update with potentially edited position name from the table
-                    source['position_name'] = table_data['position'][i]
-                    source['enabled'] = True # Mark as enabled for loading
-                    selected_sources.append(source)
-                else:
-                    logger.error(f"Invalid index {original_source_index} found in table data.")
-                    self._update_status(f"Internal error: Invalid data index encountered.", 'red')
-                    return # Stop processing on error
-
-
-        if included_count == 0:
-            self._update_status("No data sources selected. Check the 'Include' column.", 'orange')
-            return
-
-        if not selected_sources:
-             # This case might happen if indices were invalid
-            self._update_status("Could not prepare selected sources. Internal error likely.", 'red')
-            return
+        
+        # Process each included file
+        for i in range(len(included_data['index'])):
+            # Find the original source using the index stored in the table
+            original_source_index = included_data['index'][i]
+            
+            # Ensure index is valid
+            if 0 <= original_source_index < len(self.scanned_sources):
+                source = self.scanned_sources[original_source_index].copy()
+                # Update with potentially edited position name from the included files table
+                source['position_name'] = included_data['position'][i]
+                source['enabled'] = True  # Mark as enabled for loading
+                selected_sources.append(source)
+            else:
+                logger.error(f"Invalid index {original_source_index} found in included files data.")
+                self._update_status(f"Internal error: Invalid data index encountered.", 'red')
+                return  # Stop processing on error
 
         # Call the callback with the selected sources
         self._update_status(f"Loading {len(selected_sources)} selected data sources...", 'blue')
@@ -399,7 +622,7 @@ class DataSourceSelector:
 
 
     def _rename_position_group(self, event=None):
-        """Rename all entries matching the 'Current Position Name'."""
+        """Rename all entries matching the 'Current Position Name' in both available and included files."""
         old_name = self.old_position_input.value.strip()
         new_name = self.new_position_input.value.strip()
 
@@ -407,26 +630,66 @@ class DataSourceSelector:
             self._update_status("Please enter both Current and New position names to rename.", 'orange')
             return
 
-        if not self.source_table_data.data['index']:
-            self._update_status("No data in table to rename.", 'orange')
+        # Check if we have data to work with
+        if not self.available_files_source.data['index'] and not self.included_files_source.data['index']:
+            self._update_status("No data available to rename.", 'orange')
             return
 
-        current_data = self.source_table_data.data.copy() # Work on a copy
-        positions = current_data['position'] # Get the list of positions
         renamed_count = 0
-
-        # Create a new list for updated positions
-        updated_positions = []
-        for pos in positions:
-            if pos == old_name:
-                updated_positions.append(new_name)
-                renamed_count += 1
-            else:
-                updated_positions.append(pos) # Keep original name
+        
+        # Rename in available files
+        if self.available_files_source.data['index']:
+            available_data = self.available_files_source.data.copy()
+            positions = available_data['position']
+            
+            # Create a new list for updated positions
+            updated_positions = []
+            for pos in positions:
+                if pos == old_name:
+                    updated_positions.append(new_name)
+                    renamed_count += 1
+                else:
+                    updated_positions.append(pos)  # Keep original name
+            
+            if renamed_count > 0:
+                available_data['position'] = updated_positions
+                self.available_files_source.data = available_data
+        
+        # Rename in included files
+        if self.included_files_source.data['index']:
+            included_data = self.included_files_source.data.copy()
+            positions = included_data['position']
+            
+            # Create a new list for updated positions
+            updated_positions = []
+            for pos in positions:
+                if pos == old_name:
+                    updated_positions.append(new_name)
+                    renamed_count += 1
+                else:
+                    updated_positions.append(pos)  # Keep original name
+            
+            if renamed_count > 0:
+                included_data['position'] = updated_positions
+                self.included_files_source.data = included_data
+        
+        # For backward compatibility, also update the old table data source
+        if self.source_table_data.data['index']:
+            current_data = self.source_table_data.data.copy()
+            positions = current_data['position']
+            
+            # Create a new list for updated positions
+            updated_positions = []
+            for pos in positions:
+                if pos == old_name:
+                    updated_positions.append(new_name)
+                else:
+                    updated_positions.append(pos)  # Keep original name
+            
+            current_data['position'] = updated_positions
+            self.source_table_data.data = current_data
 
         if renamed_count > 0:
-            current_data['position'] = updated_positions # Update the list in the copied dict
-            self.source_table_data.data = current_data # Assign the modified dict back
             self._update_status(f"Renamed {renamed_count} entries from '{old_name}' to '{new_name}'.", 'green')
             # Clear the input fields after successful rename
             self.old_position_input.value = ""
@@ -443,13 +706,41 @@ class DataSourceSelector:
 
 
     def _clear_table(self):
-         """Clears the data table and disables relevant buttons."""
+         """Clears all tables and disables relevant buttons."""
+         # Clear the old table data source
          self.source_table_data.data = {'index': [], 'position': [], 'path': [], 'type': [], 'include': [], 'original_position': [], 'file_size': []}
+         
+         # Clear the dual-pane interface data sources
+         self.available_files_source.data = {
+            'index': [], 
+            'position': [], 
+            'relpath': [], 
+            'fullpath': [], 
+            'type': [], 
+            'file_size': [],
+            'group': []
+         }
+         
+         self.included_files_source.data = {
+            'index': [], 
+            'position': [], 
+            'relpath': [], 
+            'fullpath': [], 
+            'type': [], 
+            'file_size': [],
+            'group': []
+         }
+         
+         # Disable buttons
          self.load_button.disabled = True
          self.rename_button.disabled = True
          self.select_all_button.disabled = True
          self.deselect_all_button.disabled = True
-         self.info_div.text = "Scan results summary will appear here." # Reset summary
+         self.add_button.disabled = True
+         self.remove_button.disabled = True
+         
+         # Reset summary
+         self.info_div.text = "Scan results summary will appear here."
 
 
     def get_layout(self):

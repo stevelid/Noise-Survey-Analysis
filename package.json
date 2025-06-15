@@ -3,20 +3,9 @@
   "version": "1.0.0",
   "description": "A tool for loading, analyzing, and visualizing noise survey data from different sound meter models (Noise Sentry, NTi, and Svan).",
   "main": "index.js",
-  "directories": {
-    "test": "tests"
-  },
-  "devDependencies": {
-    "@vitest/browser": "^3.0.9",
-    "jsdom": "^26.0.0",
-    "vitest": "^3.0.9"
-  },
-  "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:ui": "vitest --ui",
-    "coverage": "vitest run --coverage"
-  },
+  "directories": {},
+  "devDependencies": {},
+  "scripts": {},
   "keywords": [],
   "author": "",
   "license": "ISC",

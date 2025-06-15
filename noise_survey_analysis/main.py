@@ -1,6 +1,6 @@
 import logging
 from bokeh.plotting import curdoc
-from bokeh.layouts import LayoutDOM # Import base layout class for assertions
+from bokeh.layouts import LayoutDOM
 from bokeh.models import Div, ColumnDataSource # Import for assertions and error messages
 import pandas as pd
 import numpy as np  # Import numpy for array operations
@@ -16,7 +16,7 @@ try:
     # Assuming media_path will be added to config.py
     from .core.config import CHART_SETTINGS, VISUALIZATION_SETTINGS, GENERAL_SETTINGS, REQUIRED_SPECTRAL_PREFIXES
     from .core.data_loaders import load_and_process_data
-    from .core.data_processors import synchronize_time_range, prepare_spectral_data_for_js
+    from .core.data_processors import synchronize_time_range
     from .core.audio_handler import AudioPlaybackHandler
     from .core.app_callbacks import AppCallbacks, session_destroyed
     from .core.utils import add_error_to_doc  # Import our new error handling function
@@ -37,10 +37,6 @@ except ImportError as e:
     raise # Re-raise error to stop execution if imports fail catastrophically
 
 
-# --- Development Flag (Set to False for Production) ---
-# This allows easily disabling all temporary asserts
-_DEV_ASSERTS_ENABLED = True # TODO: Set to False for production deployment
-# ---
 
 def create_app(doc, custom_data_sources=None, enable_audio=True):
     """
@@ -57,21 +53,17 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
     enable_audio : bool, optional
         Whether to enable audio playback. Default is True.
     """
-    # Don't override logging level here - it should be inherited from run_app.py
+
     logger.info("Setting up Bokeh application...")
 
     # 1. Load and Process Data
     position_data = None
     try:
         position_data = load_and_process_data(custom_data_sources) # Modified to use custom sources if provided
-        if _DEV_ASSERTS_ENABLED:
-            assert isinstance(position_data, dict), f"load_and_process_data returned type {type(position_data)}, expected dict"
 
         if CHART_SETTINGS.get("sync_ranges", False) and position_data and len(position_data) > 1:
              logger.info("Synchronizing time ranges across positions.")
              position_data = synchronize_time_range(position_data)
-             if _DEV_ASSERTS_ENABLED:
-                 assert isinstance(position_data, dict), f"synchronize_time_range returned type {type(position_data)}, expected dict"
         elif len(position_data or {}) <= 1:
              logger.info("Skipping time range synchronization (0 or 1 position).")
     except Exception as e:
@@ -84,9 +76,7 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
         logger.error("No data loaded, exiting app setup.")
         return
     
-    if _DEV_ASSERTS_ENABLED:
-        assert position_data, "Position data is unexpectedly empty after loading check."
-        logger.debug(f"Data loaded for positions: {list(position_data.keys())}")
+    logger.debug(f"Data loaded for positions: {list(position_data.keys())}")
 
     # 2. Initialize Core Components (Audio Handler)
     audio_handler = None
@@ -122,12 +112,6 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
         else:
             logger.warning("No audio paths found in position data and no 'media_path' in GENERAL_SETTINGS. Audio playback will be disabled.")
 
-    if _DEV_ASSERTS_ENABLED:
-        assert audio_handler is None or isinstance(audio_handler, AudioPlaybackHandler), f"Audio handler has unexpected type: {type(audio_handler)}"
-        if audio_handler is None:
-             logger.warning("DEV_ASSERT: Proceeding without Audio Handler.")
-        else:
-             logger.info("DEV_ASSERT: Audio Handler initialized.")
 
     # 3. Build Visualization and UI Layout using DashboardBuilder
     main_layout = None
@@ -139,80 +123,11 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
             visualization_settings=VISUALIZATION_SETTINGS,
             audio_handler_available=(audio_handler is not None)
         )
-        if _DEV_ASSERTS_ENABLED:
-            assert isinstance(dashboard_builder, DashboardBuilder), "DashboardBuilder instantiation failed or returned wrong type"
 
         main_layout = dashboard_builder.build()
         logger.info("Dashboard layout built.")
+        bokeh_models = dashboard_builder.bokeh_models # Assign to local variable
 
-        # --- Temporary Asserts for Builder Output ---
-        if _DEV_ASSERTS_ENABLED:
-            logger.debug("Running DEV_ASSERTS on DashboardBuilder output...")
-            assert isinstance(main_layout, LayoutDOM), f"Dashboard builder.build() did not return a valid layout (got {type(main_layout)})"
-
-            bokeh_models = dashboard_builder.bokeh_models
-            from noise_survey_analysis.visualization.dashboard import BokehModelsAdapter
-            assert isinstance(bokeh_models, (dict, BokehModelsAdapter)), f"Dashboard builder.bokeh_models is not a dictionary or BokehModelsAdapter (got {type(bokeh_models)})"
-
-            # Check that essential keys exist in the hierarchical structure
-            required_structures = []
-            required_structures.extend([
-                ['charts', 'all'],
-                ['charts', 'time_series'],
-                ['charts', 'for_js_interaction'],
-                ['sources', 'data'],
-                ['ui', 'visualization', 'click_lines'],
-                ['ui', 'visualization', 'labels']
-            ])
-
-            if audio_handler:
-                required_structures.extend([
-                    ['sources', 'playback', 'position'],
-                    ['ui', 'controls', 'playback']
-                ])
-
-            has_spectral = any(isinstance(pos_info.get('spectral'), pd.DataFrame) and not pos_info.get('spectral').empty 
-                              for pos_info in position_data.values())
-            
-            if has_spectral:
-                required_structures.extend([
-                    ['ui', 'controls', 'parameter', 'select'],
-                    ['ui', 'controls', 'parameter', 'holder'],
-                    ['sources', 'frequency', 'bar'],
-                    ['frequency_analysis', 'bar_chart', 'x_range']
-                ])
-            
-            # Verify all required structures exist
-            for path in required_structures:
-                value = bokeh_models
-                try:
-                    for key in path:
-                        value = value[key]
-                    # If we got here, the path exists
-                except (KeyError, TypeError):
-                    assert False, f"Required structure path {'.'.join(path)} is missing"
-            
-            logger.debug(f"Essential structure check passed.")
-
-            # Type checks using hierarchical structure
-            assert isinstance(bokeh_models['charts']['all'], list), f"'charts.all' is not a list (got {type(bokeh_models['charts']['all'])})"
-            assert isinstance(bokeh_models['sources']['data'], dict), f"'sources.data' is not a dict (got {type(bokeh_models['sources']['data'])})"
-            assert isinstance(bokeh_models['charts']['for_js_interaction'], list), f"'charts.for_js_interaction' is not a list (got {type(bokeh_models['charts']['for_js_interaction'])})"
-            assert isinstance(bokeh_models['ui']['visualization']['click_lines'], list), f"'ui.visualization.click_lines' is not a list (got {type(bokeh_models['ui']['visualization']['click_lines'])})"
-            assert isinstance(bokeh_models['ui']['visualization']['labels'], list), f"'ui.visualization.labels' is not a list (got {type(bokeh_models['ui']['visualization']['labels'])})"
-            
-            if audio_handler:
-                assert isinstance(bokeh_models['sources']['playback']['position'], ColumnDataSource), f"'sources.playback.position' has wrong type (got {type(bokeh_models['sources']['playback']['position'])})"
-                assert isinstance(bokeh_models['ui']['controls']['playback'], dict), f"'ui.controls.playback' is not a dict (got {type(bokeh_models['ui']['controls']['playback'])})"
-            
-            if has_spectral:
-                assert bokeh_models['ui']['controls']['parameter']['select'] is not None, "'ui.controls.parameter.select' is missing/None"
-                assert bokeh_models['ui']['controls']['parameter']['holder'] is not None, "'ui.controls.parameter.holder' is missing/None"
-                assert bokeh_models['sources']['frequency']['bar'] is not None, "'sources.frequency.bar' is missing/None"
-                assert bokeh_models['frequency_analysis']['bar_chart']['x_range'] is not None, "'frequency_analysis.bar_chart.x_range' is missing/None"
-            
-            logger.debug("DEV_ASSERTS on builder output passed.")
-        # --- End Temporary Asserts ---
 
     except Exception as e:
         add_error_to_doc(doc, "Failed to build dashboard layout. Check logs.", e, height=100)
@@ -233,7 +148,7 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
             callback_manager = AppCallbacks(
                 doc=doc,
                 audio_handler=audio_handler,
-                models=bokeh_models
+                bokeh_models=bokeh_models,
             )
             
             callback_manager.attach_callbacks()
@@ -336,4 +251,18 @@ if __name__.startswith('bokeh_app_'):
      create_app(curdoc())
 
 # Command-line interface for generating standalone HTML
-# Removed the standalone generation code
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Noise Survey Analysis Standalone HTML Generator")
+    parser.add_argument("--output", type=str, default="noise_survey_standalone.html",
+                        help="Path to save the generated HTML file")
+    args = parser.parse_args()
+    
+    # Set up logging for standalone mode
+    logging.basicConfig(level=logging.INFO, 
+                      format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # Generate the standalone HTML
+    output_path = generate_standalone_html(output_path=args.output)
+    print(f"Standalone HTML file generated at: {output_path}")
