@@ -63,7 +63,8 @@ class DataSourceSelector:
             'fullpath': [], 
             'type': [], 
             'file_size': [],
-            'group': []
+            'group': [],
+            'parser_type': [] # ADDED
         })
         
         self.included_files_source = ColumnDataSource({
@@ -73,7 +74,8 @@ class DataSourceSelector:
             'fullpath': [], 
             'type': [], 
             'file_size': [],
-            'group': []
+            'group': [],
+            'parser_type': [] # ADDED
         })
         
         # Keep the original table data source for backward compatibility
@@ -92,6 +94,7 @@ class DataSourceSelector:
         # Create UI components
         self._create_ui_components()
 
+
     def _create_ui_components(self):
         """Create all UI components for the data source selector."""
         # Title
@@ -101,6 +104,8 @@ class DataSourceSelector:
         )
 
         # --- Directory/Job Input ---
+        from bokeh.models import SelectEditor
+
         self.base_dir_label = Div(text="<b>Base Directory:</b>")
         self.base_directory_input = TextInput(
             value=DEFAULT_BASE_JOB_DIR, # Pre-filled
@@ -180,10 +185,12 @@ class DataSourceSelector:
         self.included_files_label = Div(text="<b>Included Files:</b>", width=400)
         
         # Create columns for the included files table
+        parser_options = ['svan', 'sentry', 'nti', 'audio'] # Define available parsers
         self.included_files_columns = [
             TableColumn(field="relpath", title="File Path", width=250),
             TableColumn(field="type", title="Type", width=80),
             TableColumn(field="position", title="Position", editor=StringEditor(), width=120),
+            TableColumn(field="parser_type", title="Parser", editor=SelectEditor(options=parser_options), width=100), # ADDED
             TableColumn(field="file_size", title="Size", width=80)
         ]
         
@@ -385,6 +392,7 @@ class DataSourceSelector:
             positions = [src["position_name"] for src in self.scanned_sources]
             fullpaths = [src["file_path"] for src in self.scanned_sources]
             types = [src.get("data_type", "unknown") for src in self.scanned_sources]
+            parsers = [src.get("parser_type", "unknown") for src in self.scanned_sources] # ADDED
             
             # Generate relative paths excluding the base directory
             relpaths = []
@@ -421,33 +429,27 @@ class DataSourceSelector:
                     file_sizes.append("Dir")  # For directories
 
             # Sort the data by group (folder) to keep files from the same folder together
-            sorted_data = list(zip(indices, positions, relpaths, fullpaths, types, file_sizes, groups))
+            sorted_data = list(zip(indices, positions, relpaths, fullpaths, types, file_sizes, groups, parsers)) # ADDED 'parsers'
             sorted_data.sort(key=lambda x: x[6])  # Sort by group (folder)
             
             # Unzip the sorted data
-            sorted_indices, sorted_positions, sorted_relpaths, sorted_fullpaths, sorted_types, sorted_file_sizes, sorted_groups = zip(*sorted_data) if sorted_data else ([], [], [], [], [], [], [])
+            if sorted_data:
+                sorted_indices, sorted_positions, sorted_relpaths, sorted_fullpaths, sorted_types, sorted_file_sizes, sorted_groups, sorted_parsers = zip(*sorted_data) # ADDED 'sorted_parsers'
+            else:
+                (sorted_indices, sorted_positions, sorted_relpaths, sorted_fullpaths, sorted_types, sorted_file_sizes, sorted_groups, sorted_parsers) = ([], [], [], [], [], [], [], [])
             
             # Populate available files source with sorted data
             available_data = {
-                'index': sorted_indices,
-                'position': sorted_positions,
-                'relpath': sorted_relpaths,
-                'fullpath': sorted_fullpaths,
-                'type': sorted_types,
-                'file_size': sorted_file_sizes,
-                'group': sorted_groups
+                'index': sorted_indices, 'position': sorted_positions, 'relpath': sorted_relpaths,
+                'fullpath': sorted_fullpaths, 'type': sorted_types, 'file_size': sorted_file_sizes,
+                'group': sorted_groups, 'parser_type': sorted_parsers # ADDED
             }
             self.available_files_source.data = available_data
             
-            # Clear included files
+            # Clear included files, ensuring it has the new column
             self.included_files_source.data = {
-                'index': [], 
-                'position': [], 
-                'relpath': [], 
-                'fullpath': [], 
-                'type': [], 
-                'file_size': [],
-                'group': []
+                'index': [], 'position': [], 'relpath': [], 'fullpath': [], 
+                'type': [], 'file_size': [], 'group': [], 'parser_type': [] # ADDED
             }
             
             # For backward compatibility, also update the old table data source
@@ -584,6 +586,8 @@ class DataSourceSelector:
                 source = self.scanned_sources[original_source_index].copy()
                 # Update with potentially edited position name from the included files table
                 source['position_name'] = included_data['position'][i]
+                # Update with potentially edited parser type
+                source['parser_type'] = included_data['parser_type'][i]
                 source['enabled'] = True  # Mark as enabled for loading
                 selected_sources.append(source)
             else:

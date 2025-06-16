@@ -65,7 +65,7 @@ VISUALIZATION_SETTINGS = {
 
 # Processing settings
 PROCESSING_SETTINGS = {
-    'default_resample': '1T',
+    'default_resample': '1S',
     'smooth_window': 3,
 }
 
@@ -88,9 +88,9 @@ GENERAL_SETTINGS = {
 # A list of dictionaries, where each dictionary defines a data source file.
 DEFAULT_DATA_SOURCES = [
     {
-        "position_name": "internal",  # User-friendly name for the measurement position
-        "file_path": r"G:\Shared drives\Venta\Jobs\5924 44 Grafton Road, London\5924 Surveys\5924-3\2025-05-08_SLM_001_123_Rpt_Report.txt",
-        "parser_type": "nti", # Specifies which parser class to use
+        "position_name": "svan",  # User-friendly name for the measurement position
+        "file_path": r"G:\Shared drives\Venta\Jobs\5792 Swyncombe Field, Padel Courts\5792 Surveys\971-2\L262_summary.csv",
+        "parser_type": "svan", # Specifies which parser class to use
         "enabled": True         # Flag to easily include/exclude this file
     }
 ]

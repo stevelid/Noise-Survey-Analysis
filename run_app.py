@@ -4,6 +4,9 @@ import subprocess
 import argparse
 import logging
 import socket
+from noise_survey_analysis.main import create_app 
+
+USE_DEFAULT_FILES = False 
 
 # Force debug mode for all loggers
 def configure_logging(debug=False):
@@ -134,8 +137,15 @@ def run_bokeh_server(port=5006, debug=False):
     from bokeh.application.handlers.function import FunctionHandler
     from tornado.ioloop import IOLoop
 
-    # Create a Bokeh application using the directory browser function
-    bokeh_app = Application(FunctionHandler(create_directory_browser_app))
+    if USE_DEFAULT_FILES:
+        # If the flag is True, create an app that directly loads default data
+        logger.info("Bypassing file selector. Using default data sources from config.")
+        # The handler directly calls create_app with no custom sources
+        bokeh_app = Application(FunctionHandler(lambda doc: create_app(doc, custom_data_sources=None)))
+    else:
+        # Otherwise, use the existing directory browser UI
+        logger.info("Using directory browser UI to select data sources.")
+        bokeh_app = Application(FunctionHandler(create_directory_browser_app))
     
     # Start the server
     server = Server({'/': bokeh_app}, port=port, io_loop=IOLoop.current(),

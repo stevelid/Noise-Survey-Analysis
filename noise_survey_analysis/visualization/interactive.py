@@ -263,6 +263,7 @@ def initialize_global_js(bokeh_models):
         'labels': bokeh_models['ui']['visualization']['labels'],
         'freq_bar_source': bokeh_models['sources']['frequency']['bar'],
         'freq_bar_x_range': bokeh_models['frequency_analysis']['bar_chart']['x_range'],
+        'freq_table_source': bokeh_models['sources']['frequency']['table'],
         'param_holder': bokeh_models['ui']['controls']['parameter']['holder'],
         'param_select': bokeh_models['ui']['controls']['parameter']['select'],
         'seek_command_source': bokeh_models['sources']['playback']['seek_command'],
@@ -293,7 +294,8 @@ def initialize_global_js(bokeh_models):
             freq_bar_x_range: !!freq_bar_x_range,
             param_holder: !!param_holder,
             param_select: !!param_select,
-            spectral_param_charts: !!spectral_param_charts
+            spectral_param_charts: !!spectral_param_charts,
+            freq_table_source: !!freq_table_source
         });
         
     """ + combined_js + """
@@ -315,6 +317,7 @@ def initialize_global_js(bokeh_models):
         models.position_play_buttons = position_play_buttons || {};
         models.bar_source = freq_bar_source;
         models.bar_x_range = freq_bar_x_range;
+        models.freqTableSource = freq_table_source;
         models.barChart = barChart;
         models.param_select = param_select;
         models.param_holder = param_holder;
@@ -329,6 +332,8 @@ def initialize_global_js(bokeh_models):
             hasBarXRange: !!models.bar_x_range,
             positionCount: Object.keys(models.spectral_param_charts || {}).length
         });
+
+        console.log('DEBUG: Models:', models);
 
         var initOptions = { enableKeyboardNavigation: true };
 

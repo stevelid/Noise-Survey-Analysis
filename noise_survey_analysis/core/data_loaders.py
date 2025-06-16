@@ -162,96 +162,95 @@ def load_and_process_data(data_sources=None):
             # --- Store results using standard keys ---
             if parser_type == 'nti':
                 if isinstance(result, dict) and 'type' in result and 'data' in result:
-                    data_type = result['type'] # e.g., 'RPT', 'RTA', 'RPT_LOG', 'RTA_LOG'
-                    full_df = result['data']
+                    data_type = result['type']
+                    df = result.get('data', pd.DataFrame())
                     metadata = result.get('metadata', {})
-                    
-                    # Handle audio path if included in the source_info
-                    if 'audio_path' in source_info and source_info['audio_path'] and os.path.exists(source_info['audio_path']):
-                        position_results[position]['audio'] = source_info['audio_path']
-                        logger.info(f"Added audio path for position '{position}': {source_info['audio_path']}")
-                        # Store audio path in metadata as well for consistency
-                        position_results[position]['metadata']['audio_path'] = source_info['audio_path']
 
-                    df = _filter_dataframe_columns(full_df, data_type, path)
+                    if df.empty:
+                        logger.warning(f"Parsing returned empty DataFrame for {data_type} from {path}")
+                        continue
 
-                    if isinstance(df, pd.DataFrame) and not df.empty:
-                        target_key = None
-                        if data_type == 'RPT':
-                            target_key = 'overview'
-                        elif data_type == 'RTA':
-                            target_key = 'spectral'
-                        elif data_type == 'RPT_LOG':
-                            target_key = 'log'
-                        elif data_type == 'RTA_LOG':
-                            target_key = 'spectral_log'
+                    # --- Map NTi parser type to internal data key ---
+                    target_key = None
+                    if data_type == 'RPT':
+                        target_key = 'overview'
+                    elif data_type == 'RTA':
+                        target_key = 'spectral'
+                    elif data_type == 'RPT_LOG':
+                        target_key = 'log'
+                    elif data_type == 'RTA_LOG':
+                        target_key = 'spectral_log'
 
-
-                        if target_key:
-                            if position_results[position][target_key] is None:
-                                position_results[position][target_key] = df
-                            else:
-                                logger.warning(f"Overwriting existing '{target_key}' data for position '{position}' with data from {data_type}")
-                                position_results[position][target_key] = pd.concat([position_results[position][target_key], df])
-                            logger.info(f"Stored {data_type} data as '{target_key}' for '{position}'. Shape: {df.shape}")
-                            # Store specific metadata under the original type key
-                            if metadata:
-                                position_results[position]['metadata'][data_type] = metadata
+                    if target_key:
+                        # Existing logic to store the DataFrame...
+                        if position_results[position][target_key] is None:
+                            position_results[position][target_key] = df
                         else:
-                             logger.warning(f"Could not determine standard key for NTi type '{data_type}' from {path}")
-
-                    elif isinstance(df, pd.DataFrame) and df.empty:
-                        logger.warning(f"Parsing returned empty DataFrame for NTi type {data_type} from {path}")
+                            position_results[position][target_key] = pd.concat([position_results[position][target_key], df], ignore_index=True)
+                        logger.info(f"Stored '{data_type}' data as '{target_key}' for '{position}'. Shape: {df.shape}")
+                        position_results[position]['metadata'][data_type] = metadata
                     else:
-                         logger.warning(f"NTi parser for {path} returned non-DataFrame data: {type(df)}")
-
-                else:
-                    logger.warning(f"Unexpected result format from NTi parser for {path}: {result}")
+                        logger.warning(f"Could not determine standard key for NTi type '{data_type}' from {path}")
 
             elif parser_type == 'svan':
-               
-               if isinstance(result, dict) and 'data' in result:
-                    data_type = 'SVAN'
-                    full_df = result['data']
-                    metadata = result.get('metadata', {})
-                    
-                    # Handle audio path if included in the source_info
-                    if 'audio_path' in source_info and source_info['audio_path'] and os.path.exists(source_info['audio_path']):
-                        position_results[position]['audio'] = source_info['audio_path']
-                        logger.info(f"Added audio path for position '{position}': {source_info['audio_path']}")
-                        # Store audio path in metadata as well for consistency
-                        position_results[position]['metadata']['audio_path'] = source_info['audio_path']
+                if isinstance(result, list):
+                    for res in result:
+                        data_type = res.get('type')
+                        df = res.get('data', pd.DataFrame())
+                        metadata = res.get('metadata', {})
 
-                    df = _filter_dataframe_columns(full_df, data_type, path)
+                        if df is None or df.empty:
+                            logger.warning(f"Svan parsing returned empty DataFrame for type {data_type} from {path}")
+                            continue
 
-                    if isinstance(df, pd.DataFrame) and not df.empty:
+                        # --- Map Svan parser type to internal data key ---
                         target_key = None
-                        if data_type == 'SVAN':
+                        if data_type == 'svan_summary':
                             target_key = 'overview'
+                        elif data_type == 'svan_log':
+                            target_key = 'log'
+                        elif data_type in ['svan_spectral_summary', 'svan_spectral_log']: #FIX: Handles both summary and log spectral data
+                            target_key = 'spectral'
 
-                            #TODO: Add spectral and log data handling
-
-                            #df_main = get_main_dataframe(df)
-                            #df_spectral = get_spectral_dataframe(df)
-                            #df_log = get_log_dataframe(df)
                         if target_key:
+                            filtered_df = _filter_dataframe_columns(df, data_type, path)
                             if position_results[position][target_key] is None:
-                                position_results[position][target_key] = df
+                                position_results[position][target_key] = filtered_df
                             else:
-                                logger.warning(f"Overwriting existing '{target_key}' data for position '{position}' with data from {data_type}")
-                                position_results[position][target_key] = pd.concat([position_results[position][target_key], df])
-                            logger.info(f"Stored {data_type} data as '{target_key}' for '{position}'. Shape: {df.shape}")
-                            # Store specific metadata under the original type key
-                            if metadata:
-                                position_results[position]['metadata'][data_type] = metadata
+                                position_results[position][target_key] = pd.concat([position_results[position][target_key], filtered_df], ignore_index=True)
+                            logger.info(f"Stored '{data_type}' data as '{target_key}' for '{position}'. Shape: {filtered_df.shape}")
+                            position_results[position]['metadata'][data_type] = metadata
                         else:
-                             logger.warning(f"Could not determine standard key for NTi type '{data_type}' from {path}")
-
-                    elif isinstance(df, pd.DataFrame) and df.empty:
-                        logger.warning(f"Parsing returned empty DataFrame for NTi type {data_type} from {path}")
+                            logger.warning(f"Could not determine standard key for Svan type '{data_type}' from {path}")
+                            
+                # Fallback for dict (legacy/empty)
+                elif isinstance(result, dict) and 'data' in result:
+                    data_type = result.get('type', 'SVAN')
+                    df = result.get('data', pd.DataFrame())
+                    metadata = result.get('metadata', {})
+                    if df is None or df.empty:
+                        logger.warning(f"Parsing returned empty DataFrame for {data_type} from {path}")
                     else:
-                        logger.warning(f"NTi parser for {path} returned non-DataFrame data: {type(df)}")
-            
+                        target_key = None
+                        if data_type in ['RPT', 'svan_summary', 'SVAN']:
+                            target_key = 'overview'
+                        elif data_type in ['RPT_LOG', 'svan_log']:
+                            target_key = 'log'
+                        elif data_type in ['RTA', 'svan_spectral']:
+                            target_key = 'spectral'
+                        elif data_type in ['RTA_LOG', 'svan_spectral_log']:
+                            target_key = 'spectral_log'
+                        if target_key:
+                            filtered_df = _filter_dataframe_columns(df, data_type, path)
+                            if position_results[position][target_key] is None:
+                                position_results[position][target_key] = filtered_df
+                            else:
+                                position_results[position][target_key] = pd.concat([position_results[position][target_key], filtered_df], ignore_index=True)
+                            logger.info(f"Stored '{data_type}' data as '{target_key}' for '{position}'. Shape: {filtered_df.shape}")
+                            position_results[position]['metadata'][data_type] = metadata
+                        else:
+                            logger.warning(f"Could not determine standard key for parser type '{data_type}' from {path}")
+ 
             elif parser_type in ['sentry', 'svan']:
                 # Assume Sentry/Svan provide overview data primarily
                 # (If Svan parsing was enhanced to separate spectral/log, logic would go here)
@@ -428,6 +427,12 @@ def scan_directory_for_sources(directory_path, auto_group=True):
             import fnmatch # Use fnmatch for pattern matching
             for filename in fnmatch.filter(files, pattern):
                 full_path = os.path.join(root, filename)
+
+                # --- ADD THIS BLOCK TO FILTER FILES ---
+                if '.th' in filename.lower() and filename.lower().endswith('.xlsx'):
+                    logger.info(f"Ignoring file based on filter rule (contains .TH and is .xlsx): {filename}")
+                    continue
+                # --- END OF ADDED BLOCK ---
                 
                 # Determine parser type for CSV files based on filename pattern
                 current_parser_type = parser_type

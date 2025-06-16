@@ -28,6 +28,7 @@ window.NoiseSurveyApp = (function () {
         barSource: null,         // CDS for frequency bar chart {'levels':[], 'frequency_labels':[]}
         barXRange: null,         // FactorRange for frequency bar x-axis
         barChart: null,          // Frequency bar chart figure model
+        freqTableSource: null,   // CDS for frequency table {'value':[], 'frequency_labels':[]}
         paramSelect: null,
         selectedParamHolder: null,
         allSources: {},          // Potentially includes spectral image sources if needed
@@ -148,7 +149,7 @@ window.NoiseSurveyApp = (function () {
 
     function calculateStepSize(source) {
         const DEFAULT_STEP_SIZE = 300000; // 5 minutes
-     
+
         if (!source?.data?.Datetime || source.data.Datetime.length < 2) {
             console.warn("calculateStepSize: Invalid source data for step size calculation.");
             console.log("source.data:", source.data);
@@ -164,7 +165,7 @@ window.NoiseSurveyApp = (function () {
 
     // --- Private Interaction Functions ---
     // [_updateChartLine, _updateTapLinePositions, _getActiveChartIndex, _hideAllLinesAndLabels, _sendSeekCommand - unchanged]
-     function _updateChartLine(chart, clickLineModel, labelModel, x, chartIndex) {
+    function _updateChartLine(chart, clickLineModel, labelModel, x, chartIndex) {
         if (!chart || !clickLineModel || !labelModel) { return false; }
         clickLineModel.location = x;
         clickLineModel.visible = true;
@@ -193,8 +194,8 @@ window.NoiseSurveyApp = (function () {
 
     function _updateTapLinePositions(x) {
         if (typeof x !== 'number' || isNaN(x)) {
-             console.warn("Attempted to update tap line with invalid position:", x);
-             return false;
+            console.warn("Attempted to update tap line with invalid position:", x);
+            return false;
         }
         _state.verticalLinePosition = x;
         if (!_models?.charts || !Array.isArray(_models.charts) || _models.charts.length === 0) { return false; }
@@ -336,8 +337,8 @@ window.NoiseSurveyApp = (function () {
             } else {
                 console.warn(`Flat matrix slice indices out of bounds: ${start_idx}-${end_idx}`);
             }
-        // } else if (levels_matrix && closestTimeIdx < levels_matrix.length) { // Fallback for non-flat? (Shouldn't be needed with current structure)
-        //     freqDataSlice = levels_matrix[closestTimeIdx];
+            // } else if (levels_matrix && closestTimeIdx < levels_matrix.length) { // Fallback for non-flat? (Shouldn't be needed with current structure)
+            //     freqDataSlice = levels_matrix[closestTimeIdx];
         }
 
 
@@ -351,24 +352,36 @@ window.NoiseSurveyApp = (function () {
         // Clean data (replace null/NaN with 0)
         const cleanedLevels = freqDataSlice.map(level => (level === null || level === undefined || Number.isNaN(level)) ? 0 : level);
 
-        // --- Update Bar Chart Source and Title ---
-        // Avoid unnecessary updates if data is identical? (More complex check needed)
-        barSource.data = {
-            'levels': cleanedLevels,
-            'frequency_labels': freq_labels
-        };
-        barXRange.factors = freq_labels; // Update factors
-
-        let timeString = new Date(x).toLocaleString();
-        barChart.title.text = `Frequency Slice: ${position} | ${selectedParam} | ${timeString} (${interactionSourceInfo})`;
-
-        // Emit change
+        // === 1. UPDATE BAR CHART ===
+        barSource.data = { 'levels': cleanedLevels, 'frequency_labels': freq_labels };
+        barXRange.factors = freq_labels;
+        barChart.title.text = `Frequency Slice: ${position} | ${selectedParam} | ${new Date(x).toLocaleString()}`;
         barSource.change.emit();
+
+        // === 2. CALL THE FUNCTION TO UPDATE THE TABLE ===
+        _updateFrequencyTable(cleanedLevels, freq_labels);
     }
 
+    // Update Frequency Table
+    function _updateFrequencyTable(levels, labels) {
+        const tableSource = _models.freqTableSource;
+        console.log("tableSource: ", tableSource);
+        if (!tableSource) { console.warn("Missing required models/data for _updateFrequencyTable."); return; }
+
+        const tableData = {'value':['dB']};
+        labels.forEach((label, i) => {
+            const level = Number(levels[i]);
+            tableData[label] = [isNaN(level)? 'N/A': level.toFixed(1)];
+        });
+
+        tableSource.data = tableData;
+        tableSource.change.emit();
+    }
+
+    
     // Spectrogram Hover Tool
     // [_handleSpectrogramHover - unchanged]
-     function _handleSpectrogramHover(cb_data, hover_div, bar_source_arg, bar_x_range_arg, position_name, times_array, freqs_array, freq_labels_array, levels_matrix_unused, levels_flat_array, fig_x_range) {
+    function _handleSpectrogramHover(cb_data, hover_div, bar_source_arg, bar_x_range_arg, position_name, times_array, freqs_array, freq_labels_array, levels_matrix_unused, levels_flat_array, fig_x_range) {
         try {
             const div = hover_div;
             const bar_source_js = bar_source_arg || _models.barSource;
@@ -432,7 +445,7 @@ window.NoiseSurveyApp = (function () {
 
     // --- Audio Button State Management ---
     // [_updatePlayButtonsState - unchanged]
-     function _updatePlayButtonsState(isPlaying) {
+    function _updatePlayButtonsState(isPlaying) {
         // Main play/pause buttons
         if (_models.playButton) { _models.playButton.disabled = isPlaying; }
         if (_models.pauseButton) { _models.pauseButton.disabled = !isPlaying; }
@@ -459,9 +472,9 @@ window.NoiseSurveyApp = (function () {
                         button.disabled = isPlaying;
                     }
                 } else if (button !== null && button !== undefined) { // Log only if it exists but isn't valid
-                     // Avoid logging if the button genuinely wasn't created/passed for this position
-                     console.warn(`Item '${posName}' in positionPlayButtons is not a valid Bokeh button model or is missing properties.`);
-                     // console.log("Button object:", button); // Uncomment for detailed debugging
+                    // Avoid logging if the button genuinely wasn't created/passed for this position
+                    console.warn(`Item '${posName}' in positionPlayButtons is not a valid Bokeh button model or is missing properties.`);
+                    // console.log("Button object:", button); // Uncomment for detailed debugging
                 }
             });
         }
@@ -472,11 +485,11 @@ window.NoiseSurveyApp = (function () {
         console.info('NoiseSurveyApp - Initializing with hierarchical structure support...');
         try {
             console.log('Setting global models...');
-            
+
             // Check if using hierarchical structure (passed from Python)
             const usingHierarchicalStructure = models.hierarchical === true;
             console.log(`Using ${usingHierarchicalStructure ? 'hierarchical' : 'legacy'} structure`);
-            
+
             // Assign models from the structure provided
             _models.charts = models.charts || [];
             _models.sources = models.sources || {}; // Overview/log chart sources
@@ -495,8 +508,9 @@ window.NoiseSurveyApp = (function () {
             _models.spectralParamCharts = models.spectral_param_charts || {};
             _models.seekCommandSource = models.seek_command_source || null;
             _models.playRequestSource = models.play_request_source || null; // NEW: Get play request source
+            _models.freqTableSource = models.freqTableSource || null;
 
-            console.log('Global models set.');
+            console.log('Global models set:', _models);
 
             // --- Model Validation ---
             if (!_models.playbackSource) { console.error("Initialization Error: playback_source model missing!"); }
@@ -514,10 +528,10 @@ window.NoiseSurveyApp = (function () {
 
             // Validate individual position buttons
             Object.keys(_models.positionPlayButtons).forEach(posName => {
-                 const button = _models.positionPlayButtons[posName];
-                 if (!button || typeof button.set !== 'function' || !button.hasOwnProperty('label')) {
-                      console.error(`Initialization Error: Position button for '${posName}' is not a valid Bokeh model or is missing properties.`);
-                 }
+                const button = _models.positionPlayButtons[posName];
+                if (!button || typeof button.set !== 'function' || !button.hasOwnProperty('label')) {
+                    console.error(`Initialization Error: Position button for '${posName}' is not a valid Bokeh model or is missing properties.`);
+                }
             });
             // --- End Model Validation ---
 
@@ -531,13 +545,13 @@ window.NoiseSurveyApp = (function () {
                 let initialTimeMs = 0;
                 // Default to chart start if available
                 if (_models.charts.length > 0 && _models.charts[0]?.x_range?.start !== undefined && _models.charts[0]?.x_range?.start !== null) {
-                     initialTimeMs = _models.charts[0].x_range.start;
+                    initialTimeMs = _models.charts[0].x_range.start;
                 }
                 // Ensure data structure exists and initialize/reset time
                 if (!_models.playbackSource.data || typeof _models.playbackSource.data !== 'object') {
-                     _models.playbackSource.data = { 'current_time': [initialTimeMs] };
+                    _models.playbackSource.data = { 'current_time': [initialTimeMs] };
                 } else {
-                     _models.playbackSource.data['current_time'] = [initialTimeMs];
+                    _models.playbackSource.data['current_time'] = [initialTimeMs];
                 }
                 hideTapLines(); // Hide lines initially
                 _state.verticalLinePosition = initialTimeMs; // Sync internal state
@@ -557,7 +571,7 @@ window.NoiseSurveyApp = (function () {
 
     // --- Audio Player Integration ---
     // [synchronizePlaybackPosition - unchanged]
-     function synchronizePlaybackPosition(ms) {
+    function synchronizePlaybackPosition(ms) {
         try {
             // console.debug(`Sync viz to: ${ms}ms, Active Audio Pos: ${_state.activeAudioPosition}`);
             if (!_state.isPlaying) {
@@ -567,22 +581,22 @@ window.NoiseSurveyApp = (function () {
                 // pauseAudioPlayback(); // Careful: this might trigger unwanted state changes if called rapidly
                 return false; // Don't update visuals if supposed to be paused
             }
-             // Ensure ms is valid before updating
-             if (typeof ms === 'number' && !isNaN(ms)) {
+            // Ensure ms is valid before updating
+            if (typeof ms === 'number' && !isNaN(ms)) {
                 _updateTapLinePositions(ms);
                 // Update frequency bar DATA and TITLE using the stored active position
                 // Pass null for activeChartIndex to prioritize activeAudioPosition
                 _updateBarChart(ms, null, _state.activeAudioPosition, "Audio Playback");
-             } else {
-                  console.warn("synchronizePlaybackPosition called with invalid time:", ms);
-             }
+            } else {
+                console.warn("synchronizePlaybackPosition called with invalid time:", ms);
+            }
 
             return true;
         } catch (error) { console.error('Error synchronizing playback visualization:', error); return false; }
     }
 
     // [notifyPlaybackStopped - unchanged]
-     function notifyPlaybackStopped() {
+    function notifyPlaybackStopped() {
         console.log("JS: Received notification that playback stopped (e.g., EOF or error). Resetting state.");
         if (_state.isPlaying) { // Only reset if JS thought it was playing
             _state.isPlaying = false;
@@ -591,49 +605,67 @@ window.NoiseSurveyApp = (function () {
         } else {
             console.log("JS: notifyPlaybackStopped called, but already in paused state.");
             // Ensure buttons are visually correct even if state was already false
-             _updatePlayButtonsState(false);
+            _updatePlayButtonsState(false);
         }
     }
 
     // --- Parameter Selection ---
     // [handleParameterChange - unchanged]
-     function handleParameterChange(param) {
-        if (!param) return false;
+    function handleParameterChange(param) {
+        console.log('[handleParameterChange] Called with param:', param);
+        if (!param) {
+            console.log('[handleParameterChange] Param is null or undefined, returning false.');
+            return false;
+        }
 
         // Store the selected parameter
         _state.selectedParameter = param;
+        console.log('[handleParameterChange] _state.selectedParameter set to:', _state.selectedParameter);
 
         // Update the selected parameter holder if it exists
         if (_models.selectedParamHolder) {
             _models.selectedParamHolder.text = param;
+            console.log('[handleParameterChange] _models.selectedParamHolder.text set to:', param);
+        } else {
+            console.log('[handleParameterChange] _models.selectedParamHolder does not exist.');
         }
 
         // Update each spectral chart with the new parameter
         try {
             const spectralParams = _models.spectralParamCharts || {};
+            console.log('[handleParameterChange] spectralParams:', spectralParams);
 
             for (const position in spectralParams) {
+                console.log(`[handleParameterChange] Processing position: ${position}`);
                 const positionData = spectralParams[position];
                 const availableParams = positionData.available_params || [];
+                console.log(`[handleParameterChange] Position: ${position}, availableParams:`, availableParams);
 
                 const chart = _models.charts.find(chart => chart.name === `${position}_spectral`);
                 if (!chart) {
-                    console.warn(`No chart found for position ${position}`);
+                    console.warn(`[handleParameterChange] No chart found for position ${position}`);
                     continue;
                 }
+                console.log(`[handleParameterChange] Found chart for position ${position}:`, chart);
 
                 // Find the corresponding image glyph renderer's data source
-                 const imageRenderer = chart.renderers.find(r => r.glyph?.type === 'ImageURL' || r.glyph?.type === 'ImageRGBA' || r.glyph?.type === 'Image'); // Find the image renderer
-                 const source = imageRenderer?.data_source;
-
-                if (!source) {
-                     console.warn(`Source not found for spectral chart at position ${position}`);
-                     continue;
+                const imageRenderer = chart.renderers.find(r => r.glyph?.type === 'ImageURL' || r.glyph?.type === 'ImageRGBA' || r.glyph?.type === 'Image'); // Find the image renderer
+                if (!imageRenderer) {
+                    console.warn(`[handleParameterChange] Image renderer not found for spectral chart at position ${position}`);
+                    continue;
                 }
+                console.log(`[handleParameterChange] Found imageRenderer for ${position}:`, imageRenderer);
+                const source = imageRenderer.data_source;
+                if (!source) {
+                    console.warn(`[handleParameterChange] Source not found for spectral chart at position ${position}`);
+                    continue;
+                }
+                console.log(`[handleParameterChange] Found source for ${position}:`, source);
 
                 // Skip positions that don't have this parameter
+                console.log(`[handleParameterChange] Checking if param '${param}' is in availableParams for ${position}:`, availableParams.includes(param));
                 if (!availableParams.includes(param)) {
-                    console.log(`Parameter ${param} not available for position ${position}. Clearing image.`);
+                    console.log(`[handleParameterChange] Parameter ${param} not available for position ${position}. Clearing image.`);
                     // Clear the image data or set to a placeholder
                     source.data.image = []; // Or provide a transparent/empty image array matching dimensions
                     source.data.x = [];
@@ -641,61 +673,73 @@ window.NoiseSurveyApp = (function () {
                     source.data.dw = [];
                     source.data.dh = [];
                     chart.title.text = `${position} - ${param} (N/A)`;
+                    console.log(`[handleParameterChange] Emitting source change for ${position} due to N/A param.`);
                     source.change.emit();
                     continue;
                 }
 
                 // Get the prepared data for this parameter
                 const preparedData = positionData.prepared_data?.[param];
+                console.log(`[handleParameterChange] Prepared data for ${position}/${param}:`, preparedData);
                 if (!preparedData) {
-                    console.warn(`No prepared data for position ${position} with parameter ${param}. Clearing image.`);
+                    console.warn(`[handleParameterChange] No prepared data for position ${position} with parameter ${param}. Clearing image.`);
                     source.data.image = []; source.data.x = []; source.data.y = []; source.data.dw = []; source.data.dh = [];
                     chart.title.text = `${position} - ${param} (Data Missing)`;
+                    console.log(`[handleParameterChange] Emitting source change for ${position} due to missing data.`);
                     source.change.emit();
                     continue;
                 }
 
                 // Update the data in the source
-                source.data.image = preparedData.levels_matrix_transposed ? [preparedData.levels_matrix_transposed] : [];
-                source.data.x = preparedData.x ? [preparedData.x] : [];
-                source.data.y = preparedData.y ? [preparedData.y] : [];
-                source.data.dw = preparedData.dw ? [preparedData.dw] : [];
-                source.data.dh = preparedData.dh ? [preparedData.dh] : [];
+                console.log(`[handleParameterChange] Updating imageRenderer.glyph for ${position}/${param} with:`, preparedData);
+                imageRenderer.glyph.x = preparedData.x
+                imageRenderer.glyph.y = preparedData.y
+                imageRenderer.glyph.dw = preparedData.dw
+                imageRenderer.glyph.dh = preparedData.dh
+                imageRenderer.glyph.image = preparedData.levels_matrix_transposed ? [preparedData.levels_matrix_transposed] : [];
 
                 // Update the chart title
                 chart.title.text = `${position} - ${param} Spectral Data`;
+                console.log(`[handleParameterChange] Chart title for ${position} updated to: ${chart.title.text}`);
 
                 // Update color mapper range if necessary
                 const colorMapper = imageRenderer?.glyph?.color_mapper;
                 if (colorMapper && preparedData.color_range_low !== undefined && preparedData.color_range_high !== undefined) {
                     colorMapper.low = preparedData.color_range_low;
                     colorMapper.high = preparedData.color_range_high;
+                    console.log(`[handleParameterChange] Color mapper for ${position}/${param} updated. Low: ${colorMapper.low}, High: ${colorMapper.high}`);
                 } else if (colorMapper) {
-                     console.warn(`Color range data missing for ${position}/${param}, color bar may be inaccurate.`);
+                    console.warn(`[handleParameterChange] Color range data missing for ${position}/${param}, color bar may be inaccurate.`);
                 }
 
                 // Signal that the data has changed
+                console.log(`[handleParameterChange] Emitting source.change.emit() for ${position}/${param}.`);
                 source.change.emit();
-                console.log(`Updated ${position} spectrogram to parameter ${param}`);
+                console.log(`[handleParameterChange] Updated ${position} spectrogram to parameter ${param}`);
             }
 
             // If a click line is active, update the frequency bar with the new parameter
-            const activePosForUpdate = _state.isPlaying ? _state.activeAudioPosition : null;
-            const activeIndexForUpdate = _state.isPlaying ? null : _state.activeChartIndex;
             if (_state.verticalLinePosition !== null) {
+                console.log('[handleParameterChange] Vertical line is active, calling _updateBarChart. _state.verticalLinePosition:', _state.verticalLinePosition);
+                const activePosForUpdate = _state.isPlaying ? _state.activeAudioPosition : null;
+                const activeIndexForUpdate = _state.isPlaying ? null : _state.activeChartIndex;
                 _updateBarChart(_state.verticalLinePosition, activeIndexForUpdate, activePosForUpdate, "Parameter Change");
+            } else {
+                console.log('[handleParameterChange] Vertical line is not active, not calling _updateBarChart.');
             }
 
+            console.log('[handleParameterChange] Successfully processed parameter change.');
             return true;
         } catch (error) {
-            console.error('Error handling parameter change:', error);
+            console.error('[handleParameterChange] Error handling parameter change:', error);
             return false;
         }
     }
 
     // Public wrapper for _updateBarChart
     // [updateFrequencyBar - unchanged]
-     function updateFrequencyBar(x, activeChartIndex, title_source = '') {
+    function updateFrequencyBar(x, activeChartIndex, title_source = '') {
+        // ... (rest of the code remains the same)
         try {
             if (typeof x !== 'number' || isNaN(x)) { return false; }
             // Call internal function - activeAudioPos is null for user interactions unless already playing
@@ -707,7 +751,7 @@ window.NoiseSurveyApp = (function () {
 
     // --- Tap Line Visibility ---
     // [showTapLines, hideTapLines, updateTapLinePosition - unchanged]
-     function showTapLines() {
+    function showTapLines() {
         if (!_models.clickLines) return false;
         try {
             if (_state.verticalLinePosition !== null) { _updateTapLinePositions(_state.verticalLinePosition); }
@@ -715,17 +759,17 @@ window.NoiseSurveyApp = (function () {
             _models.clickLines.forEach(line => { if (line) line.visible = true; });
             // Ensure labels corresponding to the current position are visible
             if (_state.verticalLinePosition !== null) {
-                 _models.charts.forEach((chart, i) => {
-                      if (chart && _models.clickLines?.[i] && _models.labels?.[i]) {
-                           _updateChartLine(chart, _models.clickLines[i], _models.labels[i], _state.verticalLinePosition, i);
-                      }
-                 });
+                _models.charts.forEach((chart, i) => {
+                    if (chart && _models.clickLines?.[i] && _models.labels?.[i]) {
+                        _updateChartLine(chart, _models.clickLines[i], _models.labels[i], _state.verticalLinePosition, i);
+                    }
+                });
             }
             return true;
         } catch (error) { console.error("Error showing tap lines:", error); return false; }
     }
     function hideTapLines() { return _hideAllLinesAndLabels(); }
-    
+
     function updateTapLinePosition(x) {
         if (typeof x !== 'number' || isNaN(x)) { return false; }
         try { return _updateTapLinePositions(x); }
@@ -735,7 +779,7 @@ window.NoiseSurveyApp = (function () {
     // --- JS Audio Control Wrappers (trigger Python via model changes) ---
 
     // [startAudioPlayback - unchanged]
-     function startAudioPlayback() {
+    function startAudioPlayback() {
         try {
             if (!_models.playButton) { console.warn("Main Play button model missing."); return false; }
             if (!_models.playButton.disabled) { // Check if already playing (button is disabled if so)
@@ -745,14 +789,14 @@ window.NoiseSurveyApp = (function () {
                 _state.isPlaying = true;
                 // If activeAudioPosition isn't set, Python needs a default or error handling
                 if (!_state.activeAudioPosition && Object.keys(_models.positionPlayButtons).length > 0) {
-                     // Attempt to set a default if none is active
-                     _state.activeAudioPosition = Object.keys(_models.positionPlayButtons)[0];
-                     console.log("No active position set, defaulting to:", _state.activeAudioPosition);
+                    // Attempt to set a default if none is active
+                    _state.activeAudioPosition = Object.keys(_models.positionPlayButtons)[0];
+                    console.log("No active position set, defaulting to:", _state.activeAudioPosition);
                 } else if (!_state.activeAudioPosition) {
-                     console.error("Cannot start playback: No active audio position set and no position buttons found.");
-                     _state.isPlaying = false; // Revert state
-                     _updatePlayButtonsState(false); // Update buttons to reflect reverted state
-                     return false;
+                    console.error("Cannot start playback: No active audio position set and no position buttons found.");
+                    _state.isPlaying = false; // Revert state
+                    _updatePlayButtonsState(false); // Update buttons to reflect reverted state
+                    return false;
                 }
 
                 _updatePlayButtonsState(true); // Update button visuals
@@ -774,7 +818,7 @@ window.NoiseSurveyApp = (function () {
     }
 
     // [pauseAudioPlayback - unchanged]
-     function pauseAudioPlayback() {
+    function pauseAudioPlayback() {
         try {
             if (!_models.pauseButton) { console.warn("Main Pause button model missing."); return false; }
             if (!_models.pauseButton.disabled) { // Check if already paused (button is disabled if so)
@@ -798,9 +842,9 @@ window.NoiseSurveyApp = (function () {
             console.error("Error triggering pause audio from JS:", error);
             // Revert state on error? Depends if pause actually failed.
             // Assume pause might have worked partially, keep paused state for safety.
-             _state.isPlaying = false;
-             _state.activeAudioPosition = null;
-             _updatePlayButtonsState(false);
+            _state.isPlaying = false;
+            _state.activeAudioPosition = null;
+            _updatePlayButtonsState(false);
             return false;
         }
     }
@@ -813,8 +857,8 @@ window.NoiseSurveyApp = (function () {
             return false;
         }
         if (!_models.playRequestSource) {
-             console.error("Cannot handle position play click: playRequestSource model is missing!");
-             return false;
+            console.error("Cannot handle position play click: playRequestSource model is missing!");
+            return false;
         }
 
         const currentlyPlaying = _state.isPlaying;
@@ -837,16 +881,16 @@ window.NoiseSurveyApp = (function () {
             _updatePlayButtonsState(true); // Update button visuals immediately
 
             // Update the frequency bar immediately to reflect the requested state
-             if (_state.verticalLinePosition !== null) {
-                 _updateBarChart(_state.verticalLinePosition, null, _state.activeAudioPosition, "Position Play Click");
-             } else {
-                  console.warn("Cannot update frequency bar on position play click: verticalLinePosition is null.");
-             }
+            if (_state.verticalLinePosition !== null) {
+                _updateBarChart(_state.verticalLinePosition, null, _state.activeAudioPosition, "Position Play Click");
+            } else {
+                console.warn("Cannot update frequency bar on position play click: verticalLinePosition is null.");
+            }
 
             // *** NEW: Trigger Python via the dedicated playRequestSource ***
             const currentTime = _state.verticalLinePosition;
             console.log(`Updating playRequestSource: position=${positionName}, time=${currentTime}`);
-            _models.playRequestSource.data = {'position': [positionName], 'time': [currentTime]};
+            _models.playRequestSource.data = { 'position': [positionName], 'time': [currentTime] };
             _models.playRequestSource.change.emit(); // Signal Python to handle the request
 
             // NOTE: The Python callback attached to playRequestSource is now responsible
@@ -856,7 +900,7 @@ window.NoiseSurveyApp = (function () {
     }
 
     // [togglePlayPause - unchanged]
-     function togglePlayPause() {
+    function togglePlayPause() {
         try {
             // This toggles based on the MAIN pause button's state
             if (!_models.playButton || !_models.pauseButton) { console.warn("Main Play/Pause button models missing."); return false; }
@@ -864,14 +908,14 @@ window.NoiseSurveyApp = (function () {
             if (!_models.pauseButton.disabled) { // If pause is ENABLED, it means we are currently playing
                 return pauseAudioPlayback();
             } else if (!_models.playButton.disabled) { // If play is ENABLED, it means we are currently paused
-                 // When toggling play from paused state, ensure an active position is selected or default
-                 if (!_state.activeAudioPosition && Object.keys(_models.positionPlayButtons).length > 0) {
-                      _state.activeAudioPosition = Object.keys(_models.positionPlayButtons)[0];
-                      console.log("Toggle Play: No active position, defaulting to:", _state.activeAudioPosition);
-                 } else if (!_state.activeAudioPosition) {
-                      console.error("Toggle Play: Cannot start playback - no position selected and no defaults available.");
-                      return false;
-                 }
+                // When toggling play from paused state, ensure an active position is selected or default
+                if (!_state.activeAudioPosition && Object.keys(_models.positionPlayButtons).length > 0) {
+                    _state.activeAudioPosition = Object.keys(_models.positionPlayButtons)[0];
+                    console.log("Toggle Play: No active position, defaulting to:", _state.activeAudioPosition);
+                } else if (!_state.activeAudioPosition) {
+                    console.error("Toggle Play: Cannot start playback - no position selected and no defaults available.");
+                    return false;
+                }
                 return startAudioPlayback();
             } else {
                 // This state should ideally not happen if logic is correct
@@ -883,7 +927,7 @@ window.NoiseSurveyApp = (function () {
 
     // --- Keyboard Navigation ---
     // [enableKeyboardNavigation, disableKeyboardNavigation, handleKeyPress, setupKeyboardNavigation - unchanged]
-     function enableKeyboardNavigation() {
+    function enableKeyboardNavigation() {
         if (!_state.keyboardNavigationEnabled) {
             try {
                 document.addEventListener('keydown', handleKeyPress);
@@ -908,10 +952,10 @@ window.NoiseSurveyApp = (function () {
     function handleKeyPress(e) {
         // Allow keyboard input in text fields, etc.
         const targetTagName = e.target.tagName.toLowerCase();
-         if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') {
-             // Don't interfere with form inputs
-             return;
-         }
+        if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') {
+            // Don't interfere with form inputs
+            return;
+        }
 
         // Basic check for models needed for navigation/playback
         if (!_models.playbackSource || !_models.seekCommandSource) { console.warn("Keyboard nav disabled: models not ready."); return; }
@@ -927,13 +971,13 @@ window.NoiseSurveyApp = (function () {
             let step = _state.stepSize || 300000;
             let newX = e.key === 'ArrowLeft' ? currentX - step : currentX + step;
 
-             // Clamp navigation within the main chart's range if possible
-             if (_models.charts?.[0]?.x_range) {
-                  const minX = _models.charts[0].x_range.start;
-                  const maxX = _models.charts[0].x_range.end;
-                  if (newX < minX) newX = minX;
-                  if (newX > maxX) newX = maxX;
-             }
+            // Clamp navigation within the main chart's range if possible
+            if (_models.charts?.[0]?.x_range) {
+                const minX = _models.charts[0].x_range.start;
+                const maxX = _models.charts[0].x_range.end;
+                if (newX < minX) newX = minX;
+                if (newX > maxX) newX = maxX;
+            }
 
 
             updateTapLinePosition(newX); // Update visuals
@@ -953,20 +997,20 @@ window.NoiseSurveyApp = (function () {
 
     // --- Chart Interaction Handlers ---
     // [onTapHandler, onHoverHandler - unchanged]
-     function onTapHandler(cb_obj) {
+    function onTapHandler(cb_obj) {
         try {
             _state.activeChartIndex = _getActiveChartIndex(cb_obj); // Store index of tapped chart
             const x = cb_obj.x;
             if (x === undefined || x === null || isNaN(x)) {
-                 console.warn("Tap handler received invalid x coordinate:", x);
-                 return false;
+                console.warn("Tap handler received invalid x coordinate:", x);
+                return false;
             }
             _updateTapLinePositions(x); // Update lines
             _sendSeekCommand(x);        // Send seek command to Python
 
             // Update frequency bar based on tap location and chart index
-             const activePosForTap = _state.isPlaying ? _state.activeAudioPosition : null;
-             const activeIndexForTap = _state.isPlaying ? null : _state.activeChartIndex;
+            const activePosForTap = _state.isPlaying ? _state.activeAudioPosition : null;
+            const activeIndexForTap = _state.isPlaying ? null : _state.activeChartIndex;
             _updateBarChart(x, activeIndexForTap, activePosForTap, "Click Line");
             return true;
         } catch (error) { console.error("Error handling tap:", error); return false; }
@@ -975,25 +1019,25 @@ window.NoiseSurveyApp = (function () {
     function onHoverHandler(hoverLines, cb_data) {
         try {
             if (!cb_data?.geometry || typeof cb_data.geometry.x !== 'number') {
-                 // If geometry is invalid (e.g., mouse moved off chart), restore freq bar to click line pos
-                 if (_state.verticalLinePosition !== null) {
-                      const activePosForRestore = _state.isPlaying ? _state.activeAudioPosition : null;
-                      const activeIndexForRestore = _state.isPlaying ? null : _state.activeChartIndex;
-                      _updateBarChart(_state.verticalLinePosition, activeIndexForRestore, activePosForRestore, "Click Line");
-                 }
-                 return false;
+                // If geometry is invalid (e.g., mouse moved off chart), restore freq bar to click line pos
+                if (_state.verticalLinePosition !== null) {
+                    const activePosForRestore = _state.isPlaying ? _state.activeAudioPosition : null;
+                    const activeIndexForRestore = _state.isPlaying ? null : _state.activeChartIndex;
+                    _updateBarChart(_state.verticalLinePosition, activeIndexForRestore, activePosForRestore, "Click Line");
+                }
+                return false;
             }
             const hoveredX = cb_data.geometry.x;
 
             // Update hover lines (spans)
-            if (hoverLines && Array.isArray(hoverLines)) { hoverLines.forEach(line => { if(line) line.location = hoveredX; }); }
+            if (hoverLines && Array.isArray(hoverLines)) { hoverLines.forEach(line => { if (line) line.location = hoveredX; }); }
 
             let hoveredChartIndex = -1;
-             if (cb_data.event_name === 'mousemove' && cb_data.tool_type === 'HoverTool') {
-                 // Logic to find hovered chart index might need refinement
-             } else if (cb_data.geometries?.[0]?.model) {
-                 hoveredChartIndex = _models.charts.findIndex(c => c?.id === cb_data.geometries[0].model.id);
-             }
+            if (cb_data.event_name === 'mousemove' && cb_data.tool_type === 'HoverTool') {
+                // Logic to find hovered chart index might need refinement
+            } else if (cb_data.geometries?.[0]?.model) {
+                hoveredChartIndex = _models.charts.findIndex(c => c?.id === cb_data.geometries[0].model.id);
+            }
             const hoveredChart = _models.charts[hoveredChartIndex];
 
             if (hoveredChart && hoveredChartIndex !== -1) {
@@ -1005,8 +1049,8 @@ window.NoiseSurveyApp = (function () {
                     _updateBarChart(hoveredX, hoveredChartIndex, activePosForHover, `Hover: ${chartName}`);
                 }
             } else if (_state.verticalLinePosition !== null) {
-                 const activePosForRestore = _state.isPlaying ? _state.activeAudioPosition : null;
-                 const activeIndexForRestore = _state.isPlaying ? null : _state.activeChartIndex;
+                const activePosForRestore = _state.isPlaying ? _state.activeAudioPosition : null;
+                const activeIndexForRestore = _state.isPlaying ? null : _state.activeChartIndex;
                 _updateBarChart(_state.verticalLinePosition, activeIndexForRestore, activePosForRestore, "Click Line");
             }
             return true;
@@ -1095,9 +1139,9 @@ window.handlePositionPlayClick = function (positionName) {
 };
 
 // Global Function Called by Python on Playback Stop (EOF/Error)
-window.notifyPlaybackStopped = function() {
-     if (window.NoiseSurveyApp?.notifyPlaybackStopped) { return window.NoiseSurveyApp.notifyPlaybackStopped(); }
-     else { console.warn("NoiseSurveyApp.notifyPlaybackStopped not available."); return false; }
+window.notifyPlaybackStopped = function () {
+    if (window.NoiseSurveyApp?.notifyPlaybackStopped) { return window.NoiseSurveyApp.notifyPlaybackStopped(); }
+    else { console.warn("NoiseSurveyApp.notifyPlaybackStopped not available."); return false; }
 };
 
 

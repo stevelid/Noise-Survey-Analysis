@@ -311,29 +311,29 @@ class DashboardBuilder:
              self.bokeh_models['sources']['data']["frequency_bar"] = self.bokeh_models['sources']['frequency']['bar']
              
              # Connect the bar chart source to the table source with a callback
-             #self._connect_freq_chart_to_table() #DEBUG, disconnecting the callback to avoid overwriting the table with the bar chart data for now!
+             self._connect_freq_chart_to_table() #DEBUG, disconnecting the callback to avoid overwriting the table with the bar chart data for now!
         else:
              logger.error("Failed to create shared frequency bar chart.")
     
     def _connect_freq_chart_to_table(self):
         """
-        Connects the frequency bar chart data source to the frequency table data source
-        using a JavaScript callback.
+        TODO: delete this function. the update is now handled in app.js
+        Connects the frequency bar chart data source to the frequency table.
+        This callback dynamically updates both the table's data AND its columns.
         """
         freq_bar_source = self.bokeh_models['sources']['frequency']['bar']
         freq_table_source = self.bokeh_models['sources']['frequency']['table']
-        selected_param_holder = self.bokeh_models['ui']['controls']['parameter']['holder']
+        data_table = self.bokeh_models['frequency_analysis'].get('data_table')
         
-        if freq_bar_source and freq_table_source:
-            # Create callback to update table when bar chart data changes
+        if freq_bar_source and freq_table_source and data_table:
             update_table_callback = CustomJS(
                 args={
                     'table_source': freq_table_source,
-                    'bar_source': freq_bar_source,
-                    'param_holder': selected_param_holder
+                    'data_table': data_table
                 },
                 code="""
-                // Get the current data from the bar chart
+                console.log('[Dynamic Table CB] Triggered.');
+                console.log('[Dynamic Table CB] Received data:', JSON.parse(JSON.stringify(cb_obj.data)));
                 const data = cb_obj.data;
                 const x = data['x'];
                 const top = data['top'];
@@ -373,14 +373,15 @@ class DashboardBuilder:
                 
                 // Update the table source
                 table_source.data = table_data;
+                table_source.change.emit();
+                console.log('[Dynamic Table CB] Finished.');
                 """
             )
             
-            # Attach callback to the bar chart source
             freq_bar_source.js_on_change('data', update_table_callback)
-            logger.debug("Connected frequency bar chart to frequency table with JS callback")
+            logger.debug("Connected frequency bar chart to data table with DYNAMIC column and data callback.")
         else:
-            logger.warning("Could not connect frequency bar to table - sources not available")
+            logger.warning("Could not connect frequency bar to table - sources or data_table model not available.")
     
     def _create_frequency_data_table(self) -> LayoutDOM:
         """
@@ -400,73 +401,62 @@ class DashboardBuilder:
             return None
         
         # Initialize with dummy data - will be replaced by the callback
-        freq_table_source.data = {
-            'value': ['dB'],
-            '31.5 Hz': ['--'],
-            '63 Hz': ['--'],
-            '125 Hz': ['--'],
-            '250 Hz': ['--'],
-            '500 Hz': ['--'],
-            '1000 Hz': ['--'],
-            '2000 Hz': ['--'],
-            '4000 Hz': ['--'],
-            '8000 Hz': ['--']
-        }
+        table_freqs = ['25 Hz', '31 Hz', '40 Hz', '50 Hz', '63 Hz', '80 Hz', '100 Hz', '125 Hz', '160 Hz', '200 Hz', '250 Hz', '315 Hz', '400 Hz', '500 Hz', '630 Hz', '800 Hz', '1000 Hz', '1250 Hz', '1600 Hz', '2000 Hz']
+
+        # Create the data dictionary correctly
+        data = {'value': ['dB']}
+        data.update({freq: ['--'] for freq in table_freqs})
+        freq_table_source.data = data
         
         # Create table columns - one for the row header and one for each frequency
         table_columns = [
             TableColumn(field="value", title="")  # Row header column
         ]
         
-        # Add a column for each dummy frequency (will be replaced by callback)
-        for freq in ['31.5 Hz', '63 Hz', '125 Hz', '250 Hz', '500 Hz', '1000 Hz', '2000 Hz', '4000 Hz', '8000 Hz']:
+        # Add a column for each frequency (will be replaced by callback)
+        for freq in table_freqs:
             table_columns.append(TableColumn(field=freq, title=freq))
+        
+        # Fetch target width from chart settings
+        target_width = self.chart_settings.get("spectrogram_width", 800)
         
         # Create the data table
         data_table = DataTable(
             source=freq_table_source,
             columns=table_columns,
-            width=800,  # Wider to accommodate more columns
+            width=target_width,  # Match spectrogram width
             height=100,  # Shorter since we only have one row
             index_position=None,
             selectable=True,
             name="frequency_data_table",
-            sizing_mode="fixed"
-        )
-        
-        # Create table header with CSS styling
-        table_header = Div(
-            text="""<div style="background-color: #f9f9f9; padding: 10px; margin-top: 20px; border-radius: 5px 5px 0 0;">
-                  <h3 style="margin-top: 0; margin-bottom: 5px;">Frequency Data Table</h3>
-                  </div>""",
-            width=800,
-            sizing_mode="fixed"
-        )
-        
-        # Create help text with CSS styling
-        help_text = Div(
-            text="""<div style="background-color: #f9f9f9; padding: 10px; border-radius: 0 0 5px 5px;">
-                  <p style="margin-top: 5px; margin-bottom: 0; font-size: 0.9em; color: #666;">
-                  Click and drag to select values, then copy (Ctrl+C) and paste into Excel.
-                  </p></div>""",
-            width=800,
-            sizing_mode="fixed"
+            sizing_mode="fixed",
         )
         
         # Add a wrapper div for the table itself to maintain styling consistency
         table_wrapper = Div(
             text="""<div style="background-color: #f9f9f9; padding: 0 10px;"></div>""",
-            width=800,
+            width=target_width,
             height=1,
             sizing_mode="fixed"
         )
         
+        # CSS to enable text selection in DataTable cells
+        style_div = Div(text='''
+        <style>
+            .bk-data-table .slick-cell {
+                user-select: text !important;
+                -webkit-user-select: text !important; /* Safari, Chrome */
+                -moz-user-select: text !important;    /* Firefox */
+                -ms-user-select: text !important;     /* IE/Edge */
+            }
+        </style>
+        ''', width=0, height=0) # Invisible Div to hold styles
+
         # Arrange in a layout without unsupported attributes
         table_layout = column(
-            table_header,
+            style_div,
             table_wrapper,
             data_table,
-            help_text,
             spacing=0,
             css_classes=["freq-data-table-container"]
         )
@@ -647,8 +637,10 @@ class DashboardBuilder:
         """
         spectral_df = data_dict.get('spectral')
         if not isinstance(spectral_df, pd.DataFrame) or spectral_df.empty:
-            logger.info(f"No spectral data found or DataFrame empty for {position}")
-            return None, False, None # Return None chart, False for has_spectral, None for hover_info_div
+            spectral_df = data_dict.get('svan_log')
+            if not isinstance(spectral_df, pd.DataFrame) or spectral_df.empty:
+                logger.info(f"No spectral data found or DataFrame empty for {position}")
+                return None, False, None # Return None chart, False for has_spectral, None for hover_info_div
             
         source_key = f"{position}_spectral" # Base key
         chart_title_base = f"{position} - Spectral Data"
@@ -1146,8 +1138,10 @@ class DashboardBuilder:
         
         # Collect all charts that should have interactions
         charts_to_interact = self.bokeh_models['charts']['time_series']
-        if self.bokeh_models['ui']['visualization']['range_selectors'].get('shared'):
-            charts_to_interact.append(self.bokeh_models['ui']['visualization']['range_selectors']['shared'])
+        # This list already includes the range selector from the _create_shared_range_selector method.
+        # No need to add it again
+        #if self.bokeh_models['ui']['visualization']['range_selectors'].get('shared'):
+        #    charts_to_interact.append(self.bokeh_models['ui']['visualization']['range_selectors']['shared'])
         
         all_sources = self.bokeh_models['sources']['data']
         bar_source = self.bokeh_models['sources']['frequency']['bar']
