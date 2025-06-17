@@ -203,3 +203,9 @@ Al-low users to select a specific range of data directly on the time-history cha
 3.  **Set up `pytest` infrastructure.**
 4.  **Begin implementing Phase 0 Testing tasks.**
 5.  Proceed to Phase 1 (Enhanced File Input).
+
+## Additoinal TODOs
+
+- [ ] when selecting a file to load, give the option to ignor spectral data (if log and summary svan files are selected, the log spectral data appears to be prioritized and user may prefer summary spectral data)
+
+

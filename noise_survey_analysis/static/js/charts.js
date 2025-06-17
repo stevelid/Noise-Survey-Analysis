@@ -143,7 +143,8 @@ function updateAllLines(x, charts, clickLineModels, labelModels) {
  * @param {Array} hoverLinesModels - Array of hover line span objects
  * @param {Object} cb_data - Callback data from Bokeh
  */
-function handleHover(hoverLinesModels, cb_data) {
+function handleHover(hoverLinesModels, cb_data, chart_index) {
+    console.log("[handleHover] called with chart_index:", chart_index);
     if (!hoverLinesModels) return;
     let geometry = cb_data['geometry'];
     if (geometry) {

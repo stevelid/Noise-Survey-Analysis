@@ -83,34 +83,15 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
     
     # Only initialize audio if enabled
     if enable_audio:
-        # Check if any position has audio paths defined
-        positions_with_audio = {pos: data.get('audio') for pos, data in position_data.items() 
-                               if data.get('audio') and os.path.exists(data.get('audio'))}
-        
-        if len(positions_with_audio) > 0:
-            try:
-                # Use the first position's audio path as the default media path
-                pos, audio_path = next(iter(positions_with_audio.items()))
-                logger.info(f"Initializing AudioPlaybackHandler with position '{pos}' media path as default: {audio_path}")
-                audio_handler = AudioPlaybackHandler(audio_path)
-                
-                # Now add all position-specific audio paths
-                if audio_handler and positions_with_audio:
-                    for pos, audio_path in positions_with_audio.items():
-                        logger.info(f"Adding position-specific audio path for '{pos}': {audio_path}")
-                        audio_handler.add_position_media_path(pos, audio_path)
-                    
-                    # Log summary
-                    logger.info(f"AudioPlaybackHandler initialized with {len(positions_with_audio)} position-specific audio paths")
-                    
-            except ImportError:
-                 logger.warning("python-vlc library not found or failed to import. Audio playback will be disabled.", exc_info=False)
-                 audio_handler = None
-            except Exception as e:
-                logger.error(f"Failed to initialize AudioPlaybackHandler: {e}", exc_info=True)
-                audio_handler = None
-        else:
-            logger.warning("No audio paths found in position data and no 'media_path' in GENERAL_SETTINGS. Audio playback will be disabled.")
+        try:
+            logger.info("Initializing AudioPlaybackHandler...")
+            audio_handler = AudioPlaybackHandler(position_data)
+        except ImportError:
+             logger.warning("python-vlc library not found or failed to import. Audio playback will be disabled.", exc_info=False)
+             audio_handler = None
+        except Exception as e:
+            logger.error(f"Failed to initialize AudioPlaybackHandler: {e}", exc_info=True)
+            audio_handler = None
 
 
     # 3. Build Visualization and UI Layout using DashboardBuilder

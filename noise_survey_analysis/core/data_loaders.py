@@ -47,7 +47,7 @@ def _filter_dataframe_columns(df, data_type, path_for_log):
         logger.warning(f"Filtering: 'Datetime' column missing in {data_type} from {path_for_log}")
 
     # Check if it's spectral data (heuristic based on common keys or column names)
-    is_spectral = data_type in ['RTA', 'RTA_LOG', 'SVAN'] or \
+    is_spectral = data_type in ['RTA', 'RTA_LOG', 'SVAN', 'svan_spectral', 'svan_spectral_log'] or \
                   any(prefix + '_' in col for col in original_cols for prefix in REQUIRED_SPECTRAL_PREFIXES)
 
     if is_spectral:
@@ -182,12 +182,15 @@ def load_and_process_data(data_sources=None):
                         target_key = 'spectral_log'
 
                     if target_key:
-                        # Existing logic to store the DataFrame...
+                        # select which columns to keep
+                        filtered_df = _filter_dataframe_columns(df, data_type, path)
+
+                        # store data
                         if position_results[position][target_key] is None:
-                            position_results[position][target_key] = df
+                            position_results[position][target_key] = filtered_df
                         else:
-                            position_results[position][target_key] = pd.concat([position_results[position][target_key], df], ignore_index=True)
-                        logger.info(f"Stored '{data_type}' data as '{target_key}' for '{position}'. Shape: {df.shape}")
+                            position_results[position][target_key] = pd.concat([position_results[position][target_key], filtered_df], ignore_index=True)
+                        logger.info(f"Stored '{data_type}' data as '{target_key}' for '{position}'. Shape: {filtered_df.shape}")
                         position_results[position]['metadata'][data_type] = metadata
                     else:
                         logger.warning(f"Could not determine standard key for NTi type '{data_type}' from {path}")
@@ -209,8 +212,10 @@ def load_and_process_data(data_sources=None):
                             target_key = 'overview'
                         elif data_type == 'svan_log':
                             target_key = 'log'
-                        elif data_type in ['svan_spectral_summary', 'svan_spectral_log']: #FIX: Handles both summary and log spectral data
+                        elif data_type == 'svan_spectral_summary': #FIX: Handles both summary and log spectral data
                             target_key = 'spectral'
+                        elif data_type == 'svan_spectral_log':
+                            target_key = 'spectral_log'
 
                         if target_key:
                             filtered_df = _filter_dataframe_columns(df, data_type, path)

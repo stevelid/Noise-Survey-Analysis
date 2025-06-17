@@ -9,6 +9,9 @@ import os
 import time
 import datetime
 import threading
+import re
+import wave
+import contextlib
 from typing import Callable, Optional, List, Tuple
 import logging
 import vlc
@@ -24,48 +27,31 @@ class AudioPlaybackHandler:
     Includes a simple time lockout for the play method to prevent rapid successive calls.
     """
 
-    def __init__(self, media_path: str, play_lockout_interval: float = 0.2): # Interval in seconds (e.g., 200ms)
+    def __init__(self, position_data: dict, play_lockout_interval: float = 0.2):
         """
         Initialize the audio playback handler.
 
-        Parameters:
-        media_path (str): Path to the directory containing audio files
-        play_lockout_interval (float): Minimum time in seconds required between successful play executions.
+        Args:
+            position_data (dict): The main data dictionary containing all positions,
+                                  their dataframes, and audio paths.
+            play_lockout_interval (float): Minimum time between play commands.
         """
-        self.default_media_path = media_path
-        self.current_media_path = media_path
-        # Dictionary to store file info for each media path
-        self.media_path_file_info = {}
-        self.file_info = self._index_audio_files(media_path)
-        self.media_path_file_info[media_path] = self.file_info
-        
-        # Dictionary to store position-specific audio paths
-        self.position_media_paths = {}
+        self.file_info_by_position = {}
         self.current_position = None
 
-        # Initialize VLC instance
+        # Initialize VLC
         try:
             self.vlc_instance = vlc.Instance('--no-xlib', '--quiet')
-        except Exception as e:
-             logger.error(f"Failed to initialize VLC instance: {e}", exc_info=True)
-             raise RuntimeError(f"Failed to initialize VLC instance: {e}. "
-                                "Ensure VLC is installed correctly and accessible.") from e
-
-        # Check if instance creation was successful
-        if self.vlc_instance is None:
-            logger.error("VLC instance creation returned None. Cannot initialize player.")
-            raise RuntimeError("VLC instance creation returned None. "
-                               "Ensure VLC is installed, accessible, and architecture matches Python.")
-
-        # Now create the player
-        try:
             self.player = self.vlc_instance.media_player_new()
-            if self.player is None:
-                 logger.error("Failed to create VLC media player from instance.")
-                 raise RuntimeError("Failed to create VLC media player. Check VLC installation.")
+            if self.vlc_instance is None or self.player is None:
+                raise RuntimeError("Failed to initialize VLC instance or player.")
         except Exception as e:
-             logger.error(f"Failed to create VLC media player: {e}", exc_info=True)
-             raise RuntimeError(f"Failed to create VLC media player: {e}") from e
+            logger.error(f"VLC initialization failed: {e}. Audio will be disabled.", exc_info=True)
+            self.vlc_instance = self.player = None
+            return
+
+        # Index audio files for all positions at initialization
+        self._index_all_positions(position_data)
 
         self._is_playing = False
         self.current_file = None
@@ -73,121 +59,118 @@ class AudioPlaybackHandler:
         self.playback_monitor = None
         self.position_callback = None
         self.stop_monitor = False
-
-        # --- Time Lockout attributes ---
         self.play_lockout_interval = play_lockout_interval
-        self._last_play_execution_start_time: float = 0.0 # Use monotonic time
-        self._play_lock = threading.Lock() # To protect check-and-update
+        self._last_play_execution_start_time: float = 0.0
+        self._play_lock = threading.Lock()
 
-        logger.info(f"Found {len(self.file_info)} audio files in {media_path}")
-        logger.info(f"Play lockout interval set to {self.play_lockout_interval * 1000} ms")
+    def _get_wav_duration(self, filepath: str) -> float:
+        """Reads the duration in seconds from a WAV file's header."""
+        try:
+            with contextlib.closing(wave.open(filepath, 'r')) as f:
+                frames = f.getnframes()
+                rate = f.getframerate()
+                return frames / float(rate) if rate > 0 else 0
+        except wave.Error as e:
+            logger.warning(f"Could not read duration from {os.path.basename(filepath)}: {e}. Defaulting to 0s.")
+            return 0
 
-    def add_position_media_path(self, position: str, media_path: str) -> bool:
-        """
-        Add a position-specific media path to the handler.
-        
-        Parameters:
-        position (str): Position identifier (e.g., 'SW', 'SE')
-        media_path (str): Path to the directory containing audio files for this position
-        
-        Returns:
-        bool: True if the media path was added successfully, False otherwise
-        """
-        if not position or not media_path:
-            logger.warning(f"Invalid position or media path: position='{position}', path='{media_path}'")
-            return False
-            
-        if not os.path.exists(media_path):
-            logger.warning(f"Media path does not exist for position '{position}': {media_path}")
-            return False
-            
-        # Index audio files in this directory
-        file_info = self._index_audio_files(media_path)
-        if not file_info:
-            logger.warning(f"No audio files found in media path for position '{position}': {media_path}")
-            return False
-            
-        # Store the path and file info
-        self.position_media_paths[position] = media_path
-        self.media_path_file_info[media_path] = file_info
-        logger.info(f"Added media path for position '{position}': {media_path} with {len(file_info)} audio files")
-        return True
-    
+    def _index_all_positions(self, position_data: dict):
+            """Iterates through all positions and indexes their audio files."""
+            for position_name, data_dict in position_data.items():
+                audio_path = data_dict.get('audio')
+                if not audio_path or not os.path.isdir(audio_path):
+                    continue
+
+                logger.info(f"Indexing audio for position '{position_name}' in path: {audio_path}")
+                
+                all_filenames = os.listdir(audio_path)
+                nti_files = []
+                svan_files_to_process = []
+
+                for filename in all_filenames:
+                    if "_audio_" in filename.lower() and filename.lower().endswith('.wav'):
+                        filepath = os.path.join(audio_path, filename)
+                        mod_time = os.path.getmtime(filepath)
+                        start_dt = datetime.datetime.fromtimestamp(mod_time)
+                        duration = 12 * 3600
+                        nti_files.append((filepath, start_dt, duration))
+                    
+                    elif filename.lower().startswith('r') and filename.lower().endswith('.wav'):
+                        match = re.search(r'R(\d+)\.wav', filename, re.IGNORECASE)
+                        if match:
+                            filepath = os.path.join(audio_path, filename)
+                            svan_files_to_process.append({
+                                'path': filepath,
+                                'num': int(match.group(1)),
+                                'duration': self._get_wav_duration(filepath)
+                            })
+                
+                processed_svan_files = []
+                if svan_files_to_process:
+                    # --- FIX: Robustly get the anchor time ---
+                    anchor_df = data_dict.get('overview')
+                    if anchor_df is None or anchor_df.empty:
+                        anchor_df = data_dict.get('log')
+
+                    anchor_time = None
+                    if anchor_df is not None and not anchor_df.empty and 'Datetime' in anchor_df.columns:
+                        anchor_time = anchor_df['Datetime'].min()
+                    # --- End of Fix ---
+
+                    if anchor_time:
+                        svan_files_to_process.sort(key=lambda x: x['num'])
+                        current_time = anchor_time
+                        for svan_file in svan_files_to_process:
+                            if svan_file['duration'] > 0:
+                                # Log the start time being assigned to each file for debugging
+                                logger.info(f"Added Svan file for position '{position_name}': {os.path.basename(svan_file['path'])} (start: {current_time}, duration: {svan_file['duration']})")
+                                processed_svan_files.append((svan_file['path'], current_time, svan_file['duration']))
+                                current_time += datetime.timedelta(seconds=svan_file['duration'])
+                    else:
+                        logger.warning(f"No measurement data found for position '{position_name}'. Cannot timeline-sync Svan audio files.")
+                
+                combined_files = nti_files + processed_svan_files
+                combined_files.sort(key=lambda x: x[1])
+                self.file_info_by_position[position_name] = combined_files
+                logger.info(f"Indexed {len(combined_files)} audio files for position '{position_name}'.")
+
     def set_current_position(self, position: str) -> bool:
-        """
-        Set the current position for audio playback.
-        
-        Parameters:
-        position (str): Position identifier (e.g., 'SW', 'SE')
-        
-        Returns:
-        bool: True if the position was set successfully, False otherwise
-        """
-        # If this position isn't different from current, no need to change
+        """Sets the active position to get audio from."""
         if position == self.current_position:
             return True
-            
-        # If we're currently playing, stop
         if self._is_playing:
-            self._perform_stop_actions()
-            
-        # Check if we have a media path for this position
-        if position in self.position_media_paths:
-            media_path = self.position_media_paths[position]
-            self.current_media_path = media_path
-            self.file_info = self.media_path_file_info[media_path]
+            self.stop()
+        
+        if position in self.file_info_by_position:
             self.current_position = position
-            logger.info(f"Set current position to '{position}' with media path: {media_path}")
+            logger.info(f"Audio position set to '{position}'.")
             return True
         else:
-            # Fall back to default media path
-            self.current_media_path = self.default_media_path
-            self.file_info = self.media_path_file_info[self.default_media_path]
+            logger.warning(f"No indexed audio files found for position '{position}'.")
             self.current_position = None
-            logger.warning(f"No media path found for position '{position}', using default path: {self.default_media_path}")
             return False
 
-    # --- _index_audio_files remains the same but now takes path as a parameter ---
-    def _index_audio_files(self, path: str) -> List[Tuple[str, datetime.datetime]]:
-        file_info = []
-
-        if not os.path.exists(path):
-            logger.warning(f"Media path does not exist: {path}")
-            return file_info
-
-        for filename in os.listdir(path):
-            # Filter files by _Audio_ pattern for consistency
-            if "_Audio_" in filename and filename.lower().endswith('.wav'):
-                filepath = os.path.join(path, filename)
-                mod_time = os.path.getmtime(filepath)
-                start_datetime = datetime.datetime.fromtimestamp(mod_time)
-                file_info.append((filepath, start_datetime))
-
-        file_info.sort(key=lambda x: x[1])
-        return file_info
-
-    # --- _find_file_for_timestamp remains the same ---
     def _find_file_for_timestamp(self, timestamp: datetime.datetime) -> Tuple[Optional[str], float, Optional[datetime.datetime]]:
-        # ... (implementation unchanged)
-        if not self.file_info:
+        """Finds the correct audio file and offset for a timestamp in the current position."""
+        logger.info(f"Finding file for timestamp: {timestamp}")
+        if not self.current_position or self.current_position not in self.file_info_by_position:
+            logger.warning(f"No indexed audio files found for position '{self.current_position}'.")
             return None, 0, None
-        file_duration = 12 * 60 * 60
-        for i, (filepath, start_time) in enumerate(self.file_info):
-            end_time = start_time + datetime.timedelta(seconds=file_duration)
+
+        logger.info(f"Current position: {self.current_position}")
+        logger.info(f"File info for current position: {self.file_info_by_position[self.current_position]}")
+        
+        for filepath, start_time, duration_sec in self.file_info_by_position[self.current_position]:
+            logger.info(f"Checking file for time: {timestamp}, file: {filepath} (start: {start_time}, duration: {duration_sec})")
+            if duration_sec <= 0:
+                continue
+            end_time = start_time + datetime.timedelta(seconds=duration_sec)
+            logger.info(f"Checking file for time: {timestamp}, file: {filepath} (start: {start_time}, duration: {duration_sec}), end: {end_time}")
             if start_time <= timestamp < end_time:
                 offset = (timestamp - start_time).total_seconds()
                 return filepath, offset, start_time
-            if i < len(self.file_info) - 1:
-                next_start = self.file_info[i+1][1]
-                if end_time <= timestamp < next_start:
-                    return filepath, file_duration, start_time
-        if self.file_info and timestamp < self.file_info[0][1]:
-            return self.file_info[0][0], 0, self.file_info[0][1]
-        if self.file_info:
-            last_file, last_start = self.file_info[-1]
-            last_end = last_start + datetime.timedelta(seconds=file_duration)
-            if timestamp >= last_end:
-                return last_file, file_duration, last_start
+        
+        logger.warning(f"Timestamp {timestamp} is outside the playable range for position '{self.current_position}'.")
         return None, 0, None
 
     def play(self, timestamp: datetime.datetime, position_callback: Optional[Callable] = None) -> bool:
@@ -475,6 +458,29 @@ class AudioPlaybackHandler:
         except:
             return 1.0
 
+    def set_amplification(self, db_level: int) -> bool:
+        """
+        Sets the audio player's volume based on a dB gain level.
+        A simple mapping is used: 0dB -> 100%, +20dB -> 200%, +40dB -> 400%.
+        Note: This requires the VLC software volume to be enabled.
+
+        Args:
+            db_level (int): The desired amplification in dB (0, 20, or 40).
+
+        Returns:
+            bool: True if the volume was set successfully, False otherwise.
+        """
+        if not self.player:
+            logger.warning("Cannot set amplification: player not available.")
+            return False
+
+        # Simple mapping from dB gain to a percentage for VLC's set_volume
+        volume_map = {0: 100, 20: 200, 40: 400}
+        volume_percent = volume_map.get(db_level, 100) # Default to 100% (0dB)
+
+        logger.info(f"Setting amplification to +{db_level}dB (VLC Volume: {volume_percent}%)")
+        return self.player.audio_set_volume(volume_percent) == 0
+
     def get_time(self):
         return self.player.get_time()
 
@@ -518,6 +524,9 @@ class AudioPlaybackHandler:
         Returns:
         bool: True if seek was successful, False otherwise
         """
+        # Remember if the player is currently playing before we do anything.
+        was_playing = self.is_playing()
+        
         # Find the correct file and offset for the timestamp
         filepath, offset_seconds, file_start_time = self._find_file_for_timestamp(timestamp)
         if not filepath:
@@ -554,5 +563,15 @@ class AudioPlaybackHandler:
             return True
         else:
             # Different file or no current media - use regular play method
-            logger.debug(f"Seeking requires file change, using full play method")
-            return self.play(timestamp, position_callback)
+            logger.debug(f"Seeking requires file change. Was playing: {was_playing}")
+
+            play_initiated = self.play(timestamp, position_callback)
+            
+            if play_initiated and not was_playing:
+                # If playback was successfully started BUT it was supposed to be paused,
+                # pause it immediately to maintain the correct state.
+                time.sleep(0.1) # Give VLC a moment to process the play command
+                self.pause()
+                logger.debug("Seek completed, player state maintained as paused.")
+
+            return play_initiated

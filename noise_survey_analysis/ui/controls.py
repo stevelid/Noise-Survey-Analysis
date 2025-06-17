@@ -1,11 +1,11 @@
 # Placeholder for UI control creation functions
 # (e.g., playback buttons, parameter selectors)
 import logging
-from bokeh.models import Button, Select, Div, CustomJS # Import CustomJS model
+from bokeh.models import Button, Select, Div, CustomJS, RadioButtonGroup # Import CustomJS model
 
 logger = logging.getLogger(__name__)
 
-def create_playback_controls(audio_handler_available: bool) -> dict:
+def create_global_audio_controls(audio_handler_available: bool) -> dict:
     """
     Creates the playback control widgets (Play, Pause buttons).
     Returns a dictionary containing the button models.
@@ -15,36 +15,40 @@ def create_playback_controls(audio_handler_available: bool) -> dict:
     # Play button: Enabled only if audio handler is available, disabled when playing.
     play_button = Button(
         label="► Play",
-        disabled=not audio_handler_available, # Initially disabled if no audio handler
-        width=80, # Adjusted width slightly
-        button_type="success" if audio_handler_available else "default",
-        name="play_button" # Name for easier selection/debugging
+        visible=False # No longer used
     )
 
     # Pause button: Enabled only when playing. Initially disabled.
     pause_button = Button(
         label="❚❚ Pause",
-        disabled=True, # Playback doesn't start automatically
-        width=80, # Adjusted width slightly
-        button_type="warning",
-        name="pause_button"
+        visible=False # No longer used
     )
 
-    # TODO: Consider adding a seek slider or time display if needed in the future.
-    # seek_slider = Slider(...)
-    # time_display = Div(...)
+    speed_control = RadioButtonGroup(
+        labels=["1x", "1.25x", "1.5x", "2x", "4x"],
+        active=0,
+        width=200
+    )
+
+    amp_control = RadioButtonGroup(
+        labels=["0dB", "+20dB", "+40dB"],
+        active=0,
+        width=200
+    )
 
     controls = {
         'play_button': play_button,
         'pause_button': pause_button,
-        # 'seek_slider': seek_slider, # Example for future addition
-        # 'time_display': time_display, # Example for future addition
+        'speed_control': speed_control,
+        'amp_control': amp_control
     }
 
     if not audio_handler_available:
-         logger.warning("Audio handler not available, playback controls created but initially disabled.")
+        logger.warning("Audio handler not available, playback controls will be disabled.")
+        speed_control.disabled = True
+        amp_control.disabled = True
     else:
-        logger.info("Playback control widgets created.")
+        logger.info("Global audio control widgets created.")
 
     return controls
 

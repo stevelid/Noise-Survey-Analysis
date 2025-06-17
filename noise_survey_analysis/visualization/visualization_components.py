@@ -130,17 +130,17 @@ def create_TH_chart(df, title="Overview Data", height=None, metrics=None, colors
         )
         renderers.append(line)
 
-    # --- Add Hover Tool ---
+    # --- Add Hover Tool --- #TODO: this is done elsewhere, remove here
     # Attach hover to the first line renderer for efficiency with vline mode
-    if renderers:
-        hover = HoverTool(
-            tooltips=[("Time", "@Datetime{%F %T}")] + # Use standard format codes
-                     [(metric, f"@{metric}{{0.1f}} dB") for metric in used_metrics], # Use Bokeh format specifier
-            formatters={"@Datetime": "datetime"},
-            mode="vline",
-            renderers=[renderers[0]] # Target only one renderer for vline efficiency
-        )
-        p.add_tools(hover)
+    #if renderers:
+    #    hover = HoverTool(
+    #        tooltips=[("Time", "@Datetime{%F %T}")] + # Use standard format codes
+    #                 [(metric, f"@{metric}{{0.1f}} dB") for metric in used_metrics], # Use Bokeh format specifier
+    #        formatters={"@Datetime": "datetime"},
+    #        mode="vline",
+    #        renderers=[renderers[0]] # Target only one renderer for vline efficiency
+    #    )
+    #    p.add_tools(hover)
 
     # --- Configure Axes and Grid ---
     p.xaxis.formatter = DatetimeTickFormatter(days="%d/%m/%y %H:%M", hours="%H:%M:%S") # Simplified formats
@@ -264,16 +264,16 @@ def create_log_chart(df, title="Log Data", height=None, metrics=None, colors=Non
         )
         renderers.append(line)
 
-    # --- Add Hover Tool ---
-    if renderers:
-        hover = HoverTool(
-            tooltips=[("Time", "@Datetime{%F %T}")] +
-                     [(metric, f"@{metric}{{0.1f}} dB") for metric in used_metrics],
-            formatters={"@Datetime": "datetime"},
-            mode="vline",
-            renderers=[renderers[0]]
-        )
-        p.add_tools(hover)
+    # --- Add Hover Tool --- #TODO: this is done elsewhere, remove here
+    #if renderers:
+    #    hover = HoverTool(
+    #        tooltips=[("Time", "@Datetime{%F %T}")] +
+    #                 [(metric, f"@{metric}{{0.1f}} dB") for metric in used_metrics],
+    #        formatters={"@Datetime": "datetime"},
+    #        mode="vline",
+    #        renderers=[renderers[0]]
+    #    )
+    #    p.add_tools(hover)
 
     # --- Configure Axes and Grid ---
     p.xaxis.formatter = DatetimeTickFormatter(days="%d/%m/%y %H:%M", hours="%H:%M:%S")
@@ -900,120 +900,122 @@ def link_x_ranges(charts):
         chart.x_range = master_range
 
 def add_vertical_line_and_hover(charts, sources=None):
-    """
-    Adds vertical line Spans, Labels, and Hover/Tap interactivity to charts.
+    if False: #TODO: legacy and can be removed
+        
+        """
+        Adds vertical line Spans, Labels, and Hover/Tap interactivity to charts.
 
-    Relies on JavaScript functions (handleHover, handleTap) defined globally.
+        Relies on JavaScript functions (handleHover, handleTap) defined globally.
 
-    Parameters:
-    charts (list): List of Bokeh figures to add interactivity to.
-    sources (dict, optional): Dictionary mapping keys (e.g., chart names)
-                              to their ColumnDataSources. Passed to JS.
+        Parameters:
+        charts (list): List of Bokeh figures to add interactivity to.
+        sources (dict, optional): Dictionary mapping keys (e.g., chart names)
+                                to their ColumnDataSources. Passed to JS.
 
-    Returns:
-    tuple: (list_of_charts, list_of_click_line_models, list_of_label_models)
-           The models created are returned for potential use elsewhere (e.g., JS init).
-    """
-    # Ensure charts is a list
-    if not isinstance(charts, list):
-        charts = [charts]
+        Returns:
+        tuple: (list_of_charts, list_of_click_line_models, list_of_label_models)
+            The models created are returned for potential use elsewhere (e.g., JS init).
+        """
+        # Ensure charts is a list
+        if not isinstance(charts, list):
+            charts = [charts]
 
-    # Filter out None charts
-    valid_charts = [c for c in charts if c is not None]
-    if not valid_charts:
-        logger.warning("No valid charts provided to add_vertical_line_and_hover.")
-        return [], [], []
+        # Filter out None charts
+        valid_charts = [c for c in charts if c is not None]
+        if not valid_charts:
+            logger.warning("No valid charts provided to add_vertical_line_and_hover.")
+            return [], [], []
 
-    logger.info(f"Adding vertical lines/hover/tap to {len(valid_charts)} charts.")
+        logger.info(f"Adding vertical lines/hover/tap to {len(valid_charts)} charts.")
 
-    hover_lines = []
-    click_lines = []
-    labels = []
+        hover_lines = []
+        click_lines = []
+        labels = []
 
-    # Create models for each valid chart
-    for i, chart in enumerate(valid_charts):
-        hover_line = Span(location=0, dimension='height', line_color='grey',
-                          line_width=1, line_dash='dashed', name=f"hover_line_{i}", level='overlay')
-        click_line = Span(location=0, dimension='height', line_color='red',
-                          line_width=1.5, line_dash='solid', visible=False, # Start invisible
-                          line_alpha=0.8, name=f"click_line_{i}", level='overlay')
+        # Create models for each valid chart
+        for i, chart in enumerate(valid_charts):
+            logger.info(f"Adding vertical lines/hover/tap to chart {chart.name}.")
+            hover_line = Span(location=0, dimension='height', line_color='grey',
+                            line_width=1, line_dash='dashed', name=f"hover_line_{i}", level='overlay')
+            click_line = Span(location=0, dimension='height', line_color='red',
+                            line_width=1.5, line_dash='solid', visible=False, # Start invisible
+                            line_alpha=0.8, name=f"click_line_{i}", level='overlay')
 
-        # Check if it's the range selector (simple title check, might need refinement)
-        is_range_selector = hasattr(chart, 'title') and "select time range" in chart.title.text.lower()
+            # Check if it's the range selector (simple title check, might need refinement)
+            is_range_selector = hasattr(chart, 'title') and "select time range" in chart.title.text.lower()
+            logger.info(f"Is range selector: {is_range_selector}.")
 
-        if is_range_selector:
-            # Range selector doesn't need a visible hover label
-            label = Label(x=0, y=0, text="", visible=False, name=f"label_{i}") # Still create model, just hidden
-        else:
-            label = Label(
-                x=0, y=0, x_units='data', y_units='screen', # Use screen units for y offset
-                text="", text_font_size="9pt", # Smaller font
-                text_align="left", text_baseline="bottom", # Baseline bottom, position with offset
-                x_offset=10, y_offset=5, # Offset from cursor/line
-                background_fill_color="white", background_fill_alpha=0.7,
-                border_line_color="black", border_line_alpha=0.5,
-                visible=False, # Start invisible
-                name=f"label_{i}",
-                render_mode='css' # Use CSS for better text rendering
-            )
-            chart.add_layout(label) # Add label to non-selector charts
+            if is_range_selector:
+                # Range selector doesn't need a visible hover label
+                label = Label(x=0, y=0, text="", visible=False, name=f"label_{i}") # Still create model, just hidden
+            else:
+                label = Label(
+                    x=0, y=0, x_units='data', y_units='screen', # Use screen units for y offset
+                    text="", text_font_size="9pt", # Smaller font
+                    text_align="left", text_baseline="bottom", # Baseline bottom, position with offset
+                    x_offset=10, y_offset=5, # Offset from cursor/line
+                    background_fill_color="white", background_fill_alpha=0.7,
+                    border_line_color="black", border_line_alpha=0.5,
+                    visible=False, # Start invisible
+                    name=f"label_{i}",
+                )
+                chart.add_layout(label) # Add label to non-selector charts
 
-        # Add spans to the chart
-        chart.add_layout(hover_line)
-        chart.add_layout(click_line)
+            # Add spans to the chart
+            chart.add_layout(hover_line)
+            chart.add_layout(click_line)
 
-        # Store models
-        hover_lines.append(hover_line)
-        click_lines.append(click_line)
-        labels.append(label)
-
-
-    # --- Define JS Callbacks ---
-    # (These call globally defined functions like window.handleHover/window.handleTap)
-
-    hover_callback_code = """
-        if (typeof window.handleHover === 'function') {
-            window.handleHover(hoverLinesModels, cb_data); // Pass models directly
-        } else { console.error('window.handleHover not defined!'); }
-    """
-    hover_callback = CustomJS(args={'hoverLinesModels': hover_lines}, code=hover_callback_code)
-
-    click_callback_code = """
-        if (typeof window.handleTap === 'function') {
-            // Pass models directly, plus sources dict and cb_obj
-            window.handleTap(cb_obj, chartModels, clickLineModels, labelModels, sourcesDict);
-        } else { console.error('window.handleTap not defined!'); }
-    """
-    click_callback = CustomJS(args={
-        'chartModels': valid_charts,
-        'clickLineModels': click_lines,
-        'labelModels': labels,
-        'sourcesDict': sources if sources is not None else {} # Ensure sources is a dict
-    }, code=click_callback_code)
+            # Store models
+            hover_lines.append(hover_line)
+            click_lines.append(click_line)
+            labels.append(label)
 
 
-    # --- Add Tools ---
-    # Add specific hover tool for vline mode
-    vline_hover = HoverTool(
-        tooltips=None, # We use the Label model for tooltips on click/playback
-        mode='vline',
-        callback=hover_callback, # JS callback updates hover lines
-        name="vline_hover" # Give it a name
-    )
+        # --- Define JS Callbacks ---
+        # (These call globally defined functions like window.handleHover/window.handleTap)
 
-    for chart in valid_charts:
-        # Add the vline hover tool
-        # Check if a tool with this name already exists to avoid duplicates
-        existing_tools = [t for t in chart.tools if t.name == "vline_hover"]
-        if not existing_tools:
-             chart.add_tools(vline_hover)
-        else:
-             # Optionally update the callback if needed, though usually not necessary
-             # existing_tools[0].callback = hover_callback
-             pass
+        hover_callback_code = """
+            if (typeof window.handleHover === 'function') {
+                window.handleHover(hoverLinesModels, cb_data, chart_index); // Pass models directly
+            } else { console.error('window.handleHover not defined!'); }
+        """
+        hover_callback = CustomJS(args={'hoverLinesModels': hover_lines}, code=hover_callback_code)
 
-        # Attach JS tap callback
-        chart.js_on_event('tap', click_callback)
+        click_callback_code = """
+            if (typeof window.handleTap === 'function') {
+                // Pass models directly, plus sources dict and cb_obj
+                window.handleTap(cb_obj, chartModels, clickLineModels, labelModels, sourcesDict);
+            } else { console.error('window.handleTap not defined!'); }
+        """
+        click_callback = CustomJS(args={
+            'chartModels': valid_charts,
+            'clickLineModels': click_lines,
+            'labelModels': labels,
+            'sourcesDict': sources if sources is not None else {} # Ensure sources is a dict
+        }, code=click_callback_code)
 
-    # Return the created models in case they are needed for JS initialization args
-    return valid_charts, click_lines, labels
+
+        # --- Add Tools ---
+        # Add specific hover tool for vline mode
+        vline_hover = HoverTool(
+            tooltips=None, # We use the Label model for tooltips on click/playback
+            mode='vline',
+            callback=hover_callback, # JS callback updates hover lines
+            name="vline_hover" # Give it a name
+        )
+
+        for chart in valid_charts:
+            # Add the vline hover tool
+            # Check if a tool with this name already exists to avoid duplicates
+            existing_tools = [t for t in chart.tools if t.name == "vline_hover"]
+            if not existing_tools:
+                chart.add_tools(vline_hover)
+            else:
+                # Optionally update the callback if needed, though usually not necessary
+                # existing_tools[0].callback = hover_callback
+                pass
+            # Attach JS tap callback
+            chart.js_on_event('tap', click_callback)
+
+        # Return the created models in case they are needed for JS initialization args
+        return valid_charts, click_lines, labels

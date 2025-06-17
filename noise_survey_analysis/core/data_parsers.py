@@ -581,8 +581,22 @@ class NTiParser(NoiseDataParser):
             frequencies_row = data[band_row_idx][band_col_idx + 1:]
 
             min_len = min(len(types_row), len(frequencies_row))
-            rta_headers = [f"{typ}_{freq}" for typ, freq in zip(types_row[:min_len], frequencies_row[:min_len])]
-            rta_headers = [h.replace('.0%', '') for h in rta_headers]
+
+            rta_headers = []
+            header_counts = {}
+            for i in range(min_len):
+                typ = types_row[i].replace('.0%', '')
+                freq = frequencies_row[i].replace('.0%', '')
+                base_header = f"{typ}_{freq}" if typ else freq
+
+                # Ensure header is unique
+                if base_header in header_counts:
+                    header_counts[base_header] += 1
+                    unique_header = f"{base_header}_{header_counts[base_header]}"
+                else:
+                    header_counts[base_header] = 0
+                    unique_header = base_header
+                rta_headers.append(unique_header)
 
             # Initial headers likely include 'Date', 'Time' instead of Start/End
             # Look for 'Date' and 'Time' in the Band [Hz] row

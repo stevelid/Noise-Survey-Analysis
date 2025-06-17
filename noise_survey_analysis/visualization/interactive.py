@@ -99,11 +99,12 @@ def link_x_ranges(charts):
         chart.x_range = master_range
 
 # NEW function for Hover Interaction
-def add_hover_interaction(charts, sources=None, bar_source=None, bar_x_range=None,
+def add_hover_interaction(charts, labels, sources=None, bar_source=None, bar_x_range=None,
                           hover_info_div=None, selected_param_holder=None,
                           all_positions_spectral_data=None):
     """
-    Adds vertical hover line and related callbacks to charts.
+    Adds vertical hover line to charts, creating a unique callback for each chart
+    to correctly identify the hovered chart index.
 
     Parameters:
     charts (list): List of Bokeh figures to add interactions to.
@@ -131,41 +132,34 @@ def add_hover_interaction(charts, sources=None, bar_source=None, bar_x_range=Non
         chart.add_layout(h_line)
 
     # --- JS Hover Callback ---
-    hover_callback = CustomJS(
-        args={
-            'hoverLinesModels': hover_lines,
-        },
-        code="""
-            if (typeof window.NoiseSurveyApp?.interactions?.handleHover === 'function') {
-                window.NoiseSurveyApp.interactions.handleHover(hoverLinesModels, cb_data);
-            } else {
-                console.error('NoiseSurveyApp.interactions.handleHover not defined!');
-            }
-        """
-    )
-
-    # --- Hover Tool Setup ---
-    hover_tool = HoverTool(
-        tooltips=None,  # We use the CustomJS callback for behavior
-        mode='vline',   # Trigger across the vertical line
-        callback=hover_callback,
-        description="Vertical Line on Hover",
-        name="hover_vertical_line" # Give the tool a name
-    )
-
-    # Add the hover tool to each chart
-    for chart in valid_charts:
-        # Skip frequency bar chart and spectrograms
+    for i, chart in enumerate(valid_charts):
+        # Skip for charts where hover is not desired
         if chart.name == 'frequency_bar' or '_spectral' in chart.name:
             continue
-            
-        # Check if a similar tool already exists to avoid duplicates if run multiple times
-        existing_tool = next((t for t in chart.tools 
-                             if isinstance(t, HoverTool) and t.name == "hover_vertical_line"), None)
-        if not existing_tool:
-            chart.add_tools(hover_tool)
-        else:
-            logger.warning(f"Hover tool already exists on chart: {chart.name}. Skipping add.")
+
+        hover_callback = CustomJS(
+            args={
+                'hoverLinesModels': hover_lines,
+                'hoverLabelModels': labels, # Pass the label models to JS
+                'chart_index': i  # Pass the specific index of this chart
+            },
+            code="""
+                // Call the application's handler directly
+                if (window.NoiseSurveyApp?.interactions?.onHover) {
+                    window.NoiseSurveyApp.interactions.onHover(hoverLinesModels, hoverLabelModels, cb_data, chart_index);
+                } else {
+                    console.error('NoiseSurveyApp.interactions.onHover not defined!');
+                }
+            """
+        )
+
+        hover_tool = HoverTool(
+            tooltips=None,
+            mode='vline',
+            callback=hover_callback,
+            name=f"hover_tool_{i}"
+        )
+        chart.add_tools(hover_tool)
 
     logger.debug(f"Hover interaction added to {len(valid_charts)} charts.")
 
@@ -215,15 +209,13 @@ def add_tap_interaction(charts, sources=None, bar_source=None, bar_x_range=None,
 
     # --- JS Tap Callback ---
     tap_callback = CustomJS(
-        args={
-            # No need to pass all models if handleTap uses app state
-            # Focus on just passing what's needed for this specific callback
-        },
+        args={}, # No arguments needed, the app state has the models
         code="""
-            if (typeof window.NoiseSurveyApp?.interactions?.handleTap === 'function') {
-                window.NoiseSurveyApp.interactions.handleTap(cb_obj);
+            // Call the application's handler directly
+            if (window.NoiseSurveyApp?.interactions?.onTap) {
+                window.NoiseSurveyApp.interactions.onTap(cb_obj);
             } else {
-                console.error('NoiseSurveyApp.interactions.handleTap not defined!');
+                console.error('NoiseSurveyApp.interactions.onTap not defined!');
             }
         """
     )
@@ -263,10 +255,11 @@ def initialize_global_js(bokeh_models):
         'labels': bokeh_models['ui']['visualization']['labels'],
         'freq_bar_source': bokeh_models['sources']['frequency']['bar'],
         'freq_bar_x_range': bokeh_models['frequency_analysis']['bar_chart']['x_range'],
-        'freq_table_source': bokeh_models['sources']['frequency']['table'],
+        'freq_table_div': bokeh_models['frequency_analysis'].get('table_div'),
         'param_holder': bokeh_models['ui']['controls']['parameter']['holder'],
         'param_select': bokeh_models['ui']['controls']['parameter']['select'],
         'seek_command_source': bokeh_models['sources']['playback']['seek_command'],
+        'js_trigger_source': bokeh_models['sources']['playback']['js_trigger'],
         'play_request_source': bokeh_models['sources']['playback']['play_request'],
         'spectral_param_charts': bokeh_models['spectral_data'],
         # Add bar chart model itself if needed by JS _updateBarChart
@@ -292,10 +285,11 @@ def initialize_global_js(bokeh_models):
             labels: !!labels,
             freq_bar_source: !!freq_bar_source,
             freq_bar_x_range: !!freq_bar_x_range,
+            freq_table_div: !!freq_table_div,
             param_holder: !!param_holder,
             param_select: !!param_select,
+            js_trigger_source: !!js_trigger_source,
             spectral_param_charts: !!spectral_param_charts,
-            freq_table_source: !!freq_table_source
         });
         
     """ + combined_js + """
@@ -315,9 +309,10 @@ def initialize_global_js(bokeh_models):
         models.play_button = play_button;
         models.pause_button = pause_button;
         models.position_play_buttons = position_play_buttons || {};
+        models.js_trigger_source = js_trigger_source;
         models.bar_source = freq_bar_source;
         models.bar_x_range = freq_bar_x_range;
-        models.freqTableSource = freq_table_source;
+        models.freqTableDiv = freq_table_div;
         models.barChart = barChart;
         models.param_select = param_select;
         models.param_holder = param_holder;
@@ -342,24 +337,24 @@ def initialize_global_js(bokeh_models):
             console.log('DEBUG: Found NoiseSurveyApp, calling init...');
             window.NoiseSurveyApp.init(models, initOptions);
             
+            // --- Set up the Python-to-JS event listener ---
+            if (models.js_trigger_source) {
+                models.js_trigger_source.js_on_change('data', (cb_obj) => {
+                    const event_name = cb_obj.data.event[0] || '';
+                    console.log(`JS Trigger Event Received: ${event_name}`);
+
+                    if (event_name.startsWith('playback_stopped')) {
+                        if (window.NoiseSurveyApp && window.NoiseSurveyApp.notifyPlaybackStopped) {
+                            window.NoiseSurveyApp.notifyPlaybackStopped();
+                        }
+                    }
+                    // Future events from Python can be handled here
+                });
+            }
+            
             // Ensure global handlers are properly exposed
             window.interactions = window.NoiseSurveyApp.interactions || {};
             window.NoiseFrequency = window.NoiseSurveyApp.frequency || {};
-            window.handleHover = function(hoverLines, cb_data) {
-                if (window.NoiseSurveyApp?.interactions?.handleHover) { 
-                    return window.NoiseSurveyApp.interactions.handleHover(hoverLines, cb_data); 
-                }
-                console.warn("NoiseSurveyApp.interactions.handleHover not available.");
-                return false;
-            };
-            window.handleTap = function(cb_obj) {
-                if (window.NoiseSurveyApp?.interactions?.handleTap) { 
-                    return window.NoiseSurveyApp.interactions.handleTap(cb_obj); 
-                }
-                console.warn("NoiseSurveyApp.interactions.handleTap not available.");
-                return false;
-            };
-            
             window.NoiseSurveyAppInitialized = true;
             console.log('DEBUG: NoiseSurveyApp initialization complete.');
         } else {

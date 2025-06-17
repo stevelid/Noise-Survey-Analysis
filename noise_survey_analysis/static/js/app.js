@@ -45,6 +45,7 @@ window.NoiseSurveyApp = (function () {
         stepSize: 300000,           // ms for keyboard nav
         keyboardNavigationEnabled: false,
         selectedParameter: 'LZeq',  // Currently selected spectral parameter
+        lastHoverX: null,           // Last hovered X position
     };
 
     // Debugging access
@@ -184,8 +185,7 @@ window.NoiseSurveyApp = (function () {
             positionLabel(x, chart, labelModel);
             labelModel.text = label_text;
             labelModel.visible = true;
-            // Update step size based on the actively tapped chart's data
-            if (_state.activeChartIndex === chartIndex) { _state.stepSize = calculateStepSize(source); }
+
             return true;
         } else {
             labelModel.visible = false; return true;
@@ -235,99 +235,103 @@ window.NoiseSurveyApp = (function () {
 
     // --- Frequency Bar Update ---
     // [_updateBarChart - unchanged]
+    function _updateFrequencyTable(levels, labels) {
+        console.log("_updateFrequencyTable called with:", { levels, labels });
+        const tableDiv = _models.freqTableDiv;
+        if (!tableDiv) { console.error("Frequency table div not found"); return; }
+
+        let tableHtml = `
+            <style>
+                .freq-html-table { border-collapse: collapse; width: 100%; font-size: 0.9em; table-layout: fixed; }
+                .freq-html-table th, .freq-html-table td { border: 1px solid #ddd; padding: 6px; text-align: center; white-space: nowrap; }
+                .freq-html-table th { background-color: #f2f2f2; font-weight: bold; }
+            </style>
+            <table class="freq-html-table"><tr>`;
+
+        labels.forEach(label => { tableHtml += `<th title="${label}">${label}</th>`; });
+        tableHtml += `</tr><tr>`;
+
+        levels.forEach(level => {
+            const levelNum = Number(level);
+            const levelText = isNaN(levelNum) ? 'N/A' : levelNum.toFixed(1);
+            tableHtml += `<td>${levelText}</td>`;
+        });
+        tableHtml += `</tr></table>`;
+
+        tableDiv.text = tableHtml;
+    }
+
     function _updateBarChart(x, activeChartIndex, activeAudioPos, title_source = '') {
         const barSource = _models.barSource;
         const barXRange = _models.barXRange;
         const barChart = _models.barChart;
-        const spectralDataStore = _models.spectralParamCharts; // Should contain prepared_data now
+        const spectralDataStore = _models.spectralParamCharts;
         const selectedParam = _state.selectedParameter;
 
+
         if (!barSource || !barXRange || !barChart || !spectralDataStore || Object.keys(spectralDataStore).length === 0) {
-            // console.warn("Missing required models/data for _updateBarChart."); // Can be noisy
             return;
         }
 
         let position = "Unknown";
-        let interactionSourceInfo = ""; // Info for title source
+        let interactionSourceInfo = title_source || "Audio Playback";
+        let spectralKey = null;
 
-        // Determine position: Prioritize active audio position if provided (during playback)
-        if (activeAudioPos && spectralDataStore[activeAudioPos]) { // Check if position exists in data
+        if (activeAudioPos && spectralDataStore[activeAudioPos]) {
             position = activeAudioPos;
-            interactionSourceInfo = title_source || "Audio Playback";
-        } else if (activeChartIndex !== null && activeChartIndex >= 0 && _models.charts?.[activeChartIndex]?.name) {
-            // Otherwise, use the index from user interaction (tap/hover)
+            spectralKey = spectralDataStore[position]?.spectral ? 'spectral' : 'spectral_log';
+        } else if (activeChartIndex !== -1 && _models.charts?.[activeChartIndex]?.name) {
             const chartName = _models.charts[activeChartIndex].name;
-            // Extract position name (assuming format like 'SW_overview', 'N_log', 'E_spectral')
-            const possiblePos = chartName.split('_')[0];
-            if (spectralDataStore[possiblePos]) { // Check if derived position exists
-                position = possiblePos;
-                interactionSourceInfo = title_source || "User Interaction";
-            }
-        }
+            position = chartName.split('_')[0];
+            const chartType = chartName.substring(position.length + 1);
 
-        // If still Unknown, try a fallback (e.g., first available position)
-        if (position === "Unknown") {
-            const firstPosKey = Object.keys(spectralDataStore)[0];
-            if (firstPosKey && spectralDataStore[firstPosKey]) {
-                position = firstPosKey;
-                interactionSourceInfo = "Fallback";
-                console.debug(`_updateBarChart: No specific position context, falling back to first position: ${position}`);
+            if (chartType === 'spectral' || chartType === 'spectral_log') {
+                spectralKey = chartType;
             } else {
-                console.warn("Cannot determine position for frequency bar update.");
-                // Clear chart?
-                barSource.data = { 'levels': [], 'frequency_labels': [] }; barXRange.factors = []; barSource.change.emit();
-                if (barChart.title) barChart.title.text = `Frequency Slice: (No Position Data)`;
-                return;
+                spectralKey = spectralDataStore[position]?.spectral ? 'spectral' : 'spectral_log';
+            }
+        } else {
+            position = Object.keys(spectralDataStore)[0];
+            if (position) {
+                spectralKey = spectralDataStore[position]?.spectral ? 'spectral' : 'spectral_log';
             }
         }
 
-
-        // --- Access Prepared Data ---
-        const positionDataContainer = spectralDataStore[position];
-        if (!positionDataContainer) {
-            console.warn(`No spectral data container found for resolved position: ${position}`);
-            barSource.data = { 'levels': [], 'frequency_labels': [] }; barXRange.factors = []; barSource.change.emit();
-            if (barChart.title) barChart.title.text = `Frequency Slice: ${position} (Data Missing)`;
+        if (position === "Unknown" || !spectralKey) {
+            console.warn("Could not determine position or spectral key for bar chart.");
             return;
         }
 
-        // Check parameter availability
-        if (!positionDataContainer.available_params?.includes(selectedParam)) {
-            // console.warn(`Parameter ${selectedParam} not available for position ${position}.`);
-            barSource.data = { 'levels': [], 'frequency_labels': [] }; barXRange.factors = []; barSource.change.emit();
-            if (barChart.title) barChart.title.text = `Frequency Slice: ${position} | ${selectedParam} (N/A)`;
-            return;
-        }
+        // --- CORRECTED DATA ACCESS ---
+        const preparedData = spectralDataStore[position]?.[spectralKey]?.prepared_data?.[selectedParam];
+        console.log("_updateBarChart called with:", { preparedData });
+        console.log("Position:", position, "spectralKey:", spectralKey);
 
-        // Get the actual prepared data for the selected parameter
-        const preparedData = positionDataContainer.prepared_data?.[selectedParam];
         if (!preparedData) {
-            console.warn(`No prepared_data found for position ${position}, parameter ${selectedParam}.`);
-            barSource.data = { 'levels': [], 'frequency_labels': [] }; barXRange.factors = []; barSource.change.emit();
-            if (barChart.title) barChart.title.text = `Frequency Slice: ${position} | ${selectedParam} (Data Missing)`;
+            console.warn(`No prepared_data found for: Pos='${position}', Key='${spectralKey}', Param='${selectedParam}'`);
+            barChart.title.text = `Frequency Slice: ${position} | ${selectedParam} (Data N/A)`;
+            barSource.data = { 'levels': [], 'frequency_labels': [] };
+            barXRange.factors = [];
+            barSource.change.emit();
             return;
         }
 
-        // --- Extract Data for Time 'x' ---
         const times = preparedData.times_ms;
-        // Prefer flattened matrix if available, otherwise assume [times][freqs]
         const levels_matrix_flat = preparedData.levels_matrix;
         const freq_labels = preparedData.frequency_labels;
         const n_freqs = freq_labels?.length || 0;
 
-        if (!times || (!levels_matrix_flat) || !freq_labels || n_freqs === 0) {
-            console.warn(`Missing critical data (times, levels, labels) in preparedData for ${position}/${selectedParam}.`);
+        if (!times || !levels_matrix_flat || !freq_labels || n_freqs === 0) {
+            console.warn(`[updateBarChart] Missing values: times=${times}, levels_matrix_flat=${levels_matrix_flat}, freq_labels=${freq_labels}, n_freqs=${n_freqs}`);
             return;
         }
 
-        // Find closest time index
         let closestTimeIdx = findClosestDateIndex(times, x);
         if (closestTimeIdx === -1) {
-            console.warn(`Could not find valid time index for ${x}ms.`);
+            console.warn(`[updateBarChart] No closest time index found for x=${x}`);
             return;
         }
 
-        // Get frequency data slice for this time
         let freqDataSlice = null;
         if (levels_matrix_flat) {
             const start_idx = closestTimeIdx * n_freqs;
@@ -344,41 +348,19 @@ window.NoiseSurveyApp = (function () {
 
         if (!freqDataSlice || freqDataSlice.length !== n_freqs) {
             console.warn(`Frequency data slice at index ${closestTimeIdx} is invalid or has wrong length (${freqDataSlice?.length} vs ${n_freqs}).`);
-            // Optionally clear chart instead of showing potentially wrong data
-            // barSource.data = { 'levels': [], 'frequency_labels': [] }; barXRange.factors = []; barSource.change.emit();
             return;
         }
 
-        // Clean data (replace null/NaN with 0)
         const cleanedLevels = freqDataSlice.map(level => (level === null || level === undefined || Number.isNaN(level)) ? 0 : level);
 
-        // === 1. UPDATE BAR CHART ===
         barSource.data = { 'levels': cleanedLevels, 'frequency_labels': freq_labels };
         barXRange.factors = freq_labels;
-        barChart.title.text = `Frequency Slice: ${position} | ${selectedParam} | ${new Date(x).toLocaleString()}`;
+        barChart.title.text = `Frequency Slice: ${position} (${spectralKey.replace('_', ' ')}) | ${selectedParam} | ${new Date(x).toLocaleString()}`;
         barSource.change.emit();
 
-        // === 2. CALL THE FUNCTION TO UPDATE THE TABLE ===
         _updateFrequencyTable(cleanedLevels, freq_labels);
     }
 
-    // Update Frequency Table
-    function _updateFrequencyTable(levels, labels) {
-        const tableSource = _models.freqTableSource;
-        console.log("tableSource: ", tableSource);
-        if (!tableSource) { console.warn("Missing required models/data for _updateFrequencyTable."); return; }
-
-        const tableData = {'value':['dB']};
-        labels.forEach((label, i) => {
-            const level = Number(levels[i]);
-            tableData[label] = [isNaN(level)? 'N/A': level.toFixed(1)];
-        });
-
-        tableSource.data = tableData;
-        tableSource.change.emit();
-    }
-
-    
     // Spectrogram Hover Tool
     // [_handleSpectrogramHover - unchanged]
     function _handleSpectrogramHover(cb_data, hover_div, bar_source_arg, bar_x_range_arg, position_name, times_array, freqs_array, freq_labels_array, levels_matrix_unused, levels_flat_array, fig_x_range) {
@@ -508,7 +490,7 @@ window.NoiseSurveyApp = (function () {
             _models.spectralParamCharts = models.spectral_param_charts || {};
             _models.seekCommandSource = models.seek_command_source || null;
             _models.playRequestSource = models.play_request_source || null; // NEW: Get play request source
-            _models.freqTableSource = models.freqTableSource || null;
+            _models.freqTableDiv = models.freqTableDiv || null;
 
             console.log('Global models set:', _models);
 
@@ -610,128 +592,90 @@ window.NoiseSurveyApp = (function () {
     }
 
     // --- Parameter Selection ---
-    // [handleParameterChange - unchanged]
     function handleParameterChange(param) {
-        console.log('[handleParameterChange] Called with param:', param);
         if (!param) {
-            console.log('[handleParameterChange] Param is null or undefined, returning false.');
+            console.warn('handleParameterChange called with null or undefined parameter.');
             return false;
         }
 
-        // Store the selected parameter
+        // Store the selected parameter in the app's state
         _state.selectedParameter = param;
-        console.log('[handleParameterChange] _state.selectedParameter set to:', _state.selectedParameter);
 
-        // Update the selected parameter holder if it exists
+        // Update the hidden div model that Python can see
         if (_models.selectedParamHolder) {
             _models.selectedParamHolder.text = param;
-            console.log('[handleParameterChange] _models.selectedParamHolder.text set to:', param);
-        } else {
-            console.log('[handleParameterChange] _models.selectedParamHolder does not exist.');
         }
 
-        // Update each spectral chart with the new parameter
         try {
-            const spectralParams = _models.spectralParamCharts || {};
-            console.log('[handleParameterChange] spectralParams:', spectralParams);
+            const spectralDataStore = _models.spectralParamCharts || {};
 
-            for (const position in spectralParams) {
-                console.log(`[handleParameterChange] Processing position: ${position}`);
-                const positionData = spectralParams[position];
-                const availableParams = positionData.available_params || [];
-                console.log(`[handleParameterChange] Position: ${position}, availableParams:`, availableParams);
+            // Loop through each position (e.g., 'SW', 'N')
+            for (const position in spectralDataStore) {
+                const positionData = spectralDataStore[position];
+                if (!positionData) continue;
 
-                const chart = _models.charts.find(chart => chart.name === `${position}_spectral`);
-                if (!chart) {
-                    console.warn(`[handleParameterChange] No chart found for position ${position}`);
-                    continue;
+                // Loop through the possible spectral types for that position
+                for (const dataKey of ['spectral', 'spectral_log']) {
+                    // Check if this position has this type of data (e.g., 'spectral')
+                    if (!positionData[dataKey]) {
+                        continue;
+                    }
+
+                    const chartName = `${position}_${dataKey}`;
+                    const chart = _models.charts.find(c => c.name === chartName);
+                    if (!chart) {
+                        console.warn(`Chart model not found for name: ${chartName}`);
+                        continue;
+                    }
+
+                    const imageRenderer = chart.renderers.find(r => r.glyph?.type === 'Image');
+                    if (!imageRenderer) {
+                        console.warn(`Image renderer not found for chart: ${chartName}`);
+                        continue;
+                    }
+                    const source = imageRenderer.data_source;
+
+                    // Correctly look for the prepared data nested under the dataKey
+                    const preparedData = positionData[dataKey]?.prepared_data?.[param];
+
+                    if (preparedData) {
+                        // --- Data is available for the new parameter, update the chart ---
+                        imageRenderer.glyph.x = preparedData.x;
+                        imageRenderer.glyph.y = preparedData.y;
+                        imageRenderer.glyph.dw = preparedData.dw;
+                        imageRenderer.glyph.dh = preparedData.dh;
+                        source.data = { 'image': [preparedData.levels_matrix_transposed] };
+
+                        // Correctly update the chart title while preserving its suffix
+                        const titleBase = chart.title.text.split('(')[0].trim();
+                        chart.title.text = `${titleBase} (${param})`;
+
+                        const colorMapper = imageRenderer.glyph.color_mapper;
+                        if (colorMapper) {
+                            colorMapper.low = preparedData.min_val;
+                            colorMapper.high = preparedData.max_val;
+                        }
+                        source.change.emit();
+
+                    } else {
+                        // --- Data is NOT available, clear the image and update the title ---
+                        source.data.image = [];
+                        const titleBase = chart.title.text.split('(')[0].trim();
+                        chart.title.text = `${titleBase} (${param} N/A)`;
+                        source.change.emit();
+                    }
                 }
-                console.log(`[handleParameterChange] Found chart for position ${position}:`, chart);
-
-                // Find the corresponding image glyph renderer's data source
-                const imageRenderer = chart.renderers.find(r => r.glyph?.type === 'ImageURL' || r.glyph?.type === 'ImageRGBA' || r.glyph?.type === 'Image'); // Find the image renderer
-                if (!imageRenderer) {
-                    console.warn(`[handleParameterChange] Image renderer not found for spectral chart at position ${position}`);
-                    continue;
-                }
-                console.log(`[handleParameterChange] Found imageRenderer for ${position}:`, imageRenderer);
-                const source = imageRenderer.data_source;
-                if (!source) {
-                    console.warn(`[handleParameterChange] Source not found for spectral chart at position ${position}`);
-                    continue;
-                }
-                console.log(`[handleParameterChange] Found source for ${position}:`, source);
-
-                // Skip positions that don't have this parameter
-                console.log(`[handleParameterChange] Checking if param '${param}' is in availableParams for ${position}:`, availableParams.includes(param));
-                if (!availableParams.includes(param)) {
-                    console.log(`[handleParameterChange] Parameter ${param} not available for position ${position}. Clearing image.`);
-                    // Clear the image data or set to a placeholder
-                    source.data.image = []; // Or provide a transparent/empty image array matching dimensions
-                    source.data.x = [];
-                    source.data.y = [];
-                    source.data.dw = [];
-                    source.data.dh = [];
-                    chart.title.text = `${position} - ${param} (N/A)`;
-                    console.log(`[handleParameterChange] Emitting source change for ${position} due to N/A param.`);
-                    source.change.emit();
-                    continue;
-                }
-
-                // Get the prepared data for this parameter
-                const preparedData = positionData.prepared_data?.[param];
-                console.log(`[handleParameterChange] Prepared data for ${position}/${param}:`, preparedData);
-                if (!preparedData) {
-                    console.warn(`[handleParameterChange] No prepared data for position ${position} with parameter ${param}. Clearing image.`);
-                    source.data.image = []; source.data.x = []; source.data.y = []; source.data.dw = []; source.data.dh = [];
-                    chart.title.text = `${position} - ${param} (Data Missing)`;
-                    console.log(`[handleParameterChange] Emitting source change for ${position} due to missing data.`);
-                    source.change.emit();
-                    continue;
-                }
-
-                // Update the data in the source
-                console.log(`[handleParameterChange] Updating imageRenderer.glyph for ${position}/${param} with:`, preparedData);
-                imageRenderer.glyph.x = preparedData.x
-                imageRenderer.glyph.y = preparedData.y
-                imageRenderer.glyph.dw = preparedData.dw
-                imageRenderer.glyph.dh = preparedData.dh
-                imageRenderer.glyph.image = preparedData.levels_matrix_transposed ? [preparedData.levels_matrix_transposed] : [];
-
-                // Update the chart title
-                chart.title.text = `${position} - ${param} Spectral Data`;
-                console.log(`[handleParameterChange] Chart title for ${position} updated to: ${chart.title.text}`);
-
-                // Update color mapper range if necessary
-                const colorMapper = imageRenderer?.glyph?.color_mapper;
-                if (colorMapper && preparedData.color_range_low !== undefined && preparedData.color_range_high !== undefined) {
-                    colorMapper.low = preparedData.color_range_low;
-                    colorMapper.high = preparedData.color_range_high;
-                    console.log(`[handleParameterChange] Color mapper for ${position}/${param} updated. Low: ${colorMapper.low}, High: ${colorMapper.high}`);
-                } else if (colorMapper) {
-                    console.warn(`[handleParameterChange] Color range data missing for ${position}/${param}, color bar may be inaccurate.`);
-                }
-
-                // Signal that the data has changed
-                console.log(`[handleParameterChange] Emitting source.change.emit() for ${position}/${param}.`);
-                source.change.emit();
-                console.log(`[handleParameterChange] Updated ${position} spectrogram to parameter ${param}`);
             }
 
             // If a click line is active, update the frequency bar with the new parameter
             if (_state.verticalLinePosition !== null) {
-                console.log('[handleParameterChange] Vertical line is active, calling _updateBarChart. _state.verticalLinePosition:', _state.verticalLinePosition);
-                const activePosForUpdate = _state.isPlaying ? _state.activeAudioPosition : null;
-                const activeIndexForUpdate = _state.isPlaying ? null : _state.activeChartIndex;
-                _updateBarChart(_state.verticalLinePosition, activeIndexForUpdate, activePosForUpdate, "Parameter Change");
-            } else {
-                console.log('[handleParameterChange] Vertical line is not active, not calling _updateBarChart.');
+                _updateBarChart(_state.verticalLinePosition, _state.activeChartIndex, _state.activeAudioPosition, "Parameter Change");
             }
 
-            console.log('[handleParameterChange] Successfully processed parameter change.');
             return true;
+
         } catch (error) {
-            console.error('[handleParameterChange] Error handling parameter change:', error);
+            console.error('Error handling parameter change:', error);
             return false;
         }
     }
@@ -819,27 +763,27 @@ window.NoiseSurveyApp = (function () {
 
     // [pauseAudioPlayback - unchanged]
     function pauseAudioPlayback() {
-        try {
-            if (!_models.pauseButton) { console.warn("Main Pause button model missing."); return false; }
-            if (!_models.pauseButton.disabled) { // Check if already paused (button is disabled if so)
-                console.log("JS: Triggering main Pause button click via model");
-
-                // Optimistically update state - Python callback should confirm/correct if needed
-                const wasPlaying = _state.isPlaying; // Store previous state
-                _state.isPlaying = false;
-                _state.activeAudioPosition = null; // Clear active position on pause
-                _updatePlayButtonsState(false); // Update button visuals
-
-                // Trigger the Bokeh model change, which Python listens for
-                _models.pauseButton.clicks = (_models.pauseButton.clicks || 0) + 1;
-                _models.pauseButton.change.emit();
-                return true;
-            } else {
-                console.warn("JS: Main Pause button is disabled (already paused?).");
+         try {
+            if (!_models.playRequestSource) {
+                console.error("Cannot pause: playRequestSource model is missing!");
                 return false;
             }
+
+            console.log("JS: Sending pause request to Python.");
+
+            // Optimistically update the UI state
+            _state.isPlaying = false;
+            _state.activeAudioPosition = null;
+            _updatePlayButtonsState(false);
+
+            // Send a specific signal for pausing via the playRequestSource.
+            // Python will listen for this exact 'pause_request' string.
+            _models.playRequestSource.data = { 'position': ['pause_request'], 'time': [_state.verticalLinePosition] };
+            _models.playRequestSource.change.emit(); // Signal Python
+
+            return true;
         } catch (error) {
-            console.error("Error triggering pause audio from JS:", error);
+            console.error("Error sending pause request from JS:", error);
             // Revert state on error? Depends if pause actually failed.
             // Assume pause might have worked partially, keep paused state for safety.
             _state.isPlaying = false;
@@ -997,29 +941,73 @@ window.NoiseSurveyApp = (function () {
 
     // --- Chart Interaction Handlers ---
     // [onTapHandler, onHoverHandler - unchanged]
-    function onTapHandler(cb_obj) {
+    function onTapHandler(cb_obj, chartModels, clickLineModels, labelModels, sourcesDict) {
         try {
-            _state.activeChartIndex = _getActiveChartIndex(cb_obj); // Store index of tapped chart
-            const x = cb_obj.x;
-            if (x === undefined || x === null || isNaN(x)) {
-                console.warn("Tap handler received invalid x coordinate:", x);
+            // Use the models passed directly as arguments instead of relying on the global _models state
+            const charts = chartModels || _models.charts;
+            const clickLines = clickLineModels || _models.clickLines;
+            const labels = labelModels || _models.labels;
+            const sources = sourcesDict || _models.sources;
+
+            _state.activeChartIndex = _getActiveChartIndex(cb_obj);
+            if (_state.activeChartIndex === -1) {
+                console.warn("Could not determine active chart on tap.");
+            }
+
+            const raw_x = cb_obj.x;
+            if (raw_x === undefined || raw_x === null || isNaN(raw_x)) {
+                console.warn("Tap handler received invalid x coordinate:", raw_x);
                 return false;
             }
-            _updateTapLinePositions(x); // Update lines
-            _sendSeekCommand(x);        // Send seek command to Python
 
-            // Update frequency bar based on tap location and chart index
-            const activePosForTap = _state.isPlaying ? _state.activeAudioPosition : null;
-            const activeIndexForTap = _state.isPlaying ? null : _state.activeChartIndex;
-            _updateBarChart(x, activeIndexForTap, activePosForTap, "Click Line");
+            const activeChart = charts[_state.activeChartIndex];
+            const source = sources[activeChart.name];
+            let snapped_x = raw_x;
+
+            if (source && source.data.Datetime && source.data.Datetime.length > 0) {
+                const closest_idx = findClosestDateIndex(source.data.Datetime, raw_x);
+                if (closest_idx !== -1) {
+                    snapped_x = source.data.Datetime[closest_idx];
+                }
+            }
+
+            // Update the visual representation of all tap lines
+            _state.verticalLinePosition = snapped_x;
+            for (let i = 0; i < charts.length; i++) {
+                if (charts[i] && clickLines?.[i] && labels?.[i]) {
+                    _updateChartLine(charts[i], clickLines[i], labels[i], snapped_x, i);
+                }
+            }
+
+            // Update step size based on the actively tapped chart's data
+            _state.stepSize = calculateStepSize(source);
+
+            // Update the frequency bar chart based on the new position
+            _updateBarChart(snapped_x, _state.activeChartIndex, _state.activeAudioPosition, "Click");
+
+            // Send a seek command to Python to update the audio handler's position
+            _sendSeekCommand(snapped_x);
+
             return true;
         } catch (error) { console.error("Error handling tap:", error); return false; }
     }
 
-    function onHoverHandler(hoverLines, cb_data) {
+    function onHoverHandler(hoverLines, hoverLabels, cb_data, chart_index) { // Now accepts chart_index and labels
+
         try {
-            if (!cb_data?.geometry || typeof cb_data.geometry.x !== 'number') {
-                // If geometry is invalid (e.g., mouse moved off chart), restore freq bar to click line pos
+            // Check if geometry data exists from the event
+            const geometry = cb_data.geometry;
+            if (!geometry || typeof geometry.x !== 'number') {
+                // Hide all hover labels when mouse is not over a valid chart area
+                if (hoverLabels && Array.isArray(hoverLabels)) {
+                    hoverLabels.forEach(label => {
+                        if (label) label.visible = false;
+                    });
+                }
+
+                // If geometry is invalid, reset lastHoverX so next valid hover isn't skipped
+                _state.lastHoverX = null;
+                // Restore frequency bar to the last clicked position if mouse leaves charts
                 if (_state.verticalLinePosition !== null) {
                     const activePosForRestore = _state.isPlaying ? _state.activeAudioPosition : null;
                     const activeIndexForRestore = _state.isPlaying ? null : _state.activeChartIndex;
@@ -1027,34 +1015,60 @@ window.NoiseSurveyApp = (function () {
                 }
                 return false;
             }
-            const hoveredX = cb_data.geometry.x;
 
-            // Update hover lines (spans)
-            if (hoverLines && Array.isArray(hoverLines)) { hoverLines.forEach(line => { if (line) line.location = hoveredX; }); }
-
-            let hoveredChartIndex = -1;
-            if (cb_data.event_name === 'mousemove' && cb_data.tool_type === 'HoverTool') {
-                // Logic to find hovered chart index might need refinement
-            } else if (cb_data.geometries?.[0]?.model) {
-                hoveredChartIndex = _models.charts.findIndex(c => c?.id === cb_data.geometries[0].model.id);
+            //debounce hover events
+            if (_state.lastHoverX === geometry.x) {
+                return true;
             }
+
+            const hoveredX = geometry.x;
+            _state.lastHoverX = hoveredX;
+
+            // Update all hover lines (the grey vertical guides)
+            if (hoverLines && Array.isArray(hoverLines)) {
+                hoverLines.forEach(line => { if (line) line.location = hoveredX; });
+            }
+
+            // Directly use the chart_index passed from the specific callback
+            const hoveredChartIndex = chart_index;
             const hoveredChart = _models.charts[hoveredChartIndex];
 
             if (hoveredChart && hoveredChartIndex !== -1) {
                 const chartName = hoveredChart.name || '';
+                // Only update the bar chart for time-series charts (overview/log)
                 const isLineChart = chartName.includes('_overview') || chartName.includes('_log');
 
                 if (isLineChart) {
                     const activePosForHover = _state.isPlaying ? _state.activeAudioPosition : null;
+                    
+                    // --- Logic to update the hover label ---
+                    const labelModel = hoverLabels[hoveredChartIndex];
+                    const source = _models.sources[chartName];
+
+                    if (labelModel && source && source.data.Datetime) {
+                        const closestIdx = findClosestDateIndex(source.data.Datetime, hoveredX);
+                        if (closestIdx !== -1) {
+                            const snappedX = source.data.Datetime[closestIdx];
+                            const labelText = createLabelText(source, closestIdx);
+                            
+                            positionLabel(snappedX, hoveredChart, labelModel);
+                            labelModel.text = labelText;
+                            labelModel.visible = true;
+                        } else {
+                            labelModel.visible = false;
+                        }
+                    }
+                    // --- End of label logic ---
+
+                    // Pass the correct chart index to the bar chart updater
                     _updateBarChart(hoveredX, hoveredChartIndex, activePosForHover, `Hover: ${chartName}`);
                 }
-            } else if (_state.verticalLinePosition !== null) {
-                const activePosForRestore = _state.isPlaying ? _state.activeAudioPosition : null;
-                const activeIndexForRestore = _state.isPlaying ? null : _state.activeChartIndex;
-                _updateBarChart(_state.verticalLinePosition, activeIndexForRestore, activePosForRestore, "Click Line");
             }
             return true;
-        } catch (error) { console.error("Error handling hover:", error); return false; }
+        } catch (error) {
+            console.error("Error handling hover:", error);
+            return false;
+        }
     }
 
     // --- Module Exports ---
@@ -1107,14 +1121,20 @@ window.synchronizePlaybackPosition = function (ms) {
 };
 
 // Function called by Bokeh TapTool
-window.handleTap = function (cb_obj) {
-    if (window.NoiseSurveyApp?.interactions?.handleTap) { return window.NoiseSurveyApp.interactions.handleTap(cb_obj); }
-    else { console.warn("NoiseSurveyApp.interactions.handleTap not available."); return false; }
+window.handleTap = function (cb_obj, chartModels, clickLineModels, labelModels, sourcesDict) {
+    if (window.NoiseSurveyApp?.interactions?.onTap) {
+        // Pass all arguments through
+        return window.NoiseSurveyApp.interactions.onTap(cb_obj, chartModels, clickLineModels, labelModels, sourcesDict);
+    } else {
+        console.warn("NoiseSurveyApp.interactions.onTap not available.");
+        return false;
+    }
 };
 
 // Function called by Bokeh HoverTool on main charts
-window.handleHover = function (hoverLines, cb_data) {
-    if (window.NoiseSurveyApp?.interactions?.handleHover) { return window.NoiseSurveyApp.interactions.handleHover(hoverLines, cb_data); }
+window.handleHover = function (hoverLines, cb_data, chart_index) {
+    console.log("[window.handleHover] called with chart_index:", chart_index);
+    if (window.NoiseSurveyApp?.interactions?.handleHover) { return window.NoiseSurveyApp.interactions.handleHover(hoverLines, cb_data, chart_index); }
     else { console.warn("NoiseSurveyApp.interactions.handleHover not available."); return false; }
 };
 
