@@ -487,7 +487,7 @@ def scan_directory_for_sources(directory_path, auto_group=True):
                     
                 # Clean up the position name - remove any remaining special chars
                 if position_name_guess:
-                    position_name_guess = re.sub(r'[^A-Za-z0-9_\-]', '_', position_name_guess)
+                    position_name_guess = re.sub(r'[^A-Za-z0-9_]', '_', position_name_guess)
                 else:
                     position_name_guess = "Unknown"
 

@@ -89,7 +89,7 @@ GENERAL_SETTINGS = {
 DEFAULT_DATA_SOURCES = [
     {
         "position_name": "svan",  # User-friendly name for the measurement position
-        "file_path": r"G:\Shared drives\Venta\Jobs\5792 Swyncombe Field, Padel Courts\5792 Surveys\971-2\L262_summary.csv",
+        "file_path": r"G:\Shared drives\Venta\Jobs\5792 Swyncombe Field, Padel Courts\5792 Surveys\971-2\L251_summary.csv",
         "parser_type": "svan", # Specifies which parser class to use
         "enabled": True         # Flag to easily include/exclude this file
     }

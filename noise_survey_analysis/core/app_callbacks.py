@@ -40,7 +40,8 @@ class AppCallbacks:
         self.amp_control = self.playback_controls.get('amp_control')
         self.param_select = bokeh_models.get('ui', {}).get('controls', {}).get('parameter', {}).get('select')
         self.param_holder = bokeh_models.get('ui', {}).get('controls', {}).get('parameter', {}).get('holder')
-
+        self.status_source = bokeh_models.get('sources', {}).get('playback', {}).get('status')
+        
         self.position_callbacks = []
         self._periodic_callback_id = None
         self.is_periodic_running = False
@@ -107,7 +108,7 @@ class AppCallbacks:
     def _speed_change_handler(self, attr, old, new):
         """Handles changes in the speed control widget."""
         if not self.audio_handler: return
-        speed_map = {0: 1.0, 1: 2.0, 2: 4.0, 3: 8.0}
+        speed_map = {0: 1.0, 1: 1.25, 2: 1.5, 3: 2.0, 4: 4.0}   
         rate = speed_map.get(new, 1.0)
         self.audio_handler.set_playback_rate(rate)
 
@@ -135,8 +136,8 @@ class AppCallbacks:
 
             # Check for the special pause command from JavaScript
             if position == 'pause_request':
-                if self.audio_handler.is_playing():
-                    logger.info("Handling pause request from JS.")
+                logger.info("Handling pause request from JS.")
+                if self.audio_handler.is_playing():                    
                     self.audio_handler.pause()
             
             # Handle a regular play request
@@ -165,6 +166,11 @@ class AppCallbacks:
         try:
             if 'target_time' not in new or new['target_time'][0] is None: return
             seek_time_ms = new['target_time'][0]
+            position = new.get('position', [None])[0]
+            if position:
+                self.audio_handler.set_current_position(position)
+            else:
+                logger.warning("Seek command received without a position. Seeking in current handler position.")
             logger.debug(f"Seek command received: {seek_time_ms} ms")
             self._process_seek_command(seek_time_ms)
             if time.time() - self._last_seek_time < 0.01:
@@ -173,7 +179,9 @@ class AppCallbacks:
             logger.error(f"Error processing seek command: {e}", exc_info=True)
 
     def _process_seek_command(self, seek_time_ms):
-        if not self.audio_handler: return
+        if not self.audio_handler: 
+            logger.error("Audio handler not initialized. Cannot process seek command.")
+            return
         now = time.time()
         if now - self._last_seek_time < 0.05: return
         self._last_seek_time = now
@@ -200,6 +208,36 @@ class AppCallbacks:
 
     def _periodic_update(self):
         if not self.audio_handler or not self.playback_source or not self.is_periodic_running: return
+        
+        if not self.status_source: 
+            logger.warning("Status source not found. Periodic update callback will not function.")
+            return
+
+        current_time_ms = None
+        is_playing_in_handler = self.audio_handler.is_playing()
+
+        if is_playing_in_handler:
+            current_pos_dt = self.audio_handler.get_current_position()
+            if current_pos_dt:
+                current_time_ms = int(current_pos_dt.timestamp() * 1000)
+            elif self.audio_handler.is_in_terminal_state():
+                logger.info("Audio handler reached terminal state. Stopping playback.")
+                self.audio_handler.pause()
+                is_playing_in_handler = False
+
+        #update vertical line position
+        if current_time_ms is not None and self.playback_source.data.get('current_time', [None])[0] != current_time_ms:
+            self.playback_source.data = {'current_time': [current_time_ms]}
+        
+        # Update the central status if it has changed
+        if (self.status_source.data['is_playing'][0] != is_playing_in_handler or
+            self.status_source.data['active_position'][0] != self.audio_handler.current_position):
+            logger.debug(f"Pushing state to JS: is_playing={is_playing_in_handler}, position={self.audio_handler.current_position}")
+            self.status_source.data = {
+                'is_playing': [is_playing_in_handler],
+                'active_position': [self.audio_handler.current_position]
+            }
+        
         if self.audio_handler.is_playing():
             try:
                 current_pos_dt = self.audio_handler.get_current_position()

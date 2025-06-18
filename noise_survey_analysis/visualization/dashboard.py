@@ -58,7 +58,8 @@ class DashboardBuilder:
                     'playback': {},
                     'parameter': {'select': None, 'holder': None},
                     'play_request': None,
-                    'js_trigger': None # For Python -> JS communication
+                    'js_trigger': None, # For Python -> JS communication
+                    'visibility': {}
                 },
                 'visualization': {'click_lines': {}, 'labels': {}, 'range_selectors': {}}
             },
@@ -126,6 +127,7 @@ class DashboardBuilder:
         self.bokeh_models['sources']['playback']['seek_command'] = ColumnDataSource(data={'target_time': [None]}, name='seek_command_source')
         self.bokeh_models['sources']['playback']['play_request'] = ColumnDataSource(data={'position': [None], 'time': [None]}, name='play_request_source')
         self.bokeh_models['sources']['playback']['js_trigger'] = ColumnDataSource(data={'event': [None]}, name='js_trigger_source')
+        self.bokeh_models['sources']['playback']['status'] = ColumnDataSource(data={'is_playing': [False], 'active_position': [None]}, name='playback_status_source')
         self.bokeh_models['ui']['controls']['init_js'] = Button(label="Initialize JS (Manual)", button_type="primary", name="init_js_button", width=150)
         
         (self.bokeh_models['frequency_analysis']['bar_chart']['figure'],
@@ -258,20 +260,11 @@ class DashboardBuilder:
 
     def _create_chart_visibility_controls(self) -> LayoutDOM:
         """Creates checkboxes to toggle chart visibility."""
-        # --- FIX: Defensively ensure the nested dictionary structure exists ---
-        if 'ui' not in self.bokeh_models:
-            self.bokeh_models['ui'] = {}
-        if 'controls' not in self.bokeh_models['ui']:
-            self.bokeh_models['ui']['controls'] = {}
-        if 'visibility' not in self.bokeh_models['ui']['controls']:
-            self.bokeh_models['ui']['controls']['visibility'] = {}
-        # --- END FIX ---
 
         position_chart_types = {}
         for pos, data in self.position_data.items():
             types = []
             
-            # --- MODIFICATION START ---
             # Use a safer check for each potential dataframe
             df_overview = data.get('overview')
             if isinstance(df_overview, pd.DataFrame) and not df_overview.empty:
@@ -288,7 +281,6 @@ class DashboardBuilder:
             df_spectral_log = data.get('spectral_log')
             if isinstance(df_spectral_log, pd.DataFrame) and not df_spectral_log.empty:
                 types.append('spectral_log')
-            # --- MODIFICATION END ---
             
             if types:
                 position_chart_types[pos] = types
@@ -315,45 +307,56 @@ class DashboardBuilder:
 
         header = Div(text="<b>Chart Visibility</b>", styles={'margin-bottom': '5px'})
         return column(header, row(*position_controls, spacing=20))
+
     def _add_position_checkbox_callback(self, position, checkbox_group, chart_types):
         """Adds JS callback to handle chart visibility toggling."""
         pos_elements = self.bokeh_models['ui']['position_elements'].get(position, {})
-        callback_args = {'header_row': pos_elements.get('header_row')}
         
+        charts_dict = {}
+        hover_divs_dict = {}
+
         for chart_type in chart_types:
             chart = pos_elements.get('charts', {}).get(chart_type)
             if chart:
-                callback_args[f"chart_{chart_type}"] = chart
-                hover_div = pos_elements.get('hover_div') # Find associated hover div
-                if hover_div and chart_type in ['spectral', 'spectral_log']:
-                     callback_args[f"hover_div_{chart_type}"] = hover_div
+                charts_dict[chart_type] = chart
+                # Correctly find the hover div associated with this position's charts
+                if chart_type in ['spectral', 'spectral_log']:
+                    hover_div = next((c for c in pos_elements.get('charts', {}).values() if isinstance(c, Div) and 'spectrogram_hover_div' in (c.name or '')), None)
+                    if hover_div:
+                        hover_divs_dict[chart_type] = hover_div
+        
+        callback_args = {
+            'header_row': pos_elements.get('header_row'),
+            'charts_dict': charts_dict,
+            'hover_divs_dict': hover_divs_dict
+        }
         
         js_code = """
             const active_indices = cb_obj.active;
             const chart_types = %s;
-            let any_spectral_visible = false;
             
             chart_types.forEach((type, index) => {
-                const chart = BOKEH_MODELS['chart_' + type];
-                if (chart) chart.visible = active_indices.includes(index);
-                if (type.includes('spectral') && active_indices.includes(index)) {
-                    any_spectral_visible = true;
+                const chart = charts_dict[type];
+                if (chart) {
+                    chart.visible = active_indices.includes(index);
                 }
             });
 
-            const header_row = BOKEH_MODELS['header_row'];
-            if(header_row) header_row.visible = active_indices.length > 0;
+            if (header_row){
+                header_row.visible = active_indices.length > 0;
+            }
 
-            // Also toggle visibility of hover divs for spectral charts
             chart_types.forEach((type, index) => {
-                if(type.includes('spectral')) {
-                    const hover_div = BOKEH_MODELS['hover_div_' + type];
-                    if(hover_div) hover_div.visible = active_indices.includes(index);
+                if (type.includes('spectral')) {
+                    const hover_div = hover_divs_dict[type];
+                    if (hover_div) {
+                        hover_div.visible = active_indices.includes(index);
+                    }
                 }
             });
         """ % chart_types
 
-        checkbox_group.js_on_change('active', CustomJS(args=callback_args, code=js_code.replace("BOKEH_MODELS", "this.args")))
+        checkbox_group.js_on_change('active', CustomJS(args=callback_args, code=js_code))
 
     # Other builder methods (_create_shared_range_selector, _create_frequency_analysis_section, etc.)
     # have been omitted for brevity as they require less substantial changes.
@@ -386,9 +389,13 @@ class DashboardBuilder:
         chart_source = self.bokeh_models['sources']['data'].get(longest_chart.name)
         if not chart_source: return None
 
-        range_selector = create_range_selector(attached_chart=longest_chart, source=chart_source)
+        range_selector = create_range_selector(
+            attached_chart=longest_chart, 
+            source=chart_source,
+        )
         range_selector.name = 'shared_range_selector'
-        self.bokeh_models['charts']['time_series'].append(range_selector) # Add to list for range linking
+        # The range selector is no longer added to the time_series list to prevent its x-axis from being linked.
+        # This was causing it to zoom along with the other charts.
         return range_selector
 
     def _create_frequency_analysis_section(self):

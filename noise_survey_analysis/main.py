@@ -56,6 +56,8 @@ def create_app(doc, custom_data_sources=None, enable_audio=True):
 
     logger.info("Setting up Bokeh application...")
 
+    doc.clear()
+
     # 1. Load and Process Data
     position_data = None
     try:

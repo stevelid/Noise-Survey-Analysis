@@ -11,7 +11,7 @@ USE_DEFAULT_FILES = False
 # Force debug mode for all loggers
 def configure_logging(debug=False):
     """Configure logging for the application with proper propagation."""
-    level = logging.DEBUG if debug else logging.INFO
+    level = logging.DEBUG
     
     # Configure root logger
     logging.basicConfig(
@@ -44,6 +44,13 @@ def configure_logging(debug=False):
 
 # Initialize logger but we'll configure it properly later
 logger = logging.getLogger(__name__)
+
+def main_app_handler(doc):
+    """A wrapper function to ensure the document is clean before creating the app."""
+    # This is the crucial step for the direct-load path.
+    doc.clear()
+    # Now call the main app creation function from main.py
+    create_app(doc, custom_data_sources=None)
 
 def is_port_in_use(port):
     """Check if a port is already in use."""
@@ -141,7 +148,7 @@ def run_bokeh_server(port=5006, debug=False):
         # If the flag is True, create an app that directly loads default data
         logger.info("Bypassing file selector. Using default data sources from config.")
         # The handler directly calls create_app with no custom sources
-        bokeh_app = Application(FunctionHandler(lambda doc: create_app(doc, custom_data_sources=None)))
+        bokeh_app = Application(FunctionHandler(main_app_handler))
     else:
         # Otherwise, use the existing directory browser UI
         logger.info("Using directory browser UI to select data sources.")

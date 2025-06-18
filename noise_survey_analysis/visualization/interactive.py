@@ -28,7 +28,7 @@ except ImportError:
 # Configure Logging
 logger = logging.getLogger(__name__)
 
-def create_range_selector(attached_chart, source, height=150, width=1600):
+def create_range_selector(attached_chart, source, height=150, width=1600, x_range=None):
     """
     Create a range selector chart.
     
@@ -51,10 +51,13 @@ def create_range_selector(attached_chart, source, height=150, width=1600):
         title="Drag to select a time range",
         height=height,
         width=width,
+        x_range=x_range,
         x_axis_type="datetime",
         y_axis_type=None,
-        tools="",
-        toolbar_location=None,
+        tools="",  # Keep this to avoid default toolbar buttons
+        toolbar_location=None, # Keep this
+        active_drag=None,      # Explicitly disable panning on the select chart itself
+        active_scroll=None,    # Explicitly disable wheel zooming on the select chart itself
         background_fill_color="#f5f5f5",
         sizing_mode="stretch_width"
     )
@@ -98,7 +101,35 @@ def link_x_ranges(charts):
     for chart in charts[1:]:
         chart.x_range = master_range
 
-# NEW function for Hover Interaction
+    add_zoom_interaction(master_range)
+
+
+def add_zoom_interaction(master_range):
+    """
+    Attend to zoom event on charts.
+    
+    Parameters:
+    master_range (Range1d): The master range to sync with
+    """
+      
+    customjs = CustomJS(
+        args={'master_range': master_range },
+        code="""
+            // Call the application's handler directly
+            if (window.NoiseSurveyApp?.interactions?.onZoom) {
+                window.NoiseSurveyApp.interactions.onZoom(cb_obj, master_range);
+            } else {
+                console.error('NoiseSurveyApp.interactions.onZoom not defined!');
+            }
+        """
+    )
+
+    master_range.js_on_change('start', customjs)
+    master_range.js_on_change('end', customjs)
+
+    return customjs
+    
+
 def add_hover_interaction(charts, labels, sources=None, bar_source=None, bar_x_range=None,
                           hover_info_div=None, selected_param_holder=None,
                           all_positions_spectral_data=None):
@@ -108,6 +139,7 @@ def add_hover_interaction(charts, labels, sources=None, bar_source=None, bar_x_r
 
     Parameters:
     charts (list): List of Bokeh figures to add interactions to.
+    labels (list): List of labels to add to the charts.
     sources (dict, optional): Dictionary of ColumnDataSource objects for charts.
     bar_source (ColumnDataSource): Frequency bar chart data source.
     bar_x_range (FactorRange): X-range for the frequency bar chart.
@@ -130,6 +162,7 @@ def add_hover_interaction(charts, labels, sources=None, bar_source=None, bar_x_r
     # Add hover lines as layout to each chart
     for chart, h_line in zip(valid_charts, hover_lines):
         chart.add_layout(h_line)
+
 
     # --- JS Hover Callback ---
     for i, chart in enumerate(valid_charts):
@@ -164,7 +197,6 @@ def add_hover_interaction(charts, labels, sources=None, bar_source=None, bar_x_r
     logger.debug(f"Hover interaction added to {len(valid_charts)} charts.")
 
 
-# NEW function for Tap Interaction
 def add_tap_interaction(charts, sources=None, bar_source=None, bar_x_range=None,
                         hover_info_div=None, # Pass hover_info_div in case tap needs to update it too
                         selected_param_holder=None, all_positions_spectral_data=None):
@@ -197,10 +229,10 @@ def add_tap_interaction(charts, sources=None, bar_source=None, bar_x_range=None,
                          line_width=1, name=f"click_line_{i}")
                    for i, _ in enumerate(valid_charts)]
 
-    # Create labels (one for each chart)
+   # Create labels (one for each chart)
     labels = [Label(x=0, y=0, text="", text_font_size='10pt', background_fill_color="white", 
                     background_fill_alpha=0.6, text_baseline="middle", visible=False, name=f"click_label_{i}")
-                for i, _ in enumerate(valid_charts)]
+                for i, _ in enumerate(valid_charts)] 
 
     # Add click lines and labels as layouts to each chart
     for chart, c_line, label in zip(valid_charts, click_lines, labels):
@@ -339,8 +371,9 @@ def initialize_global_js(bokeh_models):
             
             // --- Set up the Python-to-JS event listener ---
             if (models.js_trigger_source) {
-                models.js_trigger_source.js_on_change('data', (cb_obj) => {
-                    const event_name = cb_obj.data.event[0] || '';
+                models.js_trigger_source.properties.data.change.connect(() => {
+                    const new_data = models.js_trigger_source.data;
+                    const event_name = new_data.event[0] || '';
                     console.log(`JS Trigger Event Received: ${event_name}`);
 
                     if (event_name.startsWith('playback_stopped')) {

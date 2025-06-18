@@ -56,6 +56,7 @@ class AudioPlaybackHandler:
         self._is_playing = False
         self.current_file = None
         self.media_start_time = None
+        self.current_file_duration = None
         self.playback_monitor = None
         self.position_callback = None
         self.stop_monitor = False
@@ -150,28 +151,34 @@ class AudioPlaybackHandler:
             self.current_position = None
             return False
 
-    def _find_file_for_timestamp(self, timestamp: datetime.datetime) -> Tuple[Optional[str], float, Optional[datetime.datetime]]:
+    def _find_file_for_timestamp(self, timestamp: datetime.datetime, position: Optional[str] = None) -> Tuple[Optional[str], float, Optional[datetime.datetime]]:
         """Finds the correct audio file and offset for a timestamp in the current position."""
-        logger.info(f"Finding file for timestamp: {timestamp}")
-        if not self.current_position or self.current_position not in self.file_info_by_position:
-            logger.warning(f"No indexed audio files found for position '{self.current_position}'.")
-            return None, 0, None
+        #logger.info(f"Finding file for timestamp: {timestamp}")
+        if not position or position not in self.file_info_by_position:
+            logger.warning(f"No indexed audio files found for position '{position}'.")
+            return None, 0, None, None
 
-        logger.info(f"Current position: {self.current_position}")
-        logger.info(f"File info for current position: {self.file_info_by_position[self.current_position]}")
+        #logger.info(f"Current position: {self.current_position}")
+        #logger.info(f"File info for current position: {self.file_info_by_position[self.current_position]}")
         
-        for filepath, start_time, duration_sec in self.file_info_by_position[self.current_position]:
-            logger.info(f"Checking file for time: {timestamp}, file: {filepath} (start: {start_time}, duration: {duration_sec})")
+        for filepath, start_time, duration_sec in self.file_info_by_position[position]:
             if duration_sec <= 0:
+                logger.warning(f"Invalid duration for file: {filepath}")
                 continue
+
+            if timestamp < start_time:
+                logger.warning(f"jumping to time of first file")
+                timestamp = start_time
+                return filepath, 0, start_time, duration_sec
+
             end_time = start_time + datetime.timedelta(seconds=duration_sec)
-            logger.info(f"Checking file for time: {timestamp}, file: {filepath} (start: {start_time}, duration: {duration_sec}), end: {end_time}")
+            #logger.info(f"Checking file for time: {timestamp}, file: {filepath} (start: {start_time}, duration: {duration_sec}), end: {end_time}")
             if start_time <= timestamp < end_time:
                 offset = (timestamp - start_time).total_seconds()
-                return filepath, offset, start_time
+                return filepath, offset, start_time, duration_sec
         
-        logger.warning(f"Timestamp {timestamp} is outside the playable range for position '{self.current_position}'.")
-        return None, 0, None
+        logger.warning(f"Timestamp {timestamp} is outside the playable range for position '{position}'.")
+        return None, 0, None, None
 
     def play(self, timestamp: datetime.datetime, position_callback: Optional[Callable] = None) -> bool:
         """
@@ -204,7 +211,7 @@ class AudioPlaybackHandler:
             self._perform_stop_actions() # Use helper
 
             # Find the correct file and offset using the current position's file_info
-            filepath, offset_seconds, file_start_time = self._find_file_for_timestamp(timestamp)
+            filepath, offset_seconds, file_start_time, file_duration = self._find_file_for_timestamp(timestamp, self.current_position)
             if not filepath:
                 logger.warning(f"No audio file found for timestamp: {timestamp} in position: {self.current_position or 'default'}")
                 self._is_playing = False # Ensure state is correct
@@ -220,6 +227,7 @@ class AudioPlaybackHandler:
             self.current_file = filepath
             self.media_start_time = file_start_time
             self.position_callback = position_callback # Store latest callback
+            self.current_file_duration = file_duration
 
             # Create a new media and set it to the player
             try:
@@ -278,7 +286,6 @@ class AudioPlaybackHandler:
             # --- End of Original Core Play Logic ---
 
     def pause(self):
-        # ... (implementation unchanged)
         if self._is_playing and self.player.is_playing():
             self.player.pause()
             self._is_playing = False
@@ -399,12 +406,12 @@ class AudioPlaybackHandler:
                  logger.debug(f"Monitor: Player in unexpected state: {current_state}")
 
             current_pos = self.get_current_position()
-            if current_pos and self.media_start_time:
+            if current_pos and self.media_start_time and self.current_file_duration:
                 try:
-                    # Use >= for comparison robustness
-                    file_end_time = self.media_start_time + datetime.timedelta(hours=12)
-                    if current_pos >= file_end_time:
-                         logger.info(f"Monitor: Reached end of assumed 12h file duration for {os.path.basename(self.current_file)}. Attempting to play next part.")
+                    file_end_time = self.media_start_time + datetime.timedelta(seconds=self.current_file_duration)
+                    #check if we are within 200ms of the end
+                    if current_pos >= (file_end_time - datetime.timedelta(milliseconds=200)):
+                         logger.info(f"Monitor: Reached end of file duration for {os.path.basename(self.current_file)}. Attempting to play next part.")
                          next_timestamp = current_pos + datetime.timedelta(milliseconds=100)
                          # Call the main play method (which includes the lockout)
                          if not self.play(next_timestamp, self.position_callback):
@@ -510,7 +517,7 @@ class AudioPlaybackHandler:
             logger.error(f"Error checking player state: {e}")
             return True  # Assume terminal state on error
             
-    def seek_to_time(self, timestamp: datetime.datetime, position_callback: Optional[Callable] = None) -> bool:
+    def seek_to_time(self, timestamp: datetime.datetime, position_callback: Optional[Callable] = None, position: Optional[str] = None) -> bool:
         """
         Seeks to the specified timestamp, optimizing for seeking within the current file.
         Unlike play(), this method:
@@ -527,8 +534,11 @@ class AudioPlaybackHandler:
         # Remember if the player is currently playing before we do anything.
         was_playing = self.is_playing()
         
+        # Determine which position to use: the passed argument or the instance's current position
+        position_to_use = position if position is not None else self.current_position
+        
         # Find the correct file and offset for the timestamp
-        filepath, offset_seconds, file_start_time = self._find_file_for_timestamp(timestamp)
+        filepath, offset_seconds, file_start_time, duration_sec = self._find_file_for_timestamp(timestamp, position_to_use)
         if not filepath:
             logger.warning(f"No audio file found for timestamp: {timestamp}")
             return False
@@ -547,17 +557,12 @@ class AudioPlaybackHandler:
                 logger.warning(f"VLC failed to set time to {int(offset_seconds * 1000)}ms.")
                 return False
                 
-            # If the player was paused, keep it paused
-            was_playing = self.player.is_playing()
-            
-            # Short pause for VLC processing
-            time.sleep(0.05)
-            
-            if not was_playing and self._is_playing:
-                # If we were supposed to be playing but weren't, ensure we're playing
+            # If the *handler's* desired state is 'playing' but the *player* is not, resume playback.
+            if self._is_playing and not self.player.is_playing():
+                logger.info("Resuming playback after seek within same file")
                 play_result = self.player.play()
                 if play_result == -1:
-                    logger.error("VLC failed to resume playback after seek.")
+                    logger.error("VLC failed to resume playback after seek within same file.")
                     return False
                     
             return True
@@ -566,12 +571,5 @@ class AudioPlaybackHandler:
             logger.debug(f"Seeking requires file change. Was playing: {was_playing}")
 
             play_initiated = self.play(timestamp, position_callback)
-            
-            if play_initiated and not was_playing:
-                # If playback was successfully started BUT it was supposed to be paused,
-                # pause it immediately to maintain the correct state.
-                time.sleep(0.1) # Give VLC a moment to process the play command
-                self.pause()
-                logger.debug("Seek completed, player state maintained as paused.")
 
             return play_initiated

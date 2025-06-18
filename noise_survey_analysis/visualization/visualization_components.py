@@ -851,11 +851,13 @@ def create_range_selector(attached_chart, source, height=None, width=None):
 
 
     # --- Create Selector Figure ---
+    x_range = Range1d(start=source.data['Datetime'][0], end=source.data['Datetime'].iloc[-1])
     select = figure(
         title="Drag handles to select time range", # More descriptive title
         height=height,
         width=width,
         x_axis_type="datetime",
+        x_range=x_range,
         y_axis_type=None, # No y-axis needed
         tools="", # No tools needed on the selector itself
         toolbar_location=None,
