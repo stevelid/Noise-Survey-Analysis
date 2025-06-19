@@ -144,66 +144,147 @@ class DashboardBuilder:
 
     def _create_position_charts(self) -> tuple[list, list, bool]:
         """
-        Creates charts for each position, now handling multiple spectrograms per position.
+        Creates charts for each position, combining overview and log data into a single
+        time-series chart that can be dynamically switched.
         """
-        logger.info("Creating charts for all positions...")
         all_elements = []
         all_position_time_series_charts = []
         has_any_spectral_data = False
 
-        chart_creators = {
-            'overview': (create_TH_chart, "Overview"),
-            'log': (create_log_chart, "Log Data"),
-        }
+        default_combined_metrics = ['LAeq', 'LAF90', 'LAF10', 'LAFmax']
                
         for position, data_dict in self.position_data.items():
             position_charts = []
-            position_time_series_charts = []
+            current_position_time_series_charts = []
             
             # Initialize the UI elements container for the position
             if position not in self.bokeh_models['ui']['position_elements']:
                 self.bokeh_models['ui']['position_elements'][position] = {'charts': {}}
 
-            # --- FIX: More robust check for dataframes ---
-            # Create standard time history charts
-            for data_key, (creator_func, title) in chart_creators.items():
-                df = data_dict.get(data_key)
-                # Check if df is a DataFrame and not empty
-                if isinstance(df, pd.DataFrame) and not df.empty:
-                    chart, source = creator_func(df, title=f"{position} - {title}")
-                    if chart and source:
-                        chart.name = f"{position}_{data_key}"
-                        self.bokeh_models['sources']['data'][chart.name] = source
-                        self.bokeh_models['charts']['all'].append(chart)
-                        position_charts.append(chart)
-                        position_time_series_charts.append(chart)
+            overview_df = data_dict.get('overview')
+            log_df = data_dict.get('log')
 
-            # Create Spectrograms for both overview and log data if available
-            for spec_key, spec_title_suffix in [('spectral', 'Spectral Overview'), ('spectral_log', 'Spectral Log')]:
-                spectral_df = data_dict.get(spec_key)
-                if isinstance(spectral_df, pd.DataFrame) and not spectral_df.empty:
-                    spectral_chart, hover_div = self._create_single_spectrogram(
-                        position, spectral_df, spec_key, spec_title_suffix
-                    )
-                    if spectral_chart:
-                        position_charts.append(spectral_chart)
-                        if hover_div:
-                            position_charts.append(hover_div)
-                        position_time_series_charts.append(spectral_chart)
-                        has_any_spectral_data = True
+            primary_df_for_chart = None
+            chart_display_type_label = None
+            initial_metrics_for_chart = None
+
+            #prioritise overview data if available
+            if isinstance(overview_df, pd.DataFrame) and not overview_df.empty:
+                primary_df_for_chart = overview_df.copy()
+                chart_display_type_label = "Overview Data"
+                initial_metrics_for_chart = default_combined_metrics
+
+            # Fallback to log data if overview is not available
+            elif isinstance(log_df, pd.DataFrame) and not log_df.empty:
+                primary_df_for_chart = log_df.copy()
+                chart_display_type_label = "Log Data"
+                initial_metrics_for_chart = None # if falling back to log, auto-detect metrics for log data (create_TH_chart handles None)
+                
+            #If no suitable time-serices data found, skip creating this chart
+            if primary_df_for_chart is None or primary_df_for_chart.empty:
+                logger.warning(f"No suitable time-series data found for position {position}. Skipping chart creation.")
+                continue
+
+            else:
+                chart, source = create_TH_chart(
+                    primary_df_for_chart,
+                    title = f"{position} - {chart_display_type_label}",
+                    metrics = initial_metrics_for_chart,
+                )
+                if chart and source:
+                    chart.name = f"{position}_combined_time_series"
+                    self.bokeh_models['sources']['data'][chart.name] = source
+                    self.bokeh_models['charts']['all'].append(chart)
+                    position_charts.append(chart)
+                    current_position_time_series_charts.append(chart)
+                    logger.info(f"Created combined time series chart for {position}.")
+
+                    #store the raw dfs so JS can access them
+                    #convert to dict(orient='list') for direct JS consumption
+                    self.bokeh_models['sources']['data'][f"{position}_overview_raw_data"] = overview_df.to_dict(orient='list') if isinstance(overview_df, pd.DataFrame) else None
+                    self.bokeh_models['sources']['data'][f"{position}_log_raw_data"] = log_df.to_dict(orient='list') if isinstance(log_df, pd.DataFrame) else None
+
+                    # Store information about the combined chart's state
+                    self.bokeh_models['sources']['data'][f"{position}_combined_state"] = ColumnDataSource(data={
+                        'display_type': [chart_display_type_label], # "Overview Data" or "Log Data"
+                        'enable_auto_switch': [False], # Initial state of auto-switch toggle (for later)
+                        'min_overview_span': [self.chart_settings.get('min_overview_span', 3600000)], # For JS zoom threshold
+                        'min_log_span': [self.chart_settings.get('min_log_span', 300000)], # For JS zoom threshold
+                    }, name=f"{position}_combined_state") 
+
+            # Create combined spectrograms for both overview and log data if available
+
+            overview_spectral_df = data_dict.get('spectral')
+            log_spectral_df = data_dict.get('spectral_log')
+            
+            #Determine which df to use for the initial chart (prioritise overview if available
+            initial_spectral_df, initial_spec_key, initial_title_suffix = (None, None, None)
+            if isinstance(overview_spectral_df, pd.DataFrame) and not overview_spectral_df.empty:
+                initial_spectral_df = overview_spectral_df
+                initial_spec_key = 'spectral'
+                initial_title_suffix = 'Spectral Overview'
+            elif isinstance(log_spectral_df, pd.DataFrame) and not log_spectral_df.empty:
+                initial_spectral_df = log_spectral_df
+                initial_spec_key = 'spectral_log'
+                initial_title_suffix = 'Spectral Log'
+
+            # If we have at least one type of spectral data, proceed
+            if initial_spectral_df is not None:
+                #Preprocess both datasets
+                if isinstance(initial_spectral_df, pd.DataFrame) and not initial_spectral_df.empty:
+                    self._create_single_spectrogram(position, overview_spectral_df, 'spectral', 'Spectral Overview')
+                    
+                if isinstance(log_spectral_df, pd.DataFrame) and not log_spectral_df.empty:    
+                    self._create_single_spectrogram(position, log_spectral_df, 'spectral_log', 'Spectral Log')
+                    
+                 # A better refactor would be to have _prepare_spectral_data and _create_spectrogram_figure.
+                 # Re-call with the initial data to get the figure for the layout
+                spectral_chart, hover_div = self._create_single_spectrogram(
+                    position, initial_spectral_df, initial_spec_key, initial_title_suffix
+                )   
+                
+                if spectral_chart:
+                    spectral_chart_name = f"{position}_combined_spectrogram"
+                    if hover_div:
+                        hover_div.name = f"{position}_combined_spectrogram_hover_div"
+
+                    position_charts.append(spectral_chart)
+                    current_position_time_series_charts.append(spectral_chart)
+                    if hover_div:
+                        position_charts.append(hover_div)
+                        #store the hover_div for visibility toggling
+                        self.bokeh_models['ui']['position_elements'][position]['charts']['hover_div_combined_spectrogram'] = hover_div
+
+                    # Store the chart model itself for the toggle callback
+                    self.bokeh_models['ui']['position_elements'][position]['charts']['combined_spectrogram'] = spectral_chart
+                    has_any_spectral_data = True
+
+                    spec_key = initial_spec_key
+                    position_charts.append(spectral_chart)
+                    current_position_time_series_charts.append(spectral_chart)
+                    if hover_div:
+                        position_charts.append(hover_div)
+                        #store the hover_div for visibility toggling
+                        self.bokeh_models['ui']['position_elements'][position]['charts'][f'hover_div_{spec_key}'] = hover_div
+                    has_any_spectral_data = True
             
             # Assemble layout for the position if any charts were created
             if position_charts:
                 # Store chart models for visibility controls
                 for chart in position_charts:
                     if hasattr(chart, 'name') and chart.name:
-                        chart_type = chart.name.replace(f"{position}_", "", 1)
+                        if chart.name.endswith('_combined_time_series'):
+                            chart_type = 'combined_time_series'
+                        elif chart.name.endswith(f"{position}_spectral"):
+                            chart_type = chart.name.replace(f"{position}_", "", 1)
+                        else:
+                            chart_type = chart.name.replace(f"{position}_", "", 1)
                         self.bokeh_models['ui']['position_elements'][position]['charts'][chart_type] = chart
 
                 header_row = self._create_position_header(position, data_dict)
                 all_elements.append(header_row)
                 all_elements.extend(position_charts)
-                all_position_time_series_charts.extend(position_time_series_charts)
+                all_position_time_series_charts.extend(current_position_time_series_charts)
 
         logger.info(f"Finished collecting charts. Total time series charts: {len(all_position_time_series_charts)}")
         return all_elements, all_position_time_series_charts, has_any_spectral_data
@@ -261,26 +342,25 @@ class DashboardBuilder:
     def _create_chart_visibility_controls(self) -> LayoutDOM:
         """Creates checkboxes to toggle chart visibility."""
 
+        if 'ui' not in self.bokeh_models: self.bokeh_models['ui'] = {}
+        if 'controls' not in self.bokeh_models['ui']: self.bokeh_models['ui']['controls'] = {}
+        if 'visibility' not in self.bokeh_models['ui']['controls']: self.bokeh_models['ui']['controls']['visibility'] = {}
+
         position_chart_types = {}
         for pos, data in self.position_data.items():
             types = []
-            
-            # Use a safer check for each potential dataframe
+ 
             df_overview = data.get('overview')
-            if isinstance(df_overview, pd.DataFrame) and not df_overview.empty:
-                types.append('overview')
-
+            if isinstance(df_overview, pd.DataFrame) and not df_overview.empty: types.append('overview')
             df_log = data.get('log')
-            if isinstance(df_log, pd.DataFrame) and not df_log.empty:
-                types.append('log')
-
+            if isinstance(df_log, pd.DataFrame) and not df_log.empty: types.append('log')
             df_spectral = data.get('spectral')
-            if isinstance(df_spectral, pd.DataFrame) and not df_spectral.empty:
-                types.append('spectral')
-
+            if isinstance(df_spectral, pd.DataFrame) and not df_spectral.empty: types.append('spectral')
             df_spectral_log = data.get('spectral_log')
-            if isinstance(df_spectral_log, pd.DataFrame) and not df_spectral_log.empty:
-                types.append('spectral_log')
+            if isinstance(df_spectral_log, pd.DataFrame) and not df_spectral_log.empty: types.append('spectral_log')
+            
+            if self.bokeh_models['sources']['data'].get(f"{pos}_combined_time_series"):
+                types.insert(0, 'combined_time_series')
             
             if types:
                 position_chart_types[pos] = types
@@ -299,7 +379,21 @@ class DashboardBuilder:
             self.bokeh_models['ui']['controls']['visibility'][pos] = {'widget': checkbox, 'chart_types': types}
             
             pos_label = Div(text=f"<b>{pos}</b>", width=80, styles={'margin-top': '5px'})
-            position_controls.append(row(pos_label, checkbox, spacing=5))
+
+            combined_chart_toggle = None
+            if 'combined_time_series' in types:
+                #Determine initial label for the toffle based on whats currently displayed
+                initial_display_type = self.bokeh_models['sources']['data'][f"{pos}_combined_state"].data['display_type'][0]
+                toggle_button_label = f"Switch to {('Log Data' if initial_display_type == 'Overview Data' else 'Overview Data').replace(' Data', '')}"
+            
+                combined_chart_toggle = Toggle(label=toggle_button_label, button_type="primary", active=False, width=150)
+                
+                if combined_chart_toggle:
+                    position_controls.append(row(pos_label, checkbox, combined_chart_toggle, spacing=5))
+                    self._add_combined_chart_toggle_callback(pos, combined_chart_toggle)
+                else:
+                    position_controls.append(row(pos_label, checkbox, spacing=5))
+
             self._add_position_checkbox_callback(pos, checkbox, types)
 
         if not position_controls:
@@ -308,6 +402,59 @@ class DashboardBuilder:
         header = Div(text="<b>Chart Visibility</b>", styles={'margin-bottom': '5px'})
         return column(header, row(*position_controls, spacing=20))
 
+    def _add_combined_chart_toggle_callback(self, position, toggle_widget):
+        """Adds JS callback to handle combined chart visibility toggling."""
+        combined_source = self.bokeh_models['sources']['data'].get(f"{position}_combined_time_series")
+        overview_raw_data = self.bokeh_models['sources']['data'].get(f"{position}_overview_raw_data")
+        log_raw_data = self.bokeh_models['sources']['data'].get(f"{position}_log_raw_data")
+        combined_chart_state_source = self.bokeh_models['sources']['data'].get(f"{position}_combined_state")
+        
+        combined_chart = None
+        for chart in self.bokeh_models['charts']['all']:
+            if hasattr(chart, 'name') and chart.name == f"{position}_combined_time_series":
+                combined_chart = chart
+                break
+
+        combined_spectrogram = self.bokeh_models.get('ui', {}).get('position_elements', {}).get(position, {}).get('charts', {}).get('combined_spectrogram')
+        spectral_prepared_data = self.bokeh_models.get('spectral_data', {}).get(position)
+
+        if not combined_source or not combined_chart_state_source or not combined_chart:
+            logger.warning(f"Missing essential models for combined chart toggle callback for position {position}. Skipping.")
+            return
+
+        callback_args  = dict(
+            toggle_widget=toggle_widget, # Pass the toggle itself for label updates
+            combined_source=combined_source,
+            overview_raw_data=overview_raw_data,
+            log_raw_data=log_raw_data,
+            combined_chart_state_source=combined_chart_state_source,
+            combined_chart=combined_chart,
+            position=position, # Pass position name for logging/debugging in JS
+            combined_spectrogram=combined_spectrogram,
+            spectral_prepared_data=spectral_prepared_data
+        )
+
+        js_code = """
+            console.log("Combined chart toggle callback triggered for position:", position);
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.handleCombinedChartToggle) {
+                window.NoiseSurveyApp.handleCombinedChartToggle(cb_obj.active, 
+                                                            combined_source,
+                                                            overview_raw_data,
+                                                            log_raw_data,
+                                                            combined_chart_state_source,
+                                                            combined_chart,
+                                                            position,
+                                                            combined_spectrogram,
+                                                            spectral_prepared_data,
+                                                            toggle_widget); // Pass the toggle widget itself
+            } else {
+                console.error('window.NoiseSurveyApp.handleCombinedChartToggle function not found!');
+            }
+        """
+        
+        toggle_widget.js_on_change('active', CustomJS(args=callback_args, code=js_code))      
+        
+    
     def _add_position_checkbox_callback(self, position, checkbox_group, chart_types):
         """Adds JS callback to handle chart visibility toggling."""
         pos_elements = self.bokeh_models['ui']['position_elements'].get(position, {})
@@ -394,8 +541,8 @@ class DashboardBuilder:
             source=chart_source,
         )
         range_selector.name = 'shared_range_selector'
-        # The range selector is no longer added to the time_series list to prevent its x-axis from being linked.
-        # This was causing it to zoom along with the other charts.
+        self.bokeh_models['charts']['shared_range_selector'] = range_selector
+
         return range_selector
 
     def _create_frequency_analysis_section(self):
@@ -417,14 +564,12 @@ class DashboardBuilder:
         
         controls_row = row(
             column(
-                Div(text="<b>Playback Speed:</b>"),
-                playback_controls.get('speed_control')
+                *[w for w in [Div(text="<b>Playback Speed:</b>"), playback_controls.get('speed_control')] if w is not None]
             ),
             column(
-                Div(text="<b>Amplification:</b>"),
-                playback_controls.get('amp_control')
+                *[w for w in [Div(text="<b>Amplification:</b>"), playback_controls.get('amp_control')] if w is not None]
             ),
-            param_selector,
+            *( [param_selector] if param_selector is not None else [] ),
             sizing_mode="scale_width"
         )
         
@@ -443,7 +588,7 @@ class DashboardBuilder:
             link_x_ranges(self.bokeh_models['charts']['time_series'])
         
         # Get all charts that should have interactions
-        charts_to_interact = self.bokeh_models['charts']['time_series']
+        charts_to_interact = self.bokeh_models['charts']['time_series'] + [self.bokeh_models['charts']['shared_range_selector']]
         if not charts_to_interact:
             logger.warning("No time series charts available for interactions")
             return

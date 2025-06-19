@@ -480,7 +480,7 @@ class NTiParser(NoiseDataParser):
         """Parse content from an RPT LOG file (123 Log)"""
         # Note: Structure might be slightly different from RPT Report
         data_start_marker = "# Broadband LOG Results" # Check exact marker
-        desired_columns = ['Datetime', 'LAF90', 'LAF10', 'LAFmax_dt', 'LAeq_dt'] # Keep desired columns for now
+        desired_columns = ['Datetime', 'LAF90', 'LAF10', 'LAFmax', 'LAeq'] #after rename
         try:
             table_start_idx = next((i for i, line in enumerate(lines) if line.strip().startswith(data_start_marker)), -1)
             if table_start_idx == -1:
@@ -532,6 +532,9 @@ class NTiParser(NoiseDataParser):
                  logger.error(f"Missing 'Date' or 'Time' column in RPT LOG: {file_path}")
                  return pd.DataFrame()
 
+            #rename to match other file types:
+            log_df.rename(columns={'LAeq_dt': 'LAeq', 'LAFmax_dt': 'LAFmax'}, inplace=True)
+            
             log_df['Datetime'] = pd.to_datetime(log_df['Date'] + ' ' + log_df['Time'], errors='coerce')
             log_df.dropna(subset=['Datetime'], inplace=True)
             log_df = safe_convert_to_float(log_df)

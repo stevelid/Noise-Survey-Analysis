@@ -689,11 +689,6 @@ def make_image_spectrogram(param, df, bar_source, bar_x_range, position, title=-
         hover_div=hover_info_div,
         bar_source=bar_source,
         bar_x_range=bar_x_range,
-        times_array=times_ms, # Pass numeric times
-        freqs_array=selected_frequencies, # Pass original frequencies
-        freq_labels_array=frequency_labels_str, # Pass original frequencies
-        levels_matrix=levels_matrix, # Pass original (non-transposed) levels matrix
-        levels_flat_array=levels_matrix.flatten(),
         fig_x_range=spec.x_range, # Pass figure range for bounds checking
         position_name=position # Pass position name for title update
     ), code="""
@@ -704,11 +699,6 @@ def make_image_spectrogram(param, df, bar_source, bar_x_range, position, title=-
                 bar_source, 
                 bar_x_range, 
                 position_name,
-                times_array, 
-                freqs_array, 
-                freq_labels_array, 
-                levels_matrix, 
-                levels_flat_array, 
                 fig_x_range
             );
         } else {

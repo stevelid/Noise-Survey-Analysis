@@ -72,10 +72,6 @@ def _filter_dataframe_columns(df, data_type, path_for_log):
         final_cols_to_keep.remove('Datetime')
         final_cols_to_keep.insert(0, 'Datetime')
 
-    removed_cols = original_cols - set(final_cols_to_keep)
-    if removed_cols:
-        logger.info(f"Filtering {data_type} from {path_for_log}: Removing columns: {sorted(list(removed_cols))}")
-
     if not final_cols_to_keep or ('Datetime' in final_cols_to_keep and len(final_cols_to_keep) == 1) :
          logger.warning(f"Filtering resulted in no data columns (only Datetime perhaps) for {data_type} from {path_for_log}. Returning original df.")
          return df # Avoid returning just Datetime or empty

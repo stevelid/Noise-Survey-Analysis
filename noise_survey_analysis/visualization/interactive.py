@@ -237,7 +237,8 @@ def add_tap_interaction(charts, sources=None, bar_source=None, bar_x_range=None,
     # Add click lines and labels as layouts to each chart
     for chart, c_line, label in zip(valid_charts, click_lines, labels):
         chart.add_layout(c_line)
-        chart.add_layout(label)
+        if chart.name != 'shared_range_selector':
+            chart.add_layout(label)
 
     # --- JS Tap Callback ---
     tap_callback = CustomJS(
@@ -287,7 +288,7 @@ def initialize_global_js(bokeh_models):
         'labels': bokeh_models['ui']['visualization']['labels'],
         'freq_bar_source': bokeh_models['sources']['frequency']['bar'],
         'freq_bar_x_range': bokeh_models['frequency_analysis']['bar_chart']['x_range'],
-        'freq_table_div': bokeh_models['frequency_analysis'].get('table_div'),
+        'freq_table_div': bokeh_models['frequency_analysis'].get('table_div', ""),
         'param_holder': bokeh_models['ui']['controls']['parameter']['holder'],
         'param_select': bokeh_models['ui']['controls']['parameter']['select'],
         'seek_command_source': bokeh_models['sources']['playback']['seek_command'],
@@ -299,7 +300,7 @@ def initialize_global_js(bokeh_models):
     }
 
     # --- Filter out None values ---
-    args = {k: v for k, v in args.items() if v is not None}
+    #args = {k: v for k, v in args.items() if v is not None}
 
     # --- Prepare JS Code ---
     combined_js = get_combined_js()
