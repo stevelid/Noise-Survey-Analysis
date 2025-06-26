@@ -1,232 +1,319 @@
-"""
-Data processing utilities for Noise Survey Analysis.
-
-This module contains functions for processing, synchronizing, and filtering data.
-"""
-
-import logging
 import pandas as pd
 import numpy as np
+import logging
+from typing import List, Dict, Optional, Set, Tuple, Any
 
-# Import necessary configuration
-try:
-    from .config import CHART_SETTINGS, REQUIRED_SPECTRAL_PREFIXES
-except ImportError: # Fallback for different execution contexts
-    from noise_survey_analysis.core.config import CHART_SETTINGS, REQUIRED_SPECTRAL_PREFIXES
+# Assuming PositionData is defined elsewhere and imported (e.g., from data_manager)
+import sys
+from pathlib import Path
+current_file = Path(__file__)
+project_root = current_file.parent.parent.parent  # Go up to "Noise Survey Analysis"
+sys.path.insert(0, str(project_root))
 
-# Configure Logging
+from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETTINGS
+from noise_survey_analysis.core.data_manager import PositionData
+
 logger = logging.getLogger(__name__)
 
-def get_common_time_range(dataframes, column='Datetime'):
-    """
-    Find the common time range across multiple dataframes, handling nested dictionaries.
-    
-    Parameters:
-    dataframes (dict): dict of DataFrames or nested dicts containing DataFrames to analyze
-    column (str): Name of the datetime column
-    
-    Returns:
-    tuple: (start_time, end_time) as pandas Timestamps
-    """
-    start_times = []
-    end_times = []
-    
-    def process_item(item):
-        if isinstance(item, dict):
-            # If it's a dictionary, recursively process its values
-            for value in item.values():
-                process_item(value)
-        elif hasattr(item, 'columns'):  # Check if it's a DataFrame-like object
-            if column in item.columns and not item.empty:
-                start_times.append(item[column].min())
-                end_times.append(item[column].max())
-    
-    # Process the input dictionary
-    process_item(dataframes)
-    
-    if not start_times or not end_times:
-        return None, None
-    
-    common_start = max(start_times)
-    common_end = min(end_times)
-    
-    return common_start, common_end
 
-def filter_by_time_range(df, start_time, end_time, column='Datetime'):
+class GlyphDataProcessor:
     """
-    Filter a DataFrame to a specific time range.
-    
-    Parameters:
-    df (pd.DataFrame): DataFrame to filter
-    start_time (pd.Timestamp): Start time
-    end_time (pd.Timestamp): End time
-    column (str): Name of the datetime column
-    
-    Returns:
-    pd.DataFrame: Filtered DataFrame
+    A class dedicated to transforming DataFrames into specific data structures
+    required by Bokeh glyphs, such as the Image glyph for spectrograms.
     """
-    if column not in df.columns:
-        logger.warning(f"Column {column} not found in DataFrame")
-        return df
-    
-    return df[(df[column] >= start_time) & (df[column] <= end_time)]
 
-def synchronize_time_range(position_data):
-    """
-    Find common time range and synchronize data across all positions.
-    
-    Parameters:
-    position_data (dict): Dictionary of loaded data by position
-    
-    Returns:
-    dict: Dictionary of filtered data by position
-    """
-    try:
-        common_start, common_end = get_common_time_range(position_data)
-        logger.info(f"Common time range: {common_start} to {common_end}")
-        
-        # Filter data to common time range, allowing nested dictionaries
-        for position in position_data:
-            if isinstance(position_data[position], dict):
-                for key, df in position_data[position].items():
-                    if isinstance(df, pd.DataFrame) and 'Datetime' in df.columns:
-                        position_data[position][key] = filter_by_time_range(df, common_start, common_end)
-            else:
-                position_data[position] = filter_by_time_range(position_data[position], common_start, common_end)
-    except Exception as e:
-        logger.error(f"Error determining common time range: {e}")
-        logger.warning("Disabling chart synchronization")
-    
-    return position_data 
+    def prepare_all_spectral_data(self, position_data_obj: PositionData, 
+                                  chart_settings: Optional[Dict] = None) -> Dict[str, Dict[str, Any]]:
+        """
+        Processes all available spectral data (overview and log) for a single position.
 
-def prepare_spectral_image_data(df, param, chart_settings):
-    """
-    Process spectral data from a DataFrame into the format needed for image spectrogram visualization.
-    This function extracts the matrix preparation logic from make_image_spectrogram.
-    
-    Args:
-        df (pd.DataFrame): DataFrame with frequency data. Must contain 'Datetime'.
-        param (str): Base parameter name (e.g., 'LZeq').
-        chart_settings (dict): Configuration for chart appearance.
-    
-    Returns:
-        dict: A dictionary containing all processed data needed for visualization, or None if processing fails.
-              The dictionary includes:
-              - frequencies: NumPy array of frequency values
-              - frequency_labels: List of formatted frequency labels
-              - times_ms: NumPy array of times in milliseconds
-              - times_dt: NumPy array of datetime objects
-              - levels_matrix: Original matrix of shape (n_times, n_freqs)
-              - levels_matrix_transposed: Transposed matrix of shape (n_freqs, n_times) for image glyph
-              - freq_indices: NumPy array of frequency indices
-              - min_val, max_val: Value range for color mapping
-    """
-    logger.debug(f"Preparing spectral image data for parameter: {param}")
-    
-    if df is None or df.empty:
-        logger.warning(f"Empty DataFrame provided for spectral data preparation: {param}")
-        return None
+        Args:
+            position_data_obj: An instance of the PositionData class.
+            chart_settings: A dictionary of chart settings. Uses defaults if None.
+
+        Returns:
+            A nested dictionary structured for potential JavaScript front-end or component use, e.g.:
+            {
+                'overview': {
+                    'available_params': ['LZeq', 'LZFmax'],
+                    'prepared_params': {
+                        'LZeq': { ... spectrogram data for LZeq ... },
+                        'LZFmax': { ... spectrogram data for LZFmax ... }
+                    }
+                },
+                'log': {
+                    'available_params': ['LZeq'],
+                    'prepared_params': {
+                        'LZeq': { ... spectrogram data for LZeq ... }
+                    }
+                }
+            }
+            Returns an empty dict if no spectral data is processable.
+        """
+        if chart_settings is None:
+            chart_settings = CHART_SETTINGS.copy()
+
+        final_prepared_data: Dict[str, Dict[str, Any]] = {}
+        logger.info(f"Processor: Preparing all spectral data for position '{position_data_obj.name}'")
+
+        # Process overview spectral data
+        if position_data_obj.has_overview_spectral:
+            df = position_data_obj.overview_spectral
+            params = self._extract_spectral_parameters(df)
+            if params:
+                prepared_params_dict = {}
+                for param in params:
+                    prepared_data = self.prepare_single_spectrogram_data(df, param, chart_settings)
+                    if prepared_data:
+                        prepared_params_dict[param] = prepared_data
+                if prepared_params_dict: # Only add if some params were successfully processed
+                    final_prepared_data['overview'] = {
+                        'available_params': params,
+                        'prepared_params': prepared_params_dict
+                    }
+        else:
+            logger.debug(f"No overview_spectral data for {position_data_obj.name}")
+
+
+        # Process log spectral data
+        if position_data_obj.has_log_spectral:
+            df = position_data_obj.log_spectral
+            params = self._extract_spectral_parameters(df)
+            if params:
+                prepared_params_dict = {}
+                for param in params:
+                    prepared_data = self.prepare_single_spectrogram_data(df, param, chart_settings)
+                    if prepared_data:
+                        prepared_params_dict[param] = prepared_data
+                if prepared_params_dict:
+                    final_prepared_data['log'] = {
+                        'available_params': params,
+                        'prepared_params': prepared_params_dict
+                    }
+        else:
+            logger.debug(f"No log_spectral data for {position_data_obj.name}")
+            
+        return final_prepared_data
+
+    def prepare_single_spectrogram_data(self, df: pd.DataFrame, param_prefix: str, 
+                                        chart_settings: Dict) -> Optional[Dict[str, Any]]:
+        """
+        Process spectral data from a DataFrame for a single parameter into the format
+        needed for Bokeh image spectrogram visualization.
+
+        Args:
+            df (pd.DataFrame): DataFrame with frequency data. Must contain 'Datetime'.
+            param_prefix (str): Base parameter name (e.g., 'LZeq', 'LAFmax').
+            chart_settings (dict): Configuration for chart appearance.
         
-    if 'Datetime' not in df.columns:
-        logger.error(f"Missing 'Datetime' column for spectral data preparation: {param}")
-        return None
+        Returns:
+            dict: A dictionary containing all processed data needed for visualization, or None if processing fails.
+        """
+        logger.debug(f"Preparing single spectrogram data for parameter: {param_prefix} from DF shape {df.shape}")
         
-    if not pd.api.types.is_datetime64_any_dtype(df['Datetime']):
-        df['Datetime'] = pd.to_datetime(df['Datetime'], errors='coerce')
-        df.dropna(subset=['Datetime'], inplace=True)
-        if df.empty:
-            logger.warning("No valid dates after conversion in spectral data")
+        if df is None or df.empty:
+            logger.warning(f"Empty DataFrame provided for spectral data preparation: {param_prefix}")
             return None
-    
-    # --- Get band slicing settings ---
-    lower_band_idx = chart_settings.get('lower_freq_band', 0)
-    upper_band_idx = chart_settings.get('upper_freq_band', -1)
-    
-    # --- Find and Sort Frequency Columns ---
-    freq_cols_found = []
-    all_frequencies = []
-    for col in df.columns:
-        if col.startswith(param + '_') and col.split('_')[-1].replace('.', '', 1).isdigit():
-            try:
-                freq = float(col.split('_')[-1])
-                freq_cols_found.append(col)
-                all_frequencies.append(freq)
-            except (ValueError, IndexError):
-                continue
-    
-    if not freq_cols_found:
-        logger.error(f"No frequency columns found for parameter '{param}'")
-        return None
-    
-    sorted_indices = np.argsort(all_frequencies)
-    frequencies = np.array(all_frequencies)[sorted_indices]
-    freq_columns = np.array(freq_cols_found)[sorted_indices]
-    
-    # --- Apply Band Slicing ---
-    if upper_band_idx is None or upper_band_idx == -1:
-        upper_band_idx = len(frequencies)
-    
-    selected_frequencies = frequencies[lower_band_idx:upper_band_idx]
-    selected_freq_columns = freq_columns[lower_band_idx:upper_band_idx]
-    
-    if len(selected_frequencies) == 0:
-        logger.error(f"No frequencies after band slicing for '{param}'")
-        return None
-    
-    n_freqs = len(selected_frequencies)
-    frequency_labels_str = [(str(int(f)) if f >= 10 else f"{f:.1f}") + " Hz" for f in selected_frequencies]
-    
-    # --- Prepare Data for `image` Glyph ---
-    levels_matrix = df[selected_freq_columns].values  # Shape: (n_times, n_freqs)
-    times_dt = df['Datetime'].values
-    n_times = len(times_dt)
-    
-    if n_times == 0:
-        logger.warning(f"No time points for spectral data: {param}")
-        return None
-    
-    # Convert times to milliseconds epoch (numeric) for x coordinate
-    times_ms = pd.to_datetime(times_dt).astype('int64') // 10**6
-    
-    # Y coordinate: Use simple linear indices [0, 1, ..., n_freqs-1]
-    freq_indices = np.arange(n_freqs)
-    
-    # Handle NaNs in the data matrix
-    valid_levels = levels_matrix[~np.isnan(levels_matrix)]
-    if len(valid_levels) > 0:
-        min_val = np.min(valid_levels)
-        max_val = np.max(valid_levels)
-        nan_replace_val = min_val - 20  # Choose a value clearly outside range
-    else:  # All NaNs?
-        min_val, max_val = 0, 100
-        nan_replace_val = -100
-    
-    # Replace NaNs with out-of-range value for visualization
-    levels_matrix_clean = np.nan_to_num(levels_matrix, nan=nan_replace_val)
-    
-    # Transpose for Bokeh image glyph - shape: (n_freqs, n_times)
-    levels_matrix_transposed = levels_matrix_clean.T
+            
+        if 'Datetime' not in df.columns:
+            logger.error(f"Missing 'Datetime' column for spectral data preparation: {param_prefix}")
+            return None
+            
+        # Ensure Datetime is actually datetime type
+        if not pd.api.types.is_datetime64_any_dtype(df['Datetime']):
+            # Make a copy to avoid SettingWithCopyWarning if df is a slice
+            df = df.copy() 
+            df.loc[:, 'Datetime'] = pd.to_datetime(df['Datetime'], errors='coerce')
+            df.dropna(subset=['Datetime'], inplace=True)
+            if df.empty:
+                logger.warning("No valid dates after conversion in spectral data")
+                return None
+        
+        # --- Get band slicing settings ---
+        lower_band_idx = chart_settings.get('lower_freq_band', 0)
+        upper_band_idx = chart_settings.get('upper_freq_band', -1) # Slices up to, but not including, upper_band_idx
+        
+        # --- Find and Sort Frequency Columns for the given parameter_prefix ---
+        freq_cols_found: List[str] = []
+        all_frequencies_numeric: List[float] = []
 
-    x = times_ms[0]
-    y = -0.5
-    dw = times_ms[-1] - times_ms[0] if n_times > 1 else 60000
-    dh = n_freqs
+        for col in df.columns:
+            if col.startswith(param_prefix + '_'):
+                # Extract frequency part after the LAST underscore
+                freq_str_part = col.split('_')[-1] 
+                try:
+                    # Attempt to convert to float (handles "8", "12.5", "1000")
+                    # Suffixes like 'k' or 'Hz' should have been normalized by the parser
+                    # to match EXPECTED_THIRD_OCTAVE_SUFFIXES (which are numeric strings)
+                    freq_numeric = float(freq_str_part)
+                    freq_cols_found.append(col)
+                    all_frequencies_numeric.append(freq_numeric)
+                except ValueError:
+                    logger.debug(f"Could not parse frequency from column suffix '{freq_str_part}' in '{col}' for param '{param_prefix}'. Skipping.")
+                    continue
+        
+        if not freq_cols_found:
+            logger.warning(f"No frequency columns found for parameter '{param_prefix}' in the provided DataFrame.")
+            return None
+        
+        # Sort by numeric frequency
+        sorted_indices = np.argsort(all_frequencies_numeric)
+        frequencies_numeric_sorted = np.array(all_frequencies_numeric)[sorted_indices]
+        freq_columns_sorted = np.array(freq_cols_found)[sorted_indices]
+        
+        # --- Apply Band Slicing ---
+        # If upper_band_idx is -1 (python slice convention for "to the end"), convert for numpy
+        actual_upper_band_idx = len(frequencies_numeric_sorted) if upper_band_idx == -1 else upper_band_idx
+        
+        selected_frequencies = frequencies_numeric_sorted[lower_band_idx:actual_upper_band_idx]
+        selected_freq_columns = freq_columns_sorted[lower_band_idx:actual_upper_band_idx]
+        
+        if len(selected_frequencies) == 0:
+            logger.warning(f"No frequencies remaining after band slicing for '{param_prefix}'. Original count: {len(frequencies_numeric_sorted)}")
+            return None
+        
+        n_freqs = len(selected_frequencies)
+        frequency_labels_str = [(str(int(f)) if f.is_integer() else f"{f:.1f}") + " Hz" for f in selected_frequencies]
+        
+        # --- Prepare Data for `image` Glyph ---
+        # Ensure Datetime is sorted before creating levels_matrix and times_dt
+        df_sorted = df.sort_values(by='Datetime')
+        levels_matrix = df_sorted[selected_freq_columns].values  # Shape: (n_times, n_freqs)
+        times_dt = df_sorted['Datetime'].values # Already pandas Timestamps or numpy datetime64
+        n_times = len(times_dt)
+        
+        if n_times == 0:
+            logger.warning(f"No time points for spectral data parameter: {param_prefix}")
+            return None
+        
+        times_ms = pd.to_datetime(times_dt).astype('int64') // 10**6 # Bokeh image x-coords
+        freq_indices = np.arange(n_freqs) # Bokeh image y-coords (categorical)
+        
+        valid_levels = levels_matrix[~pd.isna(levels_matrix) & np.isfinite(levels_matrix)]
+        if len(valid_levels) > 0:
+            min_val = np.min(valid_levels)
+            max_val = np.max(valid_levels)
+        else:
+            min_val, max_val = 0, 100 # Default if all NaNs or infinite
+        
+        nan_replace_val = min_val + chart_settings.get('nan_replace_offset', -20)
+        
+        # Replace NaNs for visualization; ensure it's float for np.nan_to_num
+        levels_matrix_clean = np.nan_to_num(levels_matrix.astype(float), nan=nan_replace_val, posinf=max_val+10, neginf=min_val-10)
+        
+        levels_matrix_transposed = levels_matrix_clean.T # Shape (n_freqs, n_times) for Bokeh image
+
+        # Image glyph parameters
+        x_coord = times_ms[0] if n_times > 0 else 0
+        y_coord = -0.5 # Image covers cells from y to y+dh; -0.5 to n_freqs-0.5
+        dw_val = (times_ms[-1] - times_ms[0]) if n_times > 1 else 60000 # Default 1 min width if single point
+        # Ensure dw_val is positive if times are identical (can happen with overview data)
+        if dw_val <= 0 and n_times > 0 : dw_val = 60000 
+        dh_val = n_freqs
+        
+        return {
+            'frequencies_numeric': selected_frequencies.tolist(), # Numeric frequencies
+            'frequency_labels': frequency_labels_str,         # Formatted string labels for ticks
+            'times_ms': times_ms.tolist(),                    # Timestamps in ms for x-axis
+            #'times_dt': times_dt.tolist(),                    # Original datetime objects
+            'levels_matrix': levels_matrix_clean.tolist(),           # (n_times, n_freqs)
+            #'levels_matrix_transposed': levels_matrix_transposed.tolist(), # (n_freqs, n_times) -> for image glyph
+            'freq_indices': freq_indices.tolist(),            # [0, 1, ..., n_freqs-1] for y-axis
+            'min_val': float(min_val),
+            'max_val': float(max_val),
+            'n_times': int(n_times),
+            'n_freqs': int(n_freqs),
+            'x_coord': float(x_coord),    # For image glyph 'x'
+            'y_coord': float(y_coord),    # For image glyph 'y'
+            'dw_val': float(dw_val),     # For image glyph 'dw'
+            'dh_val': float(dh_val)      # For image glyph 'dh'
+        }
+
+    def _extract_spectral_parameters(self, df: Optional[pd.DataFrame]) -> List[str]:
+        """
+        Utility to find all unique parameter prefixes (e.g., 'LZeq', 'LAFmax') 
+        from columns that appear to be spectral data (PARAM_FREQ format).
+        """
+        if df is None or df.empty: return []
+        
+        params: Set[str] = set()
+        for col in df.columns:
+            if '_' in col:
+                parts = col.split('_', 1) # Split only on the first underscore
+                if len(parts) == 2:
+                    param_prefix = parts[0]
+                    freq_suffix = parts[1]
+                    # A simple check: does the prefix start with L and suffix look like a number?
+                    # More robust: check if freq_suffix is in a list of known freq strings (like from parsers)
+                    # For now, if it starts with L and has underscore, assume it's a candidate.
+                    if param_prefix.startswith('L') and freq_suffix.replace('.', '', 1).isdigit():
+                        params.add(param_prefix)
+        return sorted(list(params))
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
+    processor = GlyphDataProcessor()
+
+    # --- Example Usage ---
+    # 1. Create a dummy PositionData object (as if loaded by DataManager)
+    class DummyPosData(PositionData): # Inherit from actual if available
+        pass
     
-    # Return all data needed for visualization
-    return {
-        'frequencies': selected_frequencies,
-        'frequency_labels': frequency_labels_str,
-        'times_ms': times_ms,
-        'times_dt': times_dt,
-        'levels_matrix': levels_matrix_clean,  # Original shape (n_times, n_freqs)
-        'levels_matrix_transposed': levels_matrix_transposed,  # Shape (n_freqs, n_times)
-        'freq_indices': freq_indices,
-        'min_val': min_val,
-        'max_val': max_val,
-        'n_times': n_times,
-        'n_freqs': n_freqs,
-        'x': x,
-        'y': y,
-        'dw': dw,
-        'dh': dh
-    } 
+    test_pos = DummyPosData(name="TestSite")
+
+    # Create dummy overview_spectral data
+    overview_dates = pd.to_datetime(['2023-01-01 10:00:00', '2023-01-01 10:05:00'])
+    test_pos.overview_spectral = pd.DataFrame({
+        'Datetime': overview_dates,
+        'LAeq': [60, 62], # Overall LAeq
+        'LZeq_1000': [55.1, 56.2],
+        'LZeq_2000': [50.5, 51.8],
+        'LZFmax_1000': [65.0, 66.0],
+        'LAF90_ignore': [40, 41] # This should be ignored as spectral if not PARAM_FREQ
+    })
+    
+    # Create dummy log_spectral data
+    log_dates = pd.date_range('2023-01-01 10:00:00', periods=5, freq='1min')
+    test_pos.log_spectral = pd.DataFrame({
+        'Datetime': log_dates,
+        'LZeq_500': np.random.rand(5) * 20 + 40,
+        'LZeq_1000': np.random.rand(5) * 20 + 45,
+        'LAFmax': np.random.rand(5) * 10 + 60, # Overall LAFmax
+    })
+
+    print(f"Position has overview spectral: {test_pos.has_overview_spectral}")
+    print(f"Position has log spectral: {test_pos.has_log_spectral}")
+
+    # 2. Process all spectral data for this position
+    chart_settings_test = {
+        'lower_freq_band': 0, 
+        'upper_freq_band': -1, # All bands
+        'nan_replace_offset': -30
+    }
+    prepared_data_for_site = processor.prepare_all_spectral_data(test_pos, chart_settings_test)
+
+    # 3. Inspect the output
+    if 'overview_spectral' in prepared_data_for_site:
+        print("\n--- Prepared Overview Spectral Data ---")
+        print(f"Available params: {prepared_data_for_site['overview_spectral']['available_params']}")
+        for param, data_dict in prepared_data_for_site['overview_spectral']['prepared_params'].items():
+            print(f"  Parameter: {param}")
+            print(f"    Frequencies: {data_dict['frequency_labels']}")
+            print(f"    Times (ms): {data_dict['times_ms'][:2]}... ({data_dict['n_times']} total)")
+            print(f"    Levels Matrix Transposed Shape: ({len(data_dict['levels_matrix_transposed'])}, {len(data_dict['levels_matrix_transposed'][0]) if data_dict['levels_matrix_transposed'] else 0})")
+            print(f"    Min/Max Val: {data_dict['min_val']:.1f} / {data_dict['max_val']:.1f}")
+
+    if 'log_spectral' in prepared_data_for_site:
+        print("\n--- Prepared Log Spectral Data ---")
+        print(f"Available params: {prepared_data_for_site['log_spectral']['available_params']}")
+        for param, data_dict in prepared_data_for_site['log_spectral']['prepared_params'].items():
+            print(f"  Parameter: {param}")
+            print(f"    Frequencies: {data_dict['frequency_labels']}")
+            # print(f"    Levels Matrix (first 2x2): {np.array(data_dict['levels_matrix'])[:2,:2]}")
+            print(f"    Image x,y,dw,dh: {data_dict['x_coord']}, {data_dict['y_coord']}, {data_dict['dw_val']}, {data_dict['dh_val']}")
+
+    # Test with no spectral data
+    empty_pos = DummyPosData(name="EmptySite")
+    prepared_empty = processor.prepare_all_spectral_data(empty_pos, chart_settings_test)
+    print(f"\n--- Prepared Empty Site Data ---: {prepared_empty}")
+    assert not prepared_empty 

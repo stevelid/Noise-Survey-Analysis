@@ -226,3 +226,37 @@ This project is undergoing refactoring and enhancement according to the [Develop
 ## License
 
 This project is intended for internal use.
+
+
+## Future (wanted) features: 
+1. Enhanced File/Directory Input:
+
+-Allow selecting a parent directory instead of manually listing each file path in the config.
+Scan the selected directory (and subdirectories) for relevant noise survey files (based on configurable criteria like filename patterns, file types: .csv, .txt, .xlsx, etc., potentially size).
+-Present the identified files to the user.
+-Allow the user to select which files to include in the analysis.
+-Automatically suggest or allow user assignment of "position names" (e.g., based on subfolder names where files are located).
+
+2. Chart Annotation / Note-Taking System:
+
+-Ability to add notes directly linked to specific points in time on the charts.
+-Display unobtrusive visual markers on the charts indicating where notes exist.
+-Provide an easy-to-use interface for taking notes (e.g., a popup dialog or side panel).
+-When creating a note, automatically pre-populate it with relevant context from the chart at the selected time (e.g., timestamp, position name, key sound levels like LAeq, LAF90).
+-Define a clear UI trigger to initiate note creation (e.g., button click when the red vertical line is active, right-click menu option on the line, dedicated key press).
+-Save the notes persistently, associated with the specific survey data/job folder (e.g., in a JSON or CSV file within that folder).
+-Automatically load existing notes for a survey when the data is loaded in a new session.
+
+3. Data Range Selection and Statistical Analysis:
+
+-Allow users to select a specific range of data directly on the time-history charts (e.g., by dragging handles on the range selector, using a box select tool).
+-Calculate and display statistical results for the selected data range (e.g., overall LAeq, L10, L90, Lmax for the period).
+-Calculate and display the average frequency spectrum for the selected time range.
+-Provide an easy way to copy the calculated statistics and spectral data (e.g., formatted text in a display area or <textarea> for easy pasting into reports).
+-Potentially integrate the display/copying of these statistics within the note-taking feature for the selected range.
+
+4. Export and Session Management:
+
+-Option to save the current view (charts and layout) as a standalone HTML file (understanding this will be static, without audio or server-side interactivity).
+-Explore saving the configuration of a specific analysis session (selected files, chosen views, possibly notes) associated with the job folder.
+-Explore functionality to reload a saved session configuration, automatically setting up the Bokeh server with the previously selected files and settings for that specific job.
