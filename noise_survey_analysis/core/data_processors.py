@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import logging
 from typing import List, Dict, Optional, Set, Tuple, Any
+import math
 
 # Assuming PositionData is defined elsewhere and imported (e.g., from data_manager)
 import sys
@@ -95,7 +96,8 @@ class GlyphDataProcessor:
             
         return final_prepared_data
 
-    def prepare_single_spectrogram_data(self, df: pd.DataFrame, param_prefix: str, 
+    
+    def prepare_single_spectrogram_data_as_image_glyph(self, df: pd.DataFrame, param_prefix: str, 
                                         chart_settings: Dict) -> Optional[Dict[str, Any]]:
         """
         Process spectral data from a DataFrame for a single parameter into the format
@@ -109,7 +111,26 @@ class GlyphDataProcessor:
         Returns:
             dict: A dictionary containing all processed data needed for visualization, or None if processing fails.
         """
+    
+    
+    def prepare_single_spectrogram_data(self, df: pd.DataFrame, param_prefix: str, 
+                                        chart_settings: Dict) -> Optional[Dict[str, Any]]:
+        """
+        Process spectral data from a DataFrame for a single parameter into the format
+        needed for Bokeh image spectrogram visualization. If the size of the data is larger than a 
+        set limit, we will chunk the data client side. Here we will set up the initial source to the correct size. 
+
+        Args:
+            df (pd.DataFrame): DataFrame with frequency data. Must contain 'Datetime'.
+            param_prefix (str): Base parameter name (e.g., 'LZeq', 'LAFmax').
+            chart_settings (dict): Configuration for chart appearance.
+        
+        Returns:
+            dict: A dictionary containing all chunked processed data needed for visualization, or None if processing fails.
+        """
         logger.debug(f"Preparing single spectrogram data for parameter: {param_prefix} from DF shape {df.shape}")
+        
+        MAX_DATA_SIZE = 100000 #TODO: Make this a config parameter
         
         if df is None or df.empty:
             logger.warning(f"Empty DataFrame provided for spectral data preparation: {param_prefix}")
@@ -200,33 +221,54 @@ class GlyphDataProcessor:
         
         # Replace NaNs for visualization; ensure it's float for np.nan_to_num
         levels_matrix_clean = np.nan_to_num(levels_matrix.astype(float), nan=nan_replace_val, posinf=max_val+10, neginf=min_val-10)
+        levels_matrix_clean_transposed = levels_matrix_clean.T
         
-        levels_matrix_transposed = levels_matrix_clean.T # Shape (n_freqs, n_times) for Bokeh image
 
-        # Image glyph parameters
-        x_coord = times_ms[0] if n_times > 0 else 0
-        y_coord = -0.5 # Image covers cells from y to y+dh; -0.5 to n_freqs-0.5
-        dw_val = (times_ms[-1] - times_ms[0]) if n_times > 1 else 60000 # Default 1 min width if single point
-        # Ensure dw_val is positive if times are identical (can happen with overview data)
-        if dw_val <= 0 and n_times > 0 : dw_val = 60000 
-        dh_val = n_freqs
+        #get the correct size for the first chunk. If data is smaller than MAX_DATA_SIZE, this will be the full data.
+        chunk_time_length = math.ceil(MAX_DATA_SIZE / n_freqs) #TODO: set the max value to the smaller of MAX_DATA_SIZE and the size of the overview spectrogram (avoid padding out the overview)
+
+        #pad the data if it is not a multiple of chunk_time_length
+        if n_times % chunk_time_length != 0:
+            levels_matrix_clean_transposed = np.pad(levels_matrix_clean_transposed, ((0, 0), (0, chunk_time_length - n_times % chunk_time_length)), 'constant', constant_values=nan_replace_val)
+            times_ms = np.pad(times_ms, (0, chunk_time_length - n_times % chunk_time_length), 'constant', constant_values=times_ms[-1])
+
+        #pad the data if it is smaller than chunk_time_length
+        if n_times < chunk_time_length:
+            levels_matrix_clean_transposed = np.pad(levels_matrix_clean_transposed, ((0, 0), (0, chunk_time_length - n_times)), 'constant', constant_values=nan_replace_val)
+            times_ms = np.pad(times_ms, (0, chunk_time_length - n_times), 'constant', constant_values=times_ms[-1])
         
+        
+        first_data_chunk = levels_matrix_clean_transposed[:, :chunk_time_length]
+        first_time_chunk = times_ms[:chunk_time_length]
+
+        
+        time_step = (first_time_chunk[10] - first_time_chunk[5]) / 5
+        
+        # Image glyph parameters
+        x_coord = first_time_chunk[0] if n_times > 0 else 0
+        y_coord = -0.5 # Image covers cells from y to y+dh; -0.5 to n_freqs-0.5
+        dw_val = chunk_time_length * time_step
+        dh_val = n_freqs
+          
         return {
             'frequencies_numeric': selected_frequencies.tolist(), # Numeric frequencies
             'frequency_labels': frequency_labels_str,         # Formatted string labels for ticks
             'times_ms': times_ms.tolist(),                    # Timestamps in ms for x-axis
             #'times_dt': times_dt.tolist(),                    # Original datetime objects
-            'levels_matrix': levels_matrix_clean.tolist(),           # (n_times, n_freqs)
+            'levels_matrix': levels_matrix_clean,           # (n_freqs, n_times)
+            'time_step': time_step,    # Time step in ms
             #'levels_matrix_transposed': levels_matrix_transposed.tolist(), # (n_freqs, n_times) -> for image glyph
             'freq_indices': freq_indices.tolist(),            # [0, 1, ..., n_freqs-1] for y-axis
             'min_val': float(min_val),
             'max_val': float(max_val),
             'n_times': int(n_times),
             'n_freqs': int(n_freqs),
-            'x_coord': float(x_coord),    # For image glyph 'x'
-            'y_coord': float(y_coord),    # For image glyph 'y'
-            'dw_val': float(dw_val),     # For image glyph 'dw'
-            'dh_val': float(dh_val)      # For image glyph 'dh'
+            'chunk_time_length': int(chunk_time_length),
+            #'x_coord': float(x_coord),    # For image glyph 'x'
+            #'y_coord': float(y_coord),    # For image glyph 'y'
+            #'dw_val': float(dw_val),     # For image glyph 'dw'
+            #'dh_val': float(dh_val),      # For image glyph 'dh'
+            'source_replacement': {'x':[float(x_coord)],'y':[float(y_coord)],'dw':[float(dw_val)],'dh':[float(dh_val)], 'image':[first_data_chunk]}
         }
 
     def _extract_spectral_parameters(self, df: Optional[pd.DataFrame]) -> List[str]:

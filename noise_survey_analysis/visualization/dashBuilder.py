@@ -162,33 +162,29 @@ class DashBuilder:
         """Step 3: Handles the logic that connects components to each other."""
         print("INFO: DashboardBuilder: Wiring up interactions between components...")
 
+        master_x_range = None
         for position_name, comp_dict in self.components.items():
             ts_comp = comp_dict['timeseries']
             spec_comp = comp_dict['spectrogram']
             controls = self.shared_components['controls']
             freq_bar = self.shared_components['freq_bar']
 
-            # --- Wiring Example 1: Linking X-Axes ---
-            spec_comp.figure.x_range = ts_comp.figure.x_range
-
-            return
-            # --- Wiring Example 2: Giving a callback access to another component's model ---
-            # The Spectrogram component needs to update the Frequency Bar's source on hover.
-            spec_comp.attach_hover_callback(
-                bar_source=freq_bar.source,
-                bar_x_range=freq_bar.x_range
-            )
+            if master_x_range is None:
+                master_x_range = ts_comp.figure.x_range
             
-            # --- Wiring Example 3: Connecting the toggle button from Controls to multiple components ---
-            toggle_button = controls.get_toggle_for_position(position_name)
-            if toggle_button:
-                # This callback will need access to the components it affects
-                controls.attach_toggle_callback(
-                    toggle_button,
-                    position_name,
-                    ts_comp,
-                    spec_comp
-                )
+            ts_comp.figure.x_range = master_x_range
+            spec_comp.figure.x_range = master_x_range
+
+        #add callback to x_range ranges
+        range_update_js = CustomJS(code="""
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onRangeUpdate) {
+                window.NoiseSurveyApp.interactions.onRangeUpdate(cb_obj);
+            } else {
+                console.error('NoiseSurveyApp.interactions.onRangeUpdate not defined!');
+            }
+        """)
+        master_x_range.js_on_change('end', range_update_js)
+
 
     def _assemble_and_add_layout(self, doc):
         """Step 4: Gets the .layout() from each component and assembles the final page."""

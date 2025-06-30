@@ -302,15 +302,15 @@ class SpectrogramComponent:
 
         # Extract data from prepared_param_data
         times_ms = np.array(prepared_param_data['times_ms'])
-        n_times = prepared_param_data['n_times']
+        n_times = prepared_param_data['chunk_time_length']
         n_freqs = prepared_param_data['n_freqs']
         freq_indices = np.array(prepared_param_data['freq_indices'])
         selected_frequencies = np.array(prepared_param_data['frequencies_numeric'])
         
-        transposed_matrix = np.array(prepared_param_data['levels_matrix']).T
+        image_data = prepared_param_data['source_replacement']['image'][0]
         
         # Update image source
-        self.source.data = {'image': [transposed_matrix]}
+        self.source.data = {'image': [image_data]}
 
         # Update x_range (numeric ms for figure, Bokeh handles datetime axis)
         self.figure.x_range.start = times_ms[0] if n_times > 0 else 0
@@ -335,10 +335,10 @@ class SpectrogramComponent:
         
         self.image_glyph = self.figure.image(
             image='image', source=self.source,
-            x=prepared_param_data['x_coord'], 
-            y=prepared_param_data['y_coord'],
-            dw=prepared_param_data['dw_val'], 
-            dh=prepared_param_data['dh_val'],
+            x=prepared_param_data['source_replacement']['x'][0], 
+            y=prepared_param_data['source_replacement']['y'][0],
+            dw=prepared_param_data['source_replacement']['dw'][0], 
+            dh=prepared_param_data['source_replacement']['dh'][0],
             color_mapper=LinearColorMapper(palette=self.chart_settings['colormap'], 
                                           low=prepared_param_data['min_val'], 
                                           high=prepared_param_data['max_val'],
