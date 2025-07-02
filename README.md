@@ -211,6 +211,26 @@ function initializeApp(models, options) {
 }
 ```
 
+## Key Implementation Detail: Spectrogram Data Chunking
+
+A significant technical challenge in this application is the efficient display of high-resolution spectrogram data, which can often be too large to render in the browser at once. The application solves this using a dynamic data chunking strategy.
+
+### The Problem
+
+Bokeh's `Image` glyph, used for the spectrogram, is highly optimized. When initialized, it allocates a fixed-size data buffer in the browser. This means that the JavaScript `ColumnDataSource` that feeds the glyph cannot be resized dynamically. Attempting to replace the data with a new, smaller or larger array will fail.
+
+### The Solution
+
+1.  **Fixed-Size Buffer in Python:** In `data_processors.py`, the `prepare_single_spectrogram_data` function establishes a maximum chunk size (`MAX_DATA_SIZE`). All spectral data, whether it's low-resolution overview data or high-resolution log data, is padded to this exact size *before* being sent to the browser. This ensures the JavaScript `ColumnDataSource` is always initialized with a consistently sized data array.
+
+2.  **In-Place Updates in JavaScript:** In `app.js`, when a user zooms into a time range where high-resolution data is available, the `_updateActiveSpectralData` function does not create a new data source. Instead, it:
+    *   Calculates the appropriate slice of the full high-resolution data that corresponds to the visible time range.
+    *   Uses a utility function (`_getTimeChunkFromSerialData`) to extract this data slice, ensuring it matches the buffer's fixed size.
+    *   Directly modifies the *contents* of the existing `source.data.image[0]` array in-place with the new chunk's data.
+    *   Calls `source.change.emit()` to notify Bokeh of the change, which triggers a redraw of the spectrogram with the new visual data.
+
+This approach allows for the efficient display of large datasets by only sending the necessary data chunks to the browser and updating the visualization without the overhead of re-creating the glyph or its data source.
+
 ## Development Plan
 
 This project is undergoing refactoring and enhancement according to the [Development Plan](DEVELOPMENT_PLAN.md). Key goals include:

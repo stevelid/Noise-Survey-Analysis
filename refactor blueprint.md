@@ -81,26 +81,25 @@ This section illustrates how all the pieces work together, from start to finish:
 
 To implement this new architecture, we will proceed in the following order:
 
-### Phase 1: Solidify the Data Layer (Python)
+### Phase 1: Solidify the Data Layer (Python) - `COMPLETE`
 
-* Implement the final `DataManager` and `PositionData` classes.
-* Ensure they correctly load and aggregate data from your parsers. This phase can be tested independently of any UI.
+*   **Status:** The `DataManager` and `PositionData` classes are fully implemented in `noise_survey_analysis/core/data_manager.py`, successfully separating data loading from the rest of the application.
 
-### Phase 2: Implement the Presentation Layer (Python)
+### Phase 2: Implement the Presentation Layer (Python) - `COMPLETE`
 
-* Create the first component class, `TimeSeriesComponent`.
-* Refactor `main.py` to use the new flow: instantiate `DataManager`, then `DashboardBuilder`, then create a `TimeSeriesComponent`, assemble the layout, and generate a standalone HTML file. The goal is to get a chart rendering on screen using the new architecture.
-* Incrementally create the other component classes (`SpectrogramComponent`, `ControlsComponent`, etc.).
+*   **Status:** The `DashboardBuilder` in `noise_survey_analysis/visualization/dashBuilder.py` now orchestrates the creation of the UI using a component-based approach as planned. It correctly assembles the layout from individual components.
 
-### Phase 3: Refactor the Control Layer (JavaScript)
+### Phase 3: Refactor the Control Layer (JavaScript) - `SUBSTANTIALLY COMPLETE`
 
-* Restructure `app.js` with the new `_state` object and the empty shells of the controller (`handle...`) and renderer (`render...`) functions.
-* Implement the logic for each controller/renderer pair one by one, testing each interaction as you go (e.g., implement `handleParameterChange` and `renderSpectrogram`, then test that the dropdown works).
+*   **Status:** `noise_survey_analysis/static/js/app.js` has been successfully restructured to use the state-driven (`_state`, `handle...`, `render...`) pattern. The core client-side logic for interactivity is in place.
 
-### Phase 4: Final Wiring and Server Integration
+### Phase 4: Final Wiring and Server Integration - `NEXT`
 
-* In the `DashboardBuilder`, implement the `_wire_up_interactions` and `_initialize_javascript` methods to attach all `CustomJS` callbacks and pass the final bridge dictionary.
-* Once the standalone HTML works perfectly with all interactions, re-introduce the Bokeh server via `run_app.py` and connect the `AppCallbacks` class for audio playback.
+*   **Status:** The application currently generates a standalone HTML file (`noise_survey_analysis.html`) from `main.py`. The final step is to transition from this static output to a live Bokeh server.
+*   **Next Steps:**
+    *   Update `run_app.py` to use the new `DashBuilder` architecture.
+    *   Connect the `AppCallbacks` class to handle server-side interactions like audio playback.
+    *   Ensure all `CustomJS` callbacks are correctly wired for the live server environment.
 
 ---
 ### JS Example

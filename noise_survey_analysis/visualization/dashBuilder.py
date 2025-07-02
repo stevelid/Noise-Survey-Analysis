@@ -239,7 +239,8 @@ class DashBuilder:
                     visibilityCheckBoxes: visibilityCheckBoxes,
                     barSource: barSource,
                     barChart: barChart,
-                    paramSelect: paramSelect
+                    paramSelect: paramSelect,
+                    freqTableDiv: freqTableDiv,
                 }};
 
                 console.log('[NoiseSurveyApp]', 'Models:', models);
@@ -278,6 +279,7 @@ class DashBuilder:
             'visibilityCheckBoxes': self.shared_components['controls'].get_all_visibility_checkboxes(),
             'barSource': self.shared_components['freq_bar'].source,
             'barChart': self.shared_components['freq_bar'].figure,
+            'freqTableDiv': self.shared_components['freq_bar'].table_div,  # Add the frequency table div for copy/paste functionality
             'paramSelect': self.shared_components['controls'].param_select,
             # Uncommented items can be added back as needed:
             # 'barXRange': self.shared_components['freq_bar'].x_range,

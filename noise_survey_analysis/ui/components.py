@@ -301,22 +301,29 @@ class SpectrogramComponent:
         self.figure.title.text = f"Spectrogram: {self.position_name} - {param_name} ({mode_name})"
 
         # Extract data from prepared_param_data
+        initial_data = prepared_param_data['initial_glyph_data']
+
         times_ms = np.array(prepared_param_data['times_ms'])
-        n_times = prepared_param_data['chunk_time_length']
         n_freqs = prepared_param_data['n_freqs']
-        freq_indices = np.array(prepared_param_data['freq_indices'])
-        selected_frequencies = np.array(prepared_param_data['frequencies_numeric'])
-        
-        image_data = prepared_param_data['source_replacement']['image'][0]
+        frequency_labels = np.array(prepared_param_data['frequency_labels'])
+
+        # Re-create numeric frequencies from labels for the tick formatter
+        selected_frequencies_numeric = [float(label.split(' ')[0]) for label in frequency_labels]
+        freq_indices = np.arange(n_freqs)
         
         # Update image source
-        self.source.data = {'image': [image_data]}
+        self.source.data = initial_data
 
-        # Update x_range (numeric ms for figure, Bokeh handles datetime axis)
-        self.figure.x_range.start = times_ms[0] if n_times > 0 else 0
-        self.figure.x_range.end = times_ms[-1] if n_times > 0 else (times_ms[0] + 60000 if n_times >0 else 60000) # Add 1 min if only one point
-        if self.figure.x_range.start == self.figure.x_range.end and n_times > 0: # Single time point
-            self.figure.x_range.end = self.figure.x_range.start + 60000 # Make it 1 minute wide
+        # Update x_range based on the full time range of the data available
+        # This ensures the range selector and initial view are correct
+        if times_ms.size > 0:
+            self.figure.x_range.start = prepared_param_data['min_time']
+            self.figure.x_range.end = prepared_param_data['max_time']
+            if self.figure.x_range.start == self.figure.x_range.end:
+                self.figure.x_range.end += 60000 # Add 1 min for single point
+        else:
+            self.figure.x_range.start = 0
+            self.figure.x_range.end = 60000
 
         # Update y_range (categorical based on indices)
         self.figure.y_range.start = -0.5
@@ -326,22 +333,25 @@ class SpectrogramComponent:
         self.figure.yaxis.ticker = freq_indices.tolist()
         self.figure.yaxis.major_label_overrides = {
             int(i): (str(int(freq)) if freq >=10 else f"{freq:.1f}") # No " Hz" for brevity
-            for i, freq in enumerate(selected_frequencies)
+            for i, freq in enumerate(selected_frequencies_numeric)
         }
         
         # Update or create image glyph
         if self.image_glyph:
             self.figure.renderers.remove(self.image_glyph) # Remove old one
         
+        min_val = prepared_param_data.get('min_val', 0)
+        max_val = prepared_param_data.get('max_val', 100)
+        
         self.image_glyph = self.figure.image(
             image='image', source=self.source,
-            x=prepared_param_data['source_replacement']['x'][0], 
-            y=prepared_param_data['source_replacement']['y'][0],
-            dw=prepared_param_data['source_replacement']['dw'][0], 
-            dh=prepared_param_data['source_replacement']['dh'][0],
+            x=initial_data['x'][0], 
+            y=initial_data['y'][0],
+            dw=initial_data['dw'][0], 
+            dh=initial_data['dh'][0],
             color_mapper=LinearColorMapper(palette=self.chart_settings['colormap'], 
-                                          low=prepared_param_data['min_val'], 
-                                          high=prepared_param_data['max_val'],
+                                          low=min_val, 
+                                          high=max_val,
                                           nan_color='#00000000'), # Transparent NaN
             level="image", 
             name=f"{self.position_name}_{param_name}_image"
@@ -363,6 +373,20 @@ class SpectrogramComponent:
         self.figure.visible = True
         self.hover_div.visible = True
 
+    def set_initial_x_range(self, x_range_start, x_range_end):
+        """
+        Sets the initial x-range of the spectrogram to match a specific range.
+        Used to ensure spectrograms don't show padded data in the initial view.
+        
+        Args:
+            x_range_start: Start value for x-range
+            x_range_end: End value for x-range
+        """
+        if hasattr(self, 'figure') and hasattr(self.figure, 'x_range'):
+            logger.debug(f"SpectrogramComponent '{self.position_name}': Setting initial x-range to {x_range_start}-{x_range_end}")
+            self.figure.x_range.start = x_range_start
+            self.figure.x_range.end = x_range_end
+    
     def update_plot(self, position_glyph_data, display_mode: str, parameter: str):
         """
         Updates the spectrogram to show data for the specified mode and parameter.
@@ -659,7 +683,8 @@ class FrequencyBarComponent:
     """
     A self-contained component for displaying frequency levels as a bar chart
     for a specific time slice, typically updated via JavaScript interactions
-    from other components like a spectrogram.
+    from other components like a spectrogram. Includes a table below the chart
+    to allow for easy data copying.
     """
     def __init__(self, chart_settings: Optional[Dict[str, Any]] = None):
         """
@@ -686,7 +711,13 @@ class FrequencyBarComponent:
         # and if the factors change, x_range.factors also needs updating.
         self.x_range: FactorRange = FactorRange(factors=initial_data['frequency_labels'])
         
+        # Add a Div component to hold the HTML table for copying data
+        self.table_div = Div(name="frequency_table_div", width=self.settings.get('frequency_bar_width', 800))
+        
         self.figure: Figure = self._create_figure()
+        
+        # Initialize the table with empty data
+        self._update_table(initial_data['levels'], initial_data['frequency_labels'])
         
         logger.info("FrequencyBarComponent initialized.")
 
@@ -762,15 +793,50 @@ class FrequencyBarComponent:
 
         return p
 
-    def layout(self) -> Figure:
+    def layout(self):
         """
-        Returns the Bokeh layout object (the figure itself) for this component.
+        Returns the Bokeh layout object for this component, including both the chart and table div.
         """
-        return self.figure
+        return column(self.figure, self.table_div)
+
+    def _update_table(self, levels: List[float], labels: List[str]):
+        """
+        Updates the HTML table with frequency data for copying.
+        
+        Args:
+            levels (List[float]): List of level values to display in the table.
+            labels (List[str]): List of frequency band labels to display in the table.
+        """
+        if not labels or not levels:
+            self.table_div.text = "<p>No frequency data available</p>"
+            return
+        
+        table_html = """
+        <style>
+            .freq-html-table { border-collapse: collapse; width: 100%; font-size: 0.9em; table-layout: fixed; }
+            .freq-html-table th, .freq-html-table td { border: 1px solid #ddd; padding: 6px; text-align: center; white-space: nowrap; }
+            .freq-html-table th { background-color: #f2f2f2; font-weight: bold; }
+        </style>
+        <table class="freq-html-table"><tr>"""
+        
+        # Add header row with frequency labels
+        for label in labels:
+            table_html += f"<th title=\"{label}\">{label}</th>"
+        table_html += "</tr><tr>"
+        
+        # Add data row with level values
+        for level in levels:
+            level_num = float(level) if level is not None else float('nan')
+            level_text = 'N/A' if np.isnan(level_num) else f"{level_num:.1f}"
+            table_html += f"<td>{level_text}</td>"
+        table_html += "</tr></table>"
+        
+        self.table_div.text = table_html
+        logger.debug("Frequency table HTML updated.")
 
     def update_data(self, frequency_labels: List[str], levels: List[float]):
         """
-        Public method to update the data in the bar chart.
+        Public method to update the data in the bar chart and the associated table.
         This would typically be called by JavaScript via a CustomJS callback
         or by Python code if interactions are Python-driven.
 
@@ -784,6 +850,10 @@ class FrequencyBarComponent:
 
         self.source.data = {'frequency_labels': frequency_labels, 'levels': levels}
         self.x_range.factors = frequency_labels # CRITICAL: Update factors for categorical axis
+        
+        # Update the table with the new data
+        self._update_table(levels, frequency_labels)
+        
         logger.debug(f"FrequencyBarComponent data updated. Factors: {frequency_labels[:5]}..., Levels: {levels[:5]}...")
 
 if __name__ == '__main__':

@@ -8,6 +8,10 @@ window.NoiseSurveyApp = (function () {
     // =======================================================================================
     //           PRIVATE MODELS & STATES
     // =======================================================================================
+
+    const MAX_LINE_POINTS_TO_RENDER = 5000;
+    const MAX_SPECTRAL_POINTS_TO_RENDER = 5000;
+
     let _models = { // Populated by initializeApp
         charts: [],
         chartsSources: {},
@@ -25,7 +29,7 @@ window.NoiseSurveyApp = (function () {
         barSource: null,
         barXRange: null,
         barChart: null,
-        freqTableDiv: null,
+        freqTableDiv: null,  // Div for frequency table to allow copy/paste of data
         paramSelect: null,
         selectedParamHolder: null,
         seekCommandSource: null,
@@ -57,7 +61,6 @@ window.NoiseSurveyApp = (function () {
         },                          // Data currently active for frequency bar
 
         // Interaction state
-        verticalLinePosition: null, // ms timestamp of the red tap line
         lastHoverX: null,           // Last hovered X position on any chart
         chartVisibility: {},        // { chartName: true | false } - Visibility state for each chart
 
@@ -94,6 +97,48 @@ window.NoiseSurveyApp = (function () {
     // =======================================================================================
     //           UTILITY FUNCTIONS
     // =======================================================================================
+
+    /**
+     * Extracts a time-based chunk from a flat 1D array that represents a
+     * transposed (n_freqs x n_times) spectrogram.
+     * @param {TypedArray} flatData - The full, flat 1D data array.
+     * @param {number} n_freqs - The height of the matrix (number of frequency bins).
+     * @param {number} n_times_total - The total width of the matrix (total time steps).
+     * @param {number} start_time_idx - The starting time index for the chunk.
+     * @param {number} chunk_time_length - The width of the chunk to extract (in time steps).
+     * @returns {TypedArray} - A new flat 1D array containing the extracted chunk.
+     */
+    function _extractTimeChunkFromFlatData(flatData, n_freqs, n_times_total, start_time_idx, chunk_time_length) {
+        const typedFlatData = (flatData instanceof Float32Array) ? flatData : new Float32Array(flatData);
+
+        // Create a new empty buffer for our chunk. Its size is fixed.
+        const chunk_data = new Float32Array(n_freqs * chunk_time_length);
+
+        // Ensure the slice doesn't go out of bounds
+        const end_time_idx = Math.min(start_time_idx + chunk_time_length, n_times_total);
+        const actual_slice_width = end_time_idx - start_time_idx;
+
+        // Iterate through each frequency row of the implicit 2D matrix
+        for (let i = 0; i < n_freqs; i++) {
+            // Calculate the start of this row in the flat 1D array
+            const row_offset = i * n_times_total;
+
+            // Find the start index for our slice within this row
+            const slice_start_in_flat_array = row_offset + start_time_idx;
+
+            // Extract the slice for this specific frequency row
+            const row_slice = typedFlatData.subarray(slice_start_in_flat_array, slice_start_in_flat_array + actual_slice_width);
+
+            // Place this row's data into the correct position in our new chunk buffer
+            chunk_data.set(row_slice, i * chunk_time_length);
+        }
+
+        // The chunk_data is now filled. If actual_slice_width < chunk_time_length,
+        // the end of the buffer will be zeros, effectively padding it.
+        return chunk_data;
+    }
+
+
     function _getChartModel(nameOrId, isId = false) {
         // A single helper to abstract chart model retrieval
         if (_models.chartsById && isId) {
@@ -105,7 +150,6 @@ window.NoiseSurveyApp = (function () {
 
     function _getChartPositionByName(chartName) {
         try {
-            //console.log("[DEBUG] _getChartPositionByName: Function called");
             if (!chartName) return null;
             // Extracts position like 'SW' from 'figure_SW_timeseries' or 'figure_SW_spectrogram'
             const parts = chartName.split('_');
@@ -123,7 +167,6 @@ window.NoiseSurveyApp = (function () {
 
     function findClosestDateIndex(dates, x) {
         try {
-            //console.log("[DEBUG] findClosestDateIndex: Function called");
             // Add checks for robustness
             if (dates === null || dates === undefined || typeof dates.length !== 'number' || dates.length === 0) {
                 console.error('[findClosestDateIndex]', 'Invalid dates array:', dates);
@@ -216,8 +259,6 @@ window.NoiseSurveyApp = (function () {
     }
     function _positionLabel(labelModel, x) {
         try {
-            //console.log("[DEBUG] positionLabel: Function called with label", labelModel, "and x", x);
-
             if (!labelModel) { console.error('[Renderer:positionLabel]', 'Label model not found.'); return; }
 
             const associatedChartName = `figure_${labelModel.name.replace('label_', '')}`;
@@ -253,7 +294,6 @@ window.NoiseSurveyApp = (function () {
 
     function calculateStepSize(sourceData) {
         try {
-            //console.log("[DEBUG] calculateStepSize: Function called");
             const DEFAULT_STEP_SIZE = 300000;
             if (!sourceData?.Datetime || sourceData.Datetime.length < 2) {
                 return DEFAULT_STEP_SIZE;
@@ -307,11 +347,6 @@ window.NoiseSurveyApp = (function () {
                 const height = newData.length;
                 const width = newData[0] ? newData[0].length : 0;
 
-                console.log('[MatrixUtils] Updating image data:', {
-                    newData: newData,
-                    existingImage: existingImageData
-                });
-
                 // Verify data compatibility
                 if (newData.length !== existingImageData.length) {
                     console.warn('[MatrixUtils] Data size mismatch:', {
@@ -357,7 +392,8 @@ window.NoiseSurveyApp = (function () {
 
     function handleTap(cb_obj) {
         try {
-            //console.log("[DEBUG] handleTap: Function called");
+            // Handle tap event
+
             const chartModel = _getChartModel(cb_obj.origin.id, true);
             if (!chartModel || chartModel.name === 'frequency_bar') {
                 console.log('[Controller:handleTap]', 'Tap on frequency_bar or unknown chart, ignoring.');
@@ -382,15 +418,13 @@ window.NoiseSurveyApp = (function () {
                 }
             } else if (position && chartModel.name.includes('_spectrogram') && _state.activeSpectralData[position]) {
                 const activeData = _state.activeSpectralData[position];
-                const closest_idx = findClosestDateIndex(activeData.Datetime, raw_x);
+                const closest_idx = findClosestDateIndex(activeData.times_ms, raw_x);
                 if (closest_idx !== -1) {
-                    snapped_x = activeData.Datetime[closest_idx];
+                    snapped_x = activeData.times_ms[closest_idx];
                 }
             }
 
             // --- Update State ---
-            _state.verticalLinePosition = snapped_x;
-
             _state.tapContext = {
                 isActive: true,
                 timestamp: snapped_x,
@@ -401,6 +435,7 @@ window.NoiseSurveyApp = (function () {
             _updateActiveData();
 
             // --- Call Renderers ---
+            _recalculateStepSizeForFocus();
             renderTapLines(snapped_x);
             renderFrequencyBar();
             renderLabels();
@@ -418,7 +453,6 @@ window.NoiseSurveyApp = (function () {
     */
     function handleViewToggle(isActive, toggleWidget) { // toggleWidget passed to update its label
         try {
-            console.log("[DEBUG] handleViewToggle: Function called");
             const newViewType = isActive ? 'log' : 'overview';
 
             _state.viewType = newViewType;
@@ -440,8 +474,7 @@ window.NoiseSurveyApp = (function () {
 
     function handleParameterChange(value, selectWidget) {
         try {
-            console.log("[DEBUG] handleParameterChange: Function called");
-            console.log('[Controller:handleParameterChange]', { value });
+            // Parameter changed
 
             if (!value) { console.warn('[Controller:handleParameterChange]', 'Null/undefined parameter received.'); return; }
 
@@ -521,7 +554,7 @@ window.NoiseSurveyApp = (function () {
     // This function was not provided in the original code, adding a placeholder for it
     function handleSpectrogramHover(cb_data, position_name) {
         try {
-            console.log("[DEBUG] handleSpectrogramHover: Function called with data:", cb_data, "for position:", position_name);
+            // Handling spectrogram hover
             // Implement spectrogram hover logic here if needed
         } catch (error) {
             console.error("Error in handleSpectrogramHover:", error);
@@ -535,7 +568,6 @@ window.NoiseSurveyApp = (function () {
      */
     function handleVisibilityChange(cb_obj, chartName) {
         try {
-            //console.log(`[DEBUG] handleVisibilityChange: Called for ${chartName} with:`, cb_obj);
             if (!chartName) {
                 console.warn('[Controller:handleVisibilityChange]', 'No chartName provided.');
                 return;
@@ -563,13 +595,12 @@ window.NoiseSurveyApp = (function () {
 
     function handleRangeUpdate(cb_obj) {
         try {
-            //console.log("[DEBUG] handleZoom: Function called");
-            console.log("[Controller:handleZoom]", cb_obj);
+            // Handling zoom/range update
             _state.currentViewPort = {
                 min: cb_obj.start,
                 max: cb_obj.end
             };
-            console.log("[Controller:handleZoom]", _state.currentViewPort);
+            // Updated viewport
             _updateActiveData(); //TODO: set a target zoom level and only update the data for that level
             renderLineCharts();
             renderSpectrograms();
@@ -579,6 +610,72 @@ window.NoiseSurveyApp = (function () {
         } catch (error) {
             console.error("Error in handleZoom:", error);
         }
+    }
+
+    function handleKeyPress(e) {
+        // Ignore if focus is on an input element
+        const targetTagName = e.target.tagName.toLowerCase();
+        if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') {
+            return;
+        }
+
+        // Handle arrow key navigation
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            e.preventDefault();
+
+            let currentX = _state.tapContext.timestamp;
+            // If no line is set, start from the beginning of the current view
+            if (currentX === null || currentX === undefined || currentX === -1) {
+                currentX = _state.currentViewPort.min || 0;
+            }
+
+            const step = _state.stepSize || 300000; // Use state's step size, with a fallback
+            let newX = e.key === 'ArrowLeft' ? currentX - step : currentX + step;
+
+            // Clamp the new position to the current viewport range
+            if (_state.currentViewPort.min !== undefined && _state.currentViewPort.max !== undefined) {
+                newX = Math.max(_state.currentViewPort.min, Math.min(_state.currentViewPort.max, newX));
+            }
+
+            // --- Update State ---
+            _state.tapContext.timestamp = newX;
+            _state.tapContext.isActive = true;
+            // The position context (_state.tapContext.position) remains from the last tap.
+
+            // --- Trigger State Update & Renders ---
+            _updateActiveData();
+            renderTapLines();
+            renderLabels();
+            renderFrequencyBar();
+
+            // --- Trigger Backend Action ---
+            _sendSeekCommand(newX);
+
+        } else if (e.key === ' ' || e.code === 'Space') {
+            e.preventDefault();
+            // TODO: Implement togglePlayPause()
+            console.log("Spacebar pressed - togglePlayPause to be implemented.");
+        }
+    }
+
+    function enableKeyboardNavigation() {
+        if (!_state.keyboardNavigationEnabled) {
+            document.addEventListener('keydown', handleKeyPress);
+            _state.keyboardNavigationEnabled = true;
+            console.log('[NoiseSurveyApp] Keyboard navigation enabled.');
+        }
+    }
+
+    function disableKeyboardNavigation() {
+        if (_state.keyboardNavigationEnabled) {
+            document.removeEventListener('keydown', handleKeyPress);
+            _state.keyboardNavigationEnabled = false;
+            console.log('[NoiseSurveyApp] Keyboard navigation disabled.');
+        }
+    }
+
+    function setupKeyboardNavigation() {
+        enableKeyboardNavigation();
     }
 
     //===============================================================================================
@@ -593,8 +690,6 @@ window.NoiseSurveyApp = (function () {
     */
     function _updateActiveData(viewType = _state.viewType, parameter = _state.selectedParameter) {
         try {
-            //console.log("[DEBUG] _updateActiveData: Function called");
-
             _state.availablePositions.forEach(position => {
                 if (!_state.availablePositions.includes(position)) {
                     console.warn('[_updateActiveData]', `Position ${position} not found in available positions.`);
@@ -624,8 +719,40 @@ window.NoiseSurveyApp = (function () {
 
             _updateActiveFreqBarData(position, timestamp, setBy);
 
+            // 4. Recalculate Step Size for Keyboard Navigation
+            // The step size should be based on the data of the chart that currently has focus (the 'tap' context).
+            const focusedPosition = _state.tapContext.position;
+            if (focusedPosition && _state.activeLineChartData[focusedPosition]) {
+                const activeDataForFocus = _state.activeLineChartData[focusedPosition];
+                _state.stepSize = calculateStepSize(activeDataForFocus);
+                // console.log('[State:updateActiveData]', `Step size for keyboard nav recalculated to ${_state.stepSize}ms based on focus on ${focusedPosition}`);
+            }
+
         } catch (error) {
             console.error("Error in _updateActiveData:", error);
+        }
+    }
+
+    /**
+     * Recalculates and updates the keyboard navigation step size (_state.stepSize).
+     * This function uses the context from the last tap event (_state.tapContext)
+     * to determine which time-series chart is currently in focus. It then
+     * calculates a new step size based on the time interval of the data in that
+     * specific chart, ensuring that keyboard navigation (left/right arrows)
+     * moves by a relevant amount for the current view (e.g., smaller steps for
+     * high-resolution log data, larger steps for overview data).
+     * @private
+     */
+    function _recalculateStepSizeForFocus() {
+        try {
+            const focusedPosition = _state.tapContext.position;
+            const activeDataForFocus = _state.activeLineChartData[focusedPosition];
+
+            if (activeDataForFocus) {
+                _state.stepSize = calculateStepSize(activeDataForFocus);
+            }
+        } catch (error) {
+            console.error("Error in _updateStepSize:", error);
         }
     }
 
@@ -643,23 +770,68 @@ window.NoiseSurveyApp = (function () {
             }
 
             const sourceData = _models.timeSeriesSources[position];
-            const fallbackViewType = viewType === 'overview' ? 'log' : 'overview';
-            const requestedSource = sourceData ? sourceData[viewType] : null;
-            const fallbackSource = sourceData ? sourceData[fallbackViewType] : null;
+            const overviewData = sourceData?.overview?.data;
+            const logData = sourceData?.log?.data;
 
-            if (requestedSource?.data?.Datetime?.length > 0) {
-                _state.activeLineChartData[position] = requestedSource.data;
-                _state.displayedDataTypes[position].line = viewType;
-            } else if (fallbackSource?.data?.Datetime?.length > 0) {
-                _state.activeLineChartData[position] = fallbackSource.data;
-                _state.displayedDataTypes[position].line = fallbackViewType; // Track that we're showing the fallback
-            } else {
-                _state.activeLineChartData[position] = { Datetime: [], LAeq: [], LAFmax: [], LAF10: [], LAF90: [] }; // Empty default
-                _state.displayedDataTypes[position].line = 'None'; // Track that we're showing the fallback
-                console.warn('[_updateActiveLineChartData]', `No line chart data found for ${position}.`);
+            // Default to overview if it's explicitly requested or if no log data exists
+            if (viewType === 'overview' || !logData || logData.Datetime.length === 0) {
+                _state.activeLineChartData[position] = overviewData || {};
+                _state.displayedDataTypes[position].line = 'overview';
+                _state.reasonForDataDisplayed[position] = 'Overview'; // New state for titles
+                return;
             }
+
+            // --- If 'log' data is requested, apply the zoom-gate ---
+            const logTimes = logData.Datetime;
+            const viewMin = _state.currentViewPort.min;
+            const viewMax = _state.currentViewPort.max;
+
+            // Find the start and end indices of the data visible in the viewport
+            const startIndex = logTimes.findIndex(t => t >= viewMin);
+            const endIndex = logTimes.findLastIndex(t => t <= viewMax);
+
+            // Handle cases where the viewport is partially or fully outside the data range
+            if (startIndex === -1) { startIndex = 0; } // If view starts before data, start at beginning
+            if (endIndex === -1) { endIndex = logTimes.length - 1; } // If view ends after data, end at the end
+
+            // If the calculated range is invalid (e.g., view is entirely outside data),
+            // or if the start index is after the end index, fall back to overview.
+            if (endIndex < startIndex) {
+                _state.activeLineChartData[position] = hasOverview ? overviewData : {};
+                _state.displayedDataTypes[position].line = 'overview';
+                _state.reasonForDataDisplayed[position] = 'Overview (No Log Data in View)';
+                return;
+            }
+
+            const pointsInView = endIndex - startIndex;
+
+            if (pointsInView > MAX_LINE_POINTS_TO_RENDER) {
+                // --- ZOOMED OUT TOO FAR ---
+                // Keep showing the overview data but update the reason
+                _state.activeLineChartData[position] = overviewData || {};
+                _state.displayedDataTypes[position].line = 'overview'; // We are displaying overview
+                _state.reasonForDataDisplayed[position] = 'Overview (Zoom in for Log Data)';
+            } else {
+                // --- ZOOMED IN ENOUGH ---
+                // Calculate slice with a buffer for smooth panning
+                const buffer = Math.floor(pointsInView * 0.5);
+                const sliceStart = Math.max(0, startIndex - buffer);
+                const sliceEnd = Math.min(logTimes.length, endIndex + buffer + 1);
+
+                const chunk = {};
+                // Slice every column in the log data
+                for (const key in logData) {
+                    chunk[key] = logData[key].slice(sliceStart, sliceEnd);
+                }
+
+                _state.activeLineChartData[position] = chunk;
+                _state.displayedDataTypes[position].line = 'log'; // We are displaying log
+                _state.reasonForDataDisplayed[position] = 'Log Data (Chunked)';
+            }
+
         } catch (error) {
-            console.error("Error in _updateActiveLineChartData:", error);
+            console.error("Error in _updateActiveLineChartData for " + position + ":", error);
+            _state.activeLineChartData[position] = {}; // Fallback to empty
         }
     }
 
@@ -672,176 +844,92 @@ window.NoiseSurveyApp = (function () {
      */
     function _updateActiveSpectralData(position, viewType, parameter) {
         try {
-
-            const MAX_SPECTRAL_DATA_SIZE = 500 * 19; // size of data, which is n-time_steps x n-freq_bins
-
-            let reasonForDataDisplayed = null;
             const positionGlyphData = _models.preparedGlyphData[position];
-            const fallbackViewType = viewType === 'overview' ? 'log' : 'overview';
-            let activeSpectralData = {};
+            const overviewData = positionGlyphData?.overview?.prepared_params?.[parameter];
+            const logData = positionGlyphData?.log?.prepared_params?.[parameter];
+            const hasOverview = overviewData && overviewData.initial_glyph_data;
+            const hasLog = logData && logData.initial_glyph_data;
 
+            let dataToRender = null;
+            let reason = 'Overview';
+            let finalViewType = 'overview';
 
-            console.log('[_updateActiveSpectralData]', `Position glyph data:`, positionGlyphData);
+            // --- Determine which base data to use ---
+            if (viewType === 'log' && hasLog) {
+                // User wants log data, now we apply the zoom gate.
+                const pointsInView = Math.floor((_state.currentViewPort.max - _state.currentViewPort.min) / logData.time_step);
 
-            if (positionGlyphData?.[viewType]?.prepared_params?.[parameter]?.source_replacement?.image[0]?.length > 0) {
+                if (pointsInView > MAX_SPECTRAL_POINTS_TO_RENDER) {
+                    // ZOOMED OUT TOO FAR: Force overview
+                    dataToRender = hasOverview ? overviewData : null;
+                    reason = 'Zoom in for Log Data';
+                } else {
+                    // ZOOMED IN ENOUGH: Use log data for chunking
+                    dataToRender = logData;
+                    finalViewType = 'log';
+                    reason = 'Log Data'; // This will be refined by chunking logic
+                }
+            } else {
+                // Default case: User wants overview, or no log data exists. Use overview.
+                dataToRender = hasOverview ? overviewData : null;
+            }
 
-                const dataLength = positionGlyphData?.[viewType]?.prepared_params?.[parameter]?.source_replacement?.image[0]?.length;
+            // --- Process the selected data (dataToRender) ---
+            if (dataToRender) {
+                const nTimes = dataToRender.n_times;
+                const chunkTimeLength = dataToRender.chunk_time_length;
+                let finalGlyphData;
 
-                const workingData = positionGlyphData?.[viewType]?.prepared_params?.[parameter];
-                const timeStep = workingData?.time_step;
-                const nFreqs = workingData?.n_freqs;
-                const chunkTimeLength = workingData?.chunk_time_length;
-                const nTimes = workingData?.n_times;
-
-
-                // if the data is too large, we chunk it, showing only a portion of the data
                 if (nTimes <= chunkTimeLength) {
-                    // we can show the full data
-                    reasonForDataDisplayed = 'Requested';
-                    activeSpectralData = workingData;
-
-                    console.log('[_updateActiveSpectralData]', `Can use full data for ${position}/${viewType}/${parameter}. returning:`, activeSpectralData);
+                    // Data fits in one chunk, use its initial_glyph_data
+                    finalGlyphData = {
+                        ...dataToRender.initial_glyph_data,
+                        times_ms: dataToRender.times_ms
+                    };
+                    if (reason === 'Log Data') reason += ' (Full)';
 
                 } else {
-                    // we need to chunk the data
+                    // Data is large, so it must be log data that needs chunking
+                    const { min: viewMin, max: viewMax } = _state.currentViewPort;
+                    const targetChunkStartTimeStamp = (viewMax + viewMin) / 2 - (chunkTimeLength * dataToRender.time_step / 2);
+                    const chunkStartTimeIdx = dataToRender.times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
+                    const chunkStartTimeStamp = dataToRender.times_ms[chunkStartTimeIdx];
 
-                    const currentViewMax = _state.currentViewPort.max;
-                    const currentViewMin = _state.currentViewPort.min;
+                    const chunk_image = _extractTimeChunkFromFlatData(
+                        dataToRender.levels_flat_transposed, dataToRender.n_freqs,
+                        nTimes, chunkStartTimeIdx, chunkTimeLength
+                    );
+                    const chunk_times = dataToRender.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + chunkTimeLength);
 
-                    const samplesInCurrentView = Math.floor((currentViewMax - currentViewMin) / timeStep);
-                    console.log('[_updateActiveSpectralData]', `Samples in current view:`, samplesInCurrentView);
-
-                    const chunkBufferTimeSamples = samplesInCurrentView / 4;
-                    console.log('[_updateActiveSpectralData]', `Chunk buffer time samples:`, chunkBufferTimeSamples);
-
-                    if (samplesInCurrentView + chunkBufferTimeSamples * 2 <= chunkTimeLength) {
-                        // we can show a chunk. This will be a chunk of length chunkTimeLength*n_freqs.
-                        // The chunk will be centered on the current view.
-                        const chunkCenterTimeSamples = (currentViewMax + currentViewMin) / 2;
-                        console.log('[_updateActiveSpectralData]', `Chunk center time samples:`, chunkCenterTimeSamples);
-
-                        const targetChunkStartTimeStamp = chunkCenterTimeSamples - (samplesInCurrentView / 2 + chunkBufferTimeSamples) * timeStep;
-                        console.log('[_updateActiveSpectralData]', `Target chunk start time stamp:`, targetChunkStartTimeStamp);
-
-                        const chunkStartTimeIdx = workingData.times_ms.findIndex(time => time >= targetChunkStartTimeStamp);
-                        console.log('[_updateActiveSpectralData]', `Chunk start time index:`, chunkStartTimeIdx);
-                        
-                        const chunkStartTimeStamp = workingData.times_ms[chunkStartTimeIdx];
-                        console.log('[_updateActiveSpectralData]', `Chunk start time stamp:`, chunkStartTimeStamp);
-
-                        const chunk = _getTimeChunkFromSerialData(workingData.levels_matrix, nFreqs, chunkStartTimeIdx, chunkTimeLength, true);
-                        console.log('[_updateActiveSpectralData]', `Chunk:`, chunk);
-
-                        activeSpectralData.source_replacement = {
-                            ...workingData.source_replacement,
-                            image: [chunk],
-                            x: [chunkStartTimeStamp],
-                        };
-                        console.log('[_updateActiveSpectralData]', `Active spectral data:`, activeSpectralData);
-
-                        reasonForDataDisplayed = 'Chunked data';
-                        console.log('[_updateActiveSpectralData]', `Chunked data for ${position}/${viewType}/${parameter}. returning:`, activeSpectralData);
-
-                    } else {
-                        // Zoom level still too low, fall back to overview data
-                        activeSpectralData = null;
-                        reasonForDataDisplayed = 'Zoom level too low';
-                        console.warn('[_updateActiveSpectralData]', `Zoom level still too low for ${position}/${viewType}/${parameter}. Using fallback 'overview'.`);
-                    }
-
+                    finalGlyphData = {
+                        ...dataToRender.initial_glyph_data,
+                        image: [chunk_image],
+                        x: [chunkStartTimeStamp],
+                        times_ms: chunk_times,
+                    };
+                    reason = 'Log Data (Chunked)';
                 }
-            }
 
-            if (activeSpectralData) {
-                _state.activeSpectralData[position] = activeSpectralData;
-                _state.reasonForDataDisplayed[position] = reasonForDataDisplayed;
-                _state.displayedDataTypes[position].spec = viewType;
+                // Set the final state
+                _state.activeSpectralData[position] = {
+                    ...dataToRender,
+                    source_replacement: finalGlyphData,
+                };
+                _state.displayedDataTypes[position].spec = finalViewType;
+                _state.reasonForDataDisplayed[position] = reason; // Use the new dynamic reason
                 return;
             }
 
-            if (!reasonForDataDisplayed) console.log('[_updateActiveSpectralData]', `No data found for ${position}/${viewType}/${parameter}. Using fallback '${fallbackViewType}'.`, positionGlyphData?.[fallbackViewType]?.prepared_params?.[parameter]?.source_replacement?.image[0]);
-            if (positionGlyphData?.[fallbackViewType]?.prepared_params?.[parameter]?.source_replacement?.image[0]?.length > 0) {
-                //couldnt use the requested data, fall back to alternative data (usually overview)
-                if (!reasonForDataDisplayed) reasonForDataDisplayed = `${viewType} data not found, using fallback '${fallbackViewType}'.`;
-                _state.activeSpectralData[position] = positionGlyphData[fallbackViewType].prepared_params[parameter];
-                _state.displayedDataTypes[position].spec = fallbackViewType;
-                console.warn('[_updateActiveSpectralData]', `Data for view '${viewType}' not found for ${position}. Using fallback '${fallbackViewType}'.`);
-                console.log('[_updateActiveSpectralData]', `Using fallback data for ${position}/${fallbackViewType}/${parameter}. returning:`, _state.activeSpectralData[position]);
-                return;
-            }
-            //if we get here, we have no data at all
-            _state.activeSpectralData[position] = {
-                levels_matrix_transposed: null, // Explicitly null
-                x_coord: 0, y_coord: 0, dw_val: 1, dh_val: 1, // Minimal valid dimensions
-                min_val: 0, max_val: 1, // Default color range
-                frequency_labels: [], n_freqs: 0,
-                times_ms: [], n_times: 0, freq_indices: []
-            };
+            // --- FINAL FALLBACK (NO DATA FOUND) ---
+            _state.activeSpectralData[position] = { source_replacement: null };
             _state.displayedDataTypes[position].spec = 'None';
-            reasonForDataDisplayed = 'No data found';
-            console.warn('[_updateActiveSpectralData]', `Prepared spectral data for ${position}/${viewType}/${parameter} not found. Using placeholder.`);
-            return;
+            _state.reasonForDataDisplayed[position] = 'No Data Available';
 
         } catch (error) {
             console.error("Error in _updateActiveSpectralData:", error);
         }
     }
 
-    function _deserializeSpectrogramToMatrix(serializedData, n_times, n_freqs) {
-        /**
-        *Bokeh serialises data into a custom 1d format that works with glyphs. 
-        *This restores it to a 2d array, of height n_freqs and width n_times
-        */
-        try {
-
-            const restoredArray = [];
-            for (let i = 0; i < n_freqs; i++) {
-                restoredArray.push(serializedData.slice(i * n_times, (i + 1) * n_times));
-            }
-            return restoredArray;
-        } catch (error) {
-            console.error("Error in _deserializeSpectrogramToMatrix:", error);
-            return null;
-        }
-    }
-
-    function _getTimeChunkFromSerialData(data, n_freqs, idx, deltaI, transpose = false) {
-        /*
-        Bokeh serialises data into a custom 1d format that works with glyphs. 
-        This retrieves the chunk of 1d data that corresponds to a time chunk of 2d data (n_freqs x n_times)
-        starting at idx and with a width of deltaI
-        */
-        try {
-            let startIdx = Math.max(idx * n_freqs, 0);
-            let endIdx = Math.min((idx + deltaI) * n_freqs, data.length);
-            //make sure that the resulting length is a common factor of n_freqs
-            let length = endIdx - startIdx;
-            length = Math.floor(length / n_freqs) * n_freqs;
-            endIdx = startIdx + length;
-            if (endIdx > data.length) {
-                startIdx = data.length - length;
-                endIdx = data.length;
-            }
-            console.log("[_getTimeChunkFromSerialData]", {data: data, n_freqs: n_freqs, idx: idx, deltaI: deltaI, startIdx: startIdx, endIdx: endIdx});
-            const chunk = data.slice(startIdx, endIdx);
-            if (transpose) {
-                const chunkTransposed = data.slice(startIdx, endIdx); //to keep the original data format unmodified
-                const nCols = chunk.length / n_freqs;
-                const nRows = n_freqs;
-                for (let r = 0; r < nRows; r++) {
-                    for (let c = 0; c < nCols; c++) {
-                        chunkTransposed[r * nCols + c] = chunk[c * nRows + r];
-                    }
-                }
-                return chunkTransposed;
-            }
-            console.log("[_getTimeChunkFromSerialData]", chunk);
-            return chunk;
-        } catch (error) {
-            console.error("Error in _getTimeChunkFromSerialData:", error);
-            return null;
-        }
-    }
 
     function _updateActiveFreqBarData(position, timestamp, setBy) {
         try {
@@ -861,30 +949,25 @@ window.NoiseSurveyApp = (function () {
             }
 
             const activeSpectralData = _state.activeSpectralData[position];
-            if (!activeSpectralData || !activeSpectralData.times_ms || !Array.isArray(activeSpectralData.times_ms) || !activeSpectralData.levels_matrix) {
-                console.warn('[Manager:_updateActiveFreqBarData]', `No or incomplete active spectral data for position ${position}.`);
+            if (!activeSpectralData || (!activeSpectralData.times_ms && !activeSpectralData.times_ms && !activeSpectralData.times_ms) || activeSpectralData.times_ms.length === 0) {
+                console.warn('[Manager:_updateActiveFreqBarData]', `No or incomplete active spectral data for position ${position}.`, { activeSpectralData: activeSpectralData });
                 _state.activeFreqBarData = blankData;
                 return;
             }
 
-            console.log('[Manager:_updateActiveFreqBarData]', 'activeSpectralData', activeSpectralData);
 
-            let activeSpectralData2D = _deserializeSpectrogramToMatrix(activeSpectralData.source_replacement.image[0], activeSpectralData.n_times, activeSpectralData.n_freqs);
-            activeSpectralData2D = MatrixUtils.transpose(activeSpectralData2D); // the data is read off with freq as columns, not rows
-
-            const closestTimeIdx = activeSpectralData.times_ms.findLastIndex(time => time <= timestamp); //find the index of the 1st time <= timestamp
+            // Find the index of the first time <= timestamp within the total time array
+            const closestTimeIdx = activeSpectralData.times_ms.findLastIndex(time => time <= timestamp);
             if (closestTimeIdx === -1) {
-                console.warn('[Manager:_updateActiveFreqBarData]', `No closest time index for ${timestamp}.`);
                 _state.activeFreqBarData = blankData;
                 return;
             }
 
-
-            const freqDataSlice = activeSpectralData2D[closestTimeIdx];
-            if (!freqDataSlice || freqDataSlice.length !== activeSpectralData.n_freqs) {
-                console.warn('[Manager:_updateActiveFreqBarData]', `Frequency data slice invalid or wrong length for ${position} at index ${closestTimeIdx}.`);
-                _state.activeFreqBarData = blankData;
-                return;
+            const freqDataSlice = new Float32Array(activeSpectralData.n_freqs);
+            // Extract the vertical slice (all frequencies at one time step)
+            for (let i = 0; i < activeSpectralData.n_freqs; i++) {
+                // The index inside the flat buffer is: (row * row_width) + column
+                freqDataSlice[i] = activeSpectralData.levels_flat_transposed[i * activeSpectralData.n_times + closestTimeIdx];
             }
 
             let sourcetype = '';
@@ -925,7 +1008,6 @@ window.NoiseSurveyApp = (function () {
 
     function renderLineCharts() {
         try {
-            //console.log("[DEBUG] renderLineCharts: Function called");
             _state.availablePositions.forEach(position => {
                 const chartSource = _models.chartsSources.find(s => s.name === `source_${position}_timeseries`);
                 const chartModel = _models.charts.find(c => c.name === `figure_${position}_timeseries`);
@@ -938,21 +1020,9 @@ window.NoiseSurveyApp = (function () {
 
                 chartSource.data = activeData;
 
-                const requestedViewType = _state.viewType;
-                const displayedViewType = _state.displayedDataTypes[position];
-                const newTitleType = displayedViewType === 'log' ? "Log Data" : "Overview Data";
-                let titletext = `Time History ${position} (${newTitleType})`;
-                if (requestedViewType !== displayedViewType) {
-                    titletext = `${titletext} (${requestedViewType} data not available)`;
-                }
-                chartModel.title.text = titletext;
-
-                // Recalculate step size for keyboard navigation based on the new active data 
-                //TODO: this shouldnt be here???. Renderers are meant to be dumb. step size will be based on the position with focus
-                if (_state.activeFreqBarData.sourceposition === position) {
-                    _state.stepSize = calculateStepSize(activeData);
-                    console.log('[Render:renderLineChart]', `Step size recalculated to ${_state.stepSize}ms for ${position}`);
-                }
+                // Update title based on what's actually being displayed
+                const reason = _state.reasonForDataDisplayed[position] || 'Overview';
+                chartModel.title.text = `Time History ${position} - ${reason}`;
 
                 chartSource.change.emit();
 
@@ -977,20 +1047,14 @@ window.NoiseSurveyApp = (function () {
                     return;
                 }
 
-                const requestedViewType = _state.viewType;
-                const displayedSpecViewType = _state.displayedDataTypes[position]?.spec || 'None'; // Safe access
                 const currentParameter = _state.selectedParameter;
 
-                let titleText = `Spectrogram ${position} | ${currentParameter}`;
+                //update title
+                const reason = _state.reasonForDataDisplayed[position] || 'Overview';
+                let titleText = `Spectrogram ${position} | ${currentParameter} (${reason})`;
 
-                if (displayedSpecViewType !== 'None') {
-                    const viewTypeLabel = displayedSpecViewType === 'log' ? "Log Data" : "Overview Data";
-                    titleText += ` (${viewTypeLabel})`;
-                    if (requestedViewType !== displayedSpecViewType) {
-                        titleText += ` (${requestedViewType} data not available)`;
-                    }
-                } else {
-                    titleText += ` (No data available)`;
+                if (_state.displayedDataTypes[position]?.spec === 'None') {
+                    titleText = `Spectrogram ${position} | ${currentParameter} (No Data Available)`;
                 }
                 chartModel.title.text = titleText;
 
@@ -999,7 +1063,7 @@ window.NoiseSurveyApp = (function () {
                     console.warn('[Render:renderSpectrogram] No Image renderer found for spectrogram:', position);
                 }
 
-                if (activeData) { //TODO: fix this check
+                if (activeData?.source_replacement) {
                     _renderSingleSpectrogram(imageRenderer, activeData, chartModel, position);
                     chartModel.visible = true; // Ensure visible if data is rendered
                 } else {
@@ -1036,10 +1100,7 @@ window.NoiseSurveyApp = (function () {
             const source = imageRenderer.data_source;
             const glyph = imageRenderer.glyph;
             const colorMapper = imageRenderer.color_mapper;
-            console.log('[Render:_renderSingleSpectrogram]', `activeData:`, activeData);
             const replacement = activeData.source_replacement;
-            console.log('[Render:_renderSingleSpectrogram]', `replacement:`, replacement);
-            console.log('[Render:_renderSingleSpectrogram]', `source:`, source);
 
             if (replacement) {
 
@@ -1049,10 +1110,8 @@ window.NoiseSurveyApp = (function () {
                     console.warn('[Render:_renderSingleSpectrogram]', `Source image size:`, source.data.image[0].length);
                     return;
                 }
-                console.log('[Render:_renderSingleSpectrogram]', `Rendering replacement for ${position}`);
 
                 MatrixUtils.updateBokehImageData(source.data.image[0], replacement.image[0]);
-                console.log('[Render:_renderSingleSpectrogram]', `Updated image data for ${position}`);
                 glyph.x = replacement.x[0];
                 glyph.y = replacement.y[0];
                 glyph.dw = replacement.dw[0];
@@ -1099,37 +1158,72 @@ window.NoiseSurveyApp = (function () {
     }
 
     /**
-     * Renders the Frequency Bar Chart and Data Table based on _state.freqBarFocus and the given timestamp.
+     * Updates the HTML frequency table with current frequency data for copy/paste functionality
+     * @param {Array} levels - Array of level values for each frequency band
+     * @param {Array} labels - Array of frequency band labels
+     */
+    function _updateFrequencyTable(levels, labels) {
+        const tableDiv = _models.freqTableDiv;
+        if (!tableDiv) { console.error("[DEBUG] _updateFrequencyTable: Frequency table div model not found. Skipping update."); return; }
+
+        let tableHtml = `
+            <style>
+                .freq-html-table { border-collapse: collapse; width: 100%; font-size: 0.9em; table-layout: fixed; }
+                .freq-html-table th, .freq-html-table td { border: 1px solid #ddd; padding: 6px; text-align: center; white-space: nowrap; }
+                .freq-html-table th { background-color: #f2f2f2; font-weight: bold; }
+            </style>
+            <table class="freq-html-table"><tr>`;
+
+        // Add header row with frequency labels
+        labels.forEach(label => { tableHtml += `<th title="${label}">${label}</th>`; });
+        tableHtml += `</tr><tr>`;
+
+        // Add data row with level values
+        levels.forEach(level => {
+            const levelNum = Number(level);
+            const levelText = isNaN(levelNum) ? 'N/A' : levelNum.toFixed(1);
+            tableHtml += `<td>${levelText}</td>`;
+        });
+        tableHtml += `</tr></table>`;
+
+        // Update the table div content
+        tableDiv.text = tableHtml;
+    }
+
+    /**
+     * Renders the Frequency Bar Chart and Data Table based on _state.activeFreqBarData
      */
     function renderFrequencyBar() {
         try {
-            //console.log('[Render:renderFrequencyBar]', `Rendering frequency bar`);
-
+            // Update bar chart data source
             _models.barSource.data = { 'levels': _state.activeFreqBarData.levels, 'frequency_labels': _state.activeFreqBarData.frequency_labels };
-            // _models.barXRange.factors = _state.freqBarFocus.labels;
 
+            // Update the title with metadata
             _models.barChart.title.text =
                 `Frequency Slice: ${_state.activeFreqBarData.sourceposition} (${_state.activeFreqBarData.dataViewType})` +
                 ` | ${_state.selectedParameter}  | ${new Date(_state.activeFreqBarData.timestamp).toLocaleString()}` +
                 ` | ${_state.activeFreqBarData.setBy}`;
 
+            // Update the table for copy/paste functionality if table div is available
+            if (_models.freqTableDiv) {
+                _updateFrequencyTable(_state.activeFreqBarData.levels, _state.activeFreqBarData.frequency_labels);
+            }
+
+            // Notify Bokeh that the data source has changed
             _models.barSource.change.emit();
-            //_updateFrequencyTable(_state.freqBarFocus.levels, _state.freqBarFocus.labels); 
 
         } catch (error) {
             console.error("Error in renderFrequencyBar:", error);
         }
     }
 
-
-    function renderTapLines(timestamp = _state.verticalLinePosition) {
+    function renderTapLines(timestamp = null) {
         try {
-            //console.log("[DEBUG] renderTapLines: Function called");
-            //console.log('[Renderer:renderTapLines]', `Updating tap lines at x=${timestamp}`);
+
 
             if (!_models.clickLines) { console.error('[Renderer:renderTapLines]', 'Click lines not found.'); return; }
 
-            timestamp = timestamp || _state.verticalLinePosition; //if no timestamp is provided, get from state
+            timestamp = timestamp || _state.tapContext.timestamp; //if no timestamp is provided, get from tapContext
             if (timestamp === null || timestamp === undefined || timestamp === -1) {
                 console.log('[Renderer:renderTapLines]', 'No timestamp provided or invalid timestamp.');
                 _models.clickLines.forEach(line => { if (line) line.visible = false; });
@@ -1138,7 +1232,7 @@ window.NoiseSurveyApp = (function () {
 
             _models.clickLines.forEach(line => {
                 if (line) {
-                    console.log('[Renderer:renderTapLines]', `Updating tap line for ${line.name}`);
+                    // Updating tap line
                     line.location = timestamp;
                     line.visible = true;
                 }
@@ -1155,9 +1249,6 @@ window.NoiseSurveyApp = (function () {
         // if none are active, we dont show labels.
 
         try {
-            //console.log("[DEBUG] renderLabels: Function called");
-            //console.log('[Renderer:renderLabels]', `Updating labels at x=${timestamp}`);
-
             if (!_models.labels) { console.error('[Renderer:renderLabels]', 'Labels not found.'); return; }
 
             _models.labels.forEach(label => {
@@ -1194,8 +1285,6 @@ window.NoiseSurveyApp = (function () {
 
     function renderHoverLines() {
         try {
-            //console.log("[DEBUG] renderHoverLine: Function called");
-
             const timestamp = _state.hoverContext.timestamp;
             if (!timestamp) {
                 console.log('[Render:renderHoverLine]', 'No valid timestamp.');
@@ -1221,8 +1310,6 @@ window.NoiseSurveyApp = (function () {
 
     function renderSpectrogramHoverDiv() {
         try {
-            //console.log("[DEBUG] renderSpectrogramHoverDiv: Function called");
-
             //get the hover div for the active position
             if (!_state.hoverContext.position) { console.error('[Renderer:renderSpectrogramHoverDiv]', 'No hover div found.'); return; }
             const hover_div = _models.hoverDivs.find(div => div.name === `${_state.hoverContext.position}_spectrogram_hover_div`);
@@ -1263,7 +1350,6 @@ window.NoiseSurveyApp = (function () {
 
     function renderAllVisuals() {
         try {
-            console.log("[DEBUG] renderAllVisuals: Function called");
             renderLineCharts();
             renderSpectrograms();
             renderTapLines();
@@ -1290,7 +1376,7 @@ window.NoiseSurveyApp = (function () {
                 if (typeof isVisible === 'boolean') {
                     if (chartModel.visible !== isVisible) {
                         chartModel.visible = isVisible;
-                        console.log(`[Render:renderSingleChartVisibility] Set ${chartName} visibility to ${isVisible}`);
+                        // Updating chart visibility
                     }
                 } else {
                     console.warn(`[Render:renderSingleChartVisibility] Visibility state for ${chartName} is not a boolean:`, isVisible);
@@ -1361,7 +1447,7 @@ window.NoiseSurveyApp = (function () {
                 min: _models.charts[0].x_range.start,
                 max: _models.charts[0].x_range.end
             };
-            console.log("[Controller:initializeApp]", _state.currentViewPort);
+            // Application initialized with viewport
 
             //initialize visibility checkboxes
             if (_models.charts && _models.visibilityCheckBoxes) {
@@ -1385,6 +1471,13 @@ window.NoiseSurveyApp = (function () {
                 });
             }
 
+            // Setup keyboard navigation based on options
+            const kbNavEnabled = options?.enableKeyboardNavigation ?? false;
+            if (kbNavEnabled) {
+                setupKeyboardNavigation();
+            }
+            _recalculateStepSizeForFocus();
+
             //initialize data and render charts
             //_updateActiveData(_state.viewType, _state.selectedParameter);
             //renderAllVisuals();
@@ -1399,7 +1492,7 @@ window.NoiseSurveyApp = (function () {
         // State Access (for debugging or specific needs)
         getState: function () {
             try {
-                console.log("[DEBUG] getState: Function called");
+                // Getting application state
                 return JSON.parse(JSON.stringify(_state));
             } catch (error) {
                 console.error("Error in getState:", error);
