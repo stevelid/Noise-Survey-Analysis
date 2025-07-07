@@ -86,18 +86,34 @@ class PositionData:
     def has_audio_files(self) -> bool:
         return self.audio_files_list is not None and not self.audio_files_list.empty
     @property
+    def has_audio(self) -> bool:
+        return self.has_audio_files
+    @property
     def has_spectral_data(self) -> bool:
         return self.has_overview_spectral or self.has_log_spectral
 
     def _merge_df(self, existing_df: Optional[pd.DataFrame], new_df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
-        """Helper to concatenate and de-duplicate DataFrames by Datetime.
-        We dont actually want to merge so for now we will warn if there is already data here
-        and keep the old data
-        
-        """
-        if existing_df is not None and not existing_df.empty:
-            logger.error(f"Overwriting existing data for {self.name}")
-        return new_df
+        """Helper to concatenate and de-duplicate DataFrames by Datetime."""
+        if new_df is None or new_df.empty:
+            return existing_df
+        if existing_df is None or existing_df.empty:
+            return new_df
+
+        logger.info(f"Merging new data into existing DataFrame for position {self.name}.")
+        # Ensure both have Datetime column for merging
+        if 'Datetime' not in existing_df.columns or 'Datetime' not in new_df.columns:
+            logger.warning("Cannot merge DataFrames without a 'Datetime' column.")
+            return existing_df # Return original
+
+        try:
+            # Combine, sort by datetime, and remove duplicates, keeping the first entry
+            combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+            combined_df = combined_df.sort_values(by='Datetime', ascending=True)
+            combined_df = combined_df.drop_duplicates(subset=['Datetime'], keep='first')
+            return combined_df.reset_index(drop=True)
+        except Exception as e:
+            logger.error(f"Error merging DataFrames for {self.name}: {e}")
+            return existing_df # Return original on error
 
     def add_parsed_file_data(self, parsed_data_obj: ParsedData):
         """
@@ -128,12 +144,33 @@ class PositionData:
         # Distribute DataFrames based on data_profile
         profile = parsed_data_obj.data_profile
 
+        logger.debug(f"Adding data from {os.path.basename(parsed_data_obj.original_file_path)} to {self.name}")
+        logger.debug(f"  ParsedData profile: {parsed_data_obj.data_profile}, parser_type: {parsed_data_obj.parser_type}")
+        logger.debug(f"  ParsedData totals_df shape: {parsed_data_obj.totals_df.shape if parsed_data_obj.totals_df is not None else 'None'}")
+        logger.debug(f"  ParsedData spectral_df shape: {parsed_data_obj.spectral_df.shape if parsed_data_obj.spectral_df is not None else 'None'}")
+
         if profile == 'overview': # Typically summary reports
-            self.overview_totals = self._merge_df(self.overview_totals, parsed_data_obj.totals_df)
-            self.overview_spectral = self._merge_df(self.overview_spectral, parsed_data_obj.spectral_df)
+            logger.debug(f"  Before merge - overview_totals shape: {self.overview_totals.shape if self.overview_totals is not None else 'None'}")
+            if parsed_data_obj.totals_df is not None:
+                self.overview_totals = self._merge_df(self.overview_totals, parsed_data_obj.totals_df)
+            logger.debug(f"  After merge - overview_totals shape: {self.overview_totals.shape if self.overview_totals is not None else 'None'}")
+
+            logger.debug(f"  Before merge - overview_spectral shape: {self.overview_spectral.shape if self.overview_spectral is not None else 'None'}")
+            if parsed_data_obj.spectral_df is not None:
+                self.overview_spectral = self._merge_df(self.overview_spectral, parsed_data_obj.spectral_df)
+            logger.debug(f"  After merge - overview_spectral shape: {self.overview_spectral.shape if self.overview_spectral is not None else 'None'}")
+
         elif profile == 'log': # Typically time-history logs
-            self.log_totals = self._merge_df(self.log_totals, parsed_data_obj.totals_df)
-            self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
+            logger.debug(f"  Before merge - log_totals shape: {self.log_totals.shape if self.log_totals is not None else 'None'}")
+            if parsed_data_obj.totals_df is not None:
+                self.log_totals = self._merge_df(self.log_totals, parsed_data_obj.totals_df)
+            logger.debug(f"  After merge - log_totals shape: {self.log_totals.shape if self.log_totals is not None else 'None'}")
+
+            logger.debug(f"  Before merge - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
+            if parsed_data_obj.spectral_df is not None:
+                self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
+            logger.debug(f"  After merge - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
+
         elif profile == 'file_list' and parsed_data_obj.parser_type == 'Audio': # Audio parser result
             # Audio parser puts file list into totals_df
             if self.audio_files_list is None:
@@ -146,8 +183,15 @@ class PositionData:
             # Fallback for unknown profiles, try to merge into log if data exists
             logger.warning(f"Unknown data_profile '{profile}' for {parsed_data_obj.original_file_path}. "
                            "Attempting to merge into log attributes.")
-            self.log_totals = self._merge_df(self.log_totals, parsed_data_obj.totals_df)
-            self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
+            logger.debug(f"  Before merge (fallback) - log_totals shape: {self.log_totals.shape if self.log_totals is not None else 'None'}")
+            if parsed_data_obj.totals_df is not None:
+                self.log_totals = self._merge_df(self.log_totals, parsed_data_obj.totals_df)
+            logger.debug(f"  After merge (fallback) - log_totals shape: {self.log_totals.shape if self.log_totals is not None else 'None'}")
+
+            logger.debug(f"  Before merge (fallback) - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
+            if parsed_data_obj.spectral_df is not None:
+                self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
+            logger.debug(f"  After merge (fallback) - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
 
 
 # ==============================================================================
@@ -268,6 +312,10 @@ class DataManager:
         """Returns the number of positions loaded."""
         return len(self._positions_data)
 
+    def get_all_position_data(self):
+        """Returns a dictionary of all loaded positions."""
+        return self._positions_data
+    
     def examine_all_positions(self, max_files_to_detail=3):
         """Prints a summary of all loaded positions and their data."""
         if not self._positions_data:

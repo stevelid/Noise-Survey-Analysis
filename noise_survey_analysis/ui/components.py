@@ -1,5 +1,4 @@
 
-# Add the project root to Python path
 
 
 import pandas as pd
@@ -26,18 +25,13 @@ from bokeh.models import (
     CustomJS,
     Tap,
     Toggle,
+    Button,
     Select, 
     Row,
     Column,
     CheckboxGroup)
 from bokeh.palettes import Category10 # Or any other palette
 
-
-import sys
-from pathlib import Path
-current_file = Path(__file__)
-project_root = current_file.parent.parent.parent  # Go up to "Noise Survey Analysis"
-sys.path.insert(0, str(project_root))
 
 from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETTINGS
 from noise_survey_analysis.core.data_manager import PositionData
@@ -63,7 +57,6 @@ class TimeSeriesComponent:
         if not isinstance(position_data_obj, PositionData):
             raise ValueError("TimeSeriesComponent requires a valid PositionData object.")
 
-        #self.position_data = position_data_obj #commented out as it is not used, to remove once confirmed. 
         self.position_name = position_data_obj.name
         self._current_display_mode = initial_display_mode # 'overview' or 'log'
         self.chart_settings = CHART_SETTINGS
@@ -71,14 +64,14 @@ class TimeSeriesComponent:
         self.line_renderers = []
         
         #generate sources for the two view modes
-        if position_data_obj['overview_totals'] is not None:
+        if position_data_obj.overview_totals is not None:
             overview_df = position_data_obj.overview_totals.copy()
             overview_df['Datetime'] = overview_df['Datetime'].values.astype(np.int64) // 10**6 #convert to ms
             self.overview_source: ColumnDataSource = ColumnDataSource(data=overview_df)
         else:
             self.overview_source: ColumnDataSource = ColumnDataSource(data={})
         
-        if position_data_obj['log_totals'] is not None:
+        if position_data_obj.log_totals is not None:
             log_df = position_data_obj.log_totals.copy()
             log_df['Datetime'] = log_df['Datetime'].values.astype(np.int64) // 10**6 #convert to ms
             self.log_source: ColumnDataSource = ColumnDataSource(data=log_df)
@@ -86,9 +79,7 @@ class TimeSeriesComponent:
             self.log_source: ColumnDataSource = ColumnDataSource(data={})
         
         #source and figure
-        #make a copy of the source data to prevent overwriting the source when the data is updated
         self.source = ColumnDataSource(data=dict(self.overview_source.data)) if self._current_display_mode == 'overview' else ColumnDataSource(data=dict(self.log_source.data))
-        #self.source = ColumnDataSource(data={'Datetime': [], 'LAeq': [], 'LAFmax': [], 'LAF10': [],'LAF90': []}) #dont set this to the overview or log source as it overwrite the source when the data is updated
         self.source.name = "source_" + self.name_id
         self.figure: figure = self._create_figure()
         self._update_plot_lines() # Add lines based on initial data
@@ -96,7 +87,7 @@ class TimeSeriesComponent:
 
         #interative components
         self.tap_lines = Span(location=0, dimension='height', line_color='red', line_width=1, name=f"click_line_{self.name_id}")
-        self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hover_line_{self.name_id}")
+        self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hoverline_{self.name_id}")
         self.label = Label(x=0, y=0, text="", text_font_size='10pt', background_fill_color="white", background_fill_alpha=0.6, text_baseline="middle", visible=False, name=f"label_{self.name_id}")
 
         self.figure.add_layout(self.tap_lines)
@@ -118,18 +109,29 @@ class TimeSeriesComponent:
         # Common tools for time series charts
         tools = self.chart_settings['tools']
         
-        p = figure(
-            height=self.chart_settings['low_freq_height'],
-            width=self.chart_settings['low_freq_width'],
-            title=title,
-            x_axis_type="datetime",
-            x_axis_label="Time",
-            y_axis_label="Sound Level (dB)",
-            tools=tools,
-            active_drag="xpan",
-            active_scroll="xwheel_zoom",
-            name=f"figure_{self.name_id}" # For identification
-        )
+        fig_kwargs = {
+            "height": self.chart_settings['low_freq_height'],
+            "width": self.chart_settings['low_freq_width'],
+            "title": title,
+            "x_axis_type": "datetime",
+            "x_axis_label": "Time",
+            "y_axis_label": "Sound Level (dB)",
+            "tools": tools,
+            "active_drag": "xpan",
+            "active_scroll": "xwheel_zoom",
+            "name": f"figure_{self.name_id}"
+        }
+
+        # Set y-range if specified in config
+        if self.chart_settings.get('timeseries_y_range'):
+            try:
+                y_start, y_end = self.chart_settings['timeseries_y_range']
+                fig_kwargs['y_range'] = Range1d(y_start, y_end)
+                logger.debug(f"Setting fixed y-range for {self.position_name} to {self.chart_settings['timeseries_y_range']}")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Invalid 'timeseries_y_range' format: {self.chart_settings['timeseries_y_range']}. Using auto-range. Error: {e}")
+
+        p = figure(**fig_kwargs)
                 
         return p
 
@@ -242,9 +244,7 @@ class SpectrogramComponent:
         if not isinstance(position_glyph_data, dict):
             raise ValueError("SpectrogramComponent requires a valid GlyphDataProcessor instance.")
 
-        #self.position_data = position_data_obj #commented out as it is not used, to remove once confirmed. 
         self.position_name = position_data_obj.name
-        #self.position_glyph_data = position_glyph_data #commented out as it is not used, to remove once confirmed. 
         self.chart_settings = CHART_SETTINGS
         self._current_display_mode = initial_display_mode 
         self._current_param = initial_param
@@ -263,7 +263,7 @@ class SpectrogramComponent:
 
         #interactive components
         self.tap_lines = Span(location=0, dimension='height', line_color='red', line_width=1, name=f"click_line_{self.name_id}")
-        self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hover_line_{self.name_id}")
+        self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hoverline_{self.name_id}")
 
         self.figure.add_layout(self.tap_lines)
         self.figure.add_layout(self.hover_line)
@@ -455,7 +455,7 @@ class ControlsComponent:
     def __init__(self, available_params: List[str]): # Would take DataManager to access all positions' info
         
         self.available_params = available_params
-        self.visibility_checkboxes_map: Dict[str, Toggle] = {} # Key: chart_name, Value: Checkbox/Toggle widget
+        self.visibility_checkboxes: Dict[str, list] = {} # Key: position_name, Value: list of (chart_name, checkbox_widget) tuples
         self.visibility_layout = None
         
         self.view_toggle = self.add_view_type_selector()
@@ -498,9 +498,18 @@ class ControlsComponent:
         Adds a visibility checkbox for a specific chart.
         Called by DashBuilder after chart components are created.
         """
-        # Use Toggle to match your component's current implementation
-        # If you switch to Checkbox in components, use Checkbox(label=chart_label, active=initial_state, name=f"visibility_cb_{chart_name}")
-        checkbox = CheckboxGroup(labels=[chart_label], active=[0] if initial_state else [], name=f"{chart_name.replace("figure_", "checkbox_")}", width=150) # Adjust width as needed
+        # The chart_name is expected to be in the format 'figure_Position_chart-type', e.g., 'figure_East_timeseries'
+        try:
+            position_name = chart_name.split('_')[1]
+        except IndexError:
+            logger.warning(f"Could not determine position from chart name: '{chart_name}'. Grouping as 'unknown'.")
+            position_name = "unknown"
+
+        checkbox = CheckboxGroup(labels=[chart_label], active=[0] if initial_state else [], width=150, name=f"visibility_{chart_name}")
+        
+        if position_name not in self.visibility_checkboxes:
+            self.visibility_checkboxes[position_name] = []
+        self.visibility_checkboxes[position_name].append((chart_name, checkbox))
 
         # --- Attach JS Callback ---
         checkbox_js_callback = CustomJS(args=dict(chart_name=chart_name),code=f"""
@@ -511,16 +520,28 @@ class ControlsComponent:
                 }}
             """)
         checkbox.js_on_change("active", checkbox_js_callback)
-        self.visibility_checkboxes_map[chart_name] = checkbox
-
+        
     def _build_visibility_layout(self):
-        """Builds the row layout for visibility checkboxes."""
-        if not self.visibility_checkboxes_map:
+        """Builds the layout for visibility checkboxes, grouping them by position into a 2xP grid."""
+        if not self.visibility_checkboxes:
             self.visibility_layout = Div(text="") # Empty div if no checkboxes
             return
 
-        checkbox_widgets = list(self.visibility_checkboxes_map.values())
-        self.visibility_layout = Row(*checkbox_widgets, name="visibility_controls_row", sizing_mode="scale_width")
+        position_columns = []
+        # Sort positions alphabetically for consistent order
+        for position_name in sorted(self.visibility_checkboxes.keys()):
+            checkboxes = self.visibility_checkboxes[position_name]
+            # Sort checkboxes to ensure TS is above Spec, assuming consistent naming
+            # 'timeseries' comes before 'spectrogram' alphabetically.
+            sorted_checkboxes = sorted(checkboxes, key=lambda item: item[0])
+            checkbox_widgets = [widget for name, widget in sorted_checkboxes]
+            
+            # Create a vertical column for each position's checkboxes
+            position_column = Column(*checkbox_widgets, name=f"visibility_col_{position_name}")
+            position_columns.append(position_column)
+        
+        # Arrange the vertical columns in a horizontal row
+        self.visibility_layout = Row(*position_columns, name="visibility_controls_row", sizing_mode="scale_width")
 
 
     def layout(self):
@@ -540,7 +561,11 @@ class ControlsComponent:
         return Row(main_controls_row, self.visibility_layout, name="controls_component_layout")
 
     def get_all_visibility_checkboxes(self) -> list:
-        return list(self.visibility_checkboxes_map.values())
+        """Returns a flat list of all checkbox widgets."""
+        all_checkboxes = []
+        for position_checkboxes in self.visibility_checkboxes.values():
+            all_checkboxes.extend([widget for name, widget in position_checkboxes])
+        return all_checkboxes
         
 
 class RangeSelectorComponent:
@@ -571,7 +596,7 @@ class RangeSelectorComponent:
         
         #interactive components
         self.tap_lines = Span(location=0, dimension='height', line_color='red', line_width=1, name=f"click_line_{self.name_id}")
-        self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hover_line_{self.name_id}")
+        self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hoverline_{self.name_id}")
         self.figure.add_layout(self.tap_lines)
         self.figure.add_layout(self.hover_line)
     
@@ -614,7 +639,7 @@ class RangeSelectorComponent:
     def _create_selector_figure(self, source: ColumnDataSource) -> Figure:
         x_start, x_end = None, None
         # Check if Datetime data exists and is not empty
-        if source.data['Datetime'].all() and len(source.data['Datetime']) > 0:
+        if 'Datetime' in source.data and len(source.data['Datetime']) > 0:
             # Convert to NumPy array for easier min/max if it's a list
             datetime_array = np.array(source.data['Datetime'])
             x_start = datetime_array.min()
@@ -643,7 +668,7 @@ class RangeSelectorComponent:
 
         # Metrics plotting also needs to be robust to empty source
         metrics_to_plot = []
-        if source.data['Datetime'].all() and len(source.data['Datetime']) > 0:
+        if 'Datetime' in source.data and len(source.data['Datetime']) > 0:
             # Check for other columns that are list-like and have matching length
             metrics = [
                 col for col in source.data 
@@ -924,3 +949,51 @@ if __name__ == '__main__':
 
 
     print("\nComponent testing complete.")
+
+def create_audio_controls_for_position(position_id: str) -> dict:
+    """
+    Creates a dictionary of Bokeh widgets for controlling audio playback for a single position.
+
+    Args:
+        position_id (str): The identifier for the measurement position (e.g., 'SW', 'N').
+
+    Returns:
+        dict: A dictionary containing the Bokeh widgets ('play_toggle', 'playback_rate_button', 
+              'volume_boost_button') and their containing 'layout'.
+    """
+    # Play/Pause Toggle Button
+    play_toggle = Toggle(
+        label="Play", 
+        button_type="success", 
+        width=80,
+        name=f"play_toggle_{position_id}"
+    )
+
+    # Playback Rate Button
+    playback_rate_button = Button(
+        label="1.0x",
+        width=60,
+        name=f"playback_rate_{position_id}"
+    )
+
+    # Volume Boost Toggle Button
+    volume_boost_button = Toggle(
+        label="Boost",
+        width=70,
+        name=f"volume_boost_{position_id}"
+    )
+
+    # Layout for the controls
+    controls_layout = Row(
+        play_toggle, 
+        playback_rate_button, 
+        volume_boost_button,
+        name=f"audio_controls_{position_id}"
+    )
+
+    return {
+        "play_toggle": play_toggle,
+        "playback_rate_button": playback_rate_button,
+        "volume_boost_button": volume_boost_button,
+        "layout": controls_layout
+    }

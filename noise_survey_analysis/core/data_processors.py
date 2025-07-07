@@ -114,8 +114,9 @@ class GlyphDataProcessor:
         """
         logger.debug(f"Preparing single spectrogram data for parameter: {param_prefix} from DF shape {df.shape}")
         
-        MAX_DATA_SIZE = 95000 #this should be (MAX_SPECTRAL_POINTS_TO_RENDER from app.js  + buffer) * num_freqs #TODO: Make this a config parameter
-        
+        MAX_DATA_SIZE = 95000 # this should be (MAX_SPECTRAL_POINTS_TO_RENDER from app.js  + buffer) * num_freqs # TODO: Make this a config parameter
+        n_freqs = 0 # Initialize n_freqs
+
         if df is None or df.empty:
             logger.warning(f"Empty DataFrame provided for spectral data preparation: {param_prefix}")
             return None

@@ -54,3 +54,11 @@ There are two primary methods for updating `ColumnDataSource` data via JavaScrip
 ### Common Errors
 -   `'expected a 2D array, not undefined'`: Often indicates that the `image` field within `source.data` is not conforming to the expected 2D array format (i.e., a `TypedArray` representing a 2D array) or is missing.
 -   `'Size mismatch errors'`: Occurs when violating the `ColumnDataSource`'s rule that all columns must have the same length. This typically happens when updating a subset of columns or when new data for one column has a different length than existing data in other columns. The solution is to replace the entire `source.data` dictionary with a new one where all columns have consistent lengths.
+
+## Code Structure and Maintainability
+
+Focus on maintaining a clean, readable, and navigable code structure. Adhere to the following principles:
+
+*   **Separation of Concerns (SoC):** Keep code for different functionalities in separate modules or components.
+*   **Single Responsibility Principle (SRP):** Within reason, each function, class, or module should have a single, well-defined responsibility.
+*   **Avoid Verbosity:** Write concise and clear code. Avoid unnecessary complexity or overly verbose implementations. The goal is code that is easy to understand and maintain.

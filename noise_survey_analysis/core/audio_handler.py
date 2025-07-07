@@ -38,6 +38,7 @@ class AudioPlaybackHandler:
         """
         self.file_info_by_position = {}
         self.current_position = None
+        self.current_amplification = 0
 
         # Initialize VLC
         try:
@@ -78,7 +79,7 @@ class AudioPlaybackHandler:
     def _index_all_positions(self, position_data: dict):
             """Iterates through all positions and indexes their audio files."""
             for position_name, data_dict in position_data.items():
-                audio_path = data_dict.get('audio')
+                audio_path = data_dict.audio_files_list
                 if not audio_path or not os.path.isdir(audio_path):
                     continue
 
@@ -108,7 +109,6 @@ class AudioPlaybackHandler:
                 
                 processed_svan_files = []
                 if svan_files_to_process:
-                    # --- FIX: Robustly get the anchor time ---
                     anchor_df = data_dict.get('overview')
                     if anchor_df is None or anchor_df.empty:
                         anchor_df = data_dict.get('log')
@@ -116,7 +116,6 @@ class AudioPlaybackHandler:
                     anchor_time = None
                     if anchor_df is not None and not anchor_df.empty and 'Datetime' in anchor_df.columns:
                         anchor_time = anchor_df['Datetime'].min()
-                    # --- End of Fix ---
 
                     if anchor_time:
                         svan_files_to_process.sort(key=lambda x: x['num'])
@@ -151,33 +150,42 @@ class AudioPlaybackHandler:
             self.current_position = None
             return False
 
-    def _find_file_for_timestamp(self, timestamp: datetime.datetime, position: Optional[str] = None) -> Tuple[Optional[str], float, Optional[datetime.datetime]]:
+    def _find_file_for_timestamp(self, timestamp: datetime.datetime, position: Optional[str] = None) -> Tuple[Optional[str], float, Optional[datetime.datetime], Optional[float]]:
         """Finds the correct audio file and offset for a timestamp in the current position."""
-        #logger.info(f"Finding file for timestamp: {timestamp}")
-        if not position or position not in self.file_info_by_position:
-            logger.warning(f"No indexed audio files found for position '{position}'.")
+        # Use the provided position or fall back to the instance's current_position
+        target_position = position if position is not None else self.current_position
+
+        if not target_position or target_position not in self.file_info_by_position:
+            logger.warning(f"No indexed audio files found for position '{target_position}'.")
             return None, 0, None, None
 
-        #logger.info(f"Current position: {self.current_position}")
-        #logger.info(f"File info for current position: {self.file_info_by_position[self.current_position]}")
-        
-        for filepath, start_time, duration_sec in self.file_info_by_position[position]:
+        # Sort files by start time to ensure correct chronological processing
+        sorted_files = sorted(self.file_info_by_position[target_position], key=lambda x: x[1])
+
+        # Find the file that contains the timestamp
+        for filepath, start_time, duration_sec in sorted_files:
             if duration_sec <= 0:
-                logger.warning(f"Invalid duration for file: {filepath}")
+                logger.warning(f"Invalid duration for file: {os.path.basename(filepath)}. Skipping.")
                 continue
 
-            if timestamp < start_time:
-                logger.warning(f"jumping to time of first file")
-                timestamp = start_time
-                return filepath, 0, start_time, duration_sec
-
             end_time = start_time + datetime.timedelta(seconds=duration_sec)
-            #logger.info(f"Checking file for time: {timestamp}, file: {filepath} (start: {start_time}, duration: {duration_sec}), end: {end_time}")
+
             if start_time <= timestamp < end_time:
                 offset = (timestamp - start_time).total_seconds()
                 return filepath, offset, start_time, duration_sec
-        
-        logger.warning(f"Timestamp {timestamp} is outside the playable range for position '{position}'.")
+            elif timestamp < start_time: # If timestamp is before this file, and thus before all subsequent files
+                # If the timestamp is before the very first file, snap to the start of the first file
+                if filepath == sorted_files[0][0]:
+                    logger.info(f"Timestamp {timestamp} is before the first audio file. Snapping to start of {os.path.basename(filepath)}.")
+                    return filepath, 0, start_time, duration_sec
+                else:
+                    # If it's before this file but not the first, it means it falls in a gap or before any known file.
+                    # This case should ideally not happen if data is contiguous, but handle it.
+                    logger.warning(f"Timestamp {timestamp} falls in a gap before {os.path.basename(filepath)}. Cannot find exact match.")
+                    return None, 0, None, None
+
+        # If loop completes, timestamp is after all known files
+        logger.warning(f"Timestamp {timestamp} is outside the playable range for position '{target_position}'.")
         return None, 0, None, None
 
     def play(self, timestamp: datetime.datetime, position_callback: Optional[Callable] = None) -> bool:
@@ -486,7 +494,10 @@ class AudioPlaybackHandler:
         volume_percent = volume_map.get(db_level, 100) # Default to 100% (0dB)
 
         logger.info(f"Setting amplification to +{db_level}dB (VLC Volume: {volume_percent}%)")
-        return self.player.audio_set_volume(volume_percent) == 0
+        result = self.player.audio_set_volume(volume_percent) == 0
+        if result:
+            self.current_amplification = db_level
+        return result
 
     def get_time(self):
         return self.player.get_time()

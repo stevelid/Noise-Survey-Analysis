@@ -42,6 +42,10 @@ CHART_SETTINGS = {
     'range_selector_height': 150,
     'y_range': (0, 100),
     'auto_y_range': False,
+    # Set the y-axis range for timeseries charts.
+    # An empty list [] enables auto-ranging.
+    # Example: [20, 100]
+    'timeseries_y_range': [20, 100],
     'frequency_log_scale': False,
     'frequency_bar_height': 360,
     'frequency_bar_width': 1600,
@@ -92,6 +96,30 @@ DEFAULT_DATA_SOURCES = [
         "file_path": r"G:\Shared drives\Venta\Jobs\5792 Swyncombe Field, Padel Courts\5792 Surveys\971-2\L251_summary.csv",
         "parser_type": "svan", # Specifies which parser class to use
         "enabled": True         # Flag to easily include/exclude this file
+    },
+    {
+        "position_name": "nti_log",
+        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Log.txt",
+        "parser_type": "nti",
+        "enabled": True
+    },
+    {
+        "position_name": "nti_rpt_report",
+        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Rpt_Report.txt",
+        "parser_type": "nti",
+        "enabled": True
+    },
+    {
+        "position_name": "nti_rta_log",
+        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Log.txt",
+        "parser_type": "nti",
+        "enabled": True
+    },
+    {
+        "position_name": "nti_rta_rpt_report",
+        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Rpt_Report.txt",
+        "parser_type": "nti",
+        "enabled": True
     }
 ]
 # Configuration dictionary (for backward compatibility)

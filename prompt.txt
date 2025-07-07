@@ -1,0 +1,2352 @@
+
+
+==== noise_survey_analysis\core\config.py ====
+
+"""
+Centralized configuration for Noise Survey Analysis.
+
+This module contains all configuration settings used throughout the application.
+Previously, these settings were scattered across different files.
+"""
+
+REQUIRED_BROADBAND_METRICS = [
+    'LAeq',
+    'LAF90',
+    'LAF10',
+    'LAFmax',
+    'LAFmax_dt', # From NTi Log
+    'LAeq_dt',   # From NTi Log
+]
+
+# Define the prefixes for spectral parameters required
+REQUIRED_SPECTRAL_PREFIXES = [
+    'LZeq',
+    'LZF90',
+    'LZFmax',
+]
+
+
+# Chart settings
+CHART_SETTINGS = {
+    'lower_freq_band': 6,
+    'upper_freq_band': -10,
+    'low_freq_height': 360,      
+    'low_freq_width': 1600,      
+    'high_freq_height': 360,     
+    'high_freq_width': 1600,      
+    'spectrogram_height': 360,   
+    'spectrogram_width': 1600,    
+    'sync_charts': True,
+    'tools': 'xzoom_in,xzoom_out,xpan,reset,xwheel_zoom',  # X-axis only tools
+    'active_scroll': 'xwheel_zoom',
+    'line_width': 1,
+    'colormap': 'Turbo256',
+    'active_drag': 'xpan',
+    'range_selector_width': 1600,
+    'range_selector_height': 150,
+    'y_range': (0, 100),
+    'auto_y_range': False,
+    # Set the y-axis range for timeseries charts.
+    # An empty list [] enables auto-ranging.
+    # Example: [20, 100]
+    'timeseries_y_range': [20, 100],
+    'frequency_log_scale': False,
+    'frequency_bar_height': 360,
+    'frequency_bar_width': 1600,
+    'default_spectral_param': 'LZeq',  # Default parameter to show for spectrograms
+}
+
+# Visualization settings
+VISUALIZATION_SETTINGS = {
+    'default_title': 'Sound Level Analysis',
+    'line_colors': {
+        'LAeq': '#0000FF',  # Blue (adjusted to match example)
+        'LAF90': '#008000', # Green (adjusted to match example as LA90)
+        'LAF10': '#FFA500', # Orange
+        'LAFmax': '#FF0000', # Red
+        'LAFmax_dt': '#FF0000', # Red
+        'LAeq_dt': '#0000FF',  # Blue (adjusted to match example)
+    },
+    'show_grid': True,
+    'sync_ranges': True, # Whether to synchronize the x-ranges of the charts to be the same size (equal to shortest time range)
+}
+
+# Processing settings
+PROCESSING_SETTINGS = {
+    'default_resample': '1S',
+    'smooth_window': 3,
+}
+
+# Default base directory for job files
+DEFAULT_BASE_JOB_DIR = "G:\\Shared drives\\Venta\\Jobs"
+
+# --- General Application Settings ---
+GENERAL_SETTINGS = {
+    # Define the base path where corresponding audio/video media files might be found.
+    # This path should correspond to the root directory containing media files,
+    # which are typically expected to be named similarly to the survey data files.
+    # TODO: Update this path to the correct location for your system or make it configurable.
+    "media_path": r"G:\Shared drives\Venta\Jobs\5924 44 Grafton Road, London\5924 Surveys\5924-3",
+
+    # TODO: Add other general settings like logging level, default theme, etc.
+    # "log_level": "INFO", # Example: DEBUG, INFO, WARNING, ERROR
+}
+
+# --- New Data Source Configuration ---
+# A list of dictionaries, where each dictionary defines a data source file.
+DEFAULT_DATA_SOURCES = [
+    {
+        "position_name": "svan",  # User-friendly name for the measurement position
+        "file_path": r"G:\Shared drives\Venta\Jobs\5792 Swyncombe Field, Padel Courts\5792 Surveys\971-2\L251_summary.csv",
+        "parser_type": "svan", # Specifies which parser class to use
+        "enabled": True         # Flag to easily include/exclude this file
+    },
+    {
+        "position_name": "nti_log",
+        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Log.txt",
+        "parser_type": "nti",
+        "enabled": True
+    },
+    {
+        "position_name": "nti_rpt_report",
+        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Rpt_Report.txt",
+        "parser_type": "nti",
+        "enabled": True
+    },
+    {
+        "position_name": "nti_rta_log",
+        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Log.txt",
+        "parser_type": "nti",
+        "enabled": True
+    },
+    {
+        "position_name": "nti_rta_rpt_report",
+        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Rpt_Report.txt",
+        "parser_type": "nti",
+        "enabled": True
+    }
+]
+# Configuration dictionary (for backward compatibility)
+CONFIG = {
+    'chart_settings': CHART_SETTINGS,
+    'visualization': VISUALIZATION_SETTINGS,
+    'processing': PROCESSING_SETTINGS
+    # Avoid putting DEFAULT_DATA_SOURCES in here unless absolutely necessary
+    # for old code. It's better managed separately.
+}
+
+# Add logger for config module if used elsewhere
+import logging
+logger = logging.getLogger(__name__) 
+
+==== noise_survey_analysis\core\data_manager.py ====
+
+""" data_manager.py"""
+
+import os
+import pandas as pd
+from collections import defaultdict # Not strictly needed with current PositionData, but good for other aggregations
+import logging
+from typing import List, Dict, Optional, Any, Set, Union # Added Union
+
+# Assuming your refactored parsers are in a file named 'data_parsers_refactored.py'
+# in the same directory or a properly configured package.
+try:
+    from .data_parsers import NoiseParserFactory, ParsedData, AbstractNoiseParser
+except ImportError: # Fallback for running script directly
+    from data_parsers import NoiseParserFactory, ParsedData, AbstractNoiseParser
+
+
+logger = logging.getLogger(__name__)
+
+# ==============================================================================
+#  1. The Data Holder Class for a Single Position
+# ==============================================================================
+class PositionData:
+    """
+    A container for all data associated with a single measurement position.
+    This class provides convenient `.has_overview` style accessors and stores
+    standardized metadata.
+    """
+    def __init__(self, name: str):
+        self.name: str = name
+        # Standardized data holders
+        self.overview_totals: Optional[pd.DataFrame] = None
+        self.overview_spectral: Optional[pd.DataFrame] = None
+        self.log_totals: Optional[pd.DataFrame] = None
+        self.log_spectral: Optional[pd.DataFrame] = None
+        self.audio_files_list: Optional[pd.DataFrame] = None # For list of audio files
+
+        # Store combined metadata from all contributing files for this position
+        self.source_file_metadata: Optional[List[Dict[str, Any]]] = []
+        # Key overall metadata for the position (derived from sources)
+        self.parser_types_used: Optional[Set[str]] = set()
+        self.sample_periods_seconds: Optional[Set[Optional[float]]] = set()
+        self.spectral_data_types_present: Optional[Set[str]] = set()
+
+
+    def __repr__(self) -> str:
+        overview_shape = self.overview_totals.shape if self.has_overview_totals else "None"
+        log_shape = self.log_totals.shape if self.has_log_totals else "None"
+        spectral_log_shape = self.log_spectral.shape if self.has_log_spectral else "None"
+        return (f"<PositionData: {self.name} | Overview: {overview_shape}, Log: {log_shape}, "
+                f"SpectralLog: {spectral_log_shape}>")
+
+    def __getitem__(self, key: str) -> Optional[pd.DataFrame]:
+        """
+        Allows dictionary-style access to data attributes.
+        e.g., position_data['overview_totals']
+        """
+        if key == 'overview_totals':
+            return self.overview_totals
+        elif key == 'overview_spectral':
+            return self.overview_spectral
+        elif key == 'log_totals':
+            return self.log_totals
+        elif key == 'log_spectral':
+            return self.log_spectral
+        elif key == 'audio_files_list':
+            return self.audio_files_list
+        else:
+            raise KeyError(f"'{key}' is not a valid data attribute for PositionData. "
+                           f"Valid keys are: 'overview_totals', 'overview_spectral', "
+                           f"'log_totals', 'log_spectral', 'audio_files_list'.")
+
+    # --- Boolean properties for easy checking ---
+    @property
+    def has_overview_totals(self) -> bool:
+        return self.overview_totals is not None and not self.overview_totals.empty
+    @property
+    def has_overview_spectral(self) -> bool:
+        return self.overview_spectral is not None and not self.overview_spectral.empty
+    @property
+    def has_log_totals(self) -> bool:
+        return self.log_totals is not None and not self.log_totals.empty
+    @property
+    def has_log_spectral(self) -> bool:
+        return self.log_spectral is not None and not self.log_spectral.empty
+    @property
+    def has_audio_files(self) -> bool:
+        return self.audio_files_list is not None and not self.audio_files_list.empty
+    @property
+    def has_audio(self) -> bool:
+        return self.has_audio_files
+    @property
+    def has_spectral_data(self) -> bool:
+        return self.has_overview_spectral or self.has_log_spectral
+
+    def _merge_df(self, existing_df: Optional[pd.DataFrame], new_df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+        """Helper to concatenate and de-duplicate DataFrames by Datetime."""
+        if new_df is None or new_df.empty:
+            return existing_df
+        if existing_df is None or existing_df.empty:
+            return new_df
+
+        logger.info(f"Merging new data into existing DataFrame for position {self.name}.")
+        # Ensure both have Datetime column for merging
+        if 'Datetime' not in existing_df.columns or 'Datetime' not in new_df.columns:
+            logger.warning("Cannot merge DataFrames without a 'Datetime' column.")
+            return existing_df # Return original
+
+        try:
+            # Combine, sort by datetime, and remove duplicates, keeping the first entry
+            combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+            combined_df = combined_df.sort_values(by='Datetime', ascending=True)
+            combined_df = combined_df.drop_duplicates(subset=['Datetime'], keep='first')
+            return combined_df.reset_index(drop=True)
+        except Exception as e:
+            logger.error(f"Error merging DataFrames for {self.name}: {e}")
+            return existing_df # Return original on error
+
+    def add_parsed_file_data(self, parsed_data_obj: ParsedData):
+        """
+        Adds data from a single parsed file (ParsedData object) to this position.
+        """
+        if not isinstance(parsed_data_obj, ParsedData):
+            logger.warning(f"Invalid data type passed to add_parsed_file_data for {self.name}")
+            return
+
+        # Store this file's specific metadata #NOTE: this is not quite right as this should be per file, not per position.
+        # however, we dont want more depth when accessing the data and this data may not be used by the app
+        file_meta = {
+            'original_file_path': parsed_data_obj.original_file_path,
+            'parser_type': parsed_data_obj.parser_type,
+            'data_profile': parsed_data_obj.data_profile,
+            'spectral_data_type': parsed_data_obj.spectral_data_type,
+            'sample_period_seconds': parsed_data_obj.sample_period_seconds,
+            'parser_specific_details': parsed_data_obj.metadata # The raw dict from parser
+        }
+        self.source_file_metadata.append(file_meta)
+
+        # Update aggregated metadata for the position
+        if parsed_data_obj.parser_type: self.parser_types_used.add(parsed_data_obj.parser_type)
+        if parsed_data_obj.sample_period_seconds is not None: self.sample_periods_seconds.add(parsed_data_obj.sample_period_seconds)
+        if parsed_data_obj.spectral_data_type and parsed_data_obj.spectral_data_type != 'none':
+            self.spectral_data_types_present.add(parsed_data_obj.spectral_data_type)
+
+        # Distribute DataFrames based on data_profile
+        profile = parsed_data_obj.data_profile
+
+        logger.debug(f"Adding data from {os.path.basename(parsed_data_obj.original_file_path)} to {self.name}")
+        logger.debug(f"  ParsedData profile: {parsed_data_obj.data_profile}, parser_type: {parsed_data_obj.parser_type}")
+        logger.debug(f"  ParsedData totals_df shape: {parsed_data_obj.totals_df.shape if parsed_data_obj.totals_df is not None else 'None'}")
+        logger.debug(f"  ParsedData spectral_df shape: {parsed_data_obj.spectral_df.shape if parsed_data_obj.spectral_df is not None else 'None'}")
+
+        if profile == 'overview': # Typically summary reports
+            logger.debug(f"  Before merge - overview_totals shape: {self.overview_totals.shape if self.overview_totals is not None else 'None'}")
+            if parsed_data_obj.totals_df is not None:
+                self.overview_totals = self._merge_df(self.overview_totals, parsed_data_obj.totals_df)
+            logger.debug(f"  After merge - overview_totals shape: {self.overview_totals.shape if self.overview_totals is not None else 'None'}")
+
+            logger.debug(f"  Before merge - overview_spectral shape: {self.overview_spectral.shape if self.overview_spectral is not None else 'None'}")
+            if parsed_data_obj.spectral_df is not None:
+                self.overview_spectral = self._merge_df(self.overview_spectral, parsed_data_obj.spectral_df)
+            logger.debug(f"  After merge - overview_spectral shape: {self.overview_spectral.shape if self.overview_spectral is not None else 'None'}")
+
+        elif profile == 'log': # Typically time-history logs
+            logger.debug(f"  Before merge - log_totals shape: {self.log_totals.shape if self.log_totals is not None else 'None'}")
+            if parsed_data_obj.totals_df is not None:
+                self.log_totals = self._merge_df(self.log_totals, parsed_data_obj.totals_df)
+            logger.debug(f"  After merge - log_totals shape: {self.log_totals.shape if self.log_totals is not None else 'None'}")
+
+            logger.debug(f"  Before merge - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
+            if parsed_data_obj.spectral_df is not None:
+                self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
+            logger.debug(f"  After merge - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
+
+        elif profile == 'file_list' and parsed_data_obj.parser_type == 'Audio': # Audio parser result
+            # Audio parser puts file list into totals_df
+            if self.audio_files_list is None:
+                self.audio_files_list = parsed_data_obj.totals_df
+            elif parsed_data_obj.totals_df is not None:
+                self.audio_files_list = pd.concat([self.audio_files_list, parsed_data_obj.totals_df], ignore_index=True)
+                if 'full_path' in self.audio_files_list.columns:
+                    self.audio_files_list = self.audio_files_list.drop_duplicates(subset=['full_path']).reset_index(drop=True)
+        elif parsed_data_obj.totals_df is not None or parsed_data_obj.spectral_df is not None:
+            # Fallback for unknown profiles, try to merge into log if data exists
+            logger.warning(f"Unknown data_profile '{profile}' for {parsed_data_obj.original_file_path}. "
+                           "Attempting to merge into log attributes.")
+            logger.debug(f"  Before merge (fallback) - log_totals shape: {self.log_totals.shape if self.log_totals is not None else 'None'}")
+            if parsed_data_obj.totals_df is not None:
+                self.log_totals = self._merge_df(self.log_totals, parsed_data_obj.totals_df)
+            logger.debug(f"  After merge (fallback) - log_totals shape: {self.log_totals.shape if self.log_totals is not None else 'None'}")
+
+            logger.debug(f"  Before merge (fallback) - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
+            if parsed_data_obj.spectral_df is not None:
+                self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
+            logger.debug(f"  After merge (fallback) - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
+
+
+# ==============================================================================
+#  2. The Main Data Orchestrator Class
+# ==============================================================================
+class DataManager:
+    """
+    Manages loading, parsing, and accessing all survey data.
+    Acts as the primary interface for retrieving noise data.
+    """
+    def __init__(self, source_configurations: Optional[List[Dict[str, Any]]] = None):
+        self._positions_data: Dict[str, PositionData] = {}
+        self.parser_factory = NoiseParserFactory() # Uses your refactored factory
+
+        if source_configurations:
+            self.load_from_configs(source_configurations)
+
+    def load_from_configs(self, source_configs: List[Dict[str, Any]], 
+                          return_all_columns_override: Optional[bool] = None):
+        """
+        Loads and processes data from a list of configuration dictionaries.
+        Each dictionary should define a 'position_name' and either
+        'file_path' (str) or 'file_paths' (Set[str] or List[str]).
+        """
+        for config in source_configs:
+            if not config.get("enabled", True): # Default to enabled if not specified
+                logger.info(f"Skipping disabled source config: {config.get('position_name', 'N/A')}")
+                continue
+            
+            position_name = config.get("position_name")
+            if not position_name:
+                logger.warning(f"Skipping source config with no 'position_name': {config}")
+                continue
+
+            # Determine how 'return_all_columns' is set for this source
+            use_return_all_cols = config.get('return_all_columns', False) # Default from config
+            if return_all_columns_override is not None:
+                use_return_all_cols = return_all_columns_override # Global override
+
+            file_paths_to_process: List[str] = []
+            if "file_path" in config and isinstance(config["file_path"], str):
+                file_paths_to_process.append(config["file_path"])
+            elif "file_paths" in config and isinstance(config["file_paths"], (list, set)):
+                file_paths_to_process.extend(list(config["file_paths"]))
+            
+            if not file_paths_to_process:
+                logger.warning(f"No valid 'file_path' or 'file_paths' found for position '{position_name}'. Config: {config}")
+                continue
+
+            for path in file_paths_to_process:
+                self.add_source_file(path, position_name, 
+                                     parser_type_hint=config.get("parser_type_hint"),
+                                     return_all_columns=use_return_all_cols)
+
+    def add_source_file(self, file_path: str, position_name: str, 
+                        parser_type_hint: Optional[str] = None,
+                        return_all_columns: bool = False):
+        """
+        Parses a single file and adds its data to the specified position.
+        """
+        logger.info(f"DataManager: Processing '{file_path}' for position '{position_name}' (AllCols: {return_all_columns}).")
+        
+        if position_name not in self._positions_data:
+            self._positions_data[position_name] = PositionData(name=position_name)
+        
+        position_obj = self._positions_data[position_name]
+
+        parser = self.parser_factory.get_parser(file_path) # Factory can use hint if we modify it
+        if not parser:
+            err_msg = f"No suitable parser found for file: {file_path}"
+            logger.error(err_msg)
+            # Store error info in the PositionData's source metadata
+            position_obj.source_file_metadata.append({
+                'original_file_path': file_path, 'error': err_msg,
+                'parser_type': 'None', 'data_profile': 'error', 
+                'spectral_data_type': 'none', 'sample_period_seconds': None
+            })
+            return
+
+        try:
+            parsed_data_obj = parser.parse(file_path, return_all_columns=return_all_columns)
+            position_obj.add_parsed_file_data(parsed_data_obj)
+            logger.info(f"Successfully processed and added data from '{file_path}' to '{position_name}'.")
+        except Exception as e:
+            err_msg = f"Critical error parsing file {file_path} with {parser.__class__.__name__}: {e}"
+            logger.error(err_msg, exc_info=True)
+            position_obj.source_file_metadata.append({
+                'original_file_path': file_path, 'error': err_msg,
+                'parser_type': parser.__class__.__name__, 'data_profile': 'error', 
+                'spectral_data_type': 'none', 'sample_period_seconds': None
+            })
+
+    # --- Methods for clean access ---
+    def positions(self) -> List[str]:
+        """Returns a sorted list of all loaded position names."""
+        return sorted(list(self._positions_data.keys()))
+
+    def __getitem__(self, position_name: str) -> PositionData:
+        """
+        Enables dictionary-style access, e.g., `data_manager['SW']`.
+        """
+        if position_name not in self._positions_data:
+            # Option: Create an empty PositionData on demand if you prefer not to raise KeyError
+            # logger.warning(f"Position '{position_name}' not found. Creating an empty one.")
+            # self._positions_data[position_name] = PositionData(name=position_name)
+            raise KeyError(f"Position '{position_name}' not found in DataManager.")
+        return self._positions_data[position_name]
+
+    def __contains__(self, position_name: str) -> bool:
+        """Allows `in` operator, e.g., `if 'SW' in data_manager:`"""
+        return position_name in self._positions_data
+
+    def __iter__(self):
+        """Allows iterating directly over the manager, yielding PositionData objects."""
+        return iter(self._positions_data.values())
+
+    def __len__(self) -> int:
+        """Returns the number of positions loaded."""
+        return len(self._positions_data)
+
+    def get_all_position_data(self):
+        """Returns a dictionary of all loaded positions."""
+        return self._positions_data
+    
+    def examine_all_positions(self, max_files_to_detail=3):
+        """Prints a summary of all loaded positions and their data."""
+        if not self._positions_data:
+            print("DataManager contains no loaded positions.")
+            return
+
+        print("\n=== DataManager: Examination of All Loaded Positions ===")
+        for pos_name in self.positions():
+            all_pos_data = self._positions_data[pos_name]
+            print(f"\n=== {pos_name} ===")
+            for type in ['overview_totals', 'overview_spectral', 'log_totals', 'log_spectral', 'audio_files_list']:
+                
+                if hasattr(all_pos_data, type) and getattr(all_pos_data, type) is not None:
+                    print(f"\n--- {type} ---")
+                    pos_data = getattr(all_pos_data, type)
+                    if type == 'audio_files_list':
+                        print(f"  Count: {len(pos_data)}")
+                        for i, file in enumerate(pos_data):
+                            print(f"    - File: {file}")
+                        continue
+                    else:
+                        print(f"  {pos_data.head()}")
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    
+    sentry_file_path = r"G:\My Drive\Programing\example files\Noise Sentry\cricket nets 2A _2025_06_03__20h55m22s_2025_05_29__15h30m00s.csv"   
+
+    svan_log_path = r"G:\My Drive\Programing\example files\Svan full data\L259_log.csv"
+    svan_summary_path = r"G:\My Drive\Programing\example files\Svan full data\L259_summary.csv"
+
+    nti_rta_log_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Log.txt"
+    nti_123_log_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_00_123_Log.txt"
+    nti_123_Rpt_Report_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_00_123_Rpt_Report.txt"
+    nti_RTA_Rpt_Report_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Rpt_Report.txt"
+
+    audio_dir = r"G:\Shared drives\Venta\Jobs\5793 Alton Road, Ross-on-wye\5793 Surveys\5793-1"
+
+    sources_config = [
+        {"position_name": "SiteSvan", "file_paths": {svan_log_path, svan_summary_path}, "enabled": True}, # Use set for file_paths
+        {"position_name": "SiteNTi", "file_paths": {nti_rta_log_path, nti_123_log_path}, "parser_type_hint": "NTi"},
+        {"position_name": "SiteNti", "file_path": audio_dir, "enabled": True},
+        {"position_name": "SiteMissing", "file_path": "nonexistent.csv", "enabled": True}
+    ]
+
+    data_manager = DataManager(source_configurations=sources_config)
+    
+    # Add another file post-initialization
+    data_manager.add_source_file(nti_123_Rpt_Report_path, "SiteNTi")
+    data_manager.add_source_file(nti_RTA_Rpt_Report_path, "SiteNTi")
+    data_manager.add_source_file(sentry_file_path, "SiteSentry")
+
+
+    print("\n--- FINAL DATA MANAGER STATE ---")
+    data_manager.examine_all_positions()
+
+    print("\n--- Accessing Data Example ---")
+    if "SiteSvan" in data_manager:
+        svan_pos_data = data_manager["SiteSvan"]
+        if svan_pos_data.has_log_totals:
+            print("\nSiteSvan Log Totals DF:")
+            print(svan_pos_data.log_totals)
+        if svan_pos_data.has_overview_spectral: # Svan summary puts spectral into overview_spectral
+            print("\nSiteSvan Overview Spectral DF:")
+            print(svan_pos_data.overview_spectral)
+    
+    if data_manager["SiteNTi"].has_log_totals:
+            print("\nSiteNTi Log Totals (all columns due to config):")
+            print(data_manager["SiteNTi"].log_totals)
+            print("\nSiteNTi Files List:")
+            print(data_manager["SiteNTi"].audio_files_list)
+
+    if data_manager["SiteSentry"]:
+        print("\nSiteSentry Files List:")
+        print(data_manager["SiteSentry"].overview_totals)
+
+    
+    
+
+
+
+==== noise_survey_analysis\core\data_parsers.py ====
+
+"""
+data_parsers.py
+Data parsing module for noise survey analysis.
+Parses individual files based on specified parser type.
+"""
+import pandas as pd
+import numpy as np
+import re
+import os
+import logging
+from io import StringIO
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any, Tuple
+
+logger = logging.getLogger(__name__)
+
+# --- Standard Column Definitions ---
+# These are the columns we aim to provide by default if available in the source.
+STANDARD_OUTPUT_COLUMNS = ['Datetime', 'LAF90', 'LAF10', 'LAFmax', 'LAeq']
+STANDARD_SPECTRAL_PREFIXES = ['LZeq', 'LZmax', 'LZFmax', 'LZF90']
+
+# Standard 1/3 octave band center frequencies (as strings for matching cleaned column suffixes)
+# Used by parsers to identify and normalize frequency parts of column names.
+# And by _filter_and_standardize_columns to identify spectral columns.
+EXPECTED_THIRD_OCTAVE_SUFFIXES = [
+    "6.3", "8", "10", "12.5", "16", "20", "25", "31.5", "31", "40", "50", "63", "80", "100",
+    "125", "160", "200", "250", "315", "400", "500", "630", "800", "1000",
+    "1250", "1600", "2000", "2500", "3150", "4000", "5000", "6300", "8000",
+    "10000", "12500", "16000", "20000"
+]
+
+@dataclass
+class ParsedData:
+    """
+    Holds the results of parsing a single noise data file.
+    """
+    totals_df: Optional[pd.DataFrame] = None
+    spectral_df: Optional[pd.DataFrame] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    # Standardized metadata fields
+    original_file_path: Optional[str] = None
+    parser_type: Optional[str] = None
+    data_profile: Optional[str] = None  # 'log', 'overview', 'file_list'
+    spectral_data_type: Optional[str] = None # 'third_octave', 'octave', 'none'
+    sample_period_seconds: Optional[float] = None
+
+
+class AbstractNoiseParser(ABC):
+    """
+    Abstract Base Class for all noise file parsers.
+    """
+    def __init__(self):
+        self.standard_output_columns = STANDARD_OUTPUT_COLUMNS
+        self.standard_spectral_prefixes = STANDARD_SPECTRAL_PREFIXES
+        self.expected_third_octave_suffixes = EXPECTED_THIRD_OCTAVE_SUFFIXES
+
+    @abstractmethod
+    def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
+        """
+        Parses a given file and returns its contents as a ParsedData object.
+        """
+        pass
+
+    def _safe_convert_to_float(self, df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+        if df is None or df.empty:
+            return df
+        
+        columns_to_convert = [col for col in df.columns if col not in ['Datetime']]
+        for col in columns_to_convert:
+            if col in df.columns:
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    continue
+                try:
+                    # Use pd.to_numeric for efficient conversion and error handling
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                except Exception as e:
+                    logger.warning(f"Could not convert column '{col}' to numeric: {e}. Values set to NaN.")
+        return df
+
+    def _normalize_datetime_column(self, df: pd.DataFrame, 
+                                   dt_col_names: List[str], # e.g., ['Datetime'] or ['Date', 'Time']
+                                   new_name: str = 'Datetime',
+                                   sort: bool = True) -> pd.DataFrame:
+        if df.empty:
+            return df
+
+        datetime_series = None
+        # Handle single datetime column
+        if len(dt_col_names) == 1 and dt_col_names[0] in df.columns:
+            datetime_series = pd.to_datetime(df[dt_col_names[0]], errors='coerce')
+        # Handle separate date and time columns
+        elif len(dt_col_names) == 2 and dt_col_names[0] in df.columns and dt_col_names[1] in df.columns:
+            # Combine the two columns into a single series for conversion
+            datetime_str_series = df[dt_col_names[0]].astype(str) + ' ' + df[dt_col_names[1]].astype(str)
+            datetime_series = pd.to_datetime(datetime_str_series, errors='coerce')
+
+        if datetime_series is None:
+            logger.warning(f"Could not form datetime from columns: {dt_col_names}")
+            # Add an empty Datetime column to avoid downstream errors, though it will be dropped
+            df[new_name] = pd.NaT
+        else:
+            df[new_name] = datetime_series
+        
+        # Drop original date/time columns if they are different from the new_name and exist
+        for old_dt_col in dt_col_names:
+            if old_dt_col != new_name and old_dt_col in df.columns:
+                df = df.drop(columns=[old_dt_col])
+        
+        # Drop rows where datetime conversion failed
+        df = df.dropna(subset=[new_name])
+        
+        if sort and not df.empty:
+             df = df.sort_values(by=new_name).reset_index(drop=True)
+        return df
+
+    def _calculate_sample_period(self, df: Optional[pd.DataFrame]) -> Optional[float]:
+        if df is None or df.empty or 'Datetime' not in df.columns or len(df) < 2:
+            return None
+        if len(df) < 3: # Only one interval
+            if len(df) == 2:
+                delta = (df['Datetime'].iloc[1] - df['Datetime'].iloc[0]).total_seconds()
+                return round(delta, 3) if delta > 0 else None
+            return None # Only one data point
+
+        try:
+            # Datetime should already be sorted by _normalize_datetime_column
+            time_deltas = df['Datetime'].diff().dt.total_seconds()
+            
+            # Use deltas from the 2nd to the 2nd-to-last original data point.
+            if len(time_deltas) >= 3: # Requires at least df length 3, so 2 actual deltas
+                valid_deltas = time_deltas.iloc[1:-1] # All deltas except the first NaN and potentially last
+                if len(valid_deltas) > 20: # If many samples, trim ends to avoid startup/shutdown effects
+                    valid_deltas = valid_deltas.iloc[5:-5] 
+                
+                valid_deltas = valid_deltas.dropna()
+                if not valid_deltas.empty:
+                    # Mode is good for finding the most common interval in logged data
+                    # If mode has multiple values (equally common), median of modes or first mode is fine.
+                    mode_val = valid_deltas.mode()
+                    if not mode_val.empty:
+                        return round(float(mode_val[0]), 3)
+                    # Fallback to median if mode is weird (e.g., all unique values)
+                    return round(valid_deltas.median(), 3)
+            elif len(time_deltas) > 1: # Only one actual delta (df length 2)
+                 first_valid_delta = time_deltas.iloc[1:].dropna()
+                 if not first_valid_delta.empty:
+                     return round(first_valid_delta.iloc[0], 3)
+
+        except Exception as e:
+            logger.warning(f"Could not calculate sample period: {e}")
+        return None
+
+    def sort_columns_by_prefix_and_frequency(self, columns: List[str]) -> List[str]:
+        if len(columns) <= 1:
+            return columns
+    
+        # Separate datetime and other columns
+        datetime_cols = [col for col in columns if col == 'Datetime']
+        other_cols = [col for col in columns if col != 'Datetime']
+        
+        # Sort other columns by prefix and frequency
+        def parse_column_key(col_name: str) -> tuple[str, float]:
+            """Extract prefix and numeric frequency from column name."""
+            parts = col_name.split('_', 1)
+            if len(parts) != 2:
+                return (col_name, 0.0)  # Non-standard format, sort by name
+            
+            prefix, freq_str = parts
+            try:
+                # Handle cases like '1k', '2.5k' if they exist, though not in standard list
+                freq_val = float(freq_str.lower().replace('k', '')) * (1000 if 'k' in freq_str.lower() else 1)
+                return (prefix, freq_val)
+            except ValueError:
+                # Fallback to string sorting for non-numeric frequencies
+                return (prefix, float('inf'))  # Push unparseable to end
+        
+        sorted_other_cols = sorted(other_cols, key=parse_column_key)
+        return datetime_cols + sorted_other_cols
+
+    def _filter_df_columns(self, 
+                           df: Optional[pd.DataFrame], 
+                           data_category: str, # 'totals' or 'spectral'
+                           available_columns_from_parser: List[str], # Canonical names already set by parser
+                           return_all_columns: bool = False) -> Optional[pd.DataFrame]:
+        if df is None or df.empty:
+            return None
+        
+        cols_to_keep = []
+        if 'Datetime' in available_columns_from_parser and 'Datetime' in df.columns:
+            cols_to_keep.append('Datetime')
+
+        if return_all_columns:
+            for col in available_columns_from_parser:
+                if col not in cols_to_keep:
+                    cols_to_keep.append(col)
+            # Use a copy to avoid SettingWithCopyWarning
+            return df[[c for c in cols_to_keep if c in df.columns]].copy()
+
+        if data_category == 'totals':
+            for std_col in self.standard_output_columns:
+                if std_col in available_columns_from_parser and std_col not in cols_to_keep:
+                    cols_to_keep.append(std_col)
+        
+        elif data_category == 'spectral':
+            # For spectral, always include standard broadband if available (overall levels)
+            for std_col in self.standard_output_columns:
+                if std_col in available_columns_from_parser and std_col not in cols_to_keep:
+                    cols_to_keep.append(std_col)
+            
+            allowed_spectral_prefixes = self.standard_spectral_prefixes
+           
+            # And then add all recognized spectral bands
+            for col in available_columns_from_parser:
+                if col not in cols_to_keep:
+                    parts = col.split('_', 1) # Split only on the first underscore
+                    if len(parts) == 2:
+                        param_prefix = parts[0]
+                        freq_suffix = parts[1]
+                        if param_prefix in allowed_spectral_prefixes and freq_suffix in self.expected_third_octave_suffixes: 
+                            cols_to_keep.append(col)
+
+            cols_to_keep = self.sort_columns_by_prefix_and_frequency(cols_to_keep)
+        
+        if not cols_to_keep or (len(cols_to_keep) == 1 and 'Datetime' in cols_to_keep):
+            if len(available_columns_from_parser) > 1 and 'Datetime' in df.columns:
+                logger.warning(f"Default filtering for '{data_category}' resulted in minimal columns. Returning all available from parser.")
+                cols_to_keep = []
+                if 'Datetime' in available_columns_from_parser: cols_to_keep.append('Datetime')
+                for col in available_columns_from_parser:
+                    if col not in cols_to_keep: cols_to_keep.append(col)
+
+        final_cols_present = [col for col in cols_to_keep if col in df.columns]
+
+        # Use a copy to avoid SettingWithCopyWarning
+        return df[final_cols_present].copy() if final_cols_present else pd.DataFrame()
+
+
+class NoiseSentryFileParser(AbstractNoiseParser):
+    def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
+        logger.info(f"SentryParser: Parsing {file_path}")
+        parsed_data_obj = ParsedData(
+            original_file_path=file_path,
+            parser_type='NoiseSentry',
+            spectral_data_type='none'
+        )
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                header_line = ""
+                line_count = 0
+                for line in f:
+                    line_count += 1
+                    potential_header = line.strip()
+                    if potential_header:
+                        header_line = potential_header
+                        break
+                    
+                if not header_line:
+                    parsed_data_obj.metadata['error'] = "File is empty or contains only blank lines"
+                    return parsed_data_obj
+            
+                raw_headers = [h.strip() for h in header_line.split(',')]
+                raw_headers = [h for h in raw_headers if h] 
+            
+                sentry_map = {
+                    'Time (Date hh:mm:ss.ms)': 'Datetime', 'LEQ dB-A': 'LAeq',
+                    'Lmax dB-A': 'LAFmax', 'L10 dB-A': 'LAF10', 'L90 dB-A': 'LAF90'
+                }
+                canonical_headers = [sentry_map.get(h, h.replace(' ', '_')) for h in raw_headers]
+                
+                df_raw = pd.read_csv(file_path, skiprows=line_count, header=None, names=canonical_headers, 
+                                     usecols=range(len(canonical_headers)), 
+                                     na_filter=False,
+                                     on_bad_lines='warn', low_memory=False)
+                
+                df_raw = df_raw.replace('', np.nan).dropna(how='all')
+
+                if df_raw.empty:
+                    parsed_data_obj.metadata['error'] = "No data rows found"
+                    return parsed_data_obj
+
+            df_raw = self._normalize_datetime_column(df_raw, dt_col_names=['Datetime'])
+            if df_raw.empty:
+                parsed_data_obj.metadata['error'] = "All rows failed Datetime parsing"
+                return parsed_data_obj
+
+            df_raw = self._safe_convert_to_float(df_raw)
+            
+            parsed_data_obj.sample_period_seconds = self._calculate_sample_period(df_raw)
+            if parsed_data_obj.sample_period_seconds is not None and parsed_data_obj.sample_period_seconds > 60:
+                parsed_data_obj.data_profile = 'overview'
+            else:
+                parsed_data_obj.data_profile = 'log'
+                
+            found_cols = [col for col in canonical_headers if col in df_raw.columns]
+            parsed_data_obj.totals_df = self._filter_df_columns(df_raw, 'totals', found_cols, return_all_columns)
+            
+            return parsed_data_obj
+
+        except FileNotFoundError:
+            parsed_data_obj.metadata['error'] = "File not found"
+            return parsed_data_obj
+        except Exception as e:
+            parsed_data_obj.metadata['error'] = str(e)
+            logger.error(f"SentryParser: Error parsing {file_path}: {e}", exc_info=True)
+            return parsed_data_obj
+
+class SvanFileParser(AbstractNoiseParser):
+    CLEAN_PAT = re.compile(r'\s*\((?:SR|TH|Lin|Fast|Slow|SPL)\)\s*|\s*\[dB\]\s*|\s*Histogram\s*', flags=re.IGNORECASE)
+    FREQ_SUFFIX_PAT = re.compile(r'(\d+(?:\.\d+)?)(k?)_?Hz$', flags=re.IGNORECASE)
+
+    def _get_data_profile_heuristic(self, lines: List[str], file_path: str) -> str:
+        filename_upper = os.path.basename(file_path).upper()
+        if '_LOG.CSV' in filename_upper: return 'log'
+        if '_SUMMARY.CSV' in filename_upper: return 'overview'
+        for line in lines[:5]:
+            if '(TH)' in line.upper(): return 'log'
+            if '(SR)' in line.upper(): return 'overview'
+        return 'unknown'
+
+    def _clean_freq_suffix(self, freq_str_original: str) -> Optional[str]:
+        freq_str = freq_str_original.replace(" ", "")
+        match = self.FREQ_SUFFIX_PAT.match(freq_str)
+        if match:
+            num, k_suffix = match.groups()
+            val = float(num)
+            if k_suffix.lower() == 'k': val *= 1000
+            return str(int(val)) if val == int(val) else str(val)
+
+        if freq_str.replace('.', '', 1).isdigit():
+            return freq_str
+        if freq_str.lower().endswith('k') and freq_str[:-1].replace('.', '', 1).isdigit():
+             val = float(freq_str[:-1]) * 1000
+             return str(int(val)) if val == int(val) else str(val)
+            
+        return None
+
+    def _map_svan_column(self, original_col: str) -> Tuple[Optional[str], Optional[str]]:
+        cleaned = self.CLEAN_PAT.sub('', original_col)
+        cleaned = cleaned.replace(' ', '_').replace('-', '_').replace('/', '_')
+        cleaned = re.sub(r'_+', '_', cleaned).strip('_')
+
+        if 'Date_&_time' in cleaned or 'Start_date_&_time' in cleaned: return 'Datetime', 'datetime'
+
+        bb_map = {
+            "LAeq": r"^P\d_.*LAeq$", "LAFmax": r"^P\d_.*LAFmax$", "LAFmin": r"^P\d_.*LAFmin$",
+            "LAF10": r"^P\d_.*LAeq_L10$", "LAF90": r"^P\d_.*LAeq_L90$",
+            "LAeq_svan_overall": r"1/3_Oct_Leq_TOTAL_A" 
+        }
+        for can_name, pattern in bb_map.items():
+            if re.fullmatch(pattern, cleaned, re.IGNORECASE):
+                return "LAeq" if can_name == "LAeq_svan_overall" else can_name, 'totals'
+
+        if "Oct" in cleaned:
+            parts = cleaned.split('_')
+            param_prefix = None
+            for p in parts:
+                if p.upper() in [prefix.upper() for prefix in self.standard_spectral_prefixes]:
+                    param_prefix = p
+                    break
+            
+            if not param_prefix:
+                for p in parts:
+                    if p.startswith('L') and len(p) > 1 and p[1].isalpha():
+                        param_prefix = p
+                        break
+            
+            if param_prefix:
+                param_prefix = param_prefix.lower().replace("laf","LAF").replace("lzf","LZF").replace("lcf","LCF").replace("la","LA").replace("lc","LC").replace("lz","LZ")
+
+                for p_val in reversed(parts):
+                    cleaned_freq = self._clean_freq_suffix(p_val)
+                    if cleaned_freq in self.expected_third_octave_suffixes:
+                        return f"{param_prefix}_{cleaned_freq}", 'spectral'
+        return None, None
+
+    def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
+        logger.info(f"SvanParser: Parsing {file_path}")
+        parsed_data_obj = ParsedData(original_file_path=file_path, parser_type='Svan')
+        try:
+            # Handle Excel files separately
+            if file_path.lower().endswith('.xlsx'):
+                df_raw = pd.read_excel(file_path, header=None)
+                # Find the header row by looking for 'Date & time'
+                header_row_idx = -1
+                for i, row in df_raw.iterrows():
+                    if 'Date & time' in str(row.values):
+                        header_row_idx = i
+                        break
+                if header_row_idx == -1: raise ValueError("Header 'Date & time' not found in Excel file.")
+                
+                df_excel = pd.read_excel(file_path, header=header_row_idx)
+                # Clean up column names from Excel
+                df_excel.columns = [str(c).replace('\n', ' ').strip() for c in df_excel.columns]
+                sentry_map = {
+                    'Date & time': 'Datetime', 'LAeq (TH) [dB]': 'LAeq', 'LAFmax (TH) [dB]': 'LAFmax',
+                    'LAeq Histogram (SR) [dB] L10': 'LAF10', 'LAeq Histogram (SR) [dB] L90': 'LAF90'
+                }
+                df_excel = df_excel.rename(columns=sentry_map)
+                df_renamed = self._normalize_datetime_column(df_excel, ['Datetime'])
+                df_renamed = self._safe_convert_to_float(df_renamed)
+                parsed_data_obj.sample_period_seconds = self._calculate_sample_period(df_renamed)
+                parsed_data_obj.data_profile = 'overview'
+                parsed_data_obj.spectral_data_type = 'none'
+                available_cols = list(df_renamed.columns)
+                parsed_data_obj.totals_df = self._filter_df_columns(df_renamed, 'totals', available_cols, return_all_columns)
+                return parsed_data_obj
+
+            # Continue with CSV parsing logic
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f: lines = f.readlines()
+            if not lines: parsed_data_obj.metadata['error'] = "File empty"; return parsed_data_obj
+
+            parsed_data_obj.data_profile = self._get_data_profile_heuristic(lines, file_path)
+            
+            h_indices = [-1,-1,-1]
+            for i, line in enumerate(lines):
+                if 'date & time' in line.lower() or 'start date & time' in line.lower():
+                    if i > 1: h_indices = [i-2, i-1, i]; break
+            if h_indices[2] == -1:
+                parsed_data_obj.metadata['error'] = "Svan datetime header not found"; return parsed_data_obj
+
+            raw_headers = []
+            temp_headers_parts = [pd.read_csv(StringIO(lines[idx]), header=None, dtype=str).iloc[0].fillna('').tolist() if idx >=0 else [] for idx in h_indices]
+            max_h_len = max(len(h) for h in temp_headers_parts) if temp_headers_parts else 0
+            for i in range(max_h_len):
+                parts = [h[i].strip() if i < len(h) else '' for h in temp_headers_parts]
+                raw_headers.append(re.sub(r'_+', '_', "_".join(p for p in parts if p)).strip('_') or f"Unnamed_{i}")
+            
+            while raw_headers and raw_headers[-1].startswith("Unnamed_"):
+                col_idx_to_check = len(raw_headers) -1
+                is_col_empty_in_data = True
+                for data_line_idx in range(h_indices[2] + 1, min(h_indices[2] + 11, len(lines))):
+                    data_parts = lines[data_line_idx].strip().split(',')
+                    if col_idx_to_check < len(data_parts) and data_parts[col_idx_to_check].strip():
+                        is_col_empty_in_data = False; break
+                if is_col_empty_in_data: raw_headers.pop()
+                else: break
+            
+            df_full_raw = pd.read_csv(StringIO("".join(lines[h_indices[2]+1:])), header=None, names=raw_headers, usecols=range(len(raw_headers)), sep=',', na_filter=False, on_bad_lines='warn', low_memory=False)
+            df_full_raw = df_full_raw.replace('', np.nan).dropna(how='all')
+            if df_full_raw.empty: 
+                parsed_data_obj.metadata['error'] = "No data rows"; return parsed_data_obj
+
+            canonical_map = {}
+            found_totals_cols, found_spectral_cols = set(), set()
+            for raw_col in df_full_raw.columns:
+                can_name, cat = self._map_svan_column(str(raw_col))
+                if can_name:
+                    unique_can_name = can_name
+                    c = 1
+                    while unique_can_name in canonical_map.values(): unique_can_name = f"{can_name}_{c}"; c+=1
+                    canonical_map[raw_col] = unique_can_name
+                    if cat == 'datetime': found_totals_cols.add(unique_can_name); found_spectral_cols.add(unique_can_name)
+                    if cat == 'totals': found_totals_cols.add(unique_can_name)
+                    if cat == 'spectral': found_spectral_cols.add(unique_can_name)
+            
+            df_renamed = df_full_raw.rename(columns=canonical_map)
+            if 'Datetime' not in df_renamed.columns:
+                parsed_data_obj.metadata['error'] = "Datetime column not established"; return parsed_data_obj
+            
+            df_renamed = self._normalize_datetime_column(df_renamed, dt_col_names=['Datetime'])
+            if df_renamed.empty: parsed_data_obj.metadata['error'] = "All rows failed Datetime"; return parsed_data_obj
+            
+            df_renamed = self._safe_convert_to_float(df_renamed)
+            parsed_data_obj.sample_period_seconds = self._calculate_sample_period(df_renamed)
+
+            actual_spectral_type = 'none'
+            if any("1/3 Oct" in col for col in df_full_raw.columns): actual_spectral_type = 'third_octave'
+            elif any("1/1 Oct" in col for col in df_full_raw.columns): actual_spectral_type = 'octave'
+                
+            if found_spectral_cols and 'Datetime' in found_spectral_cols:
+                spectral_cols_for_df = [c for c in found_spectral_cols if c in df_renamed.columns]
+                if len(spectral_cols_for_df) > 1:
+                    df_spec_subset = df_renamed[spectral_cols_for_df].copy()
+                    parsed_data_obj.spectral_df = self._filter_df_columns(df_spec_subset, 'spectral', spectral_cols_for_df, return_all_columns)
+            
+            if found_totals_cols and 'Datetime' in found_totals_cols:
+                totals_cols_for_df = [c for c in found_totals_cols if c in df_renamed.columns]
+                if len(totals_cols_for_df) > 1:
+                    df_totals_subset = df_renamed[totals_cols_for_df].copy()
+                    parsed_data_obj.totals_df = self._filter_df_columns(df_totals_subset, 'totals', totals_cols_for_df, return_all_columns)
+
+            parsed_data_obj.spectral_data_type = actual_spectral_type
+            return parsed_data_obj
+
+        except FileNotFoundError:
+            parsed_data_obj.metadata['error'] = "File not found"; return parsed_data_obj
+        except Exception as e:
+            parsed_data_obj.metadata['error'] = str(e)
+            logger.error(f"SvanParser: Error parsing {file_path}: {e}", exc_info=True)
+            return parsed_data_obj
+
+class NTiFileParser(AbstractNoiseParser):
+
+    def _extract_nti_metadata(self, lines: List[str]) -> Dict[str, Any]:
+        meta = {'hardware_config': {}, 'measurement_setup': {}, 'time_info': {}}
+        current_section_dict = None
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("---"): continue
+            if stripped.startswith("# Hardware Configuration"): current_section_dict = meta['hardware_config']; continue
+            if stripped.startswith("# Measurement Setup"): current_section_dict = meta['measurement_setup']; continue
+            if stripped.startswith("# Time"): current_section_dict = meta['time_info']; continue
+            if stripped.startswith(("# RTA Results", "# Broadband Results", "# RTA LOG Results", "# Broadband LOG Results")):
+                break 
+            if current_section_dict is not None:
+                parts = stripped.split(':', 1)
+                if len(parts) == 2:
+                    key, value = map(str.strip, parts)
+                    if key: current_section_dict[key] = value
+        return meta
+
+    def _get_nti_headers_and_data_start(self, table_lines: List[str], is_spectral: bool) -> Tuple[Optional[List[str]], int]:
+        # --- NEW LOGIC: Use a dedicated path for non-spectral (broadband) files ---
+        if not is_spectral:
+            broadband_param_row_idx = -1
+            # Find the first row that contains a standard broadband parameter. That's our header row.
+            broadband_markers = ['LAeq', 'LAFmax', 'LAF10', 'LAF90', 'LCSmax', 'LCFmax', 'LZSmax', 'LZFmax']
+            for i, line in enumerate(table_lines):
+                if any(marker in line for marker in broadband_markers):
+                    broadband_param_row_idx = i
+                    break
+            
+            if broadband_param_row_idx == -1:
+                logger.error("Could not identify any suitable header row for broadband file.")
+                return None, -1
+
+            header_row_parts = table_lines[broadband_param_row_idx].strip().split('\t')
+            
+            # Clean the headers for standardization
+            final_headers = [h.replace('_dt', '').replace('.0%', '').strip() for h in header_row_parts]
+
+            data_start_idx = broadband_param_row_idx + 1
+            # Skip any empty lines or unit lines between header and data
+            while data_start_idx < len(table_lines):
+                line_content = table_lines[data_start_idx].strip()
+                if not line_content or line_content.startswith('[') :
+                    data_start_idx += 1
+                else:
+                    break # Found the first data line
+
+            # Make headers unique to prevent pandas from mangling them
+            seen = {}
+            for i, h in enumerate(final_headers):
+                if not h:
+                    h = f"__EMPTY_{i}__"  # Handle empty header columns
+                if h in seen:
+                    seen[h] += 1
+                    final_headers[i] = f"{h}_{seen[h]}"
+                else:
+                    seen[h] = 1
+            
+            logger.info(f"Using broadband header logic. Headers found: {len(final_headers)}")
+            return final_headers, data_start_idx
+
+        # --- ORIGINAL LOGIC (now exclusively for SPECTRAL files) ---
+        unit_row_idx = -1
+        for i, line in enumerate(table_lines):
+            if '[dB]' in line:
+                unit_row_idx = i
+                break # Found it, no need to continue
+
+        if unit_row_idx == -1:
+            logger.error("Could not identify the unit marker row ('[dB]') for spectral file.")
+            return None, -1
+        
+        data_start_idx = unit_row_idx + 1
+        while data_start_idx < len(table_lines) and not table_lines[data_start_idx].strip():
+            data_start_idx += 1
+
+        header_rows_raw = [line.strip('\n').split('\t') for line in table_lines[:unit_row_idx + 1]]
+
+        max_len = 0
+        if header_rows_raw:
+            max_len = max(len(r) for r in header_rows_raw)
+        if len(table_lines) > data_start_idx:
+            first_data_row = table_lines[data_start_idx].strip('\n').split('\t')
+            max_len = max(max_len, len(first_data_row))
+
+        header_rows = [row + [''] * (max_len - len(row)) for row in header_rows_raw]
+        unit_row_parts = header_rows[unit_row_idx]
+        potential_header_parts = header_rows[:unit_row_idx]
+
+        final_headers = []
+        for i in range(max_len):
+            is_data_col = unit_row_parts[i].strip() == '[dB]'
+            col_names = [row[i].strip() for row in potential_header_parts]
+
+            header = ''
+            if is_data_col:
+                param, freq = '', ''
+                for name in col_names:
+                    if name.replace('.', '', 1).isdigit():
+                        freq = name.replace('.0', '')
+                    elif name and not name.startswith('['):
+                        param = name.replace('_dt', '').replace('.0%', '')
+                if param and freq:
+                    header = f"{param}_{freq}"
+                elif param:
+                    header = param
+                else:
+                    header = f"__UNKNOWN_DB_{i}__"
+            else:
+                base_names = [name for name in col_names if name and not name.startswith('[')]
+                if base_names:
+                    header = base_names[-1]
+                else:
+                    header = f"__EMPTY_{i}__"
+            final_headers.append(header)
+
+        seen = {}
+        for i, h in enumerate(final_headers):
+            if h in seen:
+                seen[h] += 1
+                final_headers[i] = f"{h}_{seen[h]}"
+            else:
+                seen[h] = 1
+        return final_headers, data_start_idx
+
+    def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
+        logger.info(f"NTiParser: Parsing {file_path}")
+        parsed_data_obj = ParsedData(original_file_path=file_path, parser_type='NTi')
+        
+        filename_lower = os.path.basename(file_path).lower()
+        if "_report.txt" in filename_lower and "_rpt_" not in filename_lower:
+            parsed_data_obj.metadata['error'] = "Single measurement report files are not currently supported."
+            logger.warning(f"Skipping unsupported single measurement report: {file_path}")
+            return parsed_data_obj
+
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f: lines = f.readlines()
+            if not lines: parsed_data_obj.metadata['error'] = "File empty"; return parsed_data_obj
+
+            checksum_idx = next((i for i, line in enumerate(lines) if "#CheckSum" in line), len(lines))
+            content_lines = lines[:checksum_idx]
+            if not content_lines: parsed_data_obj.metadata['error'] = "No content before checksum"; return parsed_data_obj
+            
+            parsed_data_obj.metadata.update(self._extract_nti_metadata(content_lines))
+            
+            is_log_file = "_log.txt" in filename_lower
+            is_spectral = "_rta_" in filename_lower
+            
+            parsed_data_obj.data_profile = 'log' if is_log_file else 'overview'
+            parsed_data_obj.spectral_data_type = 'third_octave' if is_spectral else 'none'
+
+            data_start_marker = "# RTA LOG Results" if is_spectral and is_log_file else \
+                                "# RTA Results" if is_spectral and not is_log_file else \
+                                "# Broadband LOG Results" if not is_spectral and is_log_file else \
+                                "# Broadband Results"
+
+            table_start_idx = next((i for i, l in enumerate(content_lines) if l.strip().startswith(data_start_marker)), -1)
+            if table_start_idx == -1:
+                parsed_data_obj.metadata['error'] = f"Data marker '{data_start_marker}' not found"; return parsed_data_obj
+            
+            table_lines = [line for line in content_lines[table_start_idx + 1:] if line.strip()]
+            if not table_lines: parsed_data_obj.metadata['error'] = "No data table found after marker"; return parsed_data_obj
+
+            headers, data_start_row = self._get_nti_headers_and_data_start(table_lines, is_spectral)
+            
+            if not headers: parsed_data_obj.metadata['error'] = "Failed to construct headers from table"; return parsed_data_obj
+
+            data_str = "".join(table_lines[data_start_row:])
+            df_raw = pd.read_csv(StringIO(data_str), sep='\t', header=None, names=headers, on_bad_lines='warn', low_memory=False)
+
+            cols_to_drop = [h for h in df_raw.columns if h.startswith('__') and df_raw[h].isnull().all()]
+            df_raw = df_raw.drop(columns=cols_to_drop)
+
+            if df_raw.empty: parsed_data_obj.metadata['error'] = "No data parsed from table"; return parsed_data_obj
+            
+            datetime_cols_in_raw = [c for c in ['Date', 'Time', 'Start Date', 'Start Time'] if c in df_raw.columns]
+            if not datetime_cols_in_raw: parsed_data_obj.metadata['error']="Could not determine datetime columns"; return parsed_data_obj
+
+            df_processed = self._normalize_datetime_column(df_raw.copy(), dt_col_names=datetime_cols_in_raw)
+            if df_processed.empty: parsed_data_obj.metadata['error']="All rows failed Datetime parsing"; return parsed_data_obj
+            
+            df_processed = self._safe_convert_to_float(df_processed)
+            parsed_data_obj.sample_period_seconds = self._calculate_sample_period(df_processed)
+            
+            rename_map = {}
+            for col in df_processed.columns:
+                for std_name in self.standard_output_columns:
+                    if std_name.lower() == col.lower():
+                        rename_map[col] = std_name
+                        break
+            df_processed = df_processed.rename(columns=rename_map)
+            
+            available_cols = list(df_processed.columns)
+            
+            # --- FINALIZED LOGIC ---
+            # Use the is_spectral flag to cleanly separate file type handling.
+            if is_spectral:
+                # This is an RTA file. It ONLY produces a spectral_df.
+                # The _filter_df_columns with 'spectral' will keep all valid spectral bands
+                # and also any standard broadband metrics if they happen to be present.
+                parsed_data_obj.spectral_df = self._filter_df_columns(df_processed, 'spectral', available_cols, return_all_columns)
+                # The totals_df for an RTA file should be None.
+                parsed_data_obj.totals_df = None
+            else:
+                # This is a non-spectral (_123_) file. It ONLY produces a totals_df.
+                # The _filter_df_columns with 'totals' will pick out only the standard broadband columns.
+                parsed_data_obj.totals_df = self._filter_df_columns(df_processed, 'totals', available_cols, return_all_columns)
+                # The spectral_df for a broadband file should be None.
+                parsed_data_obj.spectral_df = None
+
+            return parsed_data_obj
+
+        except FileNotFoundError:
+            parsed_data_obj.metadata['error'] = "File not found"; return parsed_data_obj
+        except Exception as e:
+            parsed_data_obj.metadata['error'] = str(e)
+            logger.error(f"NTiParser: Error parsing {file_path}: {e}", exc_info=True)
+            return parsed_data_obj
+
+class AudioFileParser(AbstractNoiseParser):
+    def parse(self, path: str, return_all_columns: bool = False) -> ParsedData:
+        logger.info(f"AudioFileParser: Processing path {path}")
+        parsed_data_obj = ParsedData(
+            original_file_path=path, 
+            parser_type='Audio',
+            data_profile='file_list',
+            spectral_data_type='none',
+        )
+        audio_files_details = []
+        try:
+            if not os.path.exists(path):
+                parsed_data_obj.metadata['error'] = "Path does not exist"; return parsed_data_obj
+
+            if os.path.isdir(path):
+                parsed_data_obj.metadata['type'] = 'directory_scan'
+                for item_name in os.listdir(path):
+                    item_path = os.path.join(path, item_name)
+                    if os.path.isfile(item_path) and "_Audio_".lower() in item_name.lower() and item_name.lower().endswith(('.wav', '.mp3', '.ogg', '.flac')):
+                        stats = os.stat(item_path)
+                        audio_files_details.append({
+                            'filename': item_name, 'full_path': item_path,
+                            'size_mb': round(stats.st_size / (1024 * 1024), 2),
+                            'modified_time': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S'),
+                            'Datetime': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S')
+                        })
+            elif os.path.isfile(path) and path.lower().endswith(('.wav', '.mp3', '.ogg', '.flac')):
+                parsed_data_obj.metadata['type'] = 'single_file'
+                stats = os.stat(path)
+                audio_files_details.append({
+                    'filename': os.path.basename(path), 'full_path': path,
+                    'size_mb': round(stats.st_size / (1024 * 1024), 2),
+                    'modified_time': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S'),
+                    'Datetime': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S')
+                })
+            else:
+                parsed_data_obj.metadata['error'] = "Not a recognized audio file or directory"; return parsed_data_obj
+
+            parsed_data_obj.metadata['audio_files_count'] = len(audio_files_details)
+            
+            if audio_files_details:
+                df_audio_list = pd.DataFrame(audio_files_details)
+                if 'Datetime' in df_audio_list.columns:
+                     df_audio_list = df_audio_list.sort_values(by='Datetime').reset_index(drop=True)
+                parsed_data_obj.totals_df = df_audio_list
+            
+            return parsed_data_obj
+        except Exception as e:
+            parsed_data_obj.metadata['error'] = str(e)
+            logger.error(f"AudioFileParser: Error processing {path}: {e}", exc_info=True)
+            return parsed_data_obj
+
+class NoiseParserFactory:
+    @staticmethod
+    def get_parser(file_path: str, parser_type: str = 'auto') -> Optional[AbstractNoiseParser]:
+        filename_lower = os.path.basename(file_path).lower()
+        
+        # NTi files have very specific naming conventions
+        if '_report.txt' in filename_lower or '_log.txt' in filename_lower:
+            if "_rta_" in filename_lower or "_123_" in filename_lower:
+                return NTiFileParser()
+
+        # Svan or Noise Sentry
+        if filename_lower.endswith(('.csv','.svl')) or "overview.xlsx" in filename_lower :
+            if re.search(r'_\d{4}_\d{2}_\d{2}__\d{2}h\d{2}m\d{2}s.*\.csv$', filename_lower):
+                return NoiseSentryFileParser()
+            return SvanFileParser()
+        
+        # Audio files or directories containing them
+        if os.path.isdir(file_path) or filename_lower.endswith(('.wav', '.mp3', '.ogg', '.flac')):
+             return AudioFileParser()
+             
+        logger.warning(f"Could not determine parser type for: {file_path}")
+        return None
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # --- Noise Sentry Example ---
+    sentry_file_path = r"G:\My Drive\Programing\example files\Noise Sentry\cricket nets 2A _2025_06_03__20h55m22s_2025_05_29__15h30m00s.csv"   
+    print(f"\n--- Testing NoiseSentryParser on {os.path.basename(sentry_file_path)} ---")
+    sentry_parser = NoiseParserFactory.get_parser(sentry_file_path)
+    if sentry_parser:
+        sentry_data = sentry_parser.parse(sentry_file_path)
+        print("Sentry Metadata:", sentry_data.metadata)
+        print("Sentry Data Profile:", sentry_data.data_profile)
+        print("Sentry Sample Period:", sentry_data.sample_period_seconds)
+        if sentry_data.totals_df is not None: print("Sentry Totals DF Head:\n", sentry_data.totals_df.head())
+
+    # --- Svan Log Example ---
+    svan_log_path = r"G:\My Drive\Programing\example files\Svan full data\L259_log.csv"
+    print(f"\n--- Testing SvanFileParser on {os.path.basename(svan_log_path)} (Log File) ---")
+    svan_parser = NoiseParserFactory.get_parser(svan_log_path)
+    if svan_parser:
+        svan_data = svan_parser.parse(svan_log_path)
+        print("Svan Metadata:", svan_data.metadata)
+        print("Svan Data Profile:", svan_data.data_profile)
+        print("Svan Spectral Type:", svan_data.spectral_data_type)
+        print("Svan Sample Period:", svan_data.sample_period_seconds)
+        if svan_data.totals_df is not None: print("Svan Totals DF Head:\n", svan_data.totals_df.head(2))
+        if svan_data.spectral_df is not None: print("Svan Spectral DF Head:\n", svan_data.spectral_df.head(2))
+
+    # --- Svan Summary Example ---
+    svan_summary_path = r"G:\My Drive\Programing\example files\Svan full data\L259_summary.csv"
+    print(f"\n--- Testing SvanFileParser on {os.path.basename(svan_summary_path)} (Summary File) ---")
+    svan_parser = NoiseParserFactory.get_parser(svan_summary_path)
+    if svan_parser:
+        svan_data = svan_parser.parse(svan_summary_path)
+        print("Svan Metadata:", svan_data.metadata)
+        print("Svan Data Profile:", svan_data.data_profile)
+        print("Svan Spectral Type:", svan_data.spectral_data_type)
+        print("Svan Sample Period:", svan_data.sample_period_seconds)
+        if svan_data.totals_df is not None: print("Svan Totals DF Head:\n", svan_data.totals_df.head(2))
+        if svan_data.spectral_df is not None: print("Svan Spectral DF Head:\n", svan_data.spectral_df.head(2))
+
+    # --- NTi Test Files ---
+    nti_files_to_test = [
+        r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Log.txt",
+        r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Rpt_Report.txt",
+        r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Log.txt",
+        r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Rpt_Report.txt",
+        r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Report.txt",
+        r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Report.txt"
+    ]
+
+    for nti_path in nti_files_to_test:
+        print(f"\n--- Testing NTiFileParser on {os.path.basename(nti_path)} ---")
+        nti_parser = NoiseParserFactory.get_parser(nti_path)
+        if nti_parser:
+            nti_data = nti_parser.parse(nti_path)
+            print("NTi Metadata:", nti_data.metadata)
+            print("NTi Data Profile:", nti_data.data_profile)
+            print("NTi Spectral Type:", nti_data.spectral_data_type)
+            print("NTi Sample Period:", nti_data.sample_period_seconds)
+            if nti_data.totals_df is not None and not nti_data.totals_df.empty: 
+                print("NTi Totals DF Head:\n", nti_data.totals_df.head(2))
+            if nti_data.spectral_df is not None and not nti_data.spectral_df.empty:
+                 print("NTi Spectral DF Head:\n", nti_data.spectral_df.head(2))
+        else:
+            print(f"No parser found for {os.path.basename(nti_path)}")
+
+==== noise_survey_analysis\core\data_processors.py ====
+
+import pandas as pd
+import numpy as np
+import logging
+from typing import List, Dict, Optional, Set, Tuple, Any
+import math
+
+# Assuming PositionData is defined elsewhere and imported (e.g., from data_manager)
+import sys
+from pathlib import Path
+current_file = Path(__file__)
+project_root = current_file.parent.parent.parent  # Go up to "Noise Survey Analysis"
+sys.path.insert(0, str(project_root))
+
+from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETTINGS
+from noise_survey_analysis.core.data_manager import PositionData
+
+logger = logging.getLogger(__name__)
+
+
+class GlyphDataProcessor:
+    """
+    A class dedicated to transforming DataFrames into specific data structures
+    required by Bokeh glyphs, such as the Image glyph for spectrograms.
+    """
+
+    def prepare_all_spectral_data(self, position_data_obj: PositionData, 
+                                  chart_settings: Optional[Dict] = None) -> Dict[str, Dict[str, Any]]:
+        """
+        Processes all available spectral data (overview and log) for a single position.
+
+        Args:
+            position_data_obj: An instance of the PositionData class.
+            chart_settings: A dictionary of chart settings. Uses defaults if None.
+
+        Returns:
+            A nested dictionary structured for potential JavaScript front-end or component use, e.g.:
+            {
+                'overview': {
+                    'available_params': ['LZeq', 'LZFmax'],
+                    'prepared_params': {
+                        'LZeq': { ... spectrogram data for LZeq ... },
+                        'LZFmax': { ... spectrogram data for LZFmax ... }
+                    }
+                },
+                'log': {
+                    'available_params': ['LZeq'],
+                    'prepared_params': {
+                        'LZeq': { ... spectrogram data for LZeq ... }
+                    }
+                }
+            }
+            Returns an empty dict if no spectral data is processable.
+        """
+        if chart_settings is None:
+            chart_settings = CHART_SETTINGS.copy()
+
+        final_prepared_data: Dict[str, Dict[str, Any]] = {}
+        logger.info(f"Processor: Preparing all spectral data for position '{position_data_obj.name}'")
+        
+        # Process overview spectral data
+        if position_data_obj.has_overview_spectral:
+            df = position_data_obj.overview_spectral
+            params = self._extract_spectral_parameters(df)
+            if params:
+                prepared_params_dict = {}
+                for param in params:
+                    prepared_data = self.prepare_single_spectrogram_data(df, param, chart_settings)
+                    if prepared_data:
+                        prepared_params_dict[param] = prepared_data
+                if prepared_params_dict: # Only add if some params were successfully processed
+                    final_prepared_data['overview'] = {
+                        'available_params': params,
+                        'prepared_params': prepared_params_dict
+                    }
+        else:
+            logger.debug(f"No overview_spectral data for {position_data_obj.name}")
+
+
+        # Process log spectral data
+        if position_data_obj.has_log_spectral:
+            df = position_data_obj.log_spectral
+            params = self._extract_spectral_parameters(df)
+            if params:
+                prepared_params_dict = {}
+                for param in params:
+                    prepared_data = self.prepare_single_spectrogram_data(df, param, chart_settings)
+                    if prepared_data:
+                        prepared_params_dict[param] = prepared_data
+                if prepared_params_dict:
+                    final_prepared_data['log'] = {
+                        'available_params': params,
+                        'prepared_params': prepared_params_dict
+                    }
+        else:
+            logger.debug(f"No log_spectral data for {position_data_obj.name}")
+        
+        return final_prepared_data
+
+    
+    def prepare_single_spectrogram_data(self, df: pd.DataFrame, param_prefix: str, 
+                                        chart_settings: Dict) -> Optional[Dict[str, Any]]:
+        """
+        Process spectral data from a DataFrame for a single parameter into the format
+        needed for Bokeh image spectrogram visualization. If the size of the data is larger than a 
+        set limit, we will chunk the data client side. Here we will set up the initial source to the correct size. 
+
+        Args:
+            df (pd.DataFrame): DataFrame with frequency data. Must contain 'Datetime'.
+            param_prefix (str): Base parameter name (e.g., 'LZeq', 'LAFmax').
+            chart_settings (dict): Configuration for chart appearance.
+        
+        Returns:
+            dict: A dictionary containing all chunked processed data needed for visualization, or None if processing fails.
+        """
+        logger.debug(f"Preparing single spectrogram data for parameter: {param_prefix} from DF shape {df.shape}")
+        
+        MAX_DATA_SIZE = 95000 # this should be (MAX_SPECTRAL_POINTS_TO_RENDER from app.js  + buffer) * num_freqs # TODO: Make this a config parameter
+        n_freqs = 0 # Initialize n_freqs
+
+        if df is None or df.empty:
+            logger.warning(f"Empty DataFrame provided for spectral data preparation: {param_prefix}")
+            return None
+            
+        if 'Datetime' not in df.columns:
+            logger.error(f"Missing 'Datetime' column for spectral data preparation: {param_prefix}")
+            return None
+            
+        # Ensure Datetime is actually datetime type
+        if not pd.api.types.is_datetime64_any_dtype(df['Datetime']):
+            # Make a copy to avoid SettingWithCopyWarning if df is a slice
+            df = df.copy() 
+            df.loc[:, 'Datetime'] = pd.to_datetime(df['Datetime'], errors='coerce')
+            df.dropna(subset=['Datetime'], inplace=True)
+            if df.empty:
+                logger.warning("No valid dates after conversion in spectral data")
+                return None
+        
+        # --- Get band slicing settings ---
+        lower_band_idx = chart_settings.get('lower_freq_band', 0)
+        upper_band_idx = chart_settings.get('upper_freq_band', -1) # Slices up to, but not including, upper_band_idx
+        
+        # --- Find and Sort Frequency Columns for the given parameter_prefix ---
+        freq_cols_found: List[str] = []
+        all_frequencies_numeric: List[float] = []
+
+        for col in df.columns:
+            if col.startswith(param_prefix + '_'):
+                # Extract frequency part after the LAST underscore
+                freq_str_part = col.split('_')[-1] 
+                try:
+                    # Attempt to convert to float (handles "8", "12.5", "1000")
+                    # Suffixes like 'k' or 'Hz' should have been normalized by the parser
+                    # to match EXPECTED_THIRD_OCTAVE_SUFFIXES (which are numeric strings)
+                    freq_numeric = float(freq_str_part)
+                    freq_cols_found.append(col)
+                    all_frequencies_numeric.append(freq_numeric)
+                except ValueError:
+                    logger.debug(f"Could not parse frequency from column suffix '{freq_str_part}' in '{col}' for param '{param_prefix}'. Skipping.")
+                    continue
+        
+        if not freq_cols_found:
+            logger.warning(f"No frequency columns found for parameter '{param_prefix}' in the provided DataFrame.")
+            return None
+        
+        # Sort by numeric frequency
+        sorted_indices = np.argsort(all_frequencies_numeric)
+        frequencies_numeric_sorted = np.array(all_frequencies_numeric)[sorted_indices]
+        freq_columns_sorted = np.array(freq_cols_found)[sorted_indices]
+        
+        # --- Apply Band Slicing ---
+        # If upper_band_idx is -1 (python slice convention for "to the end"), convert for numpy
+        actual_upper_band_idx = len(frequencies_numeric_sorted) if upper_band_idx == -1 else upper_band_idx
+        
+        selected_frequencies = frequencies_numeric_sorted[lower_band_idx:actual_upper_band_idx]
+        selected_freq_columns = freq_columns_sorted[lower_band_idx:actual_upper_band_idx]
+        
+        if len(selected_frequencies) == 0:
+            logger.warning(f"No frequencies remaining after band slicing for '{param_prefix}'. Original count: {len(frequencies_numeric_sorted)}")
+            return None
+        
+        n_freqs = len(selected_frequencies)
+        frequency_labels_str = [(str(int(f)) if f.is_integer() else f"{f:.1f}") + " Hz" for f in selected_frequencies]
+        
+        # --- Prepare Data for `image` Glyph ---
+        # Ensure Datetime is sorted before creating levels_matrix and times_dt
+        df_sorted = df.sort_values(by='Datetime')
+        levels_matrix = df_sorted[selected_freq_columns].values  # Shape: (n_times, n_freqs)
+        times_dt = df_sorted['Datetime'].values # Already pandas Timestamps or numpy datetime64
+        n_times = len(times_dt)
+        
+        if n_times == 0:
+            logger.warning(f"No time points for spectral data parameter: {param_prefix}")
+            return None
+        
+        times_ms = pd.to_datetime(times_dt).astype('int64') // 10**6 # Bokeh image x-coords
+        freq_indices = np.arange(n_freqs) # Bokeh image y-coords (categorical)
+        
+        valid_levels = levels_matrix[~pd.isna(levels_matrix) & np.isfinite(levels_matrix)]
+        if len(valid_levels) > 0:
+            min_val = np.min(valid_levels)
+            max_val = np.max(valid_levels)
+        else:
+            min_val, max_val = 0, 100 # Default if all NaNs or infinite
+        
+        nan_replace_val = min_val + chart_settings.get('nan_replace_offset', -20)
+        
+        # Replace NaNs for visualization; ensure it's float for np.nan_to_num
+        levels_matrix_clean = np.nan_to_num(levels_matrix.astype(float), nan=nan_replace_val, posinf=max_val+10, neginf=min_val-10)
+
+        #round to integer
+        levels_matrix_clean = np.round(levels_matrix_clean).astype(np.int16)
+
+        levels_transposed = levels_matrix_clean.T
+        
+
+        #get the correct size for the first chunk. If data is smaller than MAX_DATA_SIZE, this will be the full data.
+        chunk_time_length = math.ceil(MAX_DATA_SIZE / n_freqs) #TODO: set the max value to the smaller of MAX_DATA_SIZE and the size of the overview spectrogram (avoid padding out the overview)
+
+        #pad the data
+        pad_width = 0
+        if n_times < chunk_time_length:
+            pad_width = chunk_time_length - n_times
+        elif n_times % chunk_time_length != 0:
+            pad_width = chunk_time_length - (n_times % chunk_time_length)
+        
+        max_time = times_ms[-1] if n_times > 0 else 0
+        min_time = times_ms[0] if n_times > 0 else 0
+        
+        if pad_width > 0:
+            # Pad the transposed matrix along the time axis (axis=1)
+            levels_transposed_padded = np.pad(levels_transposed, ((0, 0), (0, pad_width)), 'constant', constant_values=nan_replace_val)
+            # Pad the time array
+            last_time_val = times_ms[-1] if n_times > 0 else 0
+            times_ms_padded = np.pad(times_ms, (0, pad_width), 'constant', constant_values=last_time_val)
+        else:
+            levels_transposed_padded = levels_transposed
+            times_ms_padded = times_ms
+        
+        
+        final_n_times = len(times_ms_padded)
+
+        # Flatten the padded, transposed matrix into a 1D array. This is the exact format Bokeh will use for the glyph's data buffer.
+        levels_flat_transposed = levels_transposed_padded.flatten()
+        
+        first_data_chunk = levels_transposed_padded[:, :chunk_time_length]
+
+        time_step = (times_ms_padded[10] - times_ms_padded[5]) / 5 if final_n_times > 10 else (times_ms_padded[1] - times_ms_padded[0] if final_n_times > 1 else 0)
+        
+        # Image glyph parameters
+        x_coord = times_ms_padded[0] if final_n_times > 0 else 0
+        y_coord = -0.5 # Image covers cells from y to y+dh; -0.5 to n_freqs-0.5
+        dw_val = chunk_time_length * time_step
+        dh_val = n_freqs
+          
+        return {
+            'frequency_labels': frequency_labels_str,         # Formatted string labels for ticks
+            'n_times': int(final_n_times),                    # total number of times
+            'n_freqs': int(n_freqs),                          # total number of frequencies
+            'chunk_time_length': int(chunk_time_length),      # number of times in a chunk
+            'time_step': time_step,                           # time step in ms
+
+            'times_ms': times_ms_padded.tolist(),         # Timestamps in ms for x-axis
+            'levels_flat_transposed': levels_flat_transposed, # Flattened levels matrix for glyph data
+
+            'min_val': min_val,
+            'max_val': max_val,
+
+            'min_time': min_time,
+            'max_time': max_time,
+            
+            'initial_glyph_data': {
+                'x': [float(x_coord)],    # For image glyph 'x'
+                'y': [float(y_coord)],    # For image glyph 'y'
+                'dw': [float(dw_val)],     # For image glyph 'dw'
+                'dh': [float(dh_val)],      # For image glyph 'dh'
+                'image': [first_data_chunk]
+            }
+        }
+
+    def _extract_spectral_parameters(self, df: Optional[pd.DataFrame]) -> List[str]:
+        """
+        Utility to find all unique parameter prefixes (e.g., 'LZeq', 'LAFmax') 
+        from columns that appear to be spectral data (PARAM_FREQ format).
+        """
+        if df is None or df.empty: return []
+        
+        params: Set[str] = set()
+        for col in df.columns:
+            if '_' in col:
+                parts = col.split('_', 1) # Split only on the first underscore
+                if len(parts) == 2:
+                    param_prefix = parts[0]
+                    freq_suffix = parts[1]
+                    # A simple check: does the prefix start with L and suffix look like a number?
+                    # More robust: check if freq_suffix is in a list of known freq strings (like from parsers)
+                    # For now, if it starts with L and has underscore, assume it's a candidate.
+                    if param_prefix.startswith('L') and freq_suffix.replace('.', '', 1).isdigit():
+                        params.add(param_prefix)
+        return sorted(list(params))
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
+    processor = GlyphDataProcessor()
+
+    # --- Example Usage ---
+    # 1. Create a dummy PositionData object (as if loaded by DataManager)
+    class DummyPosData(PositionData): # Inherit from actual if available
+        pass
+    
+    test_pos = DummyPosData(name="TestSite")
+
+    # Create dummy overview_spectral data
+    overview_dates = pd.to_datetime(['2023-01-01 10:00:00', '2023-01-01 10:05:00'])
+    test_pos.overview_spectral = pd.DataFrame({
+        'Datetime': overview_dates,
+        'LAeq': [60, 62], # Overall LAeq
+        'LZeq_1000': [55.1, 56.2],
+        'LZeq_2000': [50.5, 51.8],
+        'LZFmax_1000': [65.0, 66.0],
+        'LAF90_ignore': [40, 41] # This should be ignored as spectral if not PARAM_FREQ
+    })
+    
+    # Create dummy log_spectral data
+    log_dates = pd.date_range('2023-01-01 10:00:00', periods=5, freq='1min')
+    test_pos.log_spectral = pd.DataFrame({
+        'Datetime': log_dates,
+        'LZeq_500': np.random.rand(5) * 20 + 40,
+        'LZeq_1000': np.random.rand(5) * 20 + 45,
+        'LAFmax': np.random.rand(5) * 10 + 60, # Overall LAFmax
+    })
+
+    print(f"Position has overview spectral: {test_pos.has_overview_spectral}")
+    print(f"Position has log spectral: {test_pos.has_log_spectral}")
+
+    # 2. Process all spectral data for this position
+    chart_settings_test = {
+        'lower_freq_band': 0, 
+        'upper_freq_band': -1, # All bands
+        'nan_replace_offset': -30
+    }
+    prepared_data_for_site = processor.prepare_all_spectral_data(test_pos, chart_settings_test)
+
+    # 3. Inspect the output
+    if 'overview_spectral' in prepared_data_for_site:
+        print("\n--- Prepared Overview Spectral Data ---")
+        print(f"Available params: {prepared_data_for_site['overview_spectral']['available_params']}")
+        for param, data_dict in prepared_data_for_site['overview_spectral']['prepared_params'].items():
+            print(f"  Parameter: {param}")
+            print(f"    Frequencies: {data_dict['frequency_labels']}")
+            print(f"    Times (ms): {data_dict['times_ms'][:2]}... ({data_dict['n_times']} total)")
+            print(f"    Levels Matrix Transposed Shape: ({len(data_dict['levels_matrix_transposed'])}, {len(data_dict['levels_matrix_transposed'][0]) if data_dict['levels_matrix_transposed'] else 0})")
+            print(f"    Min/Max Val: {data_dict['min_val']:.1f} / {data_dict['max_val']:.1f}")
+
+    if 'log_spectral' in prepared_data_for_site:
+        print("\n--- Prepared Log Spectral Data ---")
+        print(f"Available params: {prepared_data_for_site['log_spectral']['available_params']}")
+        for param, data_dict in prepared_data_for_site['log_spectral']['prepared_params'].items():
+            print(f"  Parameter: {param}")
+            print(f"    Frequencies: {data_dict['frequency_labels']}")
+            # print(f"    Levels Matrix (first 2x2): {np.array(data_dict['levels_matrix'])[:2,:2]}")
+            print(f"    Image x,y,dw,dh: {data_dict['x_coord']}, {data_dict['y_coord']}, {data_dict['dw_val']}, {data_dict['dh_val']}")
+
+    # Test with no spectral data
+    empty_pos = DummyPosData(name="EmptySite")
+    prepared_empty = processor.prepare_all_spectral_data(empty_pos, chart_settings_test)
+    print(f"\n--- Prepared Empty Site Data ---: {prepared_empty}")
+    assert not prepared_empty 
+
+==== noise_survey_analysis\visualization\dashBuilder.py ====
+
+import logging
+from bokeh.plotting import curdoc
+from bokeh.layouts import column, LayoutDOM # Ensure column is imported
+from bokeh.models import Div, ColumnDataSource # Import for assertions and error messages
+import pandas as pd
+import numpy as np  # Import numpy for array operations
+import os
+from bokeh.resources import CDN
+from bokeh.embed import file_html  # Add import for standalone HTML generation
+import logging
+from bokeh.events import DocumentReady
+from bokeh.models import CustomJS, ColumnDataSource
+from typing import Dict, Any, Optional
+
+import sys
+from pathlib import Path
+current_file = Path(__file__)
+project_root = current_file.parent.parent  # Go up to "Noise Survey Analysis"
+sys.path.insert(0, str(project_root))
+
+from noise_survey_analysis.ui.components import (
+    TimeSeriesComponent,
+    SpectrogramComponent,
+    FrequencyBarComponent,
+    ControlsComponent,
+    RangeSelectorComponent,
+    create_audio_controls_for_position
+)
+from noise_survey_analysis.core.data_processors import GlyphDataProcessor
+from noise_survey_analysis.core.app_callbacks import AppCallbacks
+from noise_survey_analysis.core.data_manager import DataManager, PositionData # Ensure PositionData is imported
+from noise_survey_analysis.core.config import CHART_SETTINGS # Ensure CHART_SETTINGS is imported
+from noise_survey_analysis.js.loader import load_js_file
+
+logger = logging.getLogger(__name__)
+
+class DashBuilder:
+  
+    """
+    Builds the Bokeh dashboard layout, including charts, widgets, and interactions.
+    Orchestrates the creation of visualization components and UI elements.
+    """
+
+    def __init__(self, 
+                 app_callbacks: Optional[AppCallbacks] = None, 
+                 audio_control_source: Optional[ColumnDataSource] = None, 
+                 audio_status_source: Optional[ColumnDataSource] = None):
+        """
+        The constructor is lightweight. It only stores references to core handlers
+        and initializes containers for the components it will create.
+
+       Args:
+            app_callbacks: An instance of AppCallbacks for backend logic. (Optional)
+            audio_control_source: The shared CDS for sending commands. (Optional)
+            audio_status_source: The shared CDS for receiving status. (Optional)
+        """
+        self.app_callbacks = app_callbacks
+        self.audio_control_source = audio_control_source or ColumnDataSource(data={'command': [], 'position_id': [], 'value': []})
+        self.audio_status_source = audio_status_source or ColumnDataSource(data={'is_playing': [False], 'current_time': [0],'playback_rate': [1.0], 'current_file_duration': [0], 'current_file_start_time': [0]})
+        
+        # These will be populated by the build process
+        self.components: Dict[str, Dict[str, Any]] = {}
+        self.shared_components: Dict[str, Any] = {}
+        self.prepared_glyph_data: Dict[str, Dict[str, Any]] = {}
+
+    def build_layout(self, doc, app_data: DataManager, chart_settings: dict):
+        """
+        The main public method that constructs the entire application layout.
+        This is the primary entry point for this class.
+
+        Args:
+            doc: The Bokeh document to attach the final layout to.
+            app_data: The complete, prepared data object from the DataManager.
+            chart_settings: The global dictionary of chart settings.
+        """
+        print("INFO: DashboardBuilder: Starting UI construction...")
+
+        # The sequence of operations is clear and logical
+        prepared_glyph_data, available_params = self._prepare_glyph_data(app_data)
+
+        self.prepared_glyph_data = prepared_glyph_data
+        self._create_components(app_data, prepared_glyph_data, available_params, chart_settings)
+        self._wire_up_interactions()
+        self._assemble_and_add_layout(doc)
+        self._initialize_javascript(doc)
+
+        print("INFO: DashboardBuilder: Build complete.")
+
+    # --- Private Helper Methods: The Step-by-Step Build Process ---
+
+    def _prepare_glyph_data(self, app_data: DataManager) -> dict:
+        """Step 1: Prepare glyph data for all positions."""
+        print("INFO: DashboardBuilder: Preparing glyph data for all positions.")
+        
+        processor = GlyphDataProcessor()
+        all_prepared_glyph_data = {}
+        available_params = set()
+
+        for position_name in app_data.positions():
+            position_data = app_data[position_name]
+            all_prepared_glyph_data[position_name] = processor.prepare_all_spectral_data(position_data)
+            
+            try:
+                available_params.update(all_prepared_glyph_data[position_name]['overview']['available_params'])
+                available_params.update(all_prepared_glyph_data[position_name]['log']['available_params'])
+            except KeyError: pass
+
+        # Convert back to a list when returning if needed
+        return all_prepared_glyph_data, list(available_params)
+    
+    
+    def _create_components(self, app_data: DataManager, prepared_glyph_data: dict, available_params: list, chart_settings: dict):
+        """Step 2: Instantiates all component classes for each position."""
+        logger.info("DashboardBuilder: Creating individual UI components...")
+
+        self.shared_components['controls'] = ControlsComponent(available_params)
+        controls_comp = self.shared_components['controls']
+        
+        self.shared_components['freq_bar'] = FrequencyBarComponent()
+
+        first_position_processed = False
+        # Create components for each position found in the data
+        for position_name in app_data.positions():
+            position_data_obj = app_data[position_name] # Get PositionData object
+            position_specific_glyph_data = prepared_glyph_data.get(position_name, {})
+
+            initial_mode = self._determine_initial_display_mode(position_data_obj)
+            initial_param_spectrogram = chart_settings.get('default_spectral_parameter', 'LZeq')
+
+            ts_component = TimeSeriesComponent(
+                position_data_obj=position_data_obj,
+                initial_display_mode=initial_mode
+            )
+            spec_component = SpectrogramComponent(
+                position_data_obj=position_data_obj,
+                position_glyph_data=position_specific_glyph_data,
+                initial_display_mode=initial_mode,
+                initial_param=initial_param_spectrogram
+            )
+
+            # Create audio controls if audio is available for this position
+            audio_controls = None
+            if position_data_obj.has_audio:
+                audio_controls = create_audio_controls_for_position(position_name)
+
+            self.components[position_name] = {
+                'timeseries': ts_component,
+                'spectrogram': spec_component,
+                'audio_controls': audio_controls
+            }
+
+            controls_comp.add_visibility_checkbox(
+                chart_name=ts_component.figure.name,
+                chart_label=f"{position_name} TS",
+                initial_state=ts_component.figure.visible
+            )
+            controls_comp.add_visibility_checkbox(
+                chart_name=spec_component.figure.name,
+                chart_label=f"{position_name} Spec",
+                initial_state=spec_component.figure.visible
+            )
+
+            if not first_position_processed and hasattr(ts_component, 'figure'):
+                self.shared_components['range_selector'] = RangeSelectorComponent(attached_timeseries_component=ts_component)
+                logger.info(f"RangeSelectorComponent linked to TimeSeries figure of {position_name}.")
+                first_position_processed = True
+        
+        if not first_position_processed:
+            logger.warning("RangeSelectorComponent could not be linked to any TimeSeries figure as no positions were processed or no figure was available.")
+            # RangeSelectorComponent will not be added to shared_components in this case
+
+
+    def _build_position_components(self, position_data):
+        """Builds the charts for a single position."""
+        
+        
+    
+    def _wire_up_interactions(self):
+        """Step 3: Handles the logic that connects components to each other."""
+        print("INFO: DashboardBuilder: Wiring up interactions between components...")
+
+        master_x_range = None
+        for position_name, comp_dict in self.components.items():
+            ts_comp = comp_dict['timeseries']
+            spec_comp = comp_dict['spectrogram']
+            controls = self.shared_components['controls']
+            freq_bar = self.shared_components['freq_bar']
+
+            if master_x_range is None:
+                master_x_range = ts_comp.figure.x_range
+            
+            ts_comp.figure.x_range = master_x_range
+            spec_comp.figure.x_range = master_x_range
+
+        #add callback to x_range ranges
+        range_update_js = CustomJS(code="""
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onRangeUpdate) {
+                window.NoiseSurveyApp.interactions.onRangeUpdate(cb_obj);
+            } else {
+                console.error('NoiseSurveyApp.interactions.onRangeUpdate not defined!');
+            }
+        """)
+        master_x_range.js_on_change('end', range_update_js)
+
+
+    def _assemble_and_add_layout(self, doc):
+        """Step 4: Gets the .layout() from each component and assembles the final page."""
+        print("INFO: DashboardBuilder: Assembling final Bokeh layout...")
+        
+        position_layouts = []
+        for position_name, comp_dict in self.components.items():
+            # Add audio controls to the timeseries layout if they exist
+            ts_layout = comp_dict['timeseries'].layout()
+            if comp_dict.get('audio_controls'):
+                # This assumes the title is a Div and we can insert controls before it.
+                # A more robust method might be needed if the layout structure changes.
+                ts_figure = comp_dict['timeseries'].figure
+                ts_figure.above.insert(0, comp_dict['audio_controls']['layout'])
+
+            pos_layout = column(
+                ts_layout,
+                comp_dict['spectrogram'].layout(),
+                name=f"layout_{position_name}"
+            )
+            position_layouts.append(pos_layout)
+
+        controls_layout = self.shared_components['controls'].layout()
+        # The final layout assembly
+        final_layout = column(
+            controls_layout, 
+            self.shared_components['range_selector'].layout(), 
+            *position_layouts, 
+            self.shared_components['freq_bar'].layout() if 'freq_bar' in self.shared_components else Div(),
+            name="main_layout"
+        )
+
+        doc.add_root(final_layout)
+        doc.title = "Noise Survey Analysis Dashboard"
+
+    def _initialize_javascript(self, doc):
+        """Step 5: Gathers all models and sends them to the JavaScript front-end."""
+        print("INFO: DashboardBuilder: Preparing and initializing JavaScript...")
+
+        # This method builds the "bridge dictionary" of Python models
+        js_models_for_args = self._assemble_js_bridge_dictionary()
+        app_js_code = load_js_file('app.js') #the full app.js code
+
+        js_code = f"""
+            console.log("Bokeh document is ready. Initializing NoiseSurveyApp...");
+
+            {app_js_code}
+
+            setTimeout(() => {{
+                console.log("This happened after 0.5 seconds (non-blocking).");
+            
+
+                const models = {{
+                    charts: charts,
+                    chartsSources: chartsSources,
+                    timeSeriesSources: timeSeriesSources,
+                    preparedGlyphData: preparedGlyphData,
+                    uiPositionElements: uiPositionElements,
+                    clickLines: clickLines,
+                    hoverLines: hoverLines,
+                    labels: labels,
+                    hoverDivs: hoverDivs,
+                    visibilityCheckBoxes: visibilityCheckBoxes,
+                    barSource: barSource,
+                    barChart: barChart,
+                    paramSelect: paramSelect,
+                    freqTableDiv: freqTableDiv,
+                    audio_control_source: audio_control_source,
+                    audio_status_source: audio_status_source,
+                    audio_controls: audio_controls,
+                }};
+
+                console.log('[NoiseSurveyApp]', 'Models:', models);
+
+                if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init === 'function') {{
+                    console.log('DEBUG: Found NoiseSurveyApp, calling init...');
+                    window.NoiseSurveyApp.init(models, {{ enableKeyboardNavigation: true }});
+                }} else {{
+                    console.error('CRITICAL ERROR: NoiseSurveyApp.init not found. Check that app.js is loaded correctly.');
+                }}
+            }}, 500); // 500 milliseconds = 0.5 seconds
+        """
+
+        # Set up the DocumentReady callback, passing the python models dict to 'args'
+        # The keys in this dict MUST match the variable names used in the JS code above.
+        doc.js_on_event(DocumentReady, CustomJS(args=js_models_for_args, code=js_code))
+
+        #trigger_source = ColumnDataSource(data={'trigger': [0]}, name='js_init_trigger')
+        #trigger_source.js_on_change('data', CustomJS(args=js_models_for_args, code=js_code))
+        #doc.add_root(trigger_source)
+        #doc.add_timeout_callback(lambda: trigger_source.data.update({'trigger': [1]}), 1000)
+
+    def _assemble_js_bridge_dictionary(self) -> dict:
+        """Creates the dictionary of all models needed by app.js."""
+        
+        js_models = {
+            'charts': [],
+            'chartsSources': [],
+            'timeSeriesSources': {},
+            'preparedGlyphData': self.prepared_glyph_data,
+            'uiPositionElements': {},
+            'clickLines': [],
+            'hoverLines': [],
+            'labels': [],
+            'hoverDivs': [],
+            'visibilityCheckBoxes': self.shared_components['controls'].get_all_visibility_checkboxes(),
+            'barSource': self.shared_components['freq_bar'].source,
+            'barChart': self.shared_components['freq_bar'].figure,
+            'freqTableDiv': self.shared_components['freq_bar'].table_div,  # Add the frequency table div for copy/paste functionality
+            'paramSelect': self.shared_components['controls'].param_select,
+            'audio_control_source': self.app_callbacks.audio_control_source if self.app_callbacks else None,
+            'audio_status_source': self.app_callbacks.audio_status_source if self.app_callbacks else None,
+            'audio_controls': {},
+        }
+
+        # Populate position-specific models
+        for pos, comp_dict in self.components.items():
+
+            js_models['timeSeriesSources'][pos] = {
+                'overview': comp_dict['timeseries'].overview_source,
+                'log': comp_dict['timeseries'].log_source,
+            }
+            
+            js_models['chartsSources'].extend([comp_dict['timeseries'].source, comp_dict['spectrogram'].source])
+            js_models['charts'].extend([comp_dict['timeseries'].figure, comp_dict['spectrogram'].figure])
+            js_models['clickLines'].extend([comp_dict['timeseries'].tap_lines, comp_dict['spectrogram'].tap_lines])
+            js_models['hoverLines'].extend([comp_dict['timeseries'].hover_line, comp_dict['spectrogram'].hover_line])
+            # Note: Only timeseries has labels, spectrogram doesn't
+            js_models['labels'].append(comp_dict['timeseries'].label)
+            js_models['hoverDivs'].append(comp_dict['spectrogram'].hover_div)
+            if comp_dict.get('audio_controls'):
+                js_models['audio_controls'][pos] = comp_dict['audio_controls']
+            if comp_dict.get('audio_controls'):
+                js_models['audio_controls'][pos] = comp_dict['audio_controls']
+
+
+        #Add RangeSelector tap and hover lines
+        js_models['clickLines'].extend([self.shared_components['range_selector'].tap_lines])
+        js_models['hoverLines'].extend([self.shared_components['range_selector'].hover_line])
+
+        return js_models
+    
+    # Helper method
+    def _determine_initial_display_mode(self, position_data: PositionData) -> str:
+        if position_data.has_overview_totals:
+            logger.debug(f"DashBuilder: Using overview_totals for {position_data.name}")
+            return 'overview'
+        elif position_data.has_log_totals:
+            logger.debug(f"DashBuilder: Using log_totals for {position_data.name}")
+            return 'log'
+        # Fallback: if no totals, check for spectral data as a last resort
+        elif position_data.has_log_spectral:
+            logger.warning(f"DashBuilder: No totals data for {position_data.name}, but log spectral data found. Defaulting to 'log'.")
+            return 'log'
+        elif position_data.has_overview_spectral:
+            logger.warning(f"DashBuilder: No totals data for {position_data.name}, but overview spectral data found. Defaulting to 'overview'.")
+            return 'overview'
+        
+        logger.warning(f"DashBuilder: No plottable data found for {position_data.name}. Defaulting to 'overview'.")
+        return 'overview'
+
+
+==== noise_survey_analysis\main.py ====
+
+import logging
+from re import L
+from bokeh.plotting import curdoc
+from bokeh.models import ColumnDataSource
+from bokeh.io import output_file, save
+from bokeh.document import Document
+import sys
+from pathlib import Path
+
+# --- Project Root Setup ---
+current_file = Path(__file__)
+project_root = current_file.parent.parent
+sys.path.insert(0, str(project_root))
+
+from noise_survey_analysis.core.config import CHART_SETTINGS
+from noise_survey_analysis.core.data_manager import DataManager
+from noise_survey_analysis.core.audio_handler import AudioPlaybackHandler
+from noise_survey_analysis.core.app_callbacks import AppCallbacks, session_destroyed
+from noise_survey_analysis.visualization.dashBuilder import DashBuilder
+
+# --- Configure Logging ---
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# --- Configuration for static file output ---
+OUTPUT_FILENAME = "noise_survey_dashboard_static.html"
+
+
+def generate_static_html():
+    """
+    Builds the dashboard layout and saves it as a standalone HTML file.
+    This version will not have a live Python backend.
+    """
+    logger.info(f"--- Generating static HTML file: {OUTPUT_FILENAME} ---")
+    
+    # 1. Load Data (same as the server app)
+    entry_file_path = r"G:\My Drive\Programing\example files\Noise Sentry\cricket nets 2A _2025_06_03__20h55m22s_2025_05_29__15h30m00s.csv"   
+
+    svan_log_path = r"G:\My Drive\Programing\example files\Svan full data\L259_log.csv"
+    svan_summary_path = r"G:\My Drive\Programing\example files\Svan full data\L259_summary.csv"
+
+    nti_rta_log_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Log.txt"
+    nti_123_log_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_00_123_Log.txt"
+    nti_123_Rpt_Report_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_00_123_Rpt_Report.txt"
+    nti_RTA_Rpt_Report_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Rpt_Report.txt"
+
+    audio_dir = r"G:\Shared drives\Venta\Jobs\5793 Alton Road, Ross-on-wye\5793 Surveys\5793-1"
+
+    SOURCE_CONFIGURATIONS = [
+            {"position_name": "SiteSvan", "file_paths": {svan_summary_path}, "enabled": False}, 
+            {"position_name": "SiteSvan", "file_paths": {svan_log_path, svan_summary_path}, "enabled": False
+            }, 
+            {"position_name": "SiteNTi", "file_paths": {nti_rta_log_path, nti_123_log_path, nti_123_Rpt_Report_path, nti_RTA_Rpt_Report_path}, "parser_type_hint": "NTi", "enabled": True},
+            {"position_name": "SiteNti_Audio", "file_path": audio_dir, "enabled": False},
+            {"position_name": "SiteMissing", "file_path": "nonexistent.csv", "enabled": False},
+            {"position_name": "East", "file_paths": {r"G:\Shared drives\Venta\Jobs\5973 Norfolk Feather Site, Diss, Norfolk\5973 Surveys\5973 Norfolk Feather Site, Diss, Norfolk_summary.csv", 
+                r"G:\Shared drives\Venta\Jobs\5973 Norfolk Feather Site, Diss, Norfolk\5973 Surveys\5973 Norfolk Feather Site, Diss, Norfolk_log.csv"}, "enabled": True}
+        ]
+    app_data = DataManager(source_configurations=SOURCE_CONFIGURATIONS)
+
+    print("\nDataManager: Data loading complete.")
+    for position_name, data in app_data.get_all_position_data().items():
+        print(f"\n--- Position: {position_name} ---")
+        if data.log_totals is not None:
+            print(f"Log Totals DataFrame Shape: {data.log_totals.shape}")
+            print("Log Totals DataFrame Columns:", data.log_totals.columns.tolist())
+            print("Log Totals DataFrame Head:")
+            print(data.log_totals.head(5)) # Print more rows
+        else:
+            print("Log Totals DataFrame: None")
+
+        if data.log_spectral is not None:
+            print(f"Log Spectral DataFrame Shape: {data.log_spectral.shape}")
+            print("Log Spectral DataFrame Columns:", data.log_spectral.columns.tolist())
+            print("Log Spectral DataFrame Head:")
+            print(data.log_spectral.head(5)) # Print more rows
+        else:
+            print("Log Spectral DataFrame: None")
+
+        if data.overview_totals is not None:
+            print(f"Overview Totals DataFrame Shape: {data.overview_totals.shape}")
+            print("Overview Totals DataFrame Columns:", data.overview_totals.columns.tolist())
+            print("Overview Totals DataFrame Head:")
+            print(data.overview_totals.head(5)) # Print more rows
+        else:
+            print("Overview Totals DataFrame: None")
+
+        if data.overview_spectral is not None:
+            print(f"Overview Spectral DataFrame Shape: {data.overview_spectral.shape}")
+            print("Overview Spectral DataFrame Columns:", data.overview_spectral.columns.tolist())
+            print("Overview Spectral DataFrame Head:")
+            print(data.overview_spectral.head(5)) # Print more rows
+        else:
+            print("Overview Spectral DataFrame: None")
+
+        if position_name == "SiteNTi":
+            print("\n--- Detailed NTi Data Info ---")
+            if data.log_totals is not None:
+                print("NTi Log Totals DataFrame Info:")
+                data.log_totals.info()
+                print("\nNTi Log Totals DataFrame Describe:")
+                print(data.log_totals.describe())
+            if data.log_spectral is not None:
+                print("\nNTi Log Spectral DataFrame Info:")
+                data.log_spectral.info()
+                print("\nNTi Log Spectral DataFrame Describe:")
+                print(data.log_spectral.describe())
+            if data.overview_totals is not None:
+                print("NTi Overview Totals DataFrame Info:")
+                data.overview_totals.info()
+                print("\nNTi Overview Totals DataFrame Describe:")
+                print(data.overview_totals.describe())
+            if data.overview_spectral is not None:
+                print("\nNTi Overview Spectral DataFrame Info:")
+                data.overview_spectral.info()
+                print("\nNTi Overview Spectral DataFrame Describe:")
+                print(data.overview_spectral.describe())
+
+    # 2. Instantiate builder WITHOUT backend components
+    # The DashBuilder will use its default placeholder sources.
+    dash_builder = DashBuilder(app_callbacks=None, 
+                               audio_control_source=None, 
+                               audio_status_source=None)
+
+    # 3. Create a temporary document to build into
+    static_doc = Document()
+
+    # 4. Build the layout into the temporary document
+    dash_builder.build_layout(static_doc, app_data, CHART_SETTINGS)
+
+    # 5. Save the document to an HTML file
+    try:
+        output_file(OUTPUT_FILENAME, title="Noise Survey Dashboard")
+        save(static_doc)
+        logger.info(f"--- Static HTML file saved successfully to {OUTPUT_FILENAME} ---")
+    except Exception as e:
+        logger.error(f"Failed to save static HTML file: {e}", exc_info=True)
+
+
+def create_app(doc):
+    """
+    This function is the entry point for the LIVE Bokeh server application.
+    It sets up the data, backend logic, and UI.
+    """
+    logger.info("--- New client session started. Creating live application instance. ---")
+    
+    # 1. DATA LOADING
+    entry_file_path = r"G:\My Drive\Programing\example files\Noise Sentry\cricket nets 2A _2025_06_03__20h55m22s_2025_05_29__15h30m00s.csv"   
+
+    svan_log_path = r"G:\My Drive\Programing\example files\Svan full data\L259_log.csv"
+    svan_summary_path = r"G:\My Drive\Programing\example files\Svan full data\L259_summary.csv"
+
+    nti_rta_log_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Log.txt"
+    nti_123_log_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_00_123_Log.txt"
+    nti_123_Rpt_Report_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_00_123_Rpt_Report.txt"
+    nti_RTA_Rpt_Report_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Rpt_Report.txt"
+
+    audio_dir = r"G:\Shared drives\Venta\Jobs\5793 Alton Road, Ross-on-wye\5793 Surveys\5793-1"
+
+    SOURCE_CONFIGURATIONS = [
+            {"position_name": "SiteSvan", "file_paths": {svan_summary_path}, "enabled": False}, 
+            {"position_name": "SiteSvan", "file_paths": {svan_log_path, svan_summary_path}, "enabled": False
+            }, 
+            {"position_name": "SiteNTi", "file_paths": {nti_rta_log_path, nti_123_log_path}, "parser_type_hint": "NTi", "enabled": True},
+            {"position_name": "SiteNti", "file_path": audio_dir, "enabled": False},
+            {"position_name": "SiteMissing", "file_path": "nonexistent.csv", "enabled": False},
+            {"position_name": "East", "file_path": {r"G:\Shared drives\Venta\Jobs\5973 Norfolk Feather Site, Diss, Norfolk\5973 Surveys\5973 Norfolk Feather Site, Diss, Norfolk_summary.csv", 
+                r"G:\Shared drives\Venta\Jobs\5973 Norfolk Feather Site, Diss, Norfolk\5973 Surveys\5973 Norfolk Feather Site, Diss, Norfolk_log.csv"}, "enabled": True},
+                {"position_name": "SiteNti", "file_paths": {nti_123_Rpt_Report_path, nti_RTA_Rpt_Report_path}, "parser_type_hint": "NTi", "enabled": True},
+        ]
+    app_data = DataManager(source_configurations=SOURCE_CONFIGURATIONS)
+    
+    # 2. BACKEND HANDLER SETUP (for live interaction)
+    logger.info("Setting up backend handlers for live session...")
+    audio_handler = AudioPlaybackHandler(position_data=app_data.get_all_position_data())
+    audio_control_source = ColumnDataSource(data={'command': [], 'position_id': [], 'value': []}, name='audio_control_source')
+    audio_status_source = ColumnDataSource(data={'is_playing': [False], 'current_time': [0], 'playback_rate': [1.0], 'current_file_duration': [0], 'current_file_start_time': [0]}, name='audio_status_source')
+    app_callbacks = AppCallbacks(doc, audio_handler, audio_control_source, audio_status_source)
+    
+    # 3. UI BUILD
+    logger.info("Building dashboard UI for live session...")
+    dash_builder = DashBuilder(app_callbacks, audio_control_source, audio_status_source)
+    dash_builder.build_layout(doc, app_data, CHART_SETTINGS)
+    
+    # 4. FINAL WIRING
+    logger.info("Attaching final callbacks for live session...")
+    app_callbacks.attach_callbacks()
+    doc.on_session_destroyed(session_destroyed)
+    setattr(doc.session_context, '_app_callback_manager', app_callbacks)
+
+    logger.info("--- Live application setup complete for this session. ---")
+
+
+# ==============================================================================
+# MAIN EXECUTION BLOCK
+# ==============================================================================
+
+# This script can be run in two ways:
+# 1. Directly with `python main.py`: This will generate a static HTML file of
+#    the dashboard without a live backend.
+# 2. With `bokeh serve main.py`: This will run a live server application.
+
+# We determine the execution mode by checking for a session context.
+doc = curdoc()
+if doc.session_context is None:
+    # No session context, so we're running as a standalone script.
+    logger.info("No Bokeh session context found. Generating static HTML file.")
+    generate_static_html()
+else:
+    # Session context exists, so we're running as a Bokeh server app.
+    logger.info("Bokeh session context found. Setting up live application.")
+    create_app(doc)
