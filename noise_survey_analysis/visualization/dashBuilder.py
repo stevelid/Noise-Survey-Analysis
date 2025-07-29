@@ -56,7 +56,15 @@ class DashBuilder:
         """
         self.app_callbacks = app_callbacks
         self.audio_control_source = audio_control_source or ColumnDataSource(data={'command': [], 'position_id': [], 'value': []})
-        self.audio_status_source = audio_status_source or ColumnDataSource(data={'is_playing': [False], 'current_time': [0],'playback_rate': [1.0], 'current_file_duration': [0], 'current_file_start_time': [0]})
+        self.audio_status_source = audio_status_source or ColumnDataSource(data={
+            'is_playing': [False], 
+            'current_time': [0], 
+            'playback_rate': [1.0], 
+            'current_file_duration': [0], 
+            'current_file_start_time': [0],
+            'active_position_id': [None],
+            'volume_boost': [False]
+            })
         
         # These will be populated by the build process
         self.components: Dict[str, Dict[str, Any]] = {}
@@ -211,14 +219,15 @@ class DashBuilder:
         for position_name, comp_dict in self.components.items():
             # Add audio controls to the timeseries layout if they exist
             ts_layout = comp_dict['timeseries'].layout()
+            ts_layout_with_controls = ts_layout
             if comp_dict.get('audio_controls'):
-                # This assumes the title is a Div and we can insert controls before it.
-                # A more robust method might be needed if the layout structure changes.
-                ts_figure = comp_dict['timeseries'].figure
-                ts_figure.above.insert(0, comp_dict['audio_controls']['layout'])
+                ts_layout_with_controls = column(
+                    comp_dict['audio_controls']['layout'],
+                    ts_layout
+                )
 
             pos_layout = column(
-                ts_layout,
+                ts_layout_with_controls,
                 comp_dict['spectrogram'].layout(),
                 name=f"layout_{position_name}"
             )
@@ -334,8 +343,8 @@ class DashBuilder:
             js_models['hoverDivs'].append(comp_dict['spectrogram'].hover_div)
             if comp_dict.get('audio_controls'):
                 js_models['audio_controls'][pos] = comp_dict['audio_controls']
-            if comp_dict.get('audio_controls'):
-                js_models['audio_controls'][pos] = comp_dict['audio_controls']
+            if comp_dict.get('audio_status_source'):
+                js_models['audio_status_source'][pos] = comp_dict['audio_status_source']
 
 
         #Add RangeSelector tap and hover lines
@@ -346,12 +355,12 @@ class DashBuilder:
     
     # Helper method
     def _determine_initial_display_mode(self, position_data: PositionData) -> str:
-        if position_data.has_overview_totals:
-            logger.debug(f"DashBuilder: Using overview_totals for {position_data.name}")
-            return 'overview'
-        elif position_data.has_log_totals:
-            logger.debug(f"DashBuilder: Using log_totals for {position_data.name}")
+        if position_data.has_log_totals:
+            logger.debug(f"DashBuilder: Defaulting to 'log' view for {position_data.name} as log data is available.")
             return 'log'
+        elif position_data.has_overview_totals:
+            logger.debug(f"DashBuilder: Defaulting to 'overview' view for {position_data.name} as only overview data is available.")
+            return 'overview'
         # Fallback: if no totals, check for spectral data as a last resort
         elif position_data.has_log_spectral:
             logger.warning(f"DashBuilder: No totals data for {position_data.name}, but log spectral data found. Defaulting to 'log'.")

@@ -1,21 +1,32 @@
 import pandas as pd
 import numpy as np
 import os
+import glob
+import sys
 
 # --- Configuration ---
-# Set the path to your input data file here.
-# This example path is based on the one in your request.
-input_file = r"C:\Users\steve\OneDrive\Documents\Convergence_Instruments\All_Instruments\Records\5973 1-a Norfolk Feather Site, _2025_07_03__16h34m10s_2025_07_01__10h44m01s.csv"
+# Default to current directory or parent directory if none provided via command line
+script_dir = os.path.dirname(os.path.abspath(__file__))
+default_input_dir = r"C:\Users\steve\OneDrive\Documents\Convergence_Instruments\All_Instruments\Records"
 
-# --- Automatic File Path Generation ---
-# Derive output file paths from the input file name.
-file_dir = os.path.dirname(input_file)
-file_name = os.path.basename(input_file)
-file_base, _ = os.path.splitext(file_name)
+# Get input directory from command line if provided, otherwise use default
+input_dir = sys.argv[1] if len(sys.argv) > 1 else default_input_dir
+print(f"Using input directory: {input_dir}")
 
-output_file_log = os.path.join(file_dir, f"{file_base}_log.csv")
-output_file_summary = os.path.join(file_dir, f"{file_base}_summary.csv")
+# Function to generate output file paths for a given input file
+def generate_output_paths(input_file):
+    file_dir = os.path.dirname(input_file)
+    file_name = os.path.basename(input_file)
+    file_base, _ = os.path.splitext(file_name)
+    
+    output_file_log = os.path.join(file_dir, f"{file_base}_log.csv")
+    output_file_summary = os.path.join(file_dir, f"{file_base}_summary.csv")
+    
+    return output_file_log, output_file_summary
 
+# Function to check if output files already exist
+def output_files_exist(output_file_log, output_file_summary):
+    return os.path.exists(output_file_log) and os.path.exists(output_file_summary)
 
 def aggregate_noise_data(df_indexed, rule):
     """
@@ -69,63 +80,118 @@ def aggregate_noise_data(df_indexed, rule):
 
 # --- Main Script Execution ---
 
-# 1. Read and clean the input data
-print(f"Reading input file: {input_file}")
+# Find all CSV and Excel files in the input directory
 try:
-    # Use skipinitialspace=True to handle potential spaces after commas in the header
-    df = pd.read_csv(input_file, parse_dates=[0], skipinitialspace=True)
-except FileNotFoundError:
-    print(f"Error: The file was not found at the specified path.")
-    print(f"Path: {input_file}")
-    exit()
+    if not os.path.exists(input_dir):
+        print(f"Error: Input directory does not exist: {input_dir}")
+        exit(1)
+        
+    csv_files = glob.glob(os.path.join(input_dir, "*.csv"))
+    xls_files = glob.glob(os.path.join(input_dir, "*.xls"))
+    xlsx_files = glob.glob(os.path.join(input_dir, "*.xlsx"))
+    
+    input_files = csv_files + xls_files + xlsx_files
+    
+    if not input_files:
+        print(f"No CSV or Excel files found in: {input_dir}")
+        exit(0)
+        
 except Exception as e:
-    print(f"An error occurred while reading the CSV file: {e}")
-    exit()
+    print(f"Error accessing directory {input_dir}: {e}")
+    exit(1)
 
-# Clean up column names by stripping leading/trailing whitespace
-df.columns = [col.strip() for col in df.columns]
+print(f"Found {len(input_files)} CSV files in {input_dir}")
 
-# Drop any "Unnamed" columns that can be created by trailing commas in the CSV header
-df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+# Process each input file if its output files don't exist
+for input_file in input_files:
+    # Skip files that already have "_log" or "_summary" in their name as these are our output files
+    if "_log" in input_file or "_summary" in input_file:
+        continue
+        
+    # Generate output paths for this input file
+    output_file_log, output_file_summary = generate_output_paths(input_file)
+    
+    # Check if output files already exist
+    if output_files_exist(output_file_log, output_file_summary):
+        print(f"Skipping {os.path.basename(input_file)} - output files already exist")
+        continue
+    
+    # Process this file
+    print(f"\nProcessing file: {os.path.basename(input_file)}")
+    
+    # 1. Read and clean the input data
+    try:
+        file_extension = os.path.splitext(input_file)[1].lower()
+        
+        if file_extension == '.csv':
+            # Use skipinitialspace=True to handle potential spaces after commas in the header
+            df = pd.read_csv(input_file, parse_dates=[0], skipinitialspace=True)
+        elif file_extension == '.xls':
+            # Noise Sentry XLS files are often tab-separated text files.
+            try:
+                df = pd.read_csv(input_file, sep='	', header=1, parse_dates=[0], skipinitialspace=True, engine='python')
+            except Exception:
+                # If that fails, try to read it as a proper Excel file
+                df = pd.read_excel(input_file, parse_dates=[0], engine='xlrd')
+        elif file_extension == '.xlsx':
+            # Read Excel file with explicit engine for better compatibility
+            df = pd.read_excel(input_file, parse_dates=[0], engine='openpyxl')
+        else:
+            print(f"Skipping unsupported file type: {file_extension}")
+            continue
+            
+    except FileNotFoundError:
+        print(f"Error: The file was not found at the specified path.")
+        print(f"Path: {input_file}")
+        continue
+    except Exception as e:
+        print(f"An error occurred while reading the file: {e}")
+        continue
 
-# 2. Prepare data for aggregation
-# Define a mapping for renaming columns to a simple, standard format for internal processing
-column_rename_map = {
-    "Time (Date hh:mm:ss.ms)": "Time",
-    "LEQ dB-A": "LAeq",
-    "Lmax dB-A": "Lmax"
-    # We ignore input L10/L90 as they must be recalculated for the new time periods
-}
-# Keep only the columns we need and rename them
-df = df[list(column_rename_map.keys())].rename(columns=column_rename_map)
+    # Clean up column names by stripping leading/trailing whitespace
+    df.columns = [col.strip() for col in df.columns]
+    df.rename(columns={"L-Max dB -A": "Lmax dB-A", "LEQ dB -A": "LEQ dB-A"}, inplace=True)
 
+    # Drop any "Unnamed" columns that can be created by trailing commas in the CSV header
+    df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
 
-# Convert LAeq from decibels (dB) to a linear energy scale for correct averaging
-df['LAeq_linear'] = 10 ** (df['LAeq'] / 10)
+    # 2. Prepare data for aggregation
+    # Define a mapping for renaming columns to a simple, standard format for internal processing
+    column_rename_map = {
+        "Time (Date hh:mm:ss.ms)": "Time",
+        "LEQ dB-A": "LAeq",
+        "Lmax dB-A": "Lmax"
+        # We ignore input L10/L90 as they must be recalculated for the new time periods
+    }
+    # Keep only the columns we need and rename them
+    df = df[list(column_rename_map.keys())].rename(columns=column_rename_map)
 
-# Set the 'Time' column as the DataFrame index, which is required for resampling
-df.set_index('Time', inplace=True)
+    # Convert LAeq from decibels (dB) to a linear energy scale for correct averaging
+    df['LAeq_linear'] = 10 ** (df['LAeq'] / 10)
 
-# 3. Generate 1-second log data
-print("Processing 1-second log data...")
-log_df = aggregate_noise_data(df, '1S')
+    # Set the 'Time' column as the DataFrame index, which is required for resampling
+    df.set_index('Time', inplace=True)
 
-# 4. Generate 5-minute summary data
-print("Processing 5-minute summary data...")
-summary_df = aggregate_noise_data(df, '5T')
+    # 3. Generate 1-second log data
+    print("Processing 1-second log data...")
+    log_df = aggregate_noise_data(df, '1s')  # Changed from '1S' to '1s' to fix deprecation warning
 
-# 5. Save the results to new CSV files
-# The float_format parameter ensures consistent decimal precision in the output file.
-if not log_df.empty:
-    log_df.to_csv(output_file_log, index=False, float_format='%.6f')
-    print(f"✔ 1-second log data saved to: {output_file_log}")
-else:
-    print("No 1-second data was generated.")
+    # 4. Generate 5-minute summary data
+    print("Processing 5-minute summary data...")
+    summary_df = aggregate_noise_data(df, '5min')  # Changed from '5T' to '5min' to fix deprecation warning
 
-if not summary_df.empty:
-    summary_df.to_csv(output_file_summary, index=False, float_format='%.6f')
-    print(f"✔ 5-minute summary data saved to: {output_file_summary}")
-else:
-    print("No 5-minute data was generated.")
+    # 5. Save the results to new CSV files
+    # The float_format parameter ensures consistent decimal precision in the output file.
+    if not log_df.empty:
+        log_df.to_csv(output_file_log, index=False, float_format='%.6f')
+        print(f"Success: 1-second log data saved to: {output_file_log}")
+    else:
+        print("No 1-second data was generated.")
 
-print("\nProcessing complete.")
+    if not summary_df.empty:
+        summary_df.to_csv(output_file_summary, index=False, float_format='%.6f')
+        print(f"Success: 5-minute summary data saved to: {output_file_summary}")
+    else:
+        print("No 5-minute data was generated.")
+
+print("\nAll processing complete.")

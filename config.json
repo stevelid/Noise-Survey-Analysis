@@ -1,0 +1,29 @@
+{
+  "output_filename": "noise_survey_dashboard_static.html",
+  "sources": [
+    {
+      "position_name": "North",
+      "enabled": true,
+      "file_paths": [
+        "G:\\Shared drives\\Venta\\Jobs\\6002 Westwood Centre, New Haine Road, Ramsgate\\6002 Surveys\\6002 971-1\\L303_log.csv",
+        "G:\\Shared drives\\Venta\\Jobs\\6002 Westwood Centre, New Haine Road, Ramsgate\\6002 Surveys\\6002 971-1\\L303_summary.csv"
+      ]
+    },
+    {
+      "position_name": "East",
+      "enabled": true,
+      "file_paths": [
+        "G:\\Shared drives\\Venta\\Jobs\\6002 Westwood Centre, New Haine Road, Ramsgate\\6002 Surveys\\6002 NS East\\6002 Westwood Centre, Ramsgate_EAST_2025_07_23__11h37m28s_summary.csv",
+        "G:\\Shared drives\\Venta\\Jobs\\6002 Westwood Centre, New Haine Road, Ramsgate\\6002 Surveys\\6002 NS East\\6002 Westwood Centre, Ramsgate_EAST_2025_07_23__11h37m28s_log.csv"
+      ]
+    },
+    {
+      "position_name": "West",
+      "enabled": true,
+      "file_paths": [
+        "G:\\Shared drives\\Venta\\Jobs\\6002 Westwood Centre, New Haine Road, Ramsgate\\6002 Surveys\\6002 NS West\\6002 Westwood Centre, Ramsgate_5A_2025_07_29__14h33m45s_2025_07_23__11h32m58s_log.csv",
+        "G:\\Shared drives\\Venta\\Jobs\\6002 Westwood Centre, New Haine Road, Ramsgate\\6002 Surveys\\6002 NS West\\6002 Westwood Centre, Ramsgate_5A_2025_07_29__14h33m45s_2025_07_23__11h32m58s_summary.csv"
+      ]
+    }
+  ]
+}

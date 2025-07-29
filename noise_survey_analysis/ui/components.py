@@ -45,7 +45,7 @@ class TimeSeriesComponent:
     A self-contained Time Series chart component for displaying broadband noise data.
     It can display either overview/summary data or log data for a given position.
     """
-    def __init__(self, position_data_obj, initial_display_mode: str = 'overview'):
+    def __init__(self, position_data_obj, initial_display_mode: str = 'log'):
         """
         Initializes the component.
 
@@ -62,6 +62,7 @@ class TimeSeriesComponent:
         self.chart_settings = CHART_SETTINGS
         self.name_id = f"{self.position_name}_timeseries"
         self.line_renderers = []
+        self.has_log_data = position_data_obj.log_totals is not None and not position_data_obj.log_totals.empty
         
         #generate sources for the two view modes
         if position_data_obj.overview_totals is not None:
@@ -78,8 +79,14 @@ class TimeSeriesComponent:
         else:
             self.log_source: ColumnDataSource = ColumnDataSource(data={})
         
-        #source and figure
-        self.source = ColumnDataSource(data=dict(self.overview_source.data)) if self._current_display_mode == 'overview' else ColumnDataSource(data=dict(self.log_source.data))
+        # Use overview data for initialization if available, otherwise use log data.
+        # This ensures all columns are present for renderer creation.
+        if position_data_obj.overview_totals is not None and not position_data_obj.overview_totals.empty:
+            initial_source_data = self.overview_source.data
+        else:
+            initial_source_data = self.log_source.data
+
+        self.source = ColumnDataSource(data=dict(initial_source_data))
         self.source.name = "source_" + self.name_id
         self.figure: figure = self._create_figure()
         self._update_plot_lines() # Add lines based on initial data
@@ -89,6 +96,9 @@ class TimeSeriesComponent:
         self.tap_lines = Span(location=0, dimension='height', line_color='red', line_width=1, name=f"click_line_{self.name_id}")
         self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hoverline_{self.name_id}")
         self.label = Label(x=0, y=0, text="", text_font_size='10pt', background_fill_color="white", background_fill_alpha=0.6, text_baseline="middle", visible=False, name=f"label_{self.name_id}")
+        
+        # Marker lines - initially empty list, will be populated dynamically
+        self.marker_lines = []  # List of Span objects for markers
 
         self.figure.add_layout(self.tap_lines)
         self.figure.add_layout(self.hover_line)
@@ -103,8 +113,7 @@ class TimeSeriesComponent:
 
     def _create_figure(self) -> figure:
         """Creates and configures the Bokeh figure for the time series plot."""
-        title_suffix = "Overview" if self._current_display_mode == 'overview' else "Log"
-        title = f"Time History: {self.position_name} ({title_suffix})"
+        title = f"{self.position_name} - Time History"
 
         # Common tools for time series charts
         tools = self.chart_settings['tools']
@@ -166,8 +175,7 @@ class TimeSeriesComponent:
             self.line_renderers.append(line)
         
         # Update figure title based on current mode
-        title_suffix = "Overview" if self._current_display_mode == 'overview' else "Log"
-        self.figure.title.text = f"Time History: {self.position_name} ({title_suffix})"
+        self.figure.title.text = f"{self.position_name} - Time History"
 
     def _configure_figure_formatting(self):
         """Configures the formatting for the figure."""
@@ -194,6 +202,31 @@ class TimeSeriesComponent:
                 }
         """)
         self.figure.js_on_event('tap', tap_js)
+
+        # Double-click event for adding markers
+        double_click_js = CustomJS(code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onDoubleClick) {
+                window.NoiseSurveyApp.interactions.onDoubleClick(cb_obj);
+                } else {
+                    console.error('NoiseSurveyApp.interactions.onDoubleClick not defined!');
+                }
+        """)
+        self.figure.js_on_event('doubletap', double_click_js)
+        
+        # Right-click event for removing markers (using pan_end as right-click alternative)
+        # Note: Bokeh doesn't have native right-click, so we'll use a custom approach
+        right_click_js = CustomJS(code=f"""
+                // Check if this is a right-click by examining the event
+                if (cb_obj.sx !== undefined && cb_obj.sy !== undefined) {{
+                    // This is a workaround for right-click detection
+                    if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onRightClick) {{
+                        window.NoiseSurveyApp.interactions.onRightClick(cb_obj);
+                    }} else {{
+                        console.error('NoiseSurveyApp.interactions.onRightClick not defined!');
+                    }}
+                }}
+        """)
+        # We'll use a custom approach for right-click detection in the hover tool
 
         hover_js = CustomJS(code=f"""
                 if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onHover) {{
@@ -226,7 +259,7 @@ class SpectrogramComponent:
     def __init__(self, 
                  position_data_obj: PositionData, 
                  position_glyph_data: dict,
-                 initial_display_mode: str = 'overview', # 'overview' or 'log'
+                 initial_display_mode: str = 'log', # 'overview' or 'log'
                  initial_param: Optional[str] = 'LZeq'):
         """
         Initializes the SpectrogramComponent.
@@ -257,13 +290,17 @@ class SpectrogramComponent:
         self.hover_div: Div = Div(text="<i>Hover over spectrogram for details</i>", 
                                   name=f"{self.position_name}_spectrogram_hover_div",
                                   width=self.chart_settings['spectrogram_width'], height=40,
-                                  styles={'font-size': '9pt', 'font-weight': 'bold', 'padding-left': '10px', 'text-align': 'center'})
+                                  styles={'font-size': '9pt', 'font-weight': 'bold', 'padding-left': '10px', 'text-align': 'center'},
+                                  visible=False)
         self.image_glyph = None # Store the image glyph renderer
         self.update_plot(position_glyph_data, self._current_display_mode, self._current_param)
 
         #interactive components
         self.tap_lines = Span(location=0, dimension='height', line_color='red', line_width=1, name=f"click_line_{self.name_id}")
         self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hoverline_{self.name_id}")
+        
+        # Marker lines - initially empty list, will be populated dynamically
+        self.marker_lines = []  # List of Span objects for markers
 
         self.figure.add_layout(self.tap_lines)
         self.figure.add_layout(self.hover_line)
@@ -273,7 +310,7 @@ class SpectrogramComponent:
 
     def _create_empty_figure(self) -> Figure:
         """Creates a blank Bokeh figure as a placeholder."""
-        title = f"Spectrogram: {self.position_name}"
+        title = f"{self.position_name} - Spectrogram"
         p = figure(
             title=title,
             x_axis_type="datetime",
@@ -291,14 +328,13 @@ class SpectrogramComponent:
         #p.xaxis.axis_label = "Time"
         p.xgrid.visible = False
         p.ygrid.visible = False
-        p.visible = False # Initially hidden if no data
+        p.visible = False
         return p
 
     def _update_figure_content(self, prepared_param_data: Dict[str, Any]):
         """Updates the figure with new data (image, axes, colorbar)."""
         param_name = self._current_param or "Unknown Param"
-        mode_name = self._current_display_mode.replace("_spectral","").title()
-        self.figure.title.text = f"Spectrogram: {self.position_name} - {param_name} ({mode_name})"
+        self.figure.title.text = f"{self.position_name} - Spectrogram"
 
         # Extract data from prepared_param_data
         initial_data = prepared_param_data['initial_glyph_data']
@@ -410,9 +446,13 @@ class SpectrogramComponent:
                 if prepared_param_data:
                     parameter = fallback_param # Update current parameter
                 else:
-                    self.figure.visible = False; self.hover_div.visible = False; return
+                    self.figure.visible = False
+                self.hover_div.visible = False
+                return
             else:
-                self.figure.visible = False; self.hover_div.visible = False; return
+                self.figure.visible = False
+                self.hover_div.visible = False
+                return
 
         self._current_display_mode = display_mode
         self._current_param = parameter
@@ -428,6 +468,16 @@ class SpectrogramComponent:
                 }
         """)
         self.figure.js_on_event('tap', tap_js)
+
+        # Double-click event for adding markers
+        double_click_js = CustomJS(code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onDoubleClick) {
+                window.NoiseSurveyApp.interactions.onDoubleClick(cb_obj);
+                } else {
+                    console.error('NoiseSurveyApp.interactions.onDoubleClick not defined!');
+                }
+        """)
+        self.figure.js_on_event('doubletap', double_click_js)
 
         hover_js = CustomJS(code=f"""
                 if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onHover) {{
@@ -456,9 +506,12 @@ class ControlsComponent:
         
         self.available_params = available_params
         self.visibility_checkboxes: Dict[str, list] = {} # Key: position_name, Value: list of (chart_name, checkbox_widget) tuples
+        self.position_order: List[str] = []  # Track order of positions as checkboxes are added
         self.visibility_layout = None
         
         self.view_toggle = self.add_view_type_selector()
+        self.hover_toggle = self.add_hover_toggle()
+        self.clear_markers_button = self.add_clear_markers_button()
         self.param_select = self.add_parameter_selector(available_params)
 
         logger.info("ControlsComponent initialized.")
@@ -466,18 +519,50 @@ class ControlsComponent:
 
     def add_view_type_selector(self):
         toggle = Toggle(
-            label="Switch to Log Data", 
+            label="Log View Enabled", 
             button_type="primary", 
             width=150,
-            name="global_view_toggle"
+            name="global_view_toggle",
+            active=True
         )
         
         toggle.js_on_change("active", CustomJS(args={"toggle_widget": toggle}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.handleViewToggle) {
                 window.NoiseSurveyApp.handleViewToggle(cb_obj.active, toggle_widget); // Pass the toggle widget itself
             } else {
                 console.error('window.NoiseSurveyApp.handleViewToggle function not found!');
-            }""")) #active for overview, inactive for log
+            }"""))
         return toggle
+
+    def add_hover_toggle(self):
+        toggle = Toggle(
+            label="Hover Enabled", 
+            button_type="success", 
+            width=130,
+            name="global_hover_toggle",
+            active=True
+        )
+        
+        toggle.js_on_change("active", CustomJS(args={"toggle_widget": toggle}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.handleHoverToggle) {
+                window.NoiseSurveyApp.handleHoverToggle(cb_obj.active, toggle_widget); // Pass the toggle widget itself
+            } else {
+                console.error('window.NoiseSurveyApp.handleHoverToggle function not found!');
+            }"""))
+        return toggle
+    
+    def add_clear_markers_button(self):
+        button = Button(
+            label="Clear All Markers", 
+            button_type="warning", 
+            width=140,
+            name="clear_markers_button"
+        )
+        
+        button.js_on_click(CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.clearAllMarkers) {
+                window.NoiseSurveyApp.clearAllMarkers();
+            } else {
+                console.error('window.NoiseSurveyApp.clearAllMarkers function not found!');
+            }"""))
+        return button
 
     def add_parameter_selector(self, available_params: List[str]):
         select = Select(
@@ -509,6 +594,9 @@ class ControlsComponent:
         
         if position_name not in self.visibility_checkboxes:
             self.visibility_checkboxes[position_name] = []
+            # Track the order positions are added (preserves config file order)
+            if position_name not in self.position_order:
+                self.position_order.append(position_name)
         self.visibility_checkboxes[position_name].append((chart_name, checkbox))
 
         # --- Attach JS Callback ---
@@ -528,8 +616,8 @@ class ControlsComponent:
             return
 
         position_columns = []
-        # Sort positions alphabetically for consistent order
-        for position_name in sorted(self.visibility_checkboxes.keys()):
+        # Use the order positions were added (preserves config file order)
+        for position_name in self.position_order:
             checkboxes = self.visibility_checkboxes[position_name]
             # Sort checkboxes to ensure TS is above Spec, assuming consistent naming
             # 'timeseries' comes before 'spectrogram' alphabetically.
@@ -549,10 +637,12 @@ class ControlsComponent:
         if self.visibility_layout is None:
             self._build_visibility_layout()
 
-        # Main controls row (parameter select, view toggle)
+        # Main controls row (parameter select, view toggle, hover toggle, clear markers button)
         main_controls_row = Row(
             self.param_select,
             self.view_toggle,
+            self.hover_toggle,
+            self.clear_markers_button,
             sizing_mode="scale_width", # Or "stretch_width"
             name="main_controls_row"
         )
@@ -968,6 +1058,19 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         width=80,
         name=f"play_toggle_{position_id}"
     )
+
+    play_toggle_callback = CustomJS(
+        args=dict(position_id=position_id),
+        code="""
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.controls && window.NoiseSurveyApp.controls.togglePlayPause) {
+                // Call the togglePlayPause function that we exposed on the main app object
+                window.NoiseSurveyApp.controls.togglePlayPause(position_id);
+            } else {
+                console.error('NoiseSurveyApp.controls.togglePlayPause function not found!');
+            }
+        """
+    )
+    play_toggle.js_on_change('active', play_toggle_callback)
 
     # Playback Rate Button
     playback_rate_button = Button(

@@ -4,279 +4,233 @@ An interactive Bokeh application for loading, analyzing, and visualizing noise s
 
 ## Overview
 
-This tool provides a dashboard for analyzing noise survey data, featuring:
-
-* Data import from multiple source formats (currently Noise Sentry CSV, NTi TXT, Svan XLSX).
-* Configuration via `noise_survey_analysis/core/config.py`.
-* Time series visualization of broadband sound levels (e.g., LAeq, LAF90).
-* Spectral analysis including image-based spectrograms and interactive frequency slice bar charts.
-* Interactive chart navigation: synchronized zooming/panning, hover/tap to inspect data points.
-* Keyboard navigation (arrow keys for time stepping, spacebar for play/pause).
-* Synchronized audio playback (requires VLC) linked to the visualization timeline.
-
-## Project Structure (Post-Refactoring Target)
-
-├── noise_survey_analysis/
-│   ├── core/                 # Core functionality (config, loading, parsing, processing, audio, callbacks)
-│   │   ├── __init__.py
-│   │   ├── config.py
-│   │   ├── data_loaders.py
-│   │   ├── data_parsers.py
-│   │   ├── data_processors.py
-│   │   ├── audio_handler.py
-│   │   └── app_callbacks.py    # NEW: Handles Python-side callbacks
-│   ├── visualization/        # Bokeh visualization components & orchestration
-│   │   ├── __init__.py
-│   │   ├── components.py       # RENAMED: Creates individual chart figures/sources
-│   │   ├── interactive.py      # Adds interactive elements (lines, hover), JS init setup
-│   │   └── dashboard.py        # NEW: Orchestrates viz creation, builds layout
-│   ├── ui/                   # NEW: UI Widget Creation
-│   │   ├── __init__.py
-│   │   └── controls.py         # Functions to create Bokeh widget sets
-│   ├── static/js/            # Client-side JavaScript files for interactivity
-│   │   ├── core.js
-│   │   ├── charts.js
-│   │   ├── frequency.js
-│   │   └── audio.js
-│   ├── __init__.py
-│   └── app.py                # Main Bokeh application *entry point* and *orchestrator*
-├── tests/                      # Pytest tests (mirroring structure)
-│   ├── core/
-│   ├── visualization/
-│   ├── ui/
-│   └── test_app.py
-├── DEVELOPMENT_PLAN.md       # Refactoring and enhancement plan
-├── README.md                 # This file
-└── run_app.py                # Script to run the Bokeh server
-
-## Requirements
-
-* Python 3.8+
-* Bokeh (`pip install bokeh`)
-* Pandas (`pip install pandas`)
-* NumPy (`pip install numpy`)
-* python-vlc (`pip install python-vlc`)
-* VLC media player (must be installed separately on your system for audio playback)
-* `openpyxl` (for reading Svan `.xlsx` files: `pip install openpyxl`)
+This tool provides a dashboard for analyzing noise survey data from multiple positions and file types simultaneously. It is designed for performance and interactivity, even with large datasets.
 
 ## Usage
 
-1.  **Configure Data:** Edit `noise_survey_analysis/core/config.py` to define your `DEFAULT_DATA_SOURCES`, specifying the `position_name`, `file_path`, `parser_type`, and `enabled` status for each data file. **TODO:** Move the `media_path` definition from `noise_survey_analysis/app.py` into `config.py`.
-2.  **Run the Application:** Execute the `run_app.py` script from your terminal in the project's root directory:
-    ```bash
-    python run_app.py
-    ```
-    This will start the Bokeh server and open the application in your default web browser.
-3.  **Interact:**
-    * Use checkboxes to toggle chart visibility.
-    * Use the range selector at the bottom to zoom into specific time periods.
-    * Hover over charts to see a vertical line and details (in spectrogram hover div).
-    * Click on a chart to set the red vertical line and update the frequency slice chart.
-    * Use the playback controls (Play, Pause, Stop, Speed) to listen to audio synchronized with the red line.
-    * Use keyboard arrow keys (Left/Right) to step the red line through time.
-    * Use the Spacebar to toggle Play/Pause.
-    * Use the "Parameter" dropdown (if spectral data is present) to change the spectrogram display.
+This application generates a standalone HTML dashboard from noise survey data. The primary method for configuring the application is through the `config.json` file.
 
-## Data and Visualization Model Structures
+### 1. Configure the Data Sources
 
-### Data Loading Structure (`position_data`)
+Before running the application, open the `config.json` file and edit it to point to your data files.
 
-The application loads data through the `load_and_process_data()` function in `data_loaders.py`, which returns a dictionary with the following structure:
-
-```
+**Example `config.json`:**
+```json
 {
-    'Position1': {
-        'overview': DataFrame,    # Time series data for broadband metrics (LAeq, LAF90, etc.)
-        'spectral': DataFrame,    # Spectral data with frequency bands
-        'log': DataFrame,         # Detailed logging data with timestamps
-        'spectral_log': DataFrame, # Logged spectral data
-        'audio': '/path/to/audio.wav',  # Path to associated audio file
-        'metadata': {
-            'parser_type': 'sentry|nti|svan',
-            'original_path': '/path/to/original/file.csv',
-            'audio_path': '/path/to/audio/directory',
-            'RPT': {...},         # Specific metadata from RPT parser
-            'RTA': {...},         # Specific metadata from RTA parser
-            'audio': {...}        # Audio file metadata
-        }
+  "output_filename": "my_survey_dashboard.html",
+  "sources": [
+    {
+      "position_name": "Svan (North)",
+      "enabled": true,
+      "file_paths": [
+        "path/to/your/svan_log.csv",
+        "path/to/your/svan_summary.csv"
+      ]
     },
-    'Position2': { ... }
-}
-```
-
-### Bokeh Models Dictionary (`bokeh_models`)
-
-The application uses a well-organized hierarchical structure for `bokeh_models` to maintain all Bokeh UI components. The `DashboardBuilder` class maintains this dictionary for all Bokeh objects using the following structure:
-
-```
-{
-    'charts': {
-        'all': [],                    # All Bokeh Figure objects
-        'time_series': [],            # Time-based charts for synchronization
-        'for_js_interaction': []      # Charts requiring JS callbacks
+    {
+      "position_name": "NS (South)",
+      "enabled": true,
+      "file_paths": [
+        "path/to/your/ns_log.csv",
+        "path/to/your/ns_summary.csv"
+      ]
     },
-    
-    'sources': {
-        'data': {},                   # Main data sources by key
-        'playback': {                 # Playback-related sources
-            'position': None,         # Current playback position 
-            'seek_command': None,     # For sending seek commands
-            'play_request': None      # For play requests from JS
-        },
-        'frequency': {                # Frequency analysis sources
-            'bar': None,              # For frequency bar chart
-            'table': None             # For frequency data table
-        }
-    },
-    
-    'ui': {
-        'position_elements': {},      # UI elements by position
-        'controls': {                 # UI controls
-            'playback': {},           # Play/pause buttons
-            'parameter': {            # Parameter selection
-                'select': None,       # Dropdown for parameter selection
-                'holder': None        # Hidden div for selected parameter
-            },
-            'init_js': None           # Button to initialize JS
-        },
-        'visualization': {            # Visual elements
-            'click_lines': {},        # Vertical lines for clicked positions
-            'labels': {},             # Text labels for data points
-            'range_selectors': {}     # Range selectors for zooming
-        }
-    },
-    
-    'frequency_analysis': {           # Frequency analysis components 
-        'bar_chart': {                # Bar chart components
-            'figure': None,           # The bar chart figure
-            'x_range': None           # X range for the chart
-        }
-    },
-    
-    'spectral_data': {                # Spectral data by position
-        'position': {
-            'available_params': [],   # Available spectral parameters
-            'current_param': 'LZeq',  # Currently selected parameter
-            'prepared_data': {        # Pre-processed data by parameter
-                'param_name': {       # Detailed parameter data
-                    'frequencies': ndarray,     # Array of frequency values (e.g. [25, 31.5, 40, ...])
-                    'frequency_labels': list,   # List of formatted frequency labels (e.g. ["25 Hz", "31.5 Hz", ...])
-                    'times_ms': ndarray,        # Array of timestamps in milliseconds (epoch time)
-                    'times_dt': ndarray,        # Array of datetime64 objects
-                    'levels_matrix': ndarray,   # 2D matrix of sound levels in shape (n_times, n_freqs)
-                    'levels_matrix_transposed': ndarray, # Transposed matrix (n_freqs, n_times) for Bokeh image glyph
-                    'freq_indices': ndarray,    # Array of frequency indices [0, 1, 2, ...]
-                    'min_val': float,           # Minimum level value for color mapping
-                    'max_val': float,           # Maximum level value for color mapping
-                    'n_times': int,             # Number of time points
-                    'n_freqs': int,             # Number of frequency bands
-                    'x': float,                 # X coordinate for Bokeh image glyph (start time)
-                    'y': float,                 # Y coordinate for Bokeh image glyph (typically -0.5)
-                    'dw': float,                # Width for Bokeh image glyph (time span)
-                    'dh': float                 # Height for Bokeh image glyph (frequency span)
-                }
-            }
-        }
+    {
+      "position_name": "Disabled Position",
+      "enabled": false,
+      "file_paths": [
+        "path/to/another/log.csv"
+      ]
     }
+  ]
 }
 ```
 
-#### Using the Hierarchical Structure
+**Configuration Options:**
 
-**Python Example**:
+*   `output_filename`: The name of the HTML file that will be generated.
+*   `sources`: A list of data sources to include in the dashboard. Each source has the following properties:
+    *   `position_name`: A descriptive name for the measurement location. This will be displayed in the dashboard.
+    *   `enabled`: Set to `true` to process this source, or `false` to skip it.
+    *   `file_paths`: A list of file paths for the data from this position. You can include log files, summary files, etc.
+
+### 2. Generate the Dashboard
+
+Once you have configured your data sources, run the main script from your terminal:
+```bash
+python noise_survey_analysis/main.py
+```
+
+The script will read the `config.json` file, process the data, and save the HTML dashboard.
+
+### Output Location
+
+The generated HTML file will be saved in the lowest common parent directory of all the `enabled` source files. For example, if all your files are in subfolders of `G:/Shared drives/Venta/Jobs/5980 Overstrand Road, Cromer/5980 Surveys/`, the dashboard will be saved in that `5980 Surveys` folder.
+
+If the source files do not share a common path (e.g., they are on different drives), the dashboard will be saved in the project's root directory.
+
+### Key Features
+
+*   **Multi-Source Data Import:** Load data from various formats, including NTi TXT, Svan CSV/XLSX, and Noise Sentry CSV.
+*   **Time Series Visualization:** Display broadband sound levels (e.g., LAeq, LAF90) on interactive time history charts.
+*   **Advanced Spectral Analysis:**
+    *   High-performance spectrograms using Bokeh's Image glyph.
+    *   Interactive frequency slice bar chart that updates on hover/click.
+*   **Synchronized Chart Interaction:**
+    *   Pan and zoom on one chart updates all other time-based charts.
+    *   A global range selector provides an overview for easy navigation.
+    *   Hovering over charts shows data details and a synchronized vertical line.
+    *   Clicking on a chart sets a persistent cursor and updates the "Frequency Slice" bar chart at the bottom.
+*   **Synchronized Audio Playback:**
+    *   Listen to audio synchronized with the visualization timeline (requires VLC).
+    *   Controls for play/pause, playback speed, and volume boost.
+*   **Keyboard Navigation:** Use arrow keys for time-stepping and the spacebar for play/pause.
+*   **Static HTML Export:** Generate a standalone HTML file of the dashboard for sharing (with no live backend).
+
+## Project Structure
+
+```
+├── noise_survey_analysis/
+│   ├── core/                 # Core functionality (config, data management, parsing, processing, audio, callbacks)
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── data_manager.py
+│   │   ├── data_parsers.py
+│   │   ├── data_processors.py
+│   │   ├── audio_handler.py
+│   │   └── app_callbacks.py
+│   ├── ui/                   # UI Widget and Component creation
+│   │   ├── __init__.py
+│   │   └── components.py
+│   ├── visualization/        # Dashboard orchestration
+│   │   ├── __init__.py
+│   │   └── dashBuilder.py
+│   ├── js/                   # Helper for loading JS code
+│   │   └── loader.py
+│   ├── static/js/            # Client-side JavaScript for interactivity
+│   │   └── app.js
+│   ├── __init__.py
+│   └── main.py               # Main Bokeh application entry point and orchestrator
+├── tests/                      # (Future location for Pytest tests)
+├── README.md                 # This file
+└── GEMINI.md                 # Development notes for the Gemini agent
+```
+
+## Requirements
+
+*   Python 3.8+
+*   Bokeh (`pip install bokeh`)
+*   Pandas (`pip install pandas`)
+*   NumPy (`pip install numpy`)
+*   `python-vlc` (`pip install python-vlc`)
+*   `openpyxl` (for reading Svan `.xlsx` files: `pip install openpyxl`)
+*   **VLC Media Player:** Must be installed separately on your system for audio playback to function.
+
+## How to Run
+
+### Configure Data Sources:
+
+Open `noise_survey_analysis/main.py` and edit the `SOURCE_CONFIGURATIONS` list. For each position you want to analyze, add a dictionary specifying its `position_name` and the `file_paths` or `file_path`.
+
 ```python
-# Access the charts with the hierarchical structure
-charts = builder.bokeh_models['charts']['all']
+# Example from noise_survey_analysis/main.py
+SOURCE_CONFIGURATIONS = [
+    # NTi position with multiple data files and an audio directory
+    {"position_name": "SiteNTi", "file_paths": {
+        r"G:\Path\To\Your\2025-02-15_SLM_000_RTA_3rd_Log.txt",
+        r"G:\Path\To\Your\2025-02-15_SLM_000_123_Log.txt"
+    }, "enabled": True},
+    {"position_name": "SiteNTi", "file_path": r"G:\Path\To\Your\Audio\Directory", "enabled": True},
 
-# Creating a frequency chart
-chart, source = create_frequency_bar_chart()
-builder.bokeh_models['frequency_analysis']['bar_chart']['figure'] = chart
-builder.bokeh_models['sources']['frequency']['bar'] = source
-
-# Access spectral data for a position 
-param_data = builder.bokeh_models['spectral_data']['NE']['prepared_data']['LZeq']
+    # Svan position with summary and log files
+    {"position_name": "East", "file_paths": {
+        r"G:\Path\To\Your\summary.csv",
+        r"G:\Path\To\Your\log.csv"
+    }, "enabled": True},
+]
 ```
 
-**JavaScript Example**:
+### Run the Application:
+
+Navigate to the project's root directory in your terminal and use one of the following commands:
+
+**For the live interactive server (with audio):**
+
+```bash
+bokeh serve noise_survey_analysis/main.py
+```
+
+**To generate a static, standalone HTML file (no audio or live interaction):**
+
+```bash
+python noise_survey_analysis/main.py
+```
+
+This will create a `noise_survey_dashboard_static.html` file in the project root.
+
+### Interact with the Dashboard:
+
+*   **Visibility:** Use the checkboxes in the top control panel to show or hide individual charts.
+*   **Zoom/Pan:** Use the range selector at the top to select a time period, or use mouse wheel/drag gestures on the main charts. All time charts are linked.
+*   **Inspect Data:** Hover over any chart to see a gray line with live data details. Click on a chart to set a persistent red cursor, which also updates the "Frequency Slice" bar chart at the bottom.
+*   **Audio:** Click the "Play" button for a specific position to start audio playback from the red cursor's timestamp.
+*   **Keyboard:**
+    *   **Left/Right Arrow Keys:** Step the red cursor through time.
+    *   **Spacebar:** Toggle audio play/pause for the currently selected position.
+
+## Core Architectural Concepts
+
+### Data Flow
+
+The application follows a clear, structured data flow:
+
+*   **Configuration (`main.py`):** The `SOURCE_CONFIGURATIONS` list defines what data to load.
+*   **Data Management (`data_manager.py`):** `DataManager` iterates through the configs. For each file, it uses `NoiseParserFactory` to get the correct parser.
+*   **Parsing (`data_parsers.py`):** The appropriate parser (e.g., `NTiFileParser`) reads a file and converts it into a standardized `ParsedData` object, separating broadband (`totals_df`) and spectral (`spectral_df`) data.
+*   **Aggregation (`data_manager.py`):** `DataManager` adds the `ParsedData` to a `PositionData` object, which aggregates all data for a single measurement position (e.g., merging a log file and a report file for the same site).
+*   **Processing (`data_processors.py`):** Before visualization, `GlyphDataProcessor` transforms the raw spectral DataFrames into the specific, pre-padded data structures required by Bokeh's `Image` glyph for spectrograms.
+*   **Component Creation (`components.py`):** Classes like `TimeSeriesComponent` and `SpectrogramComponent` create the individual Bokeh figures and their `ColumnDataSources`.
+*   **Dashboard Assembly (`dashBuilder.py`):** `DashBuilder` orchestrates the entire process: it calls the data processor, instantiates all UI components, assembles them into a final layout, and sets up the JavaScript bridge.
+
+### The JavaScript Bridge
+
+Communication between the Python backend and the JavaScript front-end is managed by the `DashBuilder`. It constructs a single dictionary of all necessary Bokeh models (charts, sources, widgets) and passes it to the `app.js` script upon initialization.
+
+This approach avoids scattering `CustomJS` callbacks with tangled arguments throughout the Python code. The `_assemble_js_bridge_dictionary` method in `DashBuilder` is the single source of truth for the models provided to the front end.
+
 ```javascript
-// The JS initialization receives this structure
-function initializeApp(models, options) {
-    // All models are passed in the hierarchical structure
-    const charts = models.charts || [];
-    const sources = models.sources || {};
-    const barChart = models.barChart;
-    
-    console.log(`Initializing app with ${charts.length} charts`);
-    // ... rest of initialization
-}
+// A simplified view of how app.js receives the models
+// const models = {
+//     charts: [figure1, figure2, ...],
+//     timeSeriesSources: { 'Position1': { overview: cds, log: cds }, ... },
+//     preparedGlyphData: { 'Position1': { ...prepared data... } },
+//     audio_controls: { 'Position1': { play_toggle: button, ... } },
+//     barSource: frequency_bar_chart_cds,
+//     ... other models
+// };
+window.NoiseSurveyApp.init(models, /* options */);
 ```
 
-## Key Implementation Detail: Spectrogram Data Chunking
+### Spectrogram Data Handling: The Fixed-Size Buffer Solution
 
-A significant technical challenge in this application is the efficient display of high-resolution spectrogram data, which can often be too large to render in the browser at once. The application solves this using a dynamic data chunking strategy.
+A key technical challenge is efficiently displaying high-resolution spectrograms. Bokeh's `Image` glyph is highly performant but requires its data source to have a fixed size after initialization. You cannot send a smaller or larger data array to update it later.
 
-### The Problem
+This application solves this with a two-part strategy:
 
-Bokeh's `Image` glyph, used for the spectrogram, is highly optimized. When initialized, it allocates a fixed-size data buffer in the browser. This means that the JavaScript `ColumnDataSource` that feeds the glyph cannot be resized dynamically. Attempting to replace the data with a new, smaller or larger array will fail.
+1.  **Python-Side Padding:** In `data_processors.py`, a `MAX_DATA_SIZE` constant defines a fixed chunk length. All spectral data, whether it's low-resolution overview or high-resolution log data, is padded to this exact size before being sent to the browser. This ensures the JavaScript `ColumnDataSource` is always initialized with a consistently sized data buffer.
+2.  **JavaScript In-Place Updates:** In `app.js`, when a user zooms to a level where high-resolution data should be shown, the code does not try to replace the data source. Instead, it:
+    *   Calculates the slice of data corresponding to the visible time range from the full dataset held in memory.
+    *   Uses a utility function to extract this data slice, ensuring it matches the buffer's fixed size (padding if necessary).
+    *   Directly modifies the contents of the existing `source.data.image[0]` array in-place.
+    *   Calls `source.change.emit()` to notify Bokeh to redraw the spectrogram with the new visual data.
 
-### The Solution
+This method provides fast, responsive spectrograms by minimizing data transfer and avoiding the overhead of recreating Bokeh objects in the browser.
 
-1.  **Fixed-Size Buffer in Python:** In `data_processors.py`, the `prepare_single_spectrogram_data` function establishes a maximum chunk size (`MAX_DATA_SIZE`). All spectral data, whether it's low-resolution overview data or high-resolution log data, is padded to this exact size *before* being sent to the browser. This ensures the JavaScript `ColumnDataSource` is always initialized with a consistently sized data array.
+## Future Work
 
-2.  **In-Place Updates in JavaScript:** In `app.js`, when a user zooms into a time range where high-resolution data is available, the `_updateActiveSpectralData` function does not create a new data source. Instead, it:
-    *   Calculates the appropriate slice of the full high-resolution data that corresponds to the visible time range.
-    *   Uses a utility function (`_getTimeChunkFromSerialData`) to extract this data slice, ensuring it matches the buffer's fixed size.
-    *   Directly modifies the *contents* of the existing `source.data.image[0]` array in-place with the new chunk's data.
-    *   Calls `source.change.emit()` to notify Bokeh of the change, which triggers a redraw of the spectrogram with the new visual data.
+This project has a clear roadmap for enhancements:
 
-This approach allows for the efficient display of large datasets by only sending the necessary data chunks to the browser and updating the visualization without the overhead of re-creating the glyph or its data source.
-
-## Development Plan
-
-This project is undergoing refactoring and enhancement according to the [Development Plan](DEVELOPMENT_PLAN.md). Key goals include:
-
-* Improved code structure and maintainability.
-* Improved JavaScript stability and state handling.
-* Enhanced file/directory input UI.
-* Annotation/note-taking features.
-* Data range selection for statistical analysis.
-* Static HTML export options.
-* Addition of automated tests.
-
-## License
-
-This project is intended for internal use.
-
-
-## Future (wanted) features: 
-1. Enhanced File/Directory Input:
-
--Allow selecting a parent directory instead of manually listing each file path in the config.
-Scan the selected directory (and subdirectories) for relevant noise survey files (based on configurable criteria like filename patterns, file types: .csv, .txt, .xlsx, etc., potentially size).
--Present the identified files to the user.
--Allow the user to select which files to include in the analysis.
--Automatically suggest or allow user assignment of "position names" (e.g., based on subfolder names where files are located).
-
-2. Chart Annotation / Note-Taking System:
-
--Ability to add notes directly linked to specific points in time on the charts.
--Display unobtrusive visual markers on the charts indicating where notes exist.
--Provide an easy-to-use interface for taking notes (e.g., a popup dialog or side panel).
--When creating a note, automatically pre-populate it with relevant context from the chart at the selected time (e.g., timestamp, position name, key sound levels like LAeq, LAF90).
--Define a clear UI trigger to initiate note creation (e.g., button click when the red vertical line is active, right-click menu option on the line, dedicated key press).
--Save the notes persistently, associated with the specific survey data/job folder (e.g., in a JSON or CSV file within that folder).
--Automatically load existing notes for a survey when the data is loaded in a new session.
-
-3. Data Range Selection and Statistical Analysis:
-
--Allow users to select a specific range of data directly on the time-history charts (e.g., by dragging handles on the range selector, using a box select tool).
--Calculate and display statistical results for the selected data range (e.g., overall LAeq, L10, L90, Lmax for the period).
--Calculate and display the average frequency spectrum for the selected time range.
--Provide an easy way to copy the calculated statistics and spectral data (e.g., formatted text in a display area or <textarea> for easy pasting into reports).
--Potentially integrate the display/copying of these statistics within the note-taking feature for the selected range.
-
-4. Export and Session Management:
-
--Option to save the current view (charts and layout) as a standalone HTML file (understanding this will be static, without audio or server-side interactivity).
--Explore saving the configuration of a specific analysis session (selected files, chosen views, possibly notes) associated with the job folder.
--Explore functionality to reload a saved session configuration, automatically setting up the Bokeh server with the previously selected files and settings for that specific job.
+*   **Enhanced File Input:** Allow selecting a parent directory to have the app automatically scan for and identify survey files.
+*   **Annotations/Notes:** Implement a system to add, save, and load notes linked to specific timestamps on the charts.
+*   **Statistical Analysis:** Add functionality to select a data range on the charts and calculate/display/copy key statistics (LAeq, L90, etc.) and average spectra for that period.
+*   **Session Management:** Explore saving and loading a complete analysis session (file configurations, views, notes).

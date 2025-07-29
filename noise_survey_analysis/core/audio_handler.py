@@ -79,7 +79,7 @@ class AudioPlaybackHandler:
     def _index_all_positions(self, position_data: dict):
             """Iterates through all positions and indexes their audio files."""
             for position_name, data_dict in position_data.items():
-                audio_path = data_dict.audio_files_list
+                audio_path = data_dict.audio_files_path
                 if not audio_path or not os.path.isdir(audio_path):
                     continue
 

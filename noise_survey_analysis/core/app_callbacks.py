@@ -52,6 +52,7 @@ class AppCallbacks:
         logger.info("All callbacks attached.")
 
     def _handle_audio_control_command(self, attr, old, new):
+        print("Received audio control command: " + str(new))
         if not self.audio_handler: return
         try:
             command = new.get('command', [None])[0]

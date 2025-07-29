@@ -1,10 +1,12 @@
 import logging
 from re import L
 from bokeh.plotting import curdoc
-from bokeh.models import ColumnDataSource
+from bokeh.models import ColumnDataSource, Div
 from bokeh.io import output_file, save
 from bokeh.document import Document
 import sys
+import json
+import os
 from pathlib import Path
 
 # --- Project Root Setup ---
@@ -19,120 +21,92 @@ from noise_survey_analysis.core.app_callbacks import AppCallbacks, session_destr
 from noise_survey_analysis.visualization.dashBuilder import DashBuilder
 
 # --- Configure Logging ---
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Configuration for static file output ---
-OUTPUT_FILENAME = "noise_survey_dashboard_static.html"
+def find_lowest_common_folder(paths: list[str]) -> str | None:
+    """Finds the lowest common directory from a list of file paths."""
+    if not paths:
+        return None
+    try:
+        # os.path.commonpath works well, but requires paths to be absolute strings
+        common_path = os.path.commonpath([str(p) for p in paths])
+        # If the common path is a file itself, get its parent directory
+        if os.path.isfile(common_path):
+            return os.path.dirname(common_path)
+        return common_path
+    except ValueError:
+        # This can happen if paths are on different drives (e.g., C: and D:)
+        logger.warning("Could not find a common path (paths might be on different drives).")
+        return None
 
+def load_config_and_prepare_sources(config_path='config.json'):
+    """Loads configuration from a JSON file and prepares the source list."""
+    config_full_path = project_root / config_path
+    logger.info(f"Attempting to load configuration from: {config_full_path}")
+    try:
+        with open(config_full_path, 'r') as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        logger.error(f"Configuration file not found at {config_full_path}")
+        return None, None
+    except json.JSONDecodeError:
+        logger.error(f"Error decoding JSON from {config_full_path}")
+        return None, None
+
+    output_filename = config.get("output_filename", "default_dashboard.html")
+    
+    source_configurations = []
+    for source in config.get("sources", []):
+        if 'file_paths' in source and isinstance(source['file_paths'], list):
+            source['file_paths'] = set(source['file_paths'])
+        source_configurations.append(source)
+
+    return output_filename, source_configurations
 
 def generate_static_html():
     """
     Builds the dashboard layout and saves it as a standalone HTML file.
-    This version will not have a live Python backend.
     """
-    logger.info(f"--- Generating static HTML file: {OUTPUT_FILENAME} ---")
+    output_filename, source_configs = load_config_and_prepare_sources()
+    if source_configs is None:
+        logger.error("Could not load source configurations. Aborting static generation.")
+        return
+
+    # Determine output directory based on source file locations
+    all_file_paths = []
+    for config in source_configs:
+        if config.get("enabled", True):
+            all_file_paths.extend(list(config.get('file_paths', set())))
+
+    output_dir = project_root
+    if all_file_paths:
+        common_folder = find_lowest_common_folder(all_file_paths)
+        if common_folder:
+            output_dir = Path(common_folder)
+            logger.info(f"Common source directory found. Setting output location to: {output_dir}")
+        else:
+            logger.info("No common source directory found. Using default project directory for output.")
     
-    # 1. Load Data (same as the server app)
-    entry_file_path = r"G:\My Drive\Programing\example files\Noise Sentry\cricket nets 2A _2025_06_03__20h55m22s_2025_05_29__15h30m00s.csv"   
+    output_full_path = output_dir / output_filename
 
-    svan_log_path = r"G:\My Drive\Programing\example files\Svan full data\L259_log.csv"
-    svan_summary_path = r"G:\My Drive\Programing\example files\Svan full data\L259_summary.csv"
+    logger.info(f"--- Generating static HTML file: {output_full_path} ---")
+    
+    # 1. Load Data
+    app_data = DataManager(source_configurations=source_configs)
 
-    nti_rta_log_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Log.txt"
-    nti_123_log_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Log.txt"
-    nti_123_Rpt_Report_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Rpt_Report.txt"
-    nti_RTA_Rpt_Report_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Rpt_Report.txt"
+    # 2. Instantiate builder
+    dash_builder = DashBuilder(app_callbacks=None, audio_control_source=None, audio_status_source=None)
 
-    audio_dir = r"G:\Shared drives\Venta\Jobs\5793 Alton Road, Ross-on-wye\5793 Surveys\5793-1"
-
-    SOURCE_CONFIGURATIONS = [
-            {"position_name": "SiteSvan", "file_paths": {svan_summary_path}, "enabled": False}, 
-            {"position_name": "SiteSvan", "file_paths": {svan_log_path, svan_summary_path}, "enabled": False
-            }, 
-            {"position_name": "SiteNTi", "file_paths": {nti_rta_log_path, nti_123_log_path, nti_123_Rpt_Report_path, nti_RTA_Rpt_Report_path}, "parser_type_hint": "NTi", "enabled": True},
-            {"position_name": "SiteNTi", "file_path": audio_dir, "enabled": True},
-            {"position_name": "SiteMissing", "file_path": "nonexistent.csv", "enabled": False},
-            {"position_name": "East", "file_paths": {r"G:\Shared drives\Venta\Jobs\5973 Norfolk Feather Site, Diss, Norfolk\5973 Surveys\5973 Norfolk Feather Site, Diss, Norfolk_summary.csv", 
-                r"G:\Shared drives\Venta\Jobs\5973 Norfolk Feather Site, Diss, Norfolk\5973 Surveys\5973 Norfolk Feather Site, Diss, Norfolk_log.csv"}, "enabled": True}
-        ]
-    app_data = DataManager(source_configurations=SOURCE_CONFIGURATIONS)
-
-    print("\nDataManager: Data loading complete.")
-    for position_name, data in app_data.get_all_position_data().items():
-        print(f"\n--- Position: {position_name} ---")
-        if data.log_totals is not None:
-            print(f"Log Totals DataFrame Shape: {data.log_totals.shape}")
-            print("Log Totals DataFrame Columns:", data.log_totals.columns.tolist())
-            print("Log Totals DataFrame Head:")
-            print(data.log_totals.head(5)) # Print more rows
-        else:
-            print("Log Totals DataFrame: None")
-
-        if data.log_spectral is not None:
-            print(f"Log Spectral DataFrame Shape: {data.log_spectral.shape}")
-            print("Log Spectral DataFrame Columns:", data.log_spectral.columns.tolist())
-            print("Log Spectral DataFrame Head:")
-            print(data.log_spectral.head(5)) # Print more rows
-        else:
-            print("Log Spectral DataFrame: None")
-
-        if data.overview_totals is not None:
-            print(f"Overview Totals DataFrame Shape: {data.overview_totals.shape}")
-            print("Overview Totals DataFrame Columns:", data.overview_totals.columns.tolist())
-            print("Overview Totals DataFrame Head:")
-            print(data.overview_totals.head(5)) # Print more rows
-        else:
-            print("Overview Totals DataFrame: None")
-
-        if data.overview_spectral is not None:
-            print(f"Overview Spectral DataFrame Shape: {data.overview_spectral.shape}")
-            print("Overview Spectral DataFrame Columns:", data.overview_spectral.columns.tolist())
-            print("Overview Spectral DataFrame Head:")
-            print(data.overview_spectral.head(5)) # Print more rows
-        else:
-            print("Overview Spectral DataFrame: None")
-
-        if position_name == "SiteNTi":
-            print("\n--- Detailed NTi Data Info ---")
-            if data.log_totals is not None:
-                print("NTi Log Totals DataFrame Info:")
-                data.log_totals.info()
-                print("\nNTi Log Totals DataFrame Describe:")
-                print(data.log_totals.describe())
-            if data.log_spectral is not None:
-                print("\nNTi Log Spectral DataFrame Info:")
-                data.log_spectral.info()
-                print("\nNTi Log Spectral DataFrame Describe:")
-                print(data.log_spectral.describe())
-            if data.overview_totals is not None:
-                print("NTi Overview Totals DataFrame Info:")
-                data.overview_totals.info()
-                print("\nNTi Overview Totals DataFrame Describe:")
-                print(data.overview_totals.describe())
-            if data.overview_spectral is not None:
-                print("\nNTi Overview Spectral DataFrame Info:")
-                data.overview_spectral.info()
-                print("\nNTi Overview Spectral DataFrame Describe:")
-                print(data.overview_spectral.describe())
-
-    # 2. Instantiate builder WITHOUT backend components
-    # The DashBuilder will use its default placeholder sources.
-    dash_builder = DashBuilder(app_callbacks=None, 
-                               audio_control_source=None, 
-                               audio_status_source=None)
-
-    # 3. Create a temporary document to build into
+    # 3. Create and build document
     static_doc = Document()
-
-    # 4. Build the layout into the temporary document
     dash_builder.build_layout(static_doc, app_data, CHART_SETTINGS)
 
-    # 5. Save the document to an HTML file
+    # 4. Save the document
     try:
-        output_file(OUTPUT_FILENAME, title="Noise Survey Dashboard")
+        output_file(output_full_path, title="Noise Survey Dashboard")
         save(static_doc)
-        logger.info(f"--- Static HTML file saved successfully to {OUTPUT_FILENAME} ---")
+        logger.info(f"--- Static HTML file saved successfully to {output_full_path} ---")
     except Exception as e:
         logger.error(f"Failed to save static HTML file: {e}", exc_info=True)
 
@@ -140,40 +114,27 @@ def generate_static_html():
 def create_app(doc):
     """
     This function is the entry point for the LIVE Bokeh server application.
-    It sets up the data, backend logic, and UI.
     """
     logger.info("--- New client session started. Creating live application instance. ---")
     
     # 1. DATA LOADING
-    entry_file_path = r"G:\My Drive\Programing\example files\Noise Sentry\cricket nets 2A _2025_06_03__20h55m22s_2025_05_29__15h30m00s.csv"   
+    _, source_configs = load_config_and_prepare_sources()
+    if source_configs is None:
+        logger.error("Could not load source configurations. Aborting app creation.")
+        doc.add_root(Div(text="<h1>Error: Configuration file 'config.json' not found or invalid.</h1>"))
+        return
 
-    svan_log_path = r"G:\My Drive\Programing\example files\Svan full data\L259_log.csv"
-    svan_summary_path = r"G:\My Drive\Programing\example files\Svan full data\L259_summary.csv"
-
-    nti_rta_log_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Log.txt"
-    nti_123_log_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_00_123_Log.txt"
-    nti_123_Rpt_Report_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_00_123_Rpt_Report.txt"
-    nti_RTA_Rpt_Report_path = r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Rpt_Report.txt"
-
-    audio_dir = r"G:\Shared drives\Venta\Jobs\5793 Alton Road, Ross-on-wye\5793 Surveys\5793-1"
-
-    SOURCE_CONFIGURATIONS = [
-            {"position_name": "SiteSvan", "file_paths": {svan_summary_path}, "enabled": False}, 
-            {"position_name": "SiteSvan", "file_paths": {svan_log_path, svan_summary_path}, "enabled": False
-            }, 
-            {"position_name": "SiteNTi", "file_paths": {nti_rta_log_path, nti_123_log_path, nti_123_Rpt_Report_path, nti_RTA_Rpt_Report_path}, "parser_type_hint": "NTi", "enabled": True},
-            {"position_name": "SiteNTi", "file_path": audio_dir, "enabled": True},
-            {"position_name": "SiteMissing", "file_path": "nonexistent.csv", "enabled": False},
-            {"position_name": "East", "file_path": {r"G:\Shared drives\Venta\Jobs\5973 Norfolk Feather Site, Diss, Norfolk\5973 Surveys\5973 Norfolk Feather Site, Diss, Norfolk_summary.csv", 
-                r"G:\Shared drives\Venta\Jobs\5973 Norfolk Feather Site, Diss, Norfolk\5973 Surveys\5973 Norfolk Feather Site, Diss, Norfolk_log.csv"}, "enabled": True},
-        ]
-    app_data = DataManager(source_configurations=SOURCE_CONFIGURATIONS)
+    app_data = DataManager(source_configurations=source_configs)
     
-    # 2. BACKEND HANDLER SETUP (for live interaction)
+    # 2. BACKEND HANDLER SETUP
     logger.info("Setting up backend handlers for live session...")
     audio_handler = AudioPlaybackHandler(position_data=app_data.get_all_position_data())
     audio_control_source = ColumnDataSource(data={'command': [], 'position_id': [], 'value': []}, name='audio_control_source')
-    audio_status_source = ColumnDataSource(data={'is_playing': [False], 'current_time': [0], 'playback_rate': [1.0], 'current_file_duration': [0], 'current_file_start_time': [0]}, name='audio_status_source')
+    audio_status_source = ColumnDataSource(data={
+        'is_playing': [False], 'current_time': [0], 'playback_rate': [1.0], 
+        'current_file_duration': [0], 'current_file_start_time': [0],
+        'active_position_id': [None], 'volume_boost': [False]
+        }, name='audio_status_source')
     app_callbacks = AppCallbacks(doc, audio_handler, audio_control_source, audio_status_source)
     
     # 3. UI BUILD

@@ -33,6 +33,7 @@ class PositionData:
         self.log_totals: Optional[pd.DataFrame] = None
         self.log_spectral: Optional[pd.DataFrame] = None
         self.audio_files_list: Optional[pd.DataFrame] = None # For list of audio files
+        self.audio_files_path: Optional[str] = None # For path to audio files
 
         # Store combined metadata from all contributing files for this position
         self.source_file_metadata: Optional[List[Dict[str, Any]]] = []
@@ -64,6 +65,8 @@ class PositionData:
             return self.log_spectral
         elif key == 'audio_files_list':
             return self.audio_files_list
+        elif key == 'audio_files_path':
+            return self.audio_files_path
         else:
             raise KeyError(f"'{key}' is not a valid data attribute for PositionData. "
                            f"Valid keys are: 'overview_totals', 'overview_spectral', "
@@ -172,7 +175,10 @@ class PositionData:
             logger.debug(f"  After merge - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
 
         elif profile == 'file_list' and parsed_data_obj.parser_type == 'Audio': # Audio parser result
-            # Audio parser puts file list into totals_df
+            # Set the path for the audio handler to use later
+            if self.audio_files_path is None:
+                self.audio_files_path = parsed_data_obj.original_file_path      
+            # Audio parser puts file list into totals_df                
             if self.audio_files_list is None:
                 self.audio_files_list = parsed_data_obj.totals_df
             elif parsed_data_obj.totals_df is not None:
@@ -204,6 +210,7 @@ class DataManager:
     """
     def __init__(self, source_configurations: Optional[List[Dict[str, Any]]] = None):
         self._positions_data: Dict[str, PositionData] = {}
+        self._position_order: List[str] = []  # Preserve order from config file
         self.parser_factory = NoiseParserFactory() # Uses your refactored factory
 
         if source_configurations:
@@ -256,6 +263,9 @@ class DataManager:
         
         if position_name not in self._positions_data:
             self._positions_data[position_name] = PositionData(name=position_name)
+            # Preserve the order from config file
+            if position_name not in self._position_order:
+                self._position_order.append(position_name)
         
         position_obj = self._positions_data[position_name]
 
@@ -286,8 +296,12 @@ class DataManager:
 
     # --- Methods for clean access ---
     def positions(self) -> List[str]:
-        """Returns a sorted list of all loaded position names."""
-        return sorted(list(self._positions_data.keys()))
+        """Returns a list of all loaded position names in config file order."""
+        # Return positions in the order they were defined in the config file
+        # Include any positions that might exist but aren't in the order list (fallback)
+        ordered_positions = [pos for pos in self._position_order if pos in self._positions_data]
+        remaining_positions = [pos for pos in self._positions_data.keys() if pos not in self._position_order]
+        return ordered_positions + sorted(remaining_positions)
 
     def __getitem__(self, position_name: str) -> PositionData:
         """
