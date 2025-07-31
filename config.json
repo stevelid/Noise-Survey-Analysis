@@ -10,6 +10,14 @@
       ]
     },
     {
+      "position_name": "North NS",
+      "enabled": true,
+      "file_paths": [
+        "G:\\Shared drives\\Venta\\Jobs\\6002 Westwood Centre, New Haine Road, Ramsgate\\6002 Surveys\\6002 NS North\\6002 Westwood Centre, Ramsgate_2A_2025_07_29__14h39m36s_2025_07_23__11h35m15s_log.csv",
+        "G:\\Shared drives\\Venta\\Jobs\\6002 Westwood Centre, New Haine Road, Ramsgate\\6002 Surveys\\6002 NS North\\6002 Westwood Centre, Ramsgate_2A_2025_07_29__14h39m36s_2025_07_23__11h35m15s_summary.csv"
+      ]
+    },
+    {
       "position_name": "East",
       "enabled": true,
       "file_paths": [

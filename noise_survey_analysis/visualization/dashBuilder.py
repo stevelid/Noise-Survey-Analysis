@@ -24,6 +24,7 @@ from noise_survey_analysis.ui.components import (
     FrequencyBarComponent,
     ControlsComponent,
     RangeSelectorComponent,
+    SummaryTableComponent,
     create_audio_controls_for_position
 )
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
@@ -125,6 +126,9 @@ class DashBuilder:
         controls_comp = self.shared_components['controls']
         
         self.shared_components['freq_bar'] = FrequencyBarComponent()
+
+        all_positions = list(app_data.positions())
+        self.shared_components['summary_table'] = SummaryTableComponent(all_positions, ['LAeq', 'LAFmax', 'LAF90'])
 
         first_position_processed = False
         # Create components for each position found in the data
@@ -240,6 +244,7 @@ class DashBuilder:
             self.shared_components['range_selector'].layout(), 
             *position_layouts, 
             self.shared_components['freq_bar'].layout() if 'freq_bar' in self.shared_components else Div(),
+            self.shared_components['summary_table'].layout(),
             name="main_layout"
         )
 
@@ -278,9 +283,11 @@ class DashBuilder:
                     barChart: barChart,
                     paramSelect: paramSelect,
                     freqTableDiv: freqTableDiv,
+                    summaryTableDiv: summaryTableDiv,
                     audio_control_source: audio_control_source,
                     audio_status_source: audio_status_source,
                     audio_controls: audio_controls,
+                    components: components,
                 }};
 
                 console.log('[NoiseSurveyApp]', 'Models:', models);
@@ -320,10 +327,12 @@ class DashBuilder:
             'barSource': self.shared_components['freq_bar'].source,
             'barChart': self.shared_components['freq_bar'].figure,
             'freqTableDiv': self.shared_components['freq_bar'].table_div,  # Add the frequency table div for copy/paste functionality
+            'summaryTableDiv': self.shared_components['summary_table'].summary_div,
             'paramSelect': self.shared_components['controls'].param_select,
             'audio_control_source': self.app_callbacks.audio_control_source if self.app_callbacks else None,
             'audio_status_source': self.app_callbacks.audio_status_source if self.app_callbacks else None,
             'audio_controls': {},
+            'components': {},
         }
 
         # Populate position-specific models
@@ -333,18 +342,24 @@ class DashBuilder:
                 'overview': comp_dict['timeseries'].overview_source,
                 'log': comp_dict['timeseries'].log_source,
             }
+
+            ts_comp = comp_dict['timeseries']
+            spec_comp = comp_dict['spectrogram']
             
-            js_models['chartsSources'].extend([comp_dict['timeseries'].source, comp_dict['spectrogram'].source])
-            js_models['charts'].extend([comp_dict['timeseries'].figure, comp_dict['spectrogram'].figure])
-            js_models['clickLines'].extend([comp_dict['timeseries'].tap_lines, comp_dict['spectrogram'].tap_lines])
-            js_models['hoverLines'].extend([comp_dict['timeseries'].hover_line, comp_dict['spectrogram'].hover_line])
+            js_models['chartsSources'].extend([ts_comp.source, spec_comp.source])
+            js_models['charts'].extend([ts_comp.figure, spec_comp.figure])
+            js_models['clickLines'].extend([ts_comp.tap_lines, spec_comp.tap_lines])
+            js_models['hoverLines'].extend([ts_comp.hover_line, spec_comp.hover_line])
             # Note: Only timeseries has labels, spectrogram doesn't
-            js_models['labels'].append(comp_dict['timeseries'].label)
-            js_models['hoverDivs'].append(comp_dict['spectrogram'].hover_div)
+            js_models['labels'].append(ts_comp.label)
+            js_models['hoverDivs'].append(spec_comp.hover_div)
             if comp_dict.get('audio_controls'):
                 js_models['audio_controls'][pos] = comp_dict['audio_controls']
             if comp_dict.get('audio_status_source'):
                 js_models['audio_status_source'][pos] = comp_dict['audio_status_source']
+            
+            js_models['components'][ts_comp.name_id] = {'marker_lines': ts_comp.marker_lines}
+            js_models['components'][spec_comp.name_id] = {'marker_lines': spec_comp.marker_lines}
 
 
         #Add RangeSelector tap and hover lines

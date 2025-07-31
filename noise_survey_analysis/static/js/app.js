@@ -24,6 +24,7 @@ window.NoiseSurveyApp = (function () {
             this.hoverLineModel = hoverLineModel;
             this.name = chartModel.name;
             this.positionId = positionId; // Store the position ID
+            this.markerModels = []; // Each chart instance manages its own marker models.
         }
 
         setVisible(isVisible) {
@@ -67,47 +68,50 @@ window.NoiseSurveyApp = (function () {
             if (this.hoverLineModel) this.hoverLineModel.visible = false;
         }
 
-        // Marker methods
-        renderMarkers(timestamps) {
-            if (!_state.markers.enabled) {
-                this.hideAllMarkers();
-                return;
+        /**
+         * The "main" marker method. It syncs the chart's visible markers
+         * to match the global state. This is a declarative approach.
+         * @param {number[]} masterTimestampList - The global list of marker timestamps from _state.
+         * @param {boolean} areMarkersEnabled - The global visibility toggle from _state.
+         */
+        syncMarkers(masterTimestampList, areMarkersEnabled) {
+            // First, handle the global visibility toggle
+            if (!areMarkersEnabled) {
+                this.markerModels.forEach(marker => marker.visible = false);
+                return; // Stop here if markers are globally disabled
             }
-            
-            // Get the marker_lines array from the Python component
-            const markerLines = this.getMarkerLines();
-            if (!markerLines) return;
-            
-            // Hide all existing markers first
-            markerLines.forEach(marker => marker.visible = false);
-            
-            // Show markers for each timestamp
-            timestamps.forEach((timestamp, index) => {
-                if (index < markerLines.length) {
-                    markerLines[index].location = timestamp;
-                    markerLines[index].visible = true;
-                } else {
-                    // Create new marker if needed (dynamically)
-                    this.createMarker(timestamp);
-                }
+
+            const existingTimestamps = this.markerModels.map(m => m.location);
+            const timestampsToAdd = masterTimestampList.filter(t => !existingTimestamps.includes(t));
+            const markersToRemove = this.markerModels.filter(m => !masterTimestampList.includes(m.location));
+
+            // Add new markers
+            timestampsToAdd.forEach(timestamp => {
+                const newMarker = new Bokeh.Models.Span({
+                    location: timestamp,
+                    dimension: 'height',
+                    line_color: 'orange',
+                    line_width: 2,
+                    line_alpha: 0.7,
+                    level: 'underlay',
+                    visible: true,
+                    name: `marker_${this.name}_${timestamp}`
+                });
+                this.model.add_layout(newMarker);
+                this.markerModels.push(newMarker);
             });
-        }
-        
-        hideAllMarkers() {
-            const markerLines = this.getMarkerLines();
-            if (markerLines) {
-                markerLines.forEach(marker => marker.visible = false);
+
+            // Remove old markers and update the internal list
+            markersToRemove.forEach(markerModel => this.model.remove_layout(markerModel));
+            this.markerModels = this.markerModels.filter(m => !markersToRemove.includes(m));
+
+            // Ensure all remaining markers are visible
+            this.markerModels.forEach(marker => marker.visible = true);
+
+            const hasChanges = timestampsToAdd.length > 0 || markersToRemove.length > 0;
+            if (hasChanges && this.source) {
+                this.render();
             }
-        }
-        
-        getMarkerLines() {
-            // This will be overridden to access the Python component's marker_lines
-            return null;
-        }
-        
-        createMarker(timestamp) {
-            // This will be overridden to create new markers dynamically
-            console.warn('createMarker not implemented for this chart type');
         }
 
         update() {
@@ -150,37 +154,8 @@ window.NoiseSurveyApp = (function () {
             }
             return label_text;
         }
-        
-        getMarkerLines() {
-            // Access the marker_lines array from the Python TimeSeriesComponent
-            const componentName = `${this.positionId}_timeseries`;
-            const component = _models.components?.[componentName];
-            return component?.marker_lines || null;
-        }
-        
-        createMarker(timestamp) {
-            // Create a new marker Span dynamically
-            const componentName = `${this.positionId}_timeseries`;
-            const component = _models.components?.[componentName];
-            if (!component) return;
-            
-            // Create new Span for marker (orange, slightly transparent, behind other lines)
-            const newMarker = new Bokeh.models.Span({
-                location: timestamp,
-                dimension: 'height',
-                line_color: 'orange',
-                line_width: 2,
-                line_alpha: 0.7,
-                level: 'underlay', // Behind other elements
-                visible: true,
-                name: `marker_${this.name}_${Date.now()}`
-            });
-            
-            // Add to the figure and track it
-            this.model.add_layout(newMarker);
-            if (!component.marker_lines) component.marker_lines = [];
-            component.marker_lines.push(newMarker);
-        }
+
+
     }
 
     class SpectrogramChart extends Chart {
@@ -245,37 +220,8 @@ window.NoiseSurveyApp = (function () {
             const level_str = (level == null || isNaN(level)) ? "N/A" : level.toFixed(1) + " dB";
             this.hoverDivModel.text = `<b>Time:</b> ${time_str} | <b>Freq:</b> ${freq_str} | <b>Level:</b> ${level_str} (${freqBarData.param})`;
         }
-        
-        getMarkerLines() {
-            // Access the marker_lines array from the Python SpectrogramComponent
-            const componentName = `${this.positionId}_spectrogram`;
-            const component = _models.components?.[componentName];
-            return component?.marker_lines || null;
-        }
-        
-        createMarker(timestamp) {
-            // Create a new marker Span dynamically
-            const componentName = `${this.positionId}_spectrogram`;
-            const component = _models.components?.[componentName];
-            if (!component) return;
-            
-            // Create new Span for marker (orange, slightly transparent, behind other lines)
-            const newMarker = new Bokeh.models.Span({
-                location: timestamp,
-                dimension: 'height',
-                line_color: 'orange',
-                line_width: 2,
-                line_alpha: 0.7,
-                level: 'underlay', // Behind other elements
-                visible: true,
-                name: `marker_${this.name}_${Date.now()}`
-            });
-            
-            // Add to the figure and track it
-            this.model.add_layout(newMarker);
-            if (!component.marker_lines) component.marker_lines = [];
-            component.marker_lines.push(newMarker);
-        }
+
+
     }
 
     class PositionController {
@@ -383,9 +329,11 @@ window.NoiseSurveyApp = (function () {
      * time duration of the currently active dataset for the position with focus.
      * The position with focus is determined by checking audio state first, then tap state.
      */
-    function calculateStepSize() {
+    function calculateStepSize(positionId = null) {
 
-        const positionId = _state.audio.activePositionId || _state.interaction.tap.position;
+        if (!positionId) {
+            positionId = _state.audio.activePositionId || _state.interaction.tap.position;
+        }
 
         if (!positionId) {
             //console.log("[DEBUG] Cannot calculate step size: No active position from audio or tap. State is:", _state);
@@ -482,19 +430,29 @@ window.NoiseSurveyApp = (function () {
 
     function handleTap(cb_obj) {
         const chartName = cb_obj.origin.name;
-        if (chartName === 'frequency_bar') return;
-        
+        const positionId = _getChartPositionByName(chartName);
+
+        console.log(cb_obj);
+
         // Check if Ctrl key is pressed for marker removal
-        if (cb_obj.event && cb_obj.event.ctrlKey) {
-            removeMarkerNear(cb_obj.x);
-            return;
+        if (cb_obj.modifiers && cb_obj.modifiers.ctrl) {
+            _dispatchAction({
+                type: 'REMOVE_MARKER',
+                payload: {
+                    timestamp: cb_obj.x,
+                    position: positionId
+                }
+            });
+            return; // Stop further processing
         }
-        
+
+        if (chartName === 'frequency_bar') return;
+        // If no modifier key, it's a normal tap
         _dispatchAction({
             type: 'TAP',
             payload: {
                 timestamp: cb_obj.x,
-                position: _getChartPositionByName(chartName),
+                position: positionId,
                 sourceChartName: chartName
             }
         });
@@ -537,80 +495,14 @@ window.NoiseSurveyApp = (function () {
     function handleDoubleClick(cb_obj) {
         const chartName = cb_obj.origin.name;
         if (chartName === 'frequency_bar') return;
-        
-        const timestamp = cb_obj.x;
-        addMarker(timestamp);
-    }
-    
-    function handleRightClick(cb_obj) {
-        const chartName = cb_obj.origin.name;
-        if (chartName === 'frequency_bar') return;
-        
-        const timestamp = cb_obj.x;
-        removeMarkerNear(timestamp);
-    }
-    
-    function addMarker(timestamp) {
-        // Add marker to global state
-        if (!_state.markers.timestamps.includes(timestamp)) {
-            _state.markers.timestamps.push(timestamp);
-            _state.markers.timestamps.sort((a, b) => a - b); // Keep sorted
-            
-            // Create marker on all charts
-            _controllers.chartsByName.forEach(chart => {
-                chart.createMarker(timestamp);
-            });
-            
-            console.log(`[Marker] Added marker at ${new Date(timestamp).toLocaleString()}`);
-        }
-    }
-    
-    function removeMarkerNear(timestamp) {
-        // Find the closest marker within a reasonable threshold
-        const threshold = 60000; // 1 minute threshold
-        let closestIndex = -1;
-        let closestDistance = Infinity;
-        
-        _state.markers.timestamps.forEach((markerTime, index) => {
-            const distance = Math.abs(markerTime - timestamp);
-            if (distance < threshold && distance < closestDistance) {
-                closestDistance = distance;
-                closestIndex = index;
-            }
+        _dispatchAction({
+            type: 'ADD_MARKER',
+            payload: { timestamp: cb_obj.x }
         });
-        
-        if (closestIndex !== -1) {
-            const removedTimestamp = _state.markers.timestamps[closestIndex];
-            _state.markers.timestamps.splice(closestIndex, 1);
-            
-            // Remove marker from all charts
-            _controllers.chartsByName.forEach(chart => {
-                const markerLines = chart.getMarkerLines();
-                if (markerLines) {
-                    const markerToRemove = markerLines.find(marker => 
-                        Math.abs(marker.location - removedTimestamp) < threshold
-                    );
-                    if (markerToRemove) {
-                        markerToRemove.visible = false;
-                    }
-                }
-            });
-            
-            console.log(`[Marker] Removed marker at ${new Date(removedTimestamp).toLocaleString()}`);
-        }
     }
-    
+
     function clearAllMarkers() {
-        // Clear all markers from global state
-        const markerCount = _state.markers.timestamps.length;
-        _state.markers.timestamps = [];
-        
-        // Hide all markers on all charts
-        _controllers.chartsByName.forEach(chart => {
-            chart.hideAllMarkers();
-        });
-        
-        console.log(`[Marker] Cleared ${markerCount} markers`);
+        _dispatchAction({ type: 'CLEAR_ALL_MARKERS' });
     }
 
     function handleParameterChange(value) {
@@ -733,6 +625,8 @@ window.NoiseSurveyApp = (function () {
     }
 
 
+
+
     /**
      * The central dispatcher for all application actions.
      * It orchestrates state updates, data processing, and UI rendering.
@@ -795,6 +689,52 @@ window.NoiseSurveyApp = (function () {
                     _state.interaction.tap.position = _state.view.availablePositions[0];
                 }
                 break;
+            case 'ADD_MARKER': {
+                const timestamp = action.payload.timestamp;
+                if (!_state.markers.timestamps.includes(timestamp)) {
+                    // 1. Update State
+                    _state.markers.timestamps.push(timestamp);
+                    _state.markers.timestamps.sort((a, b) => a - b);
+
+                    console.log(`[Marker] Added marker at ${new Date(timestamp).toLocaleString()}`);
+                }
+                break; // State updated. UI will be synced separately.
+            }
+
+            case 'REMOVE_MARKER': {
+                const timestamp = action.payload.timestamp;
+                const viewportWidthMs = _state.view.viewport.max - _state.view.viewport.min;
+                const threshold = Math.max(10000, viewportWidthMs * 0.02); // At least 10s threshold
+                let closestIndex = -1;
+                let closestDistance = Infinity;
+
+                _state.markers.timestamps.forEach((markerTime, index) => {
+                    const distance = Math.abs(markerTime - timestamp);
+                    if (distance < threshold && distance < closestDistance) {
+                        closestDistance = distance;
+                        closestIndex = index;
+                    }
+                });
+
+                if (closestIndex !== -1) {
+                    // 1. Update State
+                    const removedTimestamp = _state.markers.timestamps.splice(closestIndex, 1)[0];
+
+                    console.log(`[Marker] Removed marker at ${new Date(removedTimestamp).toLocaleString()}`);
+                }
+                break; // State updated. UI will be synced separately.
+            }
+
+
+            case 'CLEAR_ALL_MARKERS': {
+                const markerCount = _state.markers.timestamps.length;
+                // 1. Update State
+                _state.markers.timestamps = [];
+
+                console.log(`[Marker] Cleared ${markerCount} markers`);
+                break; // State updated. UI will be synced separately.
+            }
+
             case 'INITIAL_LOAD':
                 // No specific state change needed; its purpose is to trigger a heavy update.
                 break;
@@ -806,6 +746,10 @@ window.NoiseSurveyApp = (function () {
         // --- Step 2: Decide which rendering path to take and execute it ---
         const isHeavyUpdate = ['VIEWPORT_CHANGE', 'PARAM_CHANGE', 'VIEW_TOGGLE', 'INITIAL_LOAD', 'VISIBILITY_CHANGE'].includes(action.type);
 
+        // Determine if markers need to be updated. This is done outside the heavy update block
+        // because marker updates can be triggered by light actions (add/remove marker).
+        const needsMarkerUpdate = ['ADD_MARKER', 'REMOVE_MARKER', 'CLEAR_ALL_MARKERS', 'INITIAL_LOAD'].includes(action.type);
+
         if (isHeavyUpdate) {
             _performHeavyUpdate();
         }
@@ -814,7 +758,13 @@ window.NoiseSurveyApp = (function () {
             _performLightUpdate();
         }
 
-        // --- Step 3: Handle specific side effects that occur after rendering ---
+        // --- Step 3: Perform specific post-rendering updates ---
+
+        // Sync marker visuals if the state changed or on initial load.
+        if (needsMarkerUpdate) {
+            _renderMarkers();
+        }
+
         if (action.type === 'TAP' || action.type === 'KEY_NAV') {
             const seekTime = action.payload.newTimestamp || action.payload.timestamp;
             seek(seekTime);
@@ -824,17 +774,17 @@ window.NoiseSurveyApp = (function () {
         }
     }
 
-        /**
-         * _updateActiveData()
-         * 
-         * Updates the active data for all visible charts. This involves:
-         * 
-         * 1. Updating the active line chart data for each visible chart.
-         * 2. Updating the active spectrogram data for each visible chart.
-         * 3. Determining the context (position and timestamp) for the frequency bar
-         *    from the currently active interaction (hover or tap), and calling
-         *    _updateActiveFreqBarData() to update the bar chart's data.
-         */
+    /**
+     * _updateActiveData()
+     * 
+     * Updates the active data for all visible charts. This involves:
+     * 
+     * 1. Updating the active line chart data for each visible chart.
+     * 2. Updating the active spectrogram data for each visible chart.
+     * 3. Determining the context (position and timestamp) for the frequency bar
+     *    from the currently active interaction (hover or tap), and calling
+     *    _updateActiveFreqBarData() to update the bar chart's data.
+     */
     function _updateActiveData() {
         _state.view.availablePositions.forEach(position => {
             const tsChartName = `figure_${position}_timeseries`;
@@ -937,11 +887,11 @@ window.NoiseSurveyApp = (function () {
                     const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs } = finalDataToUse;
                     const { min, max } = _state.view.viewport;
                     const targetChunkStartTimeStamp = (max + min) / 2 - (chunk_time_length * time_step / 2);
-                    
+
                     // A more robust way to find the index, defaulting to 0 if the view is before the data starts.
                     let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
                     if (chunkStartTimeIdx === -1) {
-                         // If the view is past the end of the data, show the last possible chunk.
+                        // If the view is past the end of the data, show the last possible chunk.
                         chunkStartTimeIdx = Math.max(0, n_times - chunk_time_length);
                     }
 
@@ -1085,6 +1035,13 @@ window.NoiseSurveyApp = (function () {
         }
     }
 
+
+
+    // =======================================================================================
+    //           RENDERERS
+    // =======================================================================================
+
+    
     /**
      * Updates lightweight UI overlays like lines and labels.
      * This is a LIGHT operation and can be called frequently.
@@ -1093,12 +1050,9 @@ window.NoiseSurveyApp = (function () {
         renderTapLines();
         renderLabels();
         renderHoverEffects();
-        renderMarkers();
+        renderSummaryTable();
     }
-
-    // =======================================================================================
-    //           RENDERERS
-    // =======================================================================================
+    
 
     function renderAllVisuals() {
         // This function is now deprecated. All rendering should go through _dispatchAction.
@@ -1179,10 +1133,13 @@ window.NoiseSurveyApp = (function () {
         });
     }
 
-    function renderMarkers() {
-        // Render markers across all charts
+    /**
+    * Iterates through all charts and tells them to synchronize their
+    * marker visuals with the central state.
+    */
+    function _renderMarkers() {
         _controllers.chartsByName.forEach(chart => {
-            chart.renderMarkers(_state.markers.timestamps);
+            chart.syncMarkers(_state.markers.timestamps, _state.markers.enabled);
         });
     }
 
@@ -1267,6 +1224,65 @@ window.NoiseSurveyApp = (function () {
         });
     }
 
+    function renderSummaryTable() {
+        const tableDiv = _models.summaryTableDiv;
+        if (!tableDiv) {
+            console.error("Summary table div model not found.");
+            return;
+        }
+
+        const { isActive, timestamp } = _state.interaction.tap;
+
+        const initialDoc = new DOMParser().parseFromString(tableDiv.text, 'text/html');
+        const headerCells = initialDoc.querySelectorAll("thead th:not(.position-header)");
+        const parameters = Array.from(headerCells).map(th => th.textContent.trim());
+
+        let tableBodyHtml = '';
+        
+        if (!isActive || !timestamp) {
+            tableBodyHtml = `<tr><td class='placeholder' colspan='${parameters.length + 1}'>Tap on a time series chart to populate this table.</td></tr>`;
+        } else {
+            // Add timestamp info row
+            const timestampStr = new Date(timestamp).toLocaleString();
+            tableBodyHtml += `<tr><td class='timestamp-info' colspan='${parameters.length + 1}'>Values at: ${timestampStr}</td></tr>`;
+            
+            _state.view.availablePositions.forEach(pos => {
+                let rowHtml = `<tr><td class="position-header">${pos}</td>`;
+                const activeLineData = _state.data.activeLineData[pos];
+                
+                if (activeLineData && activeLineData.Datetime && activeLineData.Datetime.length > 0) {
+                    const idx = _findAssociatedDateIndex(activeLineData, timestamp);
+
+                    if (idx !== -1) {
+                        parameters.forEach(param => {
+                            const value = activeLineData[param]?.[idx];
+                            const formattedValue = (value === null || value === undefined || isNaN(value))
+                                ? 'N/A'
+                                : parseFloat(value).toFixed(1);
+                            rowHtml += `<td>${formattedValue}</td>`;
+                        });
+                    } else {
+                         // Data exists for position, but not at this timestamp
+                        parameters.forEach(() => rowHtml += `<td>N/A</td>`);
+                    }
+                } else {
+                    // No data loaded for this position
+                    parameters.forEach(() => rowHtml += `<td>No Data</td>`);
+                }
+                rowHtml += `</tr>`;
+                tableBodyHtml += rowHtml;
+            });
+        }
+        
+        // Use regex to replace only the content of the <tbody> tag, preserving the header and style
+        const newTableHtml = tableDiv.text.replace(/<tbody>[\s\S]*<\/tbody>/, `<tbody>${tableBodyHtml}</tbody>`);
+        tableDiv.text = newTableHtml;
+    }
+            
+        
+
+        
+
     // =======================================================================================
     //           PUBLIC API
     // =======================================================================================
@@ -1277,7 +1293,6 @@ window.NoiseSurveyApp = (function () {
             console.log("[DEBUG] models: ", models); //DEBUG
             _models = models;
 
-            // Correctly populate availablePositions first
             _state.view.availablePositions = Array.from(new Set(models.charts.map(c => {
                 const parts = c.name.split('_');
                 return parts.length >= 2 ? parts[1] : null;
@@ -1292,12 +1307,10 @@ window.NoiseSurveyApp = (function () {
                 _controllers.positions[pos] = posController;
                 posController.charts.forEach(chart => {
                     _controllers.chartsByName.set(chart.name, chart);
-                    const checkbox = _models.visibilityCheckBoxes.find(cb => cb.name === `visibility_${chart.name}`);
+                    const checkbox = models.visibilityCheckBoxes.find(cb => cb.name === `visibility_${chart.name}`);
                     _state.view.chartVisibility[chart.name] = checkbox ? checkbox.active.includes(0) : true;
                 });
             });
-
-
 
             if (options?.enableKeyboardNavigation) {
                 setupKeyboardNavigation();
@@ -1337,7 +1350,6 @@ window.NoiseSurveyApp = (function () {
             onRangeUpdate: cb_obj => handleRangeUpdate(cb_obj),
             onVisibilityChange: (cb_obj, chartName) => handleVisibilityChange(cb_obj, chartName),
             onDoubleClick: cb_obj => handleDoubleClick(cb_obj),
-            onRightClick: cb_obj => handleRightClick(cb_obj),
         },
         handleParameterChange: value => handleParameterChange(value),
         handleViewToggle: (active, widget) => handleViewToggle(active, widget),

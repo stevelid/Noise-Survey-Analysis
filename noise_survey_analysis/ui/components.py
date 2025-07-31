@@ -213,21 +213,6 @@ class TimeSeriesComponent:
         """)
         self.figure.js_on_event('doubletap', double_click_js)
         
-        # Right-click event for removing markers (using pan_end as right-click alternative)
-        # Note: Bokeh doesn't have native right-click, so we'll use a custom approach
-        right_click_js = CustomJS(code=f"""
-                // Check if this is a right-click by examining the event
-                if (cb_obj.sx !== undefined && cb_obj.sy !== undefined) {{
-                    // This is a workaround for right-click detection
-                    if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onRightClick) {{
-                        window.NoiseSurveyApp.interactions.onRightClick(cb_obj);
-                    }} else {{
-                        console.error('NoiseSurveyApp.interactions.onRightClick not defined!');
-                    }}
-                }}
-        """)
-        # We'll use a custom approach for right-click detection in the hover tool
-
         hover_js = CustomJS(code=f"""
                 if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onHover) {{
                 window.NoiseSurveyApp.interactions.onHover(cb_data, 'figure_{self.name_id}');
@@ -1100,3 +1085,71 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         "volume_boost_button": volume_boost_button,
         "layout": controls_layout
     }
+
+class SummaryTableComponent:
+    """
+    A component that displays a summary table of parameter values for all 
+    positions at a specific tapped timestamp. The content is entirely 
+    controlled by JavaScript.
+    """
+    def __init__(self, position_names: List[str], parameters: List[str], compact: bool = True):
+        self.settings = CHART_SETTINGS
+        self.position_names = position_names
+        self.parameters = parameters
+        self.compact = compact
+        
+    
+        initial_html = self._create_initial_html()
+
+        self.summary_div = Div(
+            text = initial_html,
+            name = "summary_table_div",
+            width=self.settings.get('low_freq_width', 1200) # Match the width of the charts
+        )
+
+        logger.info(f"SummaryTableComponent initialized with {len(parameters)} parameters, compact={compact}.")
+
+    def _create_initial_html(self) -> str:
+        """Generates the initial HTML for the table with a placeholder message."""
+        # Responsive styling based on compact mode
+        font_size = "0.8em" if self.compact else "0.9em"
+        padding = "4px" if self.compact else "8px"
+        margin_bottom = "10px" if self.compact else "20px"
+        
+        style = f"""
+        <style>
+            .summary-html-table {{ border-collapse: collapse; width: 100%; font-size: {font_size}; table-layout: fixed; margin-top: 10px; margin-bottom: {margin_bottom};}}
+            .summary-html-table th, .summary-html-table td {{ border: 1px solid #ddd; padding: {padding}; text-align: center; }}
+            .summary-html-table th {{ background-color: #f2f2f2; font-weight: bold; }}
+            .summary-html-table .position-header {{ text-align: left; font-weight: bold; }}
+            .summary-html-table .placeholder {{ color: #888; font-style: italic; }}
+            .summary-html-table .timestamp-info {{ background-color: #f9f9f9; font-size: 0.85em; color: #666; }}
+        </style>
+        """
+        
+        header_row = "".join(f"<th>{param}</th>" for param in self.parameters)
+        
+        placeholder_row = f"<td class='placeholder' colspan='{len(self.parameters) + 1}'>Tap on a time series chart to populate this table.</td>"
+
+        table_html = f"""
+        {style}
+        <table class="summary-html-table">
+            <thead>
+                <tr>
+                    <th class="position-header">Position</th>
+                    {header_row}
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    {placeholder_row}
+                </tr>
+            </tbody>
+        </table>
+        """
+        return table_html
+
+    def layout(self):
+        """Returns the Bokeh layout object for this component."""
+        return self.summary_div
+        
