@@ -21,7 +21,7 @@ from noise_survey_analysis.core.app_callbacks import AppCallbacks, session_destr
 from noise_survey_analysis.visualization.dashBuilder import DashBuilder
 
 # --- Configure Logging ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def find_lowest_common_folder(paths: list[str]) -> str | None:
@@ -96,7 +96,7 @@ def generate_static_html():
     app_data = DataManager(source_configurations=source_configs)
 
     # 2. Instantiate builder
-    dash_builder = DashBuilder(app_callbacks=None, audio_control_source=None, audio_status_source=None)
+    dash_builder = DashBuilder(audio_control_source=None, audio_status_source=None)
 
     # 3. Create and build document
     static_doc = Document()
@@ -115,6 +115,17 @@ def create_app(doc):
     """
     This function is the entry point for the LIVE Bokeh server application.
     """
+    # Configure logging for Bokeh server environment
+    # Bokeh pre-configures logging, so we need explicit handlers to ensure visibility
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+    
+    logger.setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.DEBUG)  # Ensure root logger allows DEBUG messages
+    logger.propagate = False  # Prevent duplicate output
+    
     logger.info("--- New client session started. Creating live application instance. ---")
     
     # 1. DATA LOADING
@@ -139,8 +150,10 @@ def create_app(doc):
     
     # 3. UI BUILD
     logger.info("Building dashboard UI for live session...")
-    dash_builder = DashBuilder(app_callbacks, audio_control_source, audio_status_source)
+    dash_builder = DashBuilder(audio_control_source, audio_status_source)
     dash_builder.build_layout(doc, app_data, CHART_SETTINGS)
+    doc.add_root(audio_control_source)
+    doc.add_root(audio_status_source)
     
     # 4. FINAL WIRING
     logger.info("Attaching final callbacks for live session...")
@@ -149,6 +162,7 @@ def create_app(doc):
     setattr(doc.session_context, '_app_callback_manager', app_callbacks)
 
     logger.info("--- Live application setup complete for this session. ---")
+    
 
 
 # ==============================================================================

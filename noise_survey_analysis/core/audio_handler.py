@@ -10,8 +10,6 @@ import time
 import datetime
 import threading
 import re
-import wave
-import contextlib
 from typing import Callable, Optional, List, Tuple
 import logging
 import vlc
@@ -27,14 +25,13 @@ class AudioPlaybackHandler:
     Includes a simple time lockout for the play method to prevent rapid successive calls.
     """
 
-    def __init__(self, position_data: dict, play_lockout_interval: float = 0.2):
+    def __init__(self, position_data: dict):
         """
         Initialize the audio playback handler.
 
         Args:
             position_data (dict): The main data dictionary containing all positions,
                                   their dataframes, and audio paths.
-            play_lockout_interval (float): Minimum time between play commands.
         """
         self.file_info_by_position = {}
         self.current_position = None
@@ -51,9 +48,6 @@ class AudioPlaybackHandler:
             self.vlc_instance = self.player = None
             return
 
-        # Index audio files for all positions at initialization
-        self._index_all_positions(position_data)
-
         self._is_playing = False
         self.current_file = None
         self.media_start_time = None
@@ -61,94 +55,71 @@ class AudioPlaybackHandler:
         self.playback_monitor = None
         self.position_callback = None
         self.stop_monitor = False
-        self.play_lockout_interval = play_lockout_interval
-        self._last_play_execution_start_time: float = 0.0
-        self._play_lock = threading.Lock()
 
-    def _get_wav_duration(self, filepath: str) -> float:
-        """Reads the duration in seconds from a WAV file's header."""
-        try:
-            with contextlib.closing(wave.open(filepath, 'r')) as f:
-                frames = f.getnframes()
-                rate = f.getframerate()
-                return frames / float(rate) if rate > 0 else 0
-        except wave.Error as e:
-            logger.warning(f"Could not read duration from {os.path.basename(filepath)}: {e}. Defaulting to 0s.")
-            return 0
+        self._index_from_position_data(position_data)
 
-    def _index_all_positions(self, position_data: dict):
-            """Iterates through all positions and indexes their audio files."""
-            for position_name, data_dict in position_data.items():
-                audio_path = data_dict.audio_files_path
-                if not audio_path or not os.path.isdir(audio_path):
-                    continue
+    def _index_from_position_data(self, position_data: dict):
+        """
+        Iterates through all positions and indexes their audio files
+        using the pre-parsed audio_files_list DataFrame.
+        """
+        for position_name, data_dict in position_data.items():
+            if not getattr(data_dict, 'has_audio_files', False):
+                continue
 
-                logger.info(f"Indexing audio for position '{position_name}' in path: {audio_path}")
-                
-                all_filenames = os.listdir(audio_path)
-                nti_files = []
-                svan_files_to_process = []
+            logger.info(f"Indexing audio files for position '{position_name}'.")
 
-                for filename in all_filenames:
-                    if "_audio_" in filename.lower() and filename.lower().endswith('.wav'):
-                        filepath = os.path.join(audio_path, filename)
-                        mod_time = os.path.getmtime(filepath)
-                        start_dt = datetime.datetime.fromtimestamp(mod_time)
-                        duration = 12 * 3600
-                        nti_files.append((filepath, start_dt, duration))
-                    
-                    elif filename.lower().startswith('r') and filename.lower().endswith('.wav'):
-                        match = re.search(r'R(\d+)\.wav', filename, re.IGNORECASE)
-                        if match:
-                            filepath = os.path.join(audio_path, filename)
-                            svan_files_to_process.append({
-                                'path': filepath,
-                                'num': int(match.group(1)),
-                                'duration': self._get_wav_duration(filepath)
-                            })
-                
-                processed_svan_files = []
-                if svan_files_to_process:
-                    anchor_df = data_dict.get('overview')
-                    if anchor_df is None or anchor_df.empty:
-                        anchor_df = data_dict.get('log')
+            audio_df = data_dict.audio_files_list
+            files_to_process = []
 
-                    anchor_time = None
-                    if anchor_df is not None and not anchor_df.empty and 'Datetime' in anchor_df.columns:
-                        anchor_time = anchor_df['Datetime'].min()
+            is_svan = any(audio_df['filename'].str.lower().str.startswith('r'))
 
-                    if anchor_time:
-                        svan_files_to_process.sort(key=lambda x: x['num'])
-                        current_time = anchor_time
-                        for svan_file in svan_files_to_process:
-                            if svan_file['duration'] > 0:
-                                # Log the start time being assigned to each file for debugging
-                                logger.info(f"Added Svan file for position '{position_name}': {os.path.basename(svan_file['path'])} (start: {current_time}, duration: {svan_file['duration']})")
-                                processed_svan_files.append((svan_file['path'], current_time, svan_file['duration']))
-                                current_time += datetime.timedelta(seconds=svan_file['duration'])
-                    else:
-                        logger.warning(f"No measurement data found for position '{position_name}'. Cannot timeline-sync Svan audio files.")
-                
-                combined_files = nti_files + processed_svan_files
-                combined_files.sort(key=lambda x: x[1])
-                self.file_info_by_position[position_name] = combined_files
-                logger.info(f"Indexed {len(combined_files)} audio files for position '{position_name}'.")
+            if is_svan:
+                anchor_df = None
+                if getattr(data_dict, 'has_overview_totals', False):
+                    anchor_df = data_dict.overview_totals
+                elif getattr(data_dict, 'has_log_totals', False):
+                    anchor_df = data_dict.log_totals
+
+                anchor_time = anchor_df['Datetime'].min() if anchor_df is not None and not anchor_df.empty else None
+
+                if anchor_time:
+                    current_time = anchor_time
+                    for _, row in audio_df.iterrows():
+                        duration = row['duration_sec']
+                        if duration > 0:
+                            files_to_process.append((row['full_path'], current_time, duration))
+                            current_time += datetime.timedelta(seconds=duration)
+                else:
+                    logger.warning(f"No measurement data found for position '{position_name}'. Cannot timeline-sync Svan audio files.")
+            
+            else: # Assume NTi or other file types where modified time is the start time
+                for _, row in audio_df.iterrows():
+                    # For NTi, the start time is derived from the file's modification time.
+                    # The duration is fixed (e.g., 12 hours) as it's not in the file header.
+                    start_dt = row['modified_time']
+                    duration = 12 * 3600  # Default NTi duration
+                    files_to_process.append((row['full_path'], start_dt, duration))
+
+            files_to_process.sort(key=lambda x: x[1]) # Sort by start time
+            self.file_info_by_position[position_name] = files_to_process
+            logger.info(f"Indexed {len(files_to_process)} audio files for position '{position_name}'.")
 
     def set_current_position(self, position: str) -> bool:
-        """Sets the active position to get audio from."""
-        if position == self.current_position:
-            return True
-        if self._is_playing:
-            self.stop()
-        
-        if position in self.file_info_by_position:
-            self.current_position = position
-            logger.info(f"Audio position set to '{position}'.")
-            return True
-        else:
-            logger.warning(f"No indexed audio files found for position '{position}'.")
-            self.current_position = None
-            return False
+         """Sets the active position to get audio from."""
+         if position == self.current_position:
+             return True
+         if self._is_playing:
+             self.stop()
+         
+         if position in self.file_info_by_position:
+             self.current_position = position
+             logger.info(f"Audio position set to '{position}'.")
+             return True
+         else:
+             logger.warning(f"No indexed audio files found for position '{position}'.")
+             self.current_position = None
+             return False
 
     def _find_file_for_timestamp(self, timestamp: datetime.datetime, position: Optional[str] = None) -> Tuple[Optional[str], float, Optional[datetime.datetime], Optional[float]]:
         """Finds the correct audio file and offset for a timestamp in the current position."""
@@ -160,7 +131,17 @@ class AudioPlaybackHandler:
             return None, 0, None, None
 
         # Sort files by start time to ensure correct chronological processing
-        sorted_files = sorted(self.file_info_by_position[target_position], key=lambda x: x[1])
+        sorted_files = self.file_info_by_position[target_position]
+
+        # Handle case where timestamp is None (play from beginning)
+        if timestamp is None:
+            if sorted_files:
+                filepath, start_time, duration_sec = sorted_files[0]
+                logger.info("No timestamp provided. Starting playback from the first audio file.")
+                return filepath, 0, start_time, duration_sec
+            else:
+                logger.warning(f"Play called with no timestamp and no audio files available for position '{target_position}'.")
+                return None, 0, None, None
 
         # Find the file that contains the timestamp
         for filepath, start_time, duration_sec in sorted_files:
@@ -188,110 +169,98 @@ class AudioPlaybackHandler:
         logger.warning(f"Timestamp {timestamp} is outside the playable range for position '{target_position}'.")
         return None, 0, None, None
 
-    def play(self, timestamp: datetime.datetime, position_callback: Optional[Callable] = None) -> bool:
+    def play(self, timestamp: Optional[datetime.datetime], position_callback: Optional[Callable] = None) -> bool:
         """
-        Play audio starting at the specified timestamp, subject to a time lockout.
-        If called too soon after a previous successful execution, it will be blocked.
+        Play audio starting at the specified timestamp.
+        If timestamp is None, plays from the start of the first available file.
 
         Parameters:
         timestamp: Datetime object for the desired playback position
         position_callback: Optional callback function to report playback position
 
         Returns:
-        bool: True if playback was successfully initiated, False if blocked by lockout or an error occurred.
+        bool: True if playback was successfully initiated, False if an error occurred.
         """
-        # Use a lock to ensure the check and update of the lockout time is atomic
-        with self._play_lock:
-            now = time.monotonic() # Use monotonic clock for interval checks
+        logger.debug(f"Play call proceeding. Timestamp: {timestamp}")
 
-            # --- Lockout Check ---
-            if now < self._last_play_execution_start_time + self.play_lockout_interval:
-                logger.debug(f"Play call blocked by lockout ({(self._last_play_execution_start_time + self.play_lockout_interval - now):.3f}s remaining)")
-                return False # Blocked
+        # Stop existing playback cleanly before starting new playback.
+        # This is the key to handling rapid switching between positions.
+        self._perform_stop_actions()
 
-            # --- Update Lockout Time ---
-            # Record the start time of *this* execution attempt *before* starting long operations
-            self._last_play_execution_start_time = now
-            logger.debug(f"Play call proceeding. Timestamp: {timestamp}") # Use regular logger
+        # Find the correct file and offset using the current position's file_info
+        filepath, offset_seconds, file_start_time, file_duration = self._find_file_for_timestamp(timestamp, self.current_position)
+        if not filepath:
+            logger.warning(f"No audio file found for timestamp: {timestamp} in position: {self.current_position or 'default'}")
+            self._is_playing = False # Ensure state is correct
+            return False # Indicate failure
 
-            # --- Start of Original Core Play Logic (modified slightly) ---
-            # Stop existing playback cleanly
-            self._perform_stop_actions() # Use helper
+        # Output the current file being played to terminal
+        if self.current_file != filepath:
+            position_info = f" (position: {self.current_position})" if self.current_position else ""
+            logger.info(f"Playing file: {os.path.basename(filepath)}{position_info}")
+            print(f"Now playing: {os.path.basename(filepath)}{position_info}")
 
-            # Find the correct file and offset using the current position's file_info
-            filepath, offset_seconds, file_start_time, file_duration = self._find_file_for_timestamp(timestamp, self.current_position)
-            if not filepath:
-                logger.warning(f"No audio file found for timestamp: {timestamp} in position: {self.current_position or 'default'}")
-                self._is_playing = False # Ensure state is correct
-                return False # Indicate failure
+        # Store current state
+        self.current_file = filepath
+        self.media_start_time = file_start_time
+        self.position_callback = position_callback # Store latest callback
+        self.current_file_duration = file_duration
 
-            # Output the current file being played to terminal
-            if self.current_file != filepath:
-                position_info = f" (position: {self.current_position})" if self.current_position else ""
-                logger.info(f"Playing file: {os.path.basename(filepath)}{position_info}")
-                print(f"Now playing: {os.path.basename(filepath)}{position_info}")
-
-            # Store current state
-            self.current_file = filepath
-            self.media_start_time = file_start_time
-            self.position_callback = position_callback # Store latest callback
-            self.current_file_duration = file_duration
-
-            # Create a new media and set it to the player
-            try:
-                media = self.vlc_instance.media_new(filepath)
-                if not media:
-                    logger.error(f"VLC failed to create media for: {filepath}")
-                    self._is_playing = False
-                    return False
-                self.player.set_media(media)
-                media.release()
-
-                # Start playback
-                play_result = self.player.play()
-                if play_result == -1:
-                    logger.error("VLC failed to play media.")
-                    self._is_playing = False
-                    return False
-
-                # Wait briefly for state update
-                time.sleep(0.05)
-
-                # Set the time position (in milliseconds) after starting play
-                set_time_result = self.player.set_time(int(offset_seconds * 1000))
-                if set_time_result == -1:
-                    logger.warning(f"VLC failed to set time to {int(offset_seconds * 1000)}ms.")
-                    # Playback might continue from beginning, but consider it 'initiated'
-
-                # Short pause for VLC processing
-                time.sleep(0.05)
-                final_state = self.player.get_state()
-                if final_state not in [vlc.State.Playing, vlc.State.Buffering]:
-                     logger.warning(f"VLC player not in Playing/Buffering state after play/seek (State: {final_state}).")
-                     # Decide if this constitutes a failure
-                     # return False # Optional: Treat this as failure
-
-            except Exception as e:
-                logger.error(f"Error during VLC media setup/play/seek: {e}", exc_info=True)
+        # Create a new media and set it to the player
+        try:
+            media = self.vlc_instance.media_new(filepath)
+            if not media:
+                logger.error(f"VLC failed to create media for: {filepath}")
                 self._is_playing = False
-                return False # Indicate failure
+                return False
+            self.player.set_media(media)
+            media.release()
 
-            self._is_playing = True
-            self.stop_monitor = False
+            # Start playback
+            play_result = self.player.play()
+            if play_result == -1:
+                logger.error("VLC failed to play media.")
+                self._is_playing = False
+                return False
 
-            # Start the monitor thread (ensure previous one is stopped)
-            if self.playback_monitor and self.playback_monitor.is_alive():
-                 logger.warning("Previous monitor thread still alive before starting new one.")
-                 self.stop_monitor = True
-                 self.playback_monitor.join(0.1)
+            # Wait briefly for state update
+            time.sleep(0.05)
 
-            self.stop_monitor = False # Reset flag for new thread
-            self.playback_monitor = threading.Thread(target=self._monitor_playback)
-            self.playback_monitor.daemon = True
-            self.playback_monitor.start()
+            # Set the time position (in milliseconds) after starting play
+            set_time_result = self.player.set_time(int(offset_seconds * 1000))
+            if set_time_result == -1:
+                logger.warning(f"VLC failed to set time to {int(offset_seconds * 1000)}ms.")
+                # Playback might continue from beginning, but consider it 'initiated'
 
-            return True # Indicate successful initiation
-            # --- End of Original Core Play Logic ---
+            # Short pause for VLC processing
+            time.sleep(0.05)
+            final_state = self.player.get_state()
+            if final_state not in [vlc.State.Playing, vlc.State.Buffering]:
+                    logger.warning(f"VLC player not in Playing/Buffering state after play/seek (State: {final_state}).")
+                    # Decide if this constitutes a failure
+                    # return False # Optional: Treat this as failure
+
+        except Exception as e:
+            logger.error(f"Error during VLC media setup/play/seek: {e}", exc_info=True)
+            self._is_playing = False
+            return False # Indicate failure
+
+        self._is_playing = True
+        self.stop_monitor = False
+
+        # Start the monitor thread (ensure previous one is stopped)
+        if self.playback_monitor and self.playback_monitor.is_alive():
+                logger.warning("Previous monitor thread still alive before starting new one.")
+                self.stop_monitor = True # Tell the old one to stop
+                self.playback_monitor.join(0.5) # wait a bit for it. 
+
+        self.stop_monitor = False # Reset flag for new thread
+        self.playback_monitor = threading.Thread(target=self._monitor_playback)
+        self.playback_monitor.daemon = True
+        self.playback_monitor.start()
+
+        return True # Indicate successful initiation
+        # --- End of Original Core Play Logic ---
 
     def pause(self):
         if self._is_playing and self.player.is_playing():
@@ -400,10 +369,8 @@ class AudioPlaybackHandler:
             logger.error(f"Error releasing VLC resources: {e}", exc_info=True)
             # Don't re-raise - we want to continue cleanup even if release fails
 
-    # --- _monitor_playback remains the same (uses self.play which is now locked out) ---
     def _monitor_playback(self):
-        # ... (implementation unchanged)
-        last_file = self.current_file
+        last_file = None
         while not self.stop_monitor and self.player.get_media():
             current_state = self.player.get_state()
             if current_state in [vlc.State.Ended, vlc.State.Stopped, vlc.State.Error]:
@@ -413,37 +380,39 @@ class AudioPlaybackHandler:
             if current_state not in [vlc.State.Playing, vlc.State.Paused, vlc.State.Buffering]:
                  logger.debug(f"Monitor: Player in unexpected state: {current_state}")
 
+            if last_file is None or self.current_file != last_file:
+                logger.info(f"Monitor: File changed to: {os.path.basename(self.current_file)}")
+                last_file = self.current_file
+
             current_pos = self.get_current_position()
-            if current_pos and self.media_start_time and self.current_file_duration:
+            
+            if not current_pos:
+                time.sleep(0.1)
+                continue
+            try:    
+                file_end_time = self.media_start_time + datetime.timedelta(seconds=self.current_file_duration)
+                #check if we are within 200ms of the end
+                if current_pos >= (file_end_time - datetime.timedelta(milliseconds=200)):
+                     logger.info(f"Monitor: Reached end of file duration for {os.path.basename(self.current_file)}. Attempting to play next part.")
+                     next_timestamp = current_pos + datetime.timedelta(milliseconds=100)
+                     # Call the main play method (which includes the lockout)
+                     if not self.play(next_timestamp, self.position_callback):
+                          logger.warning("Monitor: Lockout prevented automatic transition to next file.")
+                     # Exit this monitor thread regardless, play starts a new one if successful
+                     break
+            except (TypeError, AttributeError) as e:
+                 logger.error(f"Monitor: Error comparing datetimes for file end check: {e}.")
+
+            if self.position_callback:
                 try:
-                    file_end_time = self.media_start_time + datetime.timedelta(seconds=self.current_file_duration)
-                    #check if we are within 200ms of the end
-                    if current_pos >= (file_end_time - datetime.timedelta(milliseconds=200)):
-                         logger.info(f"Monitor: Reached end of file duration for {os.path.basename(self.current_file)}. Attempting to play next part.")
-                         next_timestamp = current_pos + datetime.timedelta(milliseconds=100)
-                         # Call the main play method (which includes the lockout)
-                         if not self.play(next_timestamp, self.position_callback):
-                              logger.warning("Monitor: Lockout prevented automatic transition to next file.")
-                         # Exit this monitor thread regardless, play starts a new one if successful
-                         break
-                except TypeError as e:
-                     logger.error(f"Monitor: Error comparing datetimes for file end check: {e}.")
+                    self.position_callback(current_pos)
+                except Exception as e:
+                     logger.error(f"Error in position_callback: {e}", exc_info=True)
+                     self.position_callback = None
 
-                if self.position_callback:
-                    try:
-                        self.position_callback(current_pos)
-                    except Exception as e:
-                         logger.error(f"Error in position_callback: {e}", exc_info=True)
-                         self.position_callback = None
-
-                if self.current_file != last_file:
-                    logger.info(f"Monitor: File changed to: {os.path.basename(self.current_file)}")
-                    last_file = self.current_file
             time.sleep(0.1)
 
-    # --- set_playback_rate remains the same ---
     def set_playback_rate(self, rate: float) -> bool:
-        # ... (implementation unchanged)
         if not self.player.get_media():
             logger.warning("Cannot change playback rate: No media loaded")
             return False
@@ -451,21 +420,13 @@ class AudioPlaybackHandler:
             logger.warning(f"Invalid playback rate: {rate}. Must be positive.")
             return False
         try:
-            result = self.player.set_rate(rate)
-            if result == 0:
-                 current_rate = self.player.get_rate()
-                 logger.info(f"Playback rate set to {current_rate}x")
-                 return True
-            else:
-                 logger.error(f"VLC failed to set playback rate (returned {result})")
-                 return False
+            self.player.set_rate(rate)
+            return True
         except Exception as e:
             logger.error(f"Error setting playback rate: {e}")
             return False
 
-    # --- get_playback_rate remains the same ---
     def get_playback_rate(self) -> float:
-        # ... (implementation unchanged)
         if not self.player.get_media():
             return 1.0
         try:
@@ -494,10 +455,10 @@ class AudioPlaybackHandler:
         volume_percent = volume_map.get(db_level, 100) # Default to 100% (0dB)
 
         logger.info(f"Setting amplification to +{db_level}dB (VLC Volume: {volume_percent}%)")
-        result = self.player.audio_set_volume(volume_percent) == 0
-        if result:
+        if self.player.audio_set_volume(volume_percent) == 0:
             self.current_amplification = db_level
-        return result
+            return True
+        return False
 
     def get_time(self):
         return self.player.get_time()

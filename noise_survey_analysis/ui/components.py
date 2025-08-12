@@ -195,29 +195,29 @@ class TimeSeriesComponent:
     def _attach_callbacks(self):
         """Creates and attaches all JS callbacks for this specific component."""
         tap_js = CustomJS(code="""
-                if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onTap) {
-                window.NoiseSurveyApp.interactions.onTap(cb_obj);
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleTap) {
+                window.NoiseSurveyApp.eventHandlers.handleTap(cb_obj);
                 } else {
-                    console.error('NoiseSurveyApp.interactions.onTap not defined!');
+                    console.error('NoiseSurveyApp.eventHandlers.handleTap not defined!');
                 }
         """)
         self.figure.js_on_event('tap', tap_js)
 
         # Double-click event for adding markers
         double_click_js = CustomJS(code="""
-                if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onDoubleClick) {
-                window.NoiseSurveyApp.interactions.onDoubleClick(cb_obj);
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleDoubleClick) {
+                window.NoiseSurveyApp.eventHandlers.handleDoubleClick(cb_obj);
                 } else {
-                    console.error('NoiseSurveyApp.interactions.onDoubleClick not defined!');
+                    console.error('NoiseSurveyApp.eventHandlers.handleDoubleClick not defined!');
                 }
         """)
         self.figure.js_on_event('doubletap', double_click_js)
         
         hover_js = CustomJS(code=f"""
-                if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onHover) {{
-                window.NoiseSurveyApp.interactions.onHover(cb_data, 'figure_{self.name_id}');
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleChartHover) {{
+                window.NoiseSurveyApp.eventHandlers.handleChartHover(cb_data, 'figure_{self.name_id}');
                 }} else {{
-                    console.error('NoiseSurveyApp.interactions.onHover not defined!');
+                    console.error('NoiseSurveyApp.eventHandlers.handleChartHover not defined!');
                 }}
         """)
         hover_tool = HoverTool(
@@ -446,29 +446,29 @@ class SpectrogramComponent:
     def _attach_callbacks(self):
         """Creates and attaches all JS callbacks for this specific component."""
         tap_js = CustomJS(code="""
-                if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onTap) {
-                window.NoiseSurveyApp.interactions.onTap(cb_obj);
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleTap) {
+                window.NoiseSurveyApp.eventHandlers.handleTap(cb_obj);
                 } else {
-                    console.error('NoiseSurveyApp.interactions.onTap not defined!');
+                    console.error('NoiseSurveyApp.eventHandlers.handleTap not defined!');
                 }
         """)
         self.figure.js_on_event('tap', tap_js)
 
         # Double-click event for adding markers
         double_click_js = CustomJS(code="""
-                if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onDoubleClick) {
-                window.NoiseSurveyApp.interactions.onDoubleClick(cb_obj);
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleDoubleClick) {
+                window.NoiseSurveyApp.eventHandlers.handleDoubleClick(cb_obj);
                 } else {
-                    console.error('NoiseSurveyApp.interactions.onDoubleClick not defined!');
+                    console.error('NoiseSurveyApp.eventHandlers.handleDoubleClick not defined!');
                 }
         """)
         self.figure.js_on_event('doubletap', double_click_js)
 
         hover_js = CustomJS(code=f"""
-                if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onHover) {{
-                window.NoiseSurveyApp.interactions.onHover(cb_data, 'figure_{self.name_id}');
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleChartHover) {{
+                window.NoiseSurveyApp.eventHandlers.handleChartHover(cb_data, 'figure_{self.name_id}');
                 }} else {{
-                    console.error('NoiseSurveyApp.interactions.onHover not defined!');
+                    console.error('NoiseSurveyApp.eventHandlers.handleChartHover not defined!');
                 }}
         """)
         hover_tool = HoverTool(
@@ -511,10 +511,10 @@ class ControlsComponent:
             active=True
         )
         
-        toggle.js_on_change("active", CustomJS(args={"toggle_widget": toggle}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.handleViewToggle) {
-                window.NoiseSurveyApp.handleViewToggle(cb_obj.active, toggle_widget); // Pass the toggle widget itself
+        toggle.js_on_change("active", CustomJS(args={"toggle_widget": toggle}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleViewToggle) {
+                window.NoiseSurveyApp.eventHandlers.handleViewToggle(cb_obj.active, toggle_widget); // Pass the toggle widget itself
             } else {
-                console.error('window.NoiseSurveyApp.handleViewToggle function not found!');
+                console.error('window.NoiseSurveyApp.eventHandlers.handleViewToggle function not found!');
             }"""))
         return toggle
 
@@ -527,10 +527,10 @@ class ControlsComponent:
             active=True
         )
         
-        toggle.js_on_change("active", CustomJS(args={"toggle_widget": toggle}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.handleHoverToggle) {
-                window.NoiseSurveyApp.handleHoverToggle(cb_obj.active, toggle_widget); // Pass the toggle widget itself
+        toggle.js_on_change("active", CustomJS(args={"toggle_widget": toggle}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleHoverToggle) {
+                window.NoiseSurveyApp.eventHandlers.handleHoverToggle(cb_obj.active, toggle_widget); // Pass the toggle widget itself
             } else {
-                console.error('window.NoiseSurveyApp.handleHoverToggle function not found!');
+                console.error('window.NoiseSurveyApp.eventHandlers.handleHoverToggle function not found!');
             }"""))
         return toggle
     
@@ -542,10 +542,10 @@ class ControlsComponent:
             name="clear_markers_button"
         )
         
-        button.js_on_click(CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.clearAllMarkers) {
-                window.NoiseSurveyApp.clearAllMarkers();
+        button.js_on_click(CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.clearAllMarkers) {
+                window.NoiseSurveyApp.eventHandlers.clearAllMarkers();
             } else {
-                console.error('window.NoiseSurveyApp.clearAllMarkers function not found!');
+                console.error('window.NoiseSurveyApp.eventHandlers.clearAllMarkers function not found!');
             }"""))
         return button
 
@@ -556,10 +556,10 @@ class ControlsComponent:
             width=150,
             name="global_parameter_selector"
         )
-        select.js_on_change("value", CustomJS(args={"select_widget": select}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.handleParameterChange) {
-                window.NoiseSurveyApp.handleParameterChange(cb_obj.value, select_widget); // Pass the select widget itself
+        select.js_on_change("value", CustomJS(args={"select_widget": select}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleParameterChange) {
+                window.NoiseSurveyApp.eventHandlers.handleParameterChange(cb_obj.value, select_widget); // Pass the select widget itself
             } else {
-                console.error('window.NoiseSurveyApp.handleParameterChange function not found!');
+                console.error('window.NoiseSurveyApp.eventHandlers.handleParameterChange function not found!');
             }""")) #active for overview, inactive for log
         return select
 
@@ -586,10 +586,10 @@ class ControlsComponent:
 
         # --- Attach JS Callback ---
         checkbox_js_callback = CustomJS(args=dict(chart_name=chart_name),code=f"""
-                if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onVisibilityChange) {{
-                window.NoiseSurveyApp.interactions.onVisibilityChange(cb_obj, chart_name);
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleVisibilityChange) {{
+                window.NoiseSurveyApp.eventHandlers.handleVisibilityChange(cb_obj, chart_name);
                 }} else {{
-                    console.error('NoiseSurveyApp.interactions.onVisibilityChange not defined!');
+                    console.error('NoiseSurveyApp.eventHandlers.handleVisibilityChange not defined!');
                 }}
             """)
         checkbox.js_on_change("active", checkbox_js_callback)
@@ -1045,13 +1045,14 @@ def create_audio_controls_for_position(position_id: str) -> dict:
     )
 
     play_toggle_callback = CustomJS(
-        args=dict(position_id=position_id),
+        args=dict(position_id=position_id, button=play_toggle),
         code="""
-            if (window.NoiseSurveyApp && window.NoiseSurveyApp.controls && window.NoiseSurveyApp.controls.togglePlayPause) {
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.togglePlayPause) {
                 // Call the togglePlayPause function that we exposed on the main app object
-                window.NoiseSurveyApp.controls.togglePlayPause(position_id);
+                // Pass the button's new active state to the handler
+                window.NoiseSurveyApp.eventHandlers.togglePlayPause(position_id, button.active);
             } else {
-                console.error('NoiseSurveyApp.controls.togglePlayPause function not found!');
+                console.error('NoiseSurveyApp.eventHandlers.togglePlayPause function not found!');
             }
         """
     )
@@ -1063,13 +1064,34 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         width=60,
         name=f"playback_rate_{position_id}"
     )
+    playback_rate_button.js_on_click(CustomJS(
+        args=dict(position_id=position_id),
+        code="""
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handlePlaybackRateChange) {
+                window.NoiseSurveyApp.eventHandlers.handlePlaybackRateChange(position_id);
+            } else {
+                console.error('NoiseSurveyApp.eventHandlers.handlePlaybackRateChange function not found!');
+            }
+        """
+    ))
 
     # Volume Boost Toggle Button
     volume_boost_button = Toggle(
         label="Boost",
         width=70,
-        name=f"volume_boost_{position_id}"
+        name=f"volume_boost_{position_id}",
+        active=False # Default to off
     )
+    volume_boost_button.js_on_change('active', CustomJS(
+        args=dict(position_id=position_id, button=volume_boost_button),
+        code="""
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle) {
+                window.NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle(position_id, button.active);
+            } else {
+                console.error('NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle function not found!');
+            }
+        """
+    ))
 
     # Layout for the controls
     controls_layout = Row(
@@ -1079,6 +1101,7 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         name=f"audio_controls_{position_id}"
     )
 
+    logger.debug(f"Audio controls created for position '{position_id}'.")
     return {
         "play_toggle": play_toggle,
         "playback_rate_button": playback_rate_button,

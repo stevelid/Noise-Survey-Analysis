@@ -1,0 +1,342 @@
+// noise_survey_analysis/static/js/data-processors.js
+
+/**
+ * @fileoverview Contains data processing and transformation functions for the Noise Survey app.
+ * These functions are responsible for the "heavy lifting" of data manipulation. They take
+ * the core application state (e.g., current viewport, selected parameters) and the raw
+ * source data, then compute the derived "active" data slices that are ready to be
+ * rendered by the UI. This isolates complex calculations from state management and rendering.
+ */
+
+window.NoiseSurveyApp = window.NoiseSurveyApp || {};
+(function (app) {
+    'use strict';
+
+    const MAX_LINE_POINTS_TO_RENDER = 5000;
+    const MAX_SPECTRAL_POINTS_TO_RENDER = 5000;
+
+    const _models = app.models;
+
+
+    /**
+     * _updateActiveData()
+     * 
+     * Updates the active data for all visible charts. This involves:
+     * 
+     * 1. Updating the active line chart data for each visible chart.
+     * 2. Updating the active spectrogram data for each visible chart.
+     * 3. Determining the context (position and timestamp) for the frequency bar
+     *    from the currently active interaction (hover or tap), and calling
+     *    _updateActiveFreqBarData() to update the bar chart's data.
+     */
+    function updateActiveData(viewState, dataState, models) {
+        viewState.availablePositions.forEach(position => {
+            const tsChartName = `figure_${position}_timeseries`;
+            const specChartName = `figure_${position}_spectrogram`;
+
+
+
+            // Only process data for charts that are currently visible
+            if (viewState.chartVisibility[tsChartName] || viewState.chartVisibility[specChartName]) {
+                updateActiveLineChartData(position, viewState, dataState, models);
+                updateActiveSpectralData(position, viewState, dataState, models);
+            }
+        });
+
+        // If neither is active, timestamp will be null and the function will handle it.
+        updateActiveFreqBarData();
+    }
+
+    /**
+     * Updates the active line chart data for a given position based on the view type.
+     * 
+     * This function determines whether to use 'overview' or 'log' data for the line chart 
+     * based on the provided viewType and the current viewport. It updates the activeLineData 
+     * in the state with the selected data and sets the display details for the position.
+     * 
+     * @param {string} position - The position identifier for which the line chart data is updated.
+     * @param {string} viewType - The type of view ('overview' or 'log') to determine data selection.
+     */
+    function updateActiveLineChartData(position, viewState, dataState, models) {
+        try {
+            const viewType = viewState.globalViewType;
+            const sourceData = models.timeSeriesSources[position];
+            const overviewData = sourceData?.overview?.data;
+            const logData = sourceData?.log?.data;
+            const hasLogData = logData && logData.Datetime && logData.Datetime.length > 0;
+
+            let displayDetails = { type: 'overview', reason: ' (Overview)' }; // Default reason
+
+            if (viewType === 'log') {
+                if (hasLogData) {
+                    const { min, max } = viewState.viewport;
+                    const startIndex = logData.Datetime.findIndex(t => t >= min);
+                    const endIndex = logData.Datetime.findLastIndex(t => t <= max);
+                    const pointsInView = (startIndex !== -1 && endIndex !== -1) ? endIndex - startIndex : 0;
+
+                    if (pointsInView > MAX_LINE_POINTS_TO_RENDER) {
+                        // Log view is active, but user is too zoomed out
+                        dataState.activeLineData[position] = overviewData || {};
+                        displayDetails = { type: 'overview', reason: ' - Zoom in for Log Data' };
+                    } else {
+                        // Happy path: Show a chunk of log data
+                        const buffer = Math.floor(pointsInView * 0.5);
+                        const sliceStart = Math.max(0, startIndex - buffer);
+                        const sliceEnd = Math.min(logData.Datetime.length, endIndex + buffer + 1);
+                        const chunk = {};
+                        for (const key in logData) {
+                            chunk[key] = logData[key].slice(sliceStart, sliceEnd);
+                        }
+                        dataState.activeLineData[position] = chunk;
+                        displayDetails = { type: 'log', reason: ' (Log Data)' };
+                    }
+                } else {
+                    // Log view is active, but no log data exists for this position
+                    dataState.activeLineData[position] = overviewData || {}; // Show overview as a fallback
+                    displayDetails = { type: 'overview', reason: ' (No Log Data Available)' };
+                }
+            } else {
+                // Overview view is explicitly active
+                dataState.activeLineData[position] = overviewData || {};
+                displayDetails = { type: 'overview', reason: ' (Overview)' };
+            }
+
+            if (!viewState.displayDetails[position]) {
+                viewState.displayDetails[position] = {};
+            }
+            viewState.displayDetails[position].line = displayDetails;
+        }
+        catch (error) {
+            console.error(" [data-processors.js - updateActiveLineChartData()]", error);
+        }
+    }
+
+    /**
+     * Updates the active spectrogram data for a given position based on the view type and parameter.
+     * 
+     * This function determines whether to use 'overview' or 'log' data for the spectrogram based on 
+     * the provided viewType and the current viewport. It updates the activeSpectralData in the state 
+     * with the selected data and sets the display details for the position.
+     * 
+     * @param {string} position - The position identifier for which the spectrogram data is updated.
+     * @param {string} viewType - The type of view ('overview' or 'log') to determine data selection.
+     * @param {string} parameter - The parameter to be displayed in the spectrogram.
+     */
+    function updateActiveSpectralData(position, viewState, dataState, models) {
+        try {
+            const viewType = viewState.globalViewType;
+            const parameter = viewState.selectedParameter;
+            const positionGlyphData = models.preparedGlyphData[position];
+            const overviewData = positionGlyphData?.overview?.prepared_params?.[parameter];
+            const logData = positionGlyphData?.log?.prepared_params?.[parameter];
+            const hasLogData = logData && logData.times_ms && logData.times_ms.length > 0;
+
+            let finalDataToUse, finalGlyphData, displayReason;
+
+            if (viewType === 'log') {
+                if (hasLogData) {
+                    const pointsInView = Math.floor((viewState.viewport.max - viewState.viewport.min) / logData.time_step);
+
+                    if (pointsInView <= MAX_SPECTRAL_POINTS_TO_RENDER) {
+                        // Happy Path: Show chunked LOG data
+                        finalDataToUse = logData;
+                        displayReason = ' (Log Data)'; // Explicitly label the log view
+
+                        const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs } = finalDataToUse;
+                        const { min, max } = viewState.viewport;
+                        const targetChunkStartTimeStamp = (max + min) / 2 - (chunk_time_length * time_step / 2);
+
+                        // A more robust way to find the index, defaulting to 0 if the view is before the data starts.
+                        let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
+                        if (chunkStartTimeIdx === -1) {
+                            // If the view is past the end of the data, show the last possible chunk.
+                            chunkStartTimeIdx = Math.max(0, n_times - chunk_time_length);
+                        }
+
+                        const chunk_image = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, chunk_time_length);
+
+                        finalGlyphData = {
+                            ...finalDataToUse.initial_glyph_data,
+                            image: [chunk_image],
+                            x: [times_ms[chunkStartTimeIdx]],
+                            dw: [chunk_time_length * time_step],
+                            times_ms: times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + chunk_time_length),
+                        };
+                    } else {
+                        // Log view active, but too zoomed out
+                        finalDataToUse = overviewData;
+                        displayReason = ' - Zoom in for Log Data';
+                        finalGlyphData = finalDataToUse ? { ...finalDataToUse.initial_glyph_data, times_ms: finalDataToUse.times_ms } : null;
+                    }
+                } else {
+                    // Log view active, but no log data exists
+                    finalDataToUse = overviewData;
+                    displayReason = ' (No Log Data Available)';
+                    finalGlyphData = finalDataToUse ? { ...finalDataToUse.initial_glyph_data, times_ms: finalDataToUse.times_ms } : null;
+                }
+            } else {
+                // Overview view is explicitly active
+                finalDataToUse = overviewData;
+                displayReason = ' (Overview)';
+                finalGlyphData = finalDataToUse ? { ...finalDataToUse.initial_glyph_data, times_ms: finalDataToUse.times_ms } : null;
+            }
+
+            // --- Final state update ---
+            if (finalGlyphData && finalDataToUse) {
+                dataState.activeSpectralData[position] = { ...finalDataToUse, source_replacement: finalGlyphData };
+            } else {
+                // This case handles when overviewData was also null in one of the fallback paths.
+                dataState.activeSpectralData[position] = { source_replacement: null, reason: 'No Data Available' };
+                // If we ended up with no data, this reason overrides any previous one.
+                displayReason = ' (No Data Available)';
+            }
+            if (!viewState.displayDetails[position]) {
+                viewState.displayDetails[position] = {};
+            }
+            viewState.displayDetails[position].spec = { reason: displayReason };
+        }
+        catch (error) {
+            console.error(" [data-processors.js - updateActiveSpectralData()]", error);
+        }
+    }
+
+
+    /**
+     * Updates the active frequency bar data based on the current interaction context.
+     * 
+     * This function determines the context (position and timestamp) for the frequency bar
+     * from the currently active interaction (hover or tap), and calls _updateActiveFreqBarData()
+     * to update the bar chart's data.
+     */
+    function updateActiveFreqBarData() {
+
+        try {
+            const _state = app.state.getState(); // _state is correct here as we are not updating it
+            const blankData = { levels: [], frequency_labels: [], sourceposition: '', timestamp: null, setBy: null, param: null };
+
+            // --- Step 1: Determine the context and priority from the global state ---
+            let position, timestamp, setBy;
+
+            if (_state.interaction.hover.isActive) {
+                // Priority 1: Active hover
+                position = _state.interaction.hover.position;
+                timestamp = _state.interaction.hover.timestamp;
+                setBy = 'hover';
+            }
+            else if (_state.interaction.tap.isActive) {
+                // Priority 2: Active tap (which may be driven by audio)
+                position = _state.interaction.tap.position;
+                timestamp = _state.interaction.tap.timestamp;
+                setBy = _state.audio.isPlaying && _state.audio.activePositionId === position ? 'audio' : 'tap';
+            }
+            else {
+                // No active interaction, so set to blank and exit
+                _state.data.activeFreqBarData = blankData;
+                return;
+            }
+
+            // If there's no valid context, exit
+            if (!timestamp || !position) {
+                _state.data.activeFreqBarData = blankData;
+                return;
+            }
+
+            // --- Step 2: Fetch and process data based on the determined context ---
+            const activeSpectralData = _state.data.activeSpectralData[position];
+            if (!activeSpectralData?.times_ms?.length) {
+                _state.data.activeFreqBarData = blankData;
+                return;
+            }
+
+            const closestTimeIdx = activeSpectralData.times_ms.findLastIndex(time => time <= timestamp);
+            if (closestTimeIdx === -1) {
+                _state.data.activeFreqBarData = blankData;
+                return;
+            }
+
+            const freqDataSlice = new Float32Array(activeSpectralData.n_freqs);
+            for (let i = 0; i < activeSpectralData.n_freqs; i++) {
+                // This logic for accessing the transposed flat array remains the same
+                freqDataSlice[i] = activeSpectralData.levels_flat_transposed[i * activeSpectralData.n_times + closestTimeIdx];
+            }
+
+            _state.data.activeFreqBarData = {
+                levels: Array.from(freqDataSlice).map(l => (l === null || isNaN(l)) ? 0 : l),
+                frequency_labels: activeSpectralData.frequency_labels,
+                sourceposition: position,
+                timestamp: timestamp,
+                setBy: setBy,
+                param: _state.view.selectedParameter,
+                dataViewType: _state.view.displayDetails[position]?.spec?.type || 'None'
+            };
+        }
+        catch (error) {
+            console.error(" [data-processors.js - updateActiveFreqBarData()]", error);
+        }
+    }
+
+    /**
+     * Calculates an appropriate keyboard navigation step size based on the total
+     * time duration of the currently active dataset for the position with focus.
+     * The position with focus is determined by checking audio state first, then tap state.
+     */
+    function calculateStepSize(state) { // Accept the full state object
+        try {
+            // Determine the focused position from the interaction state
+            const positionId = state.interaction.tap.position || state.audio.activePositionId;
+    
+            if (!positionId) {
+                console.warn("[DEBUG] Can't calculate step size - no active position.");
+                return;
+            }
+    
+            const activeData = state.data.activeLineData[positionId];
+    
+            if (!activeData || !activeData.Datetime || activeData.Datetime.length < 11) {
+                console.warn(`[DEBUG] Can't calculate step size for '${positionId}' - no data or not enough data points.`);
+                return;
+            }
+    
+            // --- The rest of the function remains the same ---
+            let newStep = (activeData.Datetime[10] - activeData.Datetime[5]) / 5;
+    
+            const oneSecond = 1000;
+            const oneHour = 3600000;
+            newStep = Math.max(oneSecond, Math.min(newStep, oneHour));
+            
+            // Return the calculated value
+            return newStep;
+    
+        } catch (error) {
+            console.error(" [data-processors.js - calculateStepSize()]", error);
+        }
+    }
+
+    function _extractTimeChunkFromFlatData(flatData, n_freqs, n_times_total, start_time_idx, chunk_time_length) {
+        try {
+            const typedFlatData = (flatData instanceof Float32Array) ? flatData : new Float32Array(flatData);
+            const chunk_data = new Float32Array(n_freqs * chunk_time_length);
+            const end_time_idx = Math.min(start_time_idx + chunk_time_length, n_times_total);
+            const actual_slice_width = end_time_idx - start_time_idx;
+            for (let i = 0; i < n_freqs; i++) {
+                const row_offset = i * n_times_total;
+                const slice_start_in_flat_array = row_offset + start_time_idx;
+                const row_slice = typedFlatData.subarray(slice_start_in_flat_array, slice_start_in_flat_array + actual_slice_width);
+                chunk_data.set(row_slice, i * chunk_time_length);
+            }
+            return chunk_data;
+        }
+        catch (error) {
+            console.error(" [data-processors.js - _extractTimeChunkFromFlatData()]", error);
+        }
+    }
+
+    app.data_processors = {
+        updateActiveData: updateActiveData,
+        updateActiveLineChartData: updateActiveLineChartData,
+        updateActiveSpectralData: updateActiveSpectralData,
+        updateActiveFreqBarData: updateActiveFreqBarData,
+        calculateStepSize: calculateStepSize
+    };
+
+})(window.NoiseSurveyApp);

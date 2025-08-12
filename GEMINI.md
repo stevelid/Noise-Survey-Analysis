@@ -1,6 +1,6 @@
-# Gemini Development Notes
+# Development Notes
 
-This file contains important notes and reminders for the Gemini agent to ensure consistency and adherence to key architectural decisions during future development.
+This file contains important notes and reminders for future development.
 
 ## Spectrogram Data Handling for Bokeh `Image` Glyphs
 
@@ -13,14 +13,25 @@ This file contains important notes and reminders for the Gemini agent to ensure 
     *   It uses a `MAX_DATA_SIZE` constant to define a fixed `chunk_time_length`.
     *   **Crucially, all spectral data (both low-resolution 'overview' and high-resolution 'log' data) is padded to this `chunk_time_length` before being sent to the browser.** This ensures that the JavaScript `ColumnDataSource` is always initialized with a data array of a consistent, predictable size.
 
-2.  **JavaScript (`app.js`):**
-    *   The `_updateActiveSpectralData` function handles the dynamic display of data based on zoom level.
+2.  **JavaScript (`data-processors.js`):**
+    *   The `getTimeChunkFromSerialData` function handles the dynamic display of data based on zoom level.
     *   When a smaller, high-resolution chunk of data needs to be displayed, it does **not** create a new data source.
-    *   It uses `_getTimeChunkFromSerialData` to extract a slice from the full dataset.
+    *   It extracts a slice from the full dataset.
     *   It then uses `MatrixUtils.updateBokehImageData` to **overwrite the contents of the existing `source.data.image[0]` array in-place**.
     *   Finally, it calls `source.change.emit()` to trigger a redraw.
 
 **Reminder for Future Changes:** When modifying any part of the spectrogram data pipeline, you must respect this fixed-size buffer constraint. Any changes to the data chunking logic must ensure that the data passed to the `Image` glyph in JavaScript always has the same dimensions as the data it was initialized with.
+
+## JavaScript State Management
+
+The front-end interactivity is managed by a self-contained JavaScript application architecture (in static/js/). It follows a modern state management pattern similar to Redux:
+
+*   **state-management.js:** Holds the single source of truth for the UI state. The dispatchAction function is the only way to modify the state.
+*   **event-handlers.js:** Listens for Bokeh UI events (e.g., tap, zoom), translates them into semantic actions (e.g., { type: 'TAP', payload: ... }), and dispatches them.
+*   **data-processors.js:** When the state changes, these functions compute the derived data needed for the charts (e.g., slicing the correct chunk of spectrogram data).
+*   **renderers.js:** These functions take the new state and derived data and update the Bokeh models to change what the user sees on screen.
+
+This pattern keeps the code organized, predictable, and easier to debug and extend.
 
 ## Additional Notes on Bokeh Image Glyphs and ColumnDataSource
 
@@ -54,11 +65,3 @@ There are two primary methods for updating `ColumnDataSource` data via JavaScrip
 ### Common Errors
 -   `'expected a 2D array, not undefined'`: Often indicates that the `image` field within `source.data` is not conforming to the expected 2D array format (i.e., a `TypedArray` representing a 2D array) or is missing.
 -   `'Size mismatch errors'`: Occurs when violating the `ColumnDataSource`'s rule that all columns must have the same length. This typically happens when updating a subset of columns or when new data for one column has a different length than existing data in other columns. The solution is to replace the entire `source.data` dictionary with a new one where all columns have consistent lengths.
-
-## Code Structure and Maintainability
-
-Focus on maintaining a clean, readable, and navigable code structure. Adhere to the following principles:
-
-*   **Separation of Concerns (SoC):** Keep code for different functionalities in separate modules or components.
-*   **Single Responsibility Principle (SRP):** Within reason, each function, class, or module should have a single, well-defined responsibility.
-*   **Avoid Verbosity:** Write concise and clear code. Avoid unnecessary complexity or overly verbose implementations. The goal is code that is easy to understand and maintain.

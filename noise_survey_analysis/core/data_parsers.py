@@ -12,6 +12,8 @@ from io import StringIO
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Tuple
+import wave
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -712,6 +714,17 @@ class NTiFileParser(AbstractNoiseParser):
             return parsed_data_obj
 
 class AudioFileParser(AbstractNoiseParser):
+    def _get_wav_duration(self, filepath: str) -> float:
+        """Reads the duration in seconds from a WAV file's header."""
+        try:
+            with contextlib.closing(wave.open(filepath, 'r')) as f:
+                frames = f.getnframes()
+                rate = f.getframerate()
+                return frames / float(rate) if rate > 0 else 0
+        except (wave.Error, EOFError) as e:
+            logger.warning(f"Could not read duration from {os.path.basename(filepath)}: {e}. Defaulting to 0s.")
+            return 0
+
     def parse(self, path: str, return_all_columns: bool = False) -> ParsedData:
         logger.info(f"AudioFileParser: Processing path {path}")
         parsed_data_obj = ParsedData(
@@ -729,33 +742,36 @@ class AudioFileParser(AbstractNoiseParser):
                 parsed_data_obj.metadata['type'] = 'directory_scan'
                 for item_name in os.listdir(path):
                     item_path = os.path.join(path, item_name)
-                    if os.path.isfile(item_path) and "_Audio_".lower() in item_name.lower() and item_name.lower().endswith(('.wav', '.mp3', '.ogg', '.flac')):
+
+                    is_svan = item_name.lower().startswith("r") and item_name.lower().endswith(".wav")
+                    is_nti = "_audio_" in item_name.lower() and item_name.lower().endswith('.wav')
+                    if os.path.isfile(item_path) and (is_svan or is_nti):
                         stats = os.stat(item_path)
-                        audio_files_details.append({
-                            'filename': item_name, 'full_path': item_path,
-                            'size_mb': round(stats.st_size / (1024 * 1024), 2),
-                            'modified_time': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S'),
-                            'Datetime': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S')
-                        })
-            elif os.path.isfile(path) and path.lower().endswith(('.wav', '.mp3', '.ogg', '.flac')):
-                parsed_data_obj.metadata['type'] = 'single_file'
-                stats = os.stat(path)
-                audio_files_details.append({
-                    'filename': os.path.basename(path), 'full_path': path,
-                    'size_mb': round(stats.st_size / (1024 * 1024), 2),
-                    'modified_time': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S'),
-                    'Datetime': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S')
-                })
+                        duration = self._get_wav_duration(item_path)
+                        if duration > 0:
+                            audio_files_details.append({
+                                'filename': item_name,
+                                'full_path': item_path,
+                                'size_mb': round(stats.st_size / (1024 * 1024), 2),
+                                'modified_time': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S'),
+                                'Datetime': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S'),
+                                'duration_sec': duration
+                            })
             else:
-                parsed_data_obj.metadata['error'] = "Not a recognized audio file or directory"; return parsed_data_obj
+                parsed_data_obj.metadata['error'] = "Path is not a directory. Audio parser only scans directories."; return parsed_data_obj
 
             parsed_data_obj.metadata['audio_files_count'] = len(audio_files_details)
             
             if audio_files_details:
                 df_audio_list = pd.DataFrame(audio_files_details)
-                if 'Datetime' in df_audio_list.columns:
-                     df_audio_list = df_audio_list.sort_values(by='Datetime').reset_index(drop=True)
-                parsed_data_obj.totals_df = df_audio_list
+                # Sort by filename to handle Svan's R1, R2, R10 correctly
+                if any(df_audio_list['filename'].str.lower().str.startswith('r')):
+                    df_audio_list['sort_key'] = df_audio_list['filename'].str.extract(r'R(\d+)', expand=False).astype(int)
+                    df_audio_list = df_audio_list.sort_values(by='sort_key').drop(columns=['sort_key'])
+                else: # Sort by datetime for NTi files
+                    df_audio_list = df_audio_list.sort_values(by='Datetime')
+                
+                parsed_data_obj.totals_df = df_audio_list.reset_index(drop=True)
             
             return parsed_data_obj
         except Exception as e:
@@ -768,6 +784,10 @@ class NoiseParserFactory:
     def get_parser(file_path: str, parser_type: str = 'auto') -> Optional[AbstractNoiseParser]:
         filename_lower = os.path.basename(file_path).lower()
         
+        # Audio directory check is now first and more specific
+        if os.path.isdir(file_path):
+             return AudioFileParser()
+
         # NTi files have very specific naming conventions
         if '_report.txt' in filename_lower or '_log.txt' in filename_lower:
             if "_rta_" in filename_lower or "_123_" in filename_lower:
@@ -778,14 +798,9 @@ class NoiseParserFactory:
             if re.search(r'_\d{4}_\d{2}_\d{2}__\d{2}h\d{2}m\d{2}s.*\.csv$', filename_lower):
                 return NoiseSentryFileParser()
             return SvanFileParser()
-        
-        # Audio files or directories containing them
-        if os.path.isdir(file_path) or filename_lower.endswith(('.wav', '.mp3', '.ogg', '.flac')):
-             return AudioFileParser()
              
         logger.warning(f"Could not determine parser type for: {file_path}")
         return None
-
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -849,6 +864,6 @@ if __name__ == '__main__':
             if nti_data.totals_df is not None and not nti_data.totals_df.empty: 
                 print("NTi Totals DF Head:\n", nti_data.totals_df.head(2))
             if nti_data.spectral_df is not None and not nti_data.spectral_df.empty:
-                 print("NTi Spectral DF Head:\n", nti_data.spectral_df.head(2))
+                print("NTi Spectral DF Head:\n", nti_data.spectral_df.head(2))
         else:
             print(f"No parser found for {os.path.basename(nti_path)}")

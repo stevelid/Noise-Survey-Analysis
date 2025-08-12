@@ -8,6 +8,7 @@ import os
 from bokeh.resources import CDN
 from bokeh.embed import file_html  # Add import for standalone HTML generation
 import logging
+import os
 from bokeh.events import DocumentReady
 from bokeh.models import CustomJS, ColumnDataSource
 from typing import Dict, Any, Optional
@@ -35,6 +36,14 @@ from noise_survey_analysis.js.loader import load_js_file
 
 logger = logging.getLogger(__name__)
 
+def load_js_file(file_name):
+    """Loads a JavaScript file from the static/js directory."""
+    # Correctly resolve the path to the static/js directory
+    static_js_dir = os.path.join(os.path.dirname(__file__), '..', 'static', 'js')
+    file_path = os.path.join(static_js_dir, file_name)
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return f.read()
+
 class DashBuilder:
   
     """
@@ -43,7 +52,6 @@ class DashBuilder:
     """
 
     def __init__(self, 
-                 app_callbacks: Optional[AppCallbacks] = None, 
                  audio_control_source: Optional[ColumnDataSource] = None, 
                  audio_status_source: Optional[ColumnDataSource] = None):
         """
@@ -51,11 +59,9 @@ class DashBuilder:
         and initializes containers for the components it will create.
 
        Args:
-            app_callbacks: An instance of AppCallbacks for backend logic. (Optional)
             audio_control_source: The shared CDS for sending commands. (Optional)
             audio_status_source: The shared CDS for receiving status. (Optional)
-        """
-        self.app_callbacks = app_callbacks
+        """ 
         self.audio_control_source = audio_control_source or ColumnDataSource(data={'command': [], 'position_id': [], 'value': []})
         self.audio_status_source = audio_status_source or ColumnDataSource(data={
             'is_playing': [False], 
@@ -206,10 +212,10 @@ class DashBuilder:
 
         #add callback to x_range ranges
         range_update_js = CustomJS(code="""
-            if (window.NoiseSurveyApp && window.NoiseSurveyApp.interactions.onRangeUpdate) {
-                window.NoiseSurveyApp.interactions.onRangeUpdate(cb_obj);
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleRangeUpdate) {
+                window.NoiseSurveyApp.eventHandlers.handleRangeUpdate(cb_obj);
             } else {
-                console.error('NoiseSurveyApp.interactions.onRangeUpdate not defined!');
+                console.error('NoiseSurveyApp.eventHandlers.handleRangeUpdate not defined!');
             }
         """)
         master_x_range.js_on_change('end', range_update_js)
@@ -251,13 +257,33 @@ class DashBuilder:
         doc.add_root(final_layout)
         doc.title = "Noise Survey Analysis Dashboard"
 
+    def _load_all_js_files(self):
+        """Loads all JavaScript files in the correct order."""
+        # Define the order in which JS files should be loaded
+        js_files_order = [
+            'utils.js',
+            'chart-classes.js',
+            'state-management.js',
+            'data-processors.js',
+            'renderers.js',
+            'event-handlers.js',
+            'app.js'  # Main app file, likely depends on the others
+        ]
+
+        all_js_code = []
+        for file_name in js_files_order:
+            print(f"INFO: Loading JS file: {file_name}")
+            all_js_code.append(load_js_file(file_name))
+        
+        return "\n\n".join(all_js_code)
+
     def _initialize_javascript(self, doc):
         """Step 5: Gathers all models and sends them to the JavaScript front-end."""
         print("INFO: DashboardBuilder: Preparing and initializing JavaScript...")
 
         # This method builds the "bridge dictionary" of Python models
         js_models_for_args = self._assemble_js_bridge_dictionary()
-        app_js_code = load_js_file('app.js') #the full app.js code
+        app_js_code = self._load_all_js_files() #the full app.js code
 
         js_code = f"""
             console.log("Bokeh document is ready. Initializing NoiseSurveyApp...");
@@ -284,8 +310,8 @@ class DashBuilder:
                     paramSelect: paramSelect,
                     freqTableDiv: freqTableDiv,
                     summaryTableDiv: summaryTableDiv,
-                    audio_control_source: audio_control_source,
-                    audio_status_source: audio_status_source,
+                    //audio_control_source: audio_control_source,
+                    //audio_status_source: audio_status_source,
                     audio_controls: audio_controls,
                     components: components,
                 }};
@@ -294,7 +320,7 @@ class DashBuilder:
 
                 if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init === 'function') {{
                     console.log('DEBUG: Found NoiseSurveyApp, calling init...');
-                    window.NoiseSurveyApp.init(models, {{ enableKeyboardNavigation: true }});
+                    window.NoiseSurveyApp.init(models);
                 }} else {{
                     console.error('CRITICAL ERROR: NoiseSurveyApp.init not found. Check that app.js is loaded correctly.');
                 }}
@@ -329,8 +355,8 @@ class DashBuilder:
             'freqTableDiv': self.shared_components['freq_bar'].table_div,  # Add the frequency table div for copy/paste functionality
             'summaryTableDiv': self.shared_components['summary_table'].summary_div,
             'paramSelect': self.shared_components['controls'].param_select,
-            'audio_control_source': self.app_callbacks.audio_control_source if self.app_callbacks else None,
-            'audio_status_source': self.app_callbacks.audio_status_source if self.app_callbacks else None,
+            #'audio_control_source': self.audio_control_source,
+            #'audio_status_source': self.audio_status_source,
             'audio_controls': {},
             'components': {},
         }

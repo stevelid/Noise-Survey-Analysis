@@ -30,6 +30,8 @@ class AppCallbacks:
         self.audio_handler = audio_handler
         self.audio_control_source = audio_control_source
         self.audio_status_source = audio_status_source
+
+        logger.debug(f"[AppCallbacks.__init__] Received audio_control_source with id: {id(self.audio_control_source)}")
         
         self.position_callbacks = []
         self._periodic_callback_id = None
@@ -43,6 +45,7 @@ class AppCallbacks:
         self.attach_non_audio_callbacks()
 
         if self.audio_handler:
+            logger.debug(f"[AppCallbacks.attach] Attaching audio control callback to source id: {id(self.audio_control_source)}")
             self.audio_control_source.on_change('data', self._handle_audio_control_command)
             self._start_periodic_update()
         else:
@@ -52,32 +55,39 @@ class AppCallbacks:
         logger.info("All callbacks attached.")
 
     def _handle_audio_control_command(self, attr, old, new):
-        print("Received audio control command: " + str(new))
         if not self.audio_handler: return
         try:
             command = new.get('command', [None])[0]
-            position_id = new.get('position_id', [None])[0]
+            if command is None:
+                return
+            position_id = new.get('position_id', [None])[0] 
             value = new.get('value', [None])[0]
+
+            logger.info(f"Received audio control command: {command}, position_id: {position_id}, value: {value}")
 
             if command == 'play':
                 if position_id:
                     self.audio_handler.set_current_position(position_id)
-                    # If value is None or 0, it means we don't have a tap time, so don't play.
-                    if value:
-                        self.audio_handler.play(datetime.fromtimestamp(value / 1000.0))
+                    # The audio handler now defaults to playing from the start of the file if no valid time is given.
+                    play_timestamp = datetime.utcfromtimestamp(value / 1000.0) if value else None
+                    self.audio_handler.play(play_timestamp)
             elif command == 'pause':
                 self.audio_handler.pause()
             elif command == 'seek':
+                # If a seek command is issued, it must set the active position first.
+                if position_id and self.audio_handler.current_position != position_id:
+                    logger.info(f"Seek command received for new position '{position_id}', switching audio source.")
+                    self.audio_handler.set_current_position(position_id)                
+                self.audio_handler.seek_to_time(datetime.utcfromtimestamp(value / 1000.0))
+            elif command == 'set_rate':
                 if position_id:
                     self.audio_handler.set_current_position(position_id)
-                self.audio_handler.seek_to_time(datetime.fromtimestamp(value / 1000.0))
-            elif command == 'set_rate':
                 self.audio_handler.set_playback_rate(value)
             elif command == 'toggle_boost':
-                if value: # If boost is requested
-                    self.audio_handler.set_amplification(20)
-                else:
-                    self.audio_handler.set_amplification(0)
+                if position_id:
+                    self.audio_handler.set_current_position(position_id)
+                # value will be a boolean from the JS toggle
+                self.audio_handler.set_amplification(20 if value else 0)
             
             # Clear the command after processing to allow the same command to be sent again
             self.doc.add_next_tick_callback(lambda: self.audio_control_source.patch({'command': [(0, None)]}))
