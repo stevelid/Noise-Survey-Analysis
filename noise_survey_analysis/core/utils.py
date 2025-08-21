@@ -1,4 +1,5 @@
 import logging
+import os
 from bokeh.models import Div
 
 logger = logging.getLogger(__name__)
@@ -41,3 +42,19 @@ def add_error_to_doc(doc, message, error=None, height=50):
     except Exception as add_error:
         logger.error(f"Failed to add error message to document: {add_error}", exc_info=True)
         return False 
+
+def find_lowest_common_folder(paths: list[str]) -> str | None:
+    """Finds the lowest common directory from a list of file paths."""
+    if not paths:
+        return None
+    try:
+        # os.path.commonpath works well, but requires paths to be absolute strings
+        common_path = os.path.commonpath([str(p) for p in paths])
+        # If the common path is a file itself, get its parent directory
+        if os.path.isfile(common_path):
+            return os.path.dirname(common_path)
+        return common_path
+    except ValueError:
+        # This can happen if paths are on different drives (e.g., C: and D:)
+        logger.warning("Could not find a common path (paths might be on different drives).")
+        return None

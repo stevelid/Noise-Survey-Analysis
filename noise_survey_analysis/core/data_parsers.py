@@ -788,6 +788,17 @@ class NoiseParserFactory:
         if os.path.isdir(file_path):
              return AudioFileParser()
 
+        # Individual WAV files (Svan or NTi audio files)
+        if filename_lower.endswith('.wav'):
+            # For individual WAV files, we'll use AudioFileParser on the parent directory
+            # This allows the audio parser to scan the entire directory containing the WAV file
+            parent_dir = os.path.dirname(file_path)
+            if parent_dir and os.path.isdir(parent_dir):
+                return AudioFileParser()
+            else:
+                logger.warning(f"WAV file found but parent directory invalid: {file_path}")
+                return None
+
         # NTi files have very specific naming conventions
         if '_report.txt' in filename_lower or '_log.txt' in filename_lower:
             if "_rta_" in filename_lower or "_123_" in filename_lower:

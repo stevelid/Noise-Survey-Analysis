@@ -6,6 +6,7 @@ from bokeh.io import output_file, save
 from bokeh.document import Document
 import sys
 import json
+import argparse
 import os
 from pathlib import Path
 
@@ -16,53 +17,18 @@ sys.path.insert(0, str(project_root))
 
 from noise_survey_analysis.core.config import CHART_SETTINGS
 from noise_survey_analysis.core.data_manager import DataManager
+from noise_survey_analysis.core.app_setup import load_config_and_prepare_sources
+from noise_survey_analysis.core.utils import find_lowest_common_folder
 from noise_survey_analysis.core.audio_handler import AudioPlaybackHandler
 from noise_survey_analysis.core.app_callbacks import AppCallbacks, session_destroyed
 from noise_survey_analysis.visualization.dashBuilder import DashBuilder
+from noise_survey_analysis.ui.data_source_selector import create_data_source_selector
 
 # --- Configure Logging ---
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def find_lowest_common_folder(paths: list[str]) -> str | None:
-    """Finds the lowest common directory from a list of file paths."""
-    if not paths:
-        return None
-    try:
-        # os.path.commonpath works well, but requires paths to be absolute strings
-        common_path = os.path.commonpath([str(p) for p in paths])
-        # If the common path is a file itself, get its parent directory
-        if os.path.isfile(common_path):
-            return os.path.dirname(common_path)
-        return common_path
-    except ValueError:
-        # This can happen if paths are on different drives (e.g., C: and D:)
-        logger.warning("Could not find a common path (paths might be on different drives).")
-        return None
 
-def load_config_and_prepare_sources(config_path='config.json'):
-    """Loads configuration from a JSON file and prepares the source list."""
-    config_full_path = project_root / config_path
-    logger.info(f"Attempting to load configuration from: {config_full_path}")
-    try:
-        with open(config_full_path, 'r') as f:
-            config = json.load(f)
-    except FileNotFoundError:
-        logger.error(f"Configuration file not found at {config_full_path}")
-        return None, None
-    except json.JSONDecodeError:
-        logger.error(f"Error decoding JSON from {config_full_path}")
-        return None, None
-
-    output_filename = config.get("output_filename", "default_dashboard.html")
-    
-    source_configurations = []
-    for source in config.get("sources", []):
-        if 'file_paths' in source and isinstance(source['file_paths'], list):
-            source['file_paths'] = set(source['file_paths'])
-        source_configurations.append(source)
-
-    return output_filename, source_configurations
 
 def generate_static_html():
     """
@@ -111,7 +77,7 @@ def generate_static_html():
         logger.error(f"Failed to save static HTML file: {e}", exc_info=True)
 
 
-def create_app(doc):
+def create_app(doc, config_path=None):
     """
     This function is the entry point for the LIVE Bokeh server application.
     """
@@ -128,38 +94,56 @@ def create_app(doc):
     
     logger.info("--- New client session started. Creating live application instance. ---")
     
-    # 1. DATA LOADING
-    _, source_configs = load_config_and_prepare_sources()
-    if source_configs is None:
-        logger.error("Could not load source configurations. Aborting app creation.")
-        doc.add_root(Div(text="<h1>Error: Configuration file 'config.json' not found or invalid.</h1>"))
-        return
+    def on_data_sources_selected(source_configs):
+        """Callback when data sources are selected from the selector."""
+        logger.info("Data sources selected, building dashboard...")
+        
+        # Clear current layout
+        doc.clear()
+        
+        # Display a "Loading..." message while the backend processes data.
+        loading_div = Div(
+            text="""<h1 style='text-align:center; color:#555;'>Loading Survey Data...</h1>
+                    <p style='text-align:center; color:#888;'>This may take a moment for large surveys.</p>""",
+            width=800, align='center',
+            styles={'margin': 'auto', 'padding-top': '100px'}
+        )
+        doc.add_root(loading_div)
+        
+        # This function will run after the loading screen is displayed.
+        def build_dashboard():
+            app_data = DataManager(source_configurations=source_configs)
+            audio_handler = AudioPlaybackHandler(position_data=app_data.get_all_position_data())
+            audio_control_source = ColumnDataSource(data={'command': [], 'position_id': [], 'value': []}, name='audio_control_source')
+            audio_status_source = ColumnDataSource(data={'is_playing': [False], 'current_time': [0], 'playback_rate': [1.0], 'current_file_duration': [0], 'current_file_start_time': [0], 'active_position_id': [None], 'volume_boost': [False]}, name='audio_status_source')
+            app_callbacks = AppCallbacks(doc, audio_handler, audio_control_source, audio_status_source)
+            doc.clear() # Clear the loading message
+            dash_builder = DashBuilder(audio_control_source, audio_status_source)
+            dash_builder.build_layout(doc, app_data, CHART_SETTINGS)
+            doc.add_root(audio_control_source)
+            doc.add_root(audio_status_source)
+            app_callbacks.attach_callbacks()
+            setattr(doc.session_context, '_app_callback_manager', app_callbacks)
 
-    app_data = DataManager(source_configurations=source_configs)
+        doc.add_next_tick_callback(build_dashboard)
     
-    # 2. BACKEND HANDLER SETUP
-    logger.info("Setting up backend handlers for live session...")
-    audio_handler = AudioPlaybackHandler(position_data=app_data.get_all_position_data())
-    audio_control_source = ColumnDataSource(data={'command': [], 'position_id': [], 'value': []}, name='audio_control_source')
-    audio_status_source = ColumnDataSource(data={
-        'is_playing': [False], 'current_time': [0], 'playback_rate': [1.0], 
-        'current_file_duration': [0], 'current_file_start_time': [0],
-        'active_position_id': [None], 'volume_boost': [False]
-        }, name='audio_status_source')
-    app_callbacks = AppCallbacks(doc, audio_handler, audio_control_source, audio_status_source)
-    
-    # 3. UI BUILD
-    logger.info("Building dashboard UI for live session...")
-    dash_builder = DashBuilder(audio_control_source, audio_status_source)
-    dash_builder.build_layout(doc, app_data, CHART_SETTINGS)
-    doc.add_root(audio_control_source)
-    doc.add_root(audio_status_source)
-    
-    # 4. FINAL WIRING
-    logger.info("Attaching final callbacks for live session...")
-    app_callbacks.attach_callbacks()
+    if config_path:
+        logger.info(f"Attempting to load data directly from config file: {config_path}")
+        _, source_configs = load_config_and_prepare_sources(config_path=config_path)
+        if source_configs is not None:
+            # Use a next tick callback to ensure the document is fully ready
+            doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs))
+        else:
+            logger.error(f"Failed to load from config file {config_path}. Falling back to selector.")
+            # Fallback to selector if config loading fails
+            selector = create_data_source_selector(doc, on_data_sources_selected)
+            doc.add_root(selector.get_layout())
+    else:
+        # Show data source selector initially if no config path is provided
+        logger.info("No config file provided. Showing data source selector...")
+        selector = create_data_source_selector(doc, on_data_sources_selected)
+        doc.add_root(selector.get_layout())
     doc.on_session_destroyed(session_destroyed)
-    setattr(doc.session_context, '_app_callback_manager', app_callbacks)
 
     logger.info("--- Live application setup complete for this session. ---")
     
@@ -183,4 +167,9 @@ if doc.session_context is None:
 else:
     # Session context exists, so we're running as a Bokeh server app.
     logger.info("Bokeh session context found. Setting up live application.")
-    create_app(doc)
+    # --- Argument Parsing for Live App ---
+    # We use this approach to get args without interfering with Bokeh's own CLI args.
+    args = doc.session_context.request.arguments
+    config_file_path = args.get('config', [None])[0]
+
+    create_app(doc, config_path=config_file_path)

@@ -21,6 +21,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             // 2. Connect event handlers to Bokeh models
             // This is "wiring," which is a perfect job for app.js
+            console.log("[DEBUG] Models loaded: ", models);
             console.log("[DEBUG] Connecting event handlers...");
             const liveModels = app.models; // Get the populated models
             if (liveModels.audio_status_source) {

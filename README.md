@@ -35,64 +35,82 @@ This tool provides a powerful, interactive dashboard for analyzing noise survey 
     pip install -r requirements.txt
     ```
 
-### 2. Configure Your Data
+### 2. Run the Application
 
-The application is configured using the `config.json` file in the project's root directory.
+You can run the tool in two modes from your terminal:
 
-1.  Open `config.json`.
-2.  Set the desired `output_filename` for the static HTML report.
-3.  In the `sources` list, create an object for each measurement position.
-4.  For each position, provide a `position_name`, set `enabled` to `true`, and list all associated `file_paths`. You can include log files, summary files, and paths to directories containing audio files.
+**A) Live Interactive Server (Recommended)**
 
-**Example `config.json`:**
+This is the primary mode for analysis. It starts a local web server and opens an interactive data source selector.
+
+```bash
+bokeh serve noise_survey_analysis --show
+```
+
+Your browser will open to the **Data Source Selector**, where you can:
+*   **Scan a job directory** by providing a base path and job number.
+*   **Drag and drop** data files or folders directly onto the window.
+*   Select the files you want to include, assign position names, and load the dashboard.
+*   Optionally **save the selection** as a configuration file for quick reloading later.
+
+**B) Live Server with Direct Configuration Load**
+
+If you have a previously saved configuration file, you can bypass the selector and load the dashboard directly.
+
+```bash
+bokeh serve noise_survey_analysis --show --args --config /path/to/your/config.json
+```
+
+**C) Generate a Static HTML File**
+
+This mode processes data from the default `config.json` and packages the dashboard into a single `.html` file that you can easily email or archive. Audio playback is disabled in this mode.
+
+```bash
+python noise_survey_analysis/main.py
+```
+
+This will generate the file specified by `output_filename` in `config.json`. The file will be saved in the lowest common directory of your source files.
+
+### 4. Advanced Configuration (Manual `config.json`)
+
+While the interactive Data Source Selector is the primary way to load data, you can still manually create or edit a `config.json` file. This is useful for generating static reports or for complex setups.
+
+Here is an example demonstrating key features:
+
 ```json
 {
-  "output_filename": "my_survey_dashboard.html",
+  "output_filename": "advanced_survey_dashboard.html",
   "sources": [
     {
-      "position_name": "North Receptor",
+      "position_name": "North - Detailed",
       "enabled": true,
+      "return_all_columns": true,
       "file_paths": [
-        "G:\\Shared drives\\Venta\\Jobs\\6028\\6028 Surveys\\971-1\\L305_log.csv",
-        "G:\\Shared drives\\Venta\\Jobs\\6028\\6028 Surveys\\971-1\\L305_summary.csv",
-        "G:\\Shared drives\\Venta\\Jobs\\6028\\6028 Surveys\\971-1"
+        "C:\\path\\to\\data\\L259_log.csv",
+        "C:\\path\\to\\data\\L259_summary.csv"
       ]
     },
     {
-      "position_name": "East Boundary",
+      "position_name": "East with Audio",
       "enabled": true,
       "file_paths": [
-        "G:\\Shared drives\\Venta\\Jobs\\6028\\6028 Surveys\\971-3\\L262_log.csv",
-        "G:\\Shared drives\\Venta\\Jobs\\6028\\6028 Surveys\\971-3\\L262_summary.csv"
+        "C:\\path\\to\\data\\Sentry_log.csv",
+        "C:\\path\\to\\audio\\files\\"
       ]
     }
   ]
 }
 ```
 
-### 3. Run the Application
+**Key Configuration Options:**
 
-You can run the tool in two modes from your terminal:
-
-**A) Live Interactive Server (with Audio Playback)**
-
-This is the recommended mode for analysis. It starts a local web server.
-
-```bash
-bokeh serve noise_survey_analysis/main.py --show
-```
-
-Your browser will open to the dashboard. Audio playback and all interactive features will be enabled.
-
-**B) Generate a Static HTML File**
-
-This mode processes all the data and packages the entire dashboard into a single .html file that you can easily email or archive.
-
-```bash
-python noise_survey_analysis/main.py
-```
-
-This will generate the file specified by output_filename in config.json. The file will be saved in the lowest common directory of your source files, or in the project root if they are on different drives.
+*   `"output_filename"`: (String) The name of the generated static HTML file.
+*   `"sources"`: (List) A list of measurement positions.
+*   `"position_name"`: (String) The name for the position that appears in the dashboard.
+*   `"enabled"`: (Boolean) Set to `false` to exclude this position from loading.
+*   `"file_paths"`: (List of Strings) A list of all files and directories for this position.
+    *   **Audio Directories**: To include audio, simply add the path to the directory containing your `.wav` files. The application will automatically find and list them.
+*   `"return_all_columns"`: (Boolean) Optional. If set to `true`, the parser will load every available column from the data file, not just the standard ones (like `LAeq`, `LAFmax`, etc.). This is useful for non-standard or diagnostic parameters.
 
 ## Project Structure
 
@@ -101,6 +119,7 @@ This will generate the file specified by output_filename in config.json. The fil
 │   ├── core/                 # Core backend logic
 │   │   ├── __init__.py
 │   │   ├── app_callbacks.py  # Python-side server callbacks
+│   │   ├── app_setup.py      # Logic for loading and preparing configurations
 │   │   ├── audio_handler.py  # VLC audio playback logic
 │   │   ├── config.py         # Default configuration values
 │   │   ├── data_manager.py   # Orchestrates data loading and aggregation
@@ -119,7 +138,8 @@ This will generate the file specified by output_filename in config.json. The fil
 │   │   └── utils.js          # JS utility functions
 │   ├── ui/                   # UI Widget and Component creation
 │   │   ├── __init__.py
-│   │   └── components.py
+│   │   ├── components.py
+│   │   └── data_source_selector.py # The interactive UI for selecting data
 │   ├── visualization/        # Dashboard assembly and orchestration
 │   │   ├── __init__.py
 │   │   └── dashBuilder.py
@@ -136,7 +156,9 @@ This will generate the file specified by output_filename in config.json. The fil
 
 The application follows a clear, structured data flow:
 
-*   **Configuration (main.py -> config.json):** The application starts by loading the sources defined in config.json.
+*   **Application Start (main.py):** The app starts. If a `--config` argument is provided, it loads that file directly. Otherwise, it displays the interactive **Data Source Selector**.
+*   **Data Selection (ui/data_source_selector.py):** The user selects files, which generates a source configuration in memory.
+*   **Configuration Loading (core/app_setup.py):** The `load_config_and_prepare_sources` function parses the configuration (from file or the selector), resolves file paths, and groups data by position.
 *   **Data Management (data_manager.py):** DataManager iterates through the configs. For each file path, it uses NoiseParserFactory to get the correct parser.
 *   **Parsing (data_parsers.py):** The appropriate parser (e.g., NTiFileParser) reads a file and converts it into a standardized ParsedData object, separating broadband (totals_df) and spectral (spectral_df) data.
 *   **Aggregation (data_manager.py):** DataManager adds the ParsedData to a PositionData object, which aggregates all data for a single measurement position (e.g., merging a log file and a summary file for the same site).

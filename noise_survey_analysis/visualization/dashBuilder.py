@@ -1,7 +1,7 @@
 import logging
 from bokeh.plotting import curdoc
 from bokeh.layouts import column, LayoutDOM # Ensure column is imported
-from bokeh.models import Div, ColumnDataSource # Import for assertions and error messages
+from bokeh.models import Div, ColumnDataSource, CustomJS # Import for assertions and error messages
 import pandas as pd
 import numpy as np  # Import numpy for array operations
 import os
@@ -242,6 +242,11 @@ class DashBuilder:
                 name=f"layout_{position_name}"
             )
             position_layouts.append(pos_layout)
+        
+        # Create the JS initialization trigger Div
+        self.js_init_trigger = Div(
+            text="", width=0, height=0, visible=False, name="js_init_trigger"
+        )
 
         controls_layout = self.shared_components['controls'].layout()
         # The final layout assembly
@@ -251,7 +256,8 @@ class DashBuilder:
             *position_layouts, 
             self.shared_components['freq_bar'].layout() if 'freq_bar' in self.shared_components else Div(),
             self.shared_components['summary_table'].layout(),
-            name="main_layout"
+            self.js_init_trigger, # Add the invisible trigger to the layout
+            name="main_layout",
         )
 
         doc.add_root(final_layout)
@@ -285,51 +291,35 @@ class DashBuilder:
         js_models_for_args = self._assemble_js_bridge_dictionary()
         app_js_code = self._load_all_js_files() #the full app.js code
 
-        js_code = f"""
+        init_js_code = f"""
             console.log("Bokeh document is ready. Initializing NoiseSurveyApp...");
 
             {app_js_code}
 
-            setTimeout(() => {{
-                console.log("This happened after 0.5 seconds (non-blocking).");
-            
+            // This block will run once the trigger div becomes visible
+            const models = {{
+                charts: charts, chartsSources: chartsSources, timeSeriesSources: timeSeriesSources,
+                preparedGlyphData: preparedGlyphData, uiPositionElements: uiPositionElements,
+                clickLines: clickLines, hoverLines: hoverLines, labels: labels, hoverDivs: hoverDivs,
+                visibilityCheckBoxes: visibilityCheckBoxes, barSource: barSource, barChart: barChart,
+                paramSelect: paramSelect, freqTableDiv: freqTableDiv, summaryTableDiv: summaryTableDiv,
+                audio_controls: audio_controls, components: components,
+            }};
 
-                const models = {{
-                    charts: charts,
-                    chartsSources: chartsSources,
-                    timeSeriesSources: timeSeriesSources,
-                    preparedGlyphData: preparedGlyphData,
-                    uiPositionElements: uiPositionElements,
-                    clickLines: clickLines,
-                    hoverLines: hoverLines,
-                    labels: labels,
-                    hoverDivs: hoverDivs,
-                    visibilityCheckBoxes: visibilityCheckBoxes,
-                    barSource: barSource,
-                    barChart: barChart,
-                    paramSelect: paramSelect,
-                    freqTableDiv: freqTableDiv,
-                    summaryTableDiv: summaryTableDiv,
-                    //audio_control_source: audio_control_source,
-                    //audio_status_source: audio_status_source,
-                    audio_controls: audio_controls,
-                    components: components,
-                }};
-
-                console.log('[NoiseSurveyApp]', 'Models:', models);
-
-                if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init === 'function') {{
-                    console.log('DEBUG: Found NoiseSurveyApp, calling init...');
-                    window.NoiseSurveyApp.init(models);
-                }} else {{
-                    console.error('CRITICAL ERROR: NoiseSurveyApp.init not found. Check that app.js is loaded correctly.');
-                }}
-            }}, 500); // 500 milliseconds = 0.5 seconds
+            if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init === 'function') {{
+                console.log('DEBUG: Found NoiseSurveyApp, calling init...');
+                window.NoiseSurveyApp.init(models);
+            }} else {{
+                console.error('CRITICAL ERROR: NoiseSurveyApp.init not found. Check that app.js is loaded correctly.');
+            }}
         """
 
-        # Set up the DocumentReady callback, passing the python models dict to 'args'
-        # The keys in this dict MUST match the variable names used in the JS code above.
-        doc.js_on_event(DocumentReady, CustomJS(args=js_models_for_args, code=js_code))
+        # Attach the initialization code to the 'visible' property of our trigger div.
+        self.js_init_trigger.js_on_change('visible', CustomJS(args=js_models_for_args, code=init_js_code))
+
+        # Schedule the trigger to become visible on the next tick.
+        # This ensures the layout is in the DOM before the JS tries to run.
+        doc.add_next_tick_callback(lambda: setattr(self.js_init_trigger, 'visible', True))
 
         #trigger_source = ColumnDataSource(data={'trigger': [0]}, name='js_init_trigger')
         #trigger_source.js_on_change('data', CustomJS(args=js_models_for_args, code=js_code))
