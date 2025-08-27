@@ -259,8 +259,10 @@ function renderPrimaryCharts(state) {
                 // Update playback rate button label (always reflects current rate)
                 controls.playbackRateButton.label = `${playbackRate.toFixed(1)}x`;
 
-                // Update volume boost toggle (only show active for the playing position)
-                controls.volumeBoostButton.active = isThisPositionActive ? volumeBoost : false;
+                // Update volume boost toggle and color
+                const isBoostActiveForThisPos = isThisPositionActive && volumeBoost;
+                controls.volumeBoostButton.active = isBoostActiveForThisPos;
+                controls.volumeBoostButton.button_type = isBoostActiveForThisPos ? 'warning' : 'light'; // 'warning' (orange) when active, 'light' (grey) otherwise
             }
         });
     }

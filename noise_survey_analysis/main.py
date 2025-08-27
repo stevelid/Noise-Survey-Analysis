@@ -1,5 +1,5 @@
 import logging
-from re import L
+import re
 from bokeh.plotting import curdoc
 from bokeh.models import ColumnDataSource, Div
 from bokeh.io import output_file, save
@@ -30,38 +30,40 @@ logger = logging.getLogger(__name__)
 
 
 
-def generate_static_html():
+def generate_static_html(config_path):
     """
-    Builds the dashboard layout and saves it as a standalone HTML file.
+    Builds the dashboard layout from a config file and saves it as a standalone HTML file.
     """
-    output_filename, source_configs = load_config_and_prepare_sources()
+    logger.info(f"--- Generating static HTML from config: {config_path} ---")
+    
+    # Determine output filename from config path
+    config_filename = Path(config_path).name
+    job_number_match = re.search(r'(\d+)', config_filename)
+    if job_number_match:
+        job_number = job_number_match.group(1)
+        output_filename = f"{job_number}_survey_dashboard.html"
+    else:
+        # Fallback to the name specified inside the config file, or a default.
+        loaded_filename, _ = load_config_and_prepare_sources(config_path=config_path)
+        output_filename = loaded_filename or "default_dashboard.html"
+        logger.warning(f"Could not find job number in '{config_filename}'. Falling back to filename: {output_filename}")
+
+    # The output directory is the same as the config file's directory.
+    output_dir = Path(config_path).parent
+    output_full_path = output_dir / output_filename
+
+    # Now, load the source configs for the data manager
+    _, source_configs = load_config_and_prepare_sources(config_path=config_path)
     if source_configs is None:
         logger.error("Could not load source configurations. Aborting static generation.")
         return
 
-    # Determine output directory based on source file locations
-    all_file_paths = []
-    for config in source_configs:
-        if config.get("enabled", True):
-            all_file_paths.extend(list(config.get('file_paths', set())))
+    logger.info(f"Output will be saved to: {output_full_path}")
 
-    output_dir = project_root
-    if all_file_paths:
-        common_folder = find_lowest_common_folder(all_file_paths)
-        if common_folder:
-            output_dir = Path(common_folder)
-            logger.info(f"Common source directory found. Setting output location to: {output_dir}")
-        else:
-            logger.info("No common source directory found. Using default project directory for output.")
-    
-    output_full_path = output_dir / output_filename
-
-    logger.info(f"--- Generating static HTML file: {output_full_path} ---")
-    
     # 1. Load Data
     app_data = DataManager(source_configurations=source_configs)
 
-    # 2. Instantiate builder
+    # 2. Instantiate builder (no audio for static version)
     dash_builder = DashBuilder(audio_control_source=None, audio_status_source=None)
 
     # 3. Create and build document
@@ -153,23 +155,39 @@ def create_app(doc, config_path=None):
 # MAIN EXECUTION BLOCK
 # ==============================================================================
 
-# This script can be run in two ways:
-# 1. Directly with `python main.py`: This will generate a static HTML file of
-#    the dashboard without a live backend.
-# 2. With `bokeh serve main.py`: This will run a live server application.
+def main():
+    """Main entry point for command-line execution."""
+    parser = argparse.ArgumentParser(description="Noise Survey Analysis Tool.")
+    parser.add_argument(
+        "--generate-static",
+        type=str,
+        metavar="CONFIG_PATH",
+        help="Generate a static HTML report from the specified JSON configuration file."
+    )
+    # Note: --config for the live server is handled via Bokeh's `--args` mechanism.
+
+    # This check prevents argparse from running when script is used by Bokeh server
+    if "bokeh" not in " ".join(sys.argv):
+        args = parser.parse_args()
+        if args.generate_static:
+            if os.path.exists(args.generate_static):
+                generate_static_html(config_path=args.generate_static)
+            else:
+                logger.error(f"Configuration file not found: {args.generate_static}")
+                sys.exit(1)
+        else:
+            print("No action specified. To generate a static report, use --generate-static CONFIG_PATH.")
+            print("To run the live server, use: bokeh serve main.py")
 
 # We determine the execution mode by checking for a session context.
 doc = curdoc()
-if doc.session_context is None:
-    # No session context, so we're running as a standalone script.
-    logger.info("No Bokeh session context found. Generating static HTML file.")
-    generate_static_html()
-else:
+if doc.session_context:
     # Session context exists, so we're running as a Bokeh server app.
     logger.info("Bokeh session context found. Setting up live application.")
-    # --- Argument Parsing for Live App ---
-    # We use this approach to get args without interfering with Bokeh's own CLI args.
     args = doc.session_context.request.arguments
     config_file_path = args.get('config', [None])[0]
-
     create_app(doc, config_path=config_file_path)
+else:
+    # No session context, so we're running as a standalone script.
+    # This block will be executed when running `python main.py ...`
+    main()

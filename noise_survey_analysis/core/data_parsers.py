@@ -14,6 +14,12 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Tuple
 import wave
 import contextlib
+try:
+    import soundfile as sf  # Supports WAV/FLAC/OGG and more via libsndfile
+    _HAS_SF = True
+except Exception:
+    sf = None  # type: ignore
+    _HAS_SF = False
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +71,12 @@ class AbstractNoiseParser(ABC):
         pass
 
     def _safe_convert_to_float(self, df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+        """Safely convert all non-'Datetime' columns to numeric.
+
+        - Leaves None/empty dataframes unchanged
+        - Uses pandas' to_numeric with errors='coerce' to avoid exceptions
+        - Preserves already numeric columns
+        """
         if df is None or df.empty:
             return df
         
@@ -80,43 +92,73 @@ class AbstractNoiseParser(ABC):
                     logger.warning(f"Could not convert column '{col}' to numeric: {e}. Values set to NaN.")
         return df
 
-    def _normalize_datetime_column(self, df: pd.DataFrame, 
-                                   dt_col_names: List[str], # e.g., ['Datetime'] or ['Date', 'Time']
+    def _normalize_datetime_column(self, df: pd.DataFrame,
+                                   dt_col_names: List[str],
                                    new_name: str = 'Datetime',
                                    sort: bool = True) -> pd.DataFrame:
+        """Create a single timezone-aware UTC 'Datetime' column from 1 or 2 source columns.
+
+        Accepts either a single combined datetime column or separate date/time columns.
+        If multiple potential date/time columns are provided, it will pick the most
+        appropriate pair (e.g., 'Date'+'Time' or 'Start Date'+'Start Time').
+        Any unparsable rows are dropped.
+        """
         if df.empty:
             return df
 
-        datetime_series = None
-        # Handle single datetime column
-        if len(dt_col_names) == 1 and dt_col_names[0] in df.columns:
-            datetime_series = pd.to_datetime(df[dt_col_names[0]], errors='coerce')
-        # Handle separate date and time columns
-        elif len(dt_col_names) == 2 and dt_col_names[0] in df.columns and dt_col_names[1] in df.columns:
-            # Combine the two columns into a single series for conversion
-            datetime_str_series = df[dt_col_names[0]].astype(str) + ' ' + df[dt_col_names[1]].astype(str)
-            datetime_series = pd.to_datetime(datetime_str_series, errors='coerce')
+        # Determine which datetime source(s) to use
+        selected: Optional[Tuple[str, ...]] = None
+        # Common pairs first
+        if {'Date', 'Time'}.issubset(df.columns):
+            selected = ('Date', 'Time')
+        elif {'Start Date', 'Start Time'}.issubset(df.columns):
+            selected = ('Start Date', 'Start Time')
+        elif len(dt_col_names) == 2 and all(c in df.columns for c in dt_col_names):
+            selected = (dt_col_names[0], dt_col_names[1])
+        elif len(dt_col_names) >= 1 and dt_col_names[0] in df.columns:
+            selected = (dt_col_names[0],)
 
-        if datetime_series is None:
+        def _to_utc(series: pd.Series) -> pd.Series:
+            s = pd.to_datetime(series, errors='coerce')
+            try:
+                # Match original semantics: always treat values as local Europe/London
+                # regardless of any incoming timezone info.
+                s = s.dt.tz_localize(None)
+                s = s.dt.tz_localize('Europe/London', ambiguous='infer')
+                s = s.dt.tz_convert('UTC')
+            except Exception as e:
+                logger.warning(f"Failed to localize/convert timezone: {e}")
+            return s
+
+        if selected is None:
             logger.warning(f"Could not form datetime from columns: {dt_col_names}")
-            # Add an empty Datetime column to avoid downstream errors, though it will be dropped
             df[new_name] = pd.NaT
         else:
-            df[new_name] = datetime_series
-        
-        # Drop original date/time columns if they are different from the new_name and exist
+            if len(selected) == 1:
+                df[new_name] = _to_utc(df[selected[0]])
+            else:
+                # Combine date + time to a single string
+                combined = df[selected[0]].astype(str) + ' ' + df[selected[1]].astype(str)
+                df[new_name] = _to_utc(combined)
+
+        # Drop original date/time columns to avoid duplicates
         for old_dt_col in dt_col_names:
             if old_dt_col != new_name and old_dt_col in df.columns:
                 df = df.drop(columns=[old_dt_col])
-        
-        # Drop rows where datetime conversion failed
+
+        # Drop rows where datetime failed to parse
         df = df.dropna(subset=[new_name])
-        
+
         if sort and not df.empty:
-             df = df.sort_values(by=new_name).reset_index(drop=True)
+            df = df.sort_values(by=new_name).reset_index(drop=True)
         return df
 
     def _calculate_sample_period(self, df: Optional[pd.DataFrame]) -> Optional[float]:
+        """Estimate the most common sample period (seconds) from a Datetime column.
+
+        Uses mode of time differences with sensible fallbacks. Returns None if
+        insufficient data or Datetime not present.
+        """
         if df is None or df.empty or 'Datetime' not in df.columns or len(df) < 2:
             return None
         if len(df) < 3: # Only one interval
@@ -154,6 +196,11 @@ class AbstractNoiseParser(ABC):
         return None
 
     def sort_columns_by_prefix_and_frequency(self, columns: List[str]) -> List[str]:
+        """Sort spectral-like columns by their parameter prefix then frequency.
+
+        Keeps 'Datetime' first (if present) and sorts the remainder by parsing
+        names of the form '<prefix>_<freq>' where freq may include 'k' for thousands.
+        """
         if len(columns) <= 1:
             return columns
     
@@ -180,11 +227,18 @@ class AbstractNoiseParser(ABC):
         sorted_other_cols = sorted(other_cols, key=parse_column_key)
         return datetime_cols + sorted_other_cols
 
-    def _filter_df_columns(self, 
-                           df: Optional[pd.DataFrame], 
-                           data_category: str, # 'totals' or 'spectral'
-                           available_columns_from_parser: List[str], # Canonical names already set by parser
+    def _filter_df_columns(self,
+                           df: Optional[pd.DataFrame],
+                           data_category: str,  # 'totals' or 'spectral'
+                           available_columns_from_parser: List[str],  # Canonical names already set by parser
                            return_all_columns: bool = False) -> Optional[pd.DataFrame]:
+        """Filter dataframe to the expected set of columns for a given category.
+
+        - If return_all_columns is True, returns all available columns (plus Datetime if present)
+        - For 'totals', keeps standard broadband columns
+        - For 'spectral', keeps standard broadband columns plus recognized spectral bands
+        Always returns a copy to avoid SettingWithCopy warnings.
+        """
         if df is None or df.empty:
             return None
         
@@ -512,8 +566,10 @@ class NTiFileParser(AbstractNoiseParser):
                     if key: current_section_dict[key] = value
         return meta
 
-    def _get_nti_headers_and_data_start(self, table_lines: List[str], is_spectral: bool) -> Tuple[Optional[List[str]], int]:
-        # --- NEW LOGIC: Use a dedicated path for non-spectral (broadband) files ---
+    def _get_nti_headers_and_data_start(self, table_lines: List[str], is_spectral: bool, content_lines: List[str], table_start_idx: int) -> Tuple[Optional[List[str]], int]:
+        # --- NEW: Pass in original content_lines and table_start_idx to inspect section title ---
+
+        # --- Use a dedicated path for non-spectral (broadband) files ---
         if not is_spectral:
             broadband_param_row_idx = -1
             # Find the first row that contains a standard broadband parameter. That's our header row.
@@ -555,12 +611,47 @@ class NTiFileParser(AbstractNoiseParser):
             logger.info(f"Using broadband header logic. Headers found: {len(final_headers)}")
             return final_headers, data_start_idx
 
-        # --- ORIGINAL LOGIC (now exclusively for SPECTRAL files) ---
+        # --- MODIFIED SPECTRAL LOGIC ---
+
+        # --- NEW: Logic for Format 2 (parameter in section title) ---
+        section_title_line = content_lines[table_start_idx].strip()
+        title_parts = section_title_line.split()
+        # Check if the last part of the title is a parameter like 'LZeq_dt'
+        if len(title_parts) > 3 and title_parts[-1].startswith('L'):
+            param_from_title = title_parts[-1].replace('_dt', '')
+            logger.info(f"Detected Format 2 RTA Log. Parameter from title: '{param_from_title}'")
+            
+            # Find the frequency band row
+            band_row_idx = -1
+            for i, line in enumerate(table_lines):
+                if 'Band [Hz]' in line:
+                    band_row_idx = i
+                    break
+            
+            if band_row_idx != -1:
+                header_parts = table_lines[band_row_idx].strip().split('\t')
+                final_headers = []
+                for part in header_parts:
+                    part = part.strip()
+                    if part.replace('.', '', 1).isdigit(): # Check if it's a frequency
+                        freq = part.replace('.0', '')
+                        final_headers.append(f"{param_from_title}_{freq}")
+                    else: # It's a non-data column like 'Date', 'Time', etc.
+                        final_headers.append(part)
+                
+                data_start_idx = band_row_idx + 1
+                while data_start_idx < len(table_lines) and (not table_lines[data_start_idx].strip() or table_lines[data_start_idx].strip().startswith('[')):
+                    data_start_idx += 1
+                
+                return final_headers, data_start_idx
+            
+        # --- ORIGINAL LOGIC (now a fallback for Format 1) ---
+        logger.info("Did not find parameter in title, falling back to Format 1 RTA Log parsing.")
         unit_row_idx = -1
         for i, line in enumerate(table_lines):
             if '[dB]' in line:
                 unit_row_idx = i
-                break # Found it, no need to continue
+                break 
 
         if unit_row_idx == -1:
             logger.error("Could not identify the unit marker row ('[dB]') for spectral file.")
@@ -657,7 +748,7 @@ class NTiFileParser(AbstractNoiseParser):
             table_lines = [line for line in content_lines[table_start_idx + 1:] if line.strip()]
             if not table_lines: parsed_data_obj.metadata['error'] = "No data table found after marker"; return parsed_data_obj
 
-            headers, data_start_row = self._get_nti_headers_and_data_start(table_lines, is_spectral)
+            headers, data_start_row = self._get_nti_headers_and_data_start(table_lines, is_spectral, content_lines, table_start_idx)
             
             if not headers: parsed_data_obj.metadata['error'] = "Failed to construct headers from table"; return parsed_data_obj
 
@@ -715,13 +806,26 @@ class NTiFileParser(AbstractNoiseParser):
 
 class AudioFileParser(AbstractNoiseParser):
     def _get_wav_duration(self, filepath: str) -> float:
-        """Reads the duration in seconds from a WAV file's header."""
+        """Reads the duration in seconds from an audio file.
+
+        Uses soundfile (libsndfile) when available to support more formats (WAV/FLAC/OGG, etc.).
+        Falls back to Python's wave module for WAV files if soundfile is unavailable or fails.
+        """
+        # Preferred: soundfile
+        if _HAS_SF:
+            try:
+                info = sf.info(filepath)
+                if info.samplerate > 0:
+                    return float(info.frames) / float(info.samplerate)
+            except Exception as e:
+                logger.debug(f"soundfile failed to read duration for {os.path.basename(filepath)}: {e}. Falling back to wave if possible.")
+        # Fallback: wave (WAV only)
         try:
             with contextlib.closing(wave.open(filepath, 'r')) as f:
                 frames = f.getnframes()
                 rate = f.getframerate()
                 return frames / float(rate) if rate > 0 else 0
-        except (wave.Error, EOFError) as e:
+        except (wave.Error, EOFError, FileNotFoundError) as e:
             logger.warning(f"Could not read duration from {os.path.basename(filepath)}: {e}. Defaulting to 0s.")
             return 0
 
@@ -753,8 +857,8 @@ class AudioFileParser(AbstractNoiseParser):
                                 'filename': item_name,
                                 'full_path': item_path,
                                 'size_mb': round(stats.st_size / (1024 * 1024), 2),
-                                'modified_time': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S'),
-                                'Datetime': pd.to_datetime(stats.st_mtime, unit='s', utc=True).tz_localize(None).round('S'),
+                                'modified_time': pd.to_datetime(stats.st_mtime, unit='s', utc=True).round('S'),
+                                'Datetime': pd.to_datetime(stats.st_mtime, unit='s', utc=True).round('S'),
                                 'duration_sec': duration
                             })
             else:
@@ -764,12 +868,23 @@ class AudioFileParser(AbstractNoiseParser):
             
             if audio_files_details:
                 df_audio_list = pd.DataFrame(audio_files_details)
-                # Sort by filename to handle Svan's R1, R2, R10 correctly
-                if any(df_audio_list['filename'].str.lower().str.startswith('r')):
-                    df_audio_list['sort_key'] = df_audio_list['filename'].str.extract(r'R(\d+)', expand=False).astype(int)
-                    df_audio_list = df_audio_list.sort_values(by='sort_key').drop(columns=['sort_key'])
-                else: # Sort by datetime for NTi files
-                    df_audio_list = df_audio_list.sort_values(by='Datetime')
+                # This function will extract the numeric index from Svan (R##) or NTi (..._##) filenames
+                def get_sort_key(filename):
+                    # For Svan: R1, R2, R10 etc.
+                    svan_match = re.search(r'^R(\d+)\.wav$', filename, re.IGNORECASE)
+                    if svan_match:
+                        return int(svan_match.group(1))
+                    
+                    # For NTi: ..._Audio_AGC_00.wav, ..._01.wav etc.
+                    nti_match = re.search(r'_(\d+)\.wav$', filename, re.IGNORECASE)
+                    if nti_match:
+                        return int(nti_match.group(1))
+                    
+                    # Fallback for unknown formats
+                    return filename
+
+                df_audio_list['sort_key'] = df_audio_list['filename'].apply(get_sort_key)
+                df_audio_list = df_audio_list.sort_values(by='sort_key').drop(columns=['sort_key'])
                 
                 parsed_data_obj.totals_df = df_audio_list.reset_index(drop=True)
             

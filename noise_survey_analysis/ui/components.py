@@ -1,24 +1,21 @@
-
-
-
+import logging
 import pandas as pd
 import numpy as np
-import logging
-from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource, NumeralTickFormatter, DatetimeTickFormatter, Legend, DatetimeTicker
-from bokeh.palettes import Category10  # Using a standard palette
+import pytz
 from typing import Optional, Dict, Any, List
-from bokeh.models import ColorBar, Div, LinearColorMapper
-from bokeh.layouts import column
-from matplotlib.figure import Figure
+
 from bokeh.plotting import figure
 from bokeh.models import (
-    ColumnDataSource, 
-    FactorRange, 
-    Range1d, 
-    LabelSet, 
+    ColumnDataSource,
+    DatetimeTickFormatter,
+    DatetimeTicker,
+    CustomJSTickFormatter,
+    FactorRange,
+    Range1d,
+    LabelSet,
     HoverTool,
-    NumeralTickFormatter, # For y-axis formatting
+    NumeralTickFormatter,
+
     RangeTool,
     Span,
     Label,
@@ -26,12 +23,16 @@ from bokeh.models import (
     Tap,
     Toggle,
     Button,
-    Select, 
-    Row,
-    Column,
-    CheckboxGroup)
-from bokeh.palettes import Category10 # Or any other palette
+    Select,
+    CheckboxGroup,
+    ColorBar,
+    Div,
+    LinearColorMapper
+)
+from bokeh.layouts import column, Row, Column
+from bokeh.palettes import Category10
 
+from matplotlib.figure import Figure
 
 from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETTINGS
 from noise_survey_analysis.core.data_manager import PositionData
@@ -179,7 +180,13 @@ class TimeSeriesComponent:
 
     def _configure_figure_formatting(self):
         """Configures the formatting for the figure."""
-        self.figure.xaxis.formatter = DatetimeTickFormatter(days="%a %d/%m/%y", hours="%H:%M:%S") # Simplified formats
+        self.figure.xaxis.formatter = CustomJSTickFormatter(code="""
+            const d = new Date(tick);
+            const weekday = d.toLocaleDateString(undefined, { weekday: 'short' });
+            const date = d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' });
+            const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+            return `${weekday} ${date} ${time}`;
+        """)
         self.figure.xaxis.ticker = DatetimeTicker(desired_num_ticks=10) # Fewer ticks might be cleaner
         self.figure.yaxis.axis_label = "Sound Level (dB)"
 
@@ -307,7 +314,13 @@ class SpectrogramComponent:
             active_scroll=self.chart_settings['active_scroll'],
             name=f"figure_{self.name_id}"
         )
-        p.xaxis.formatter = DatetimeTickFormatter(days="%a %d/%m/%y", hours="%H:%M:%S") # Simplified formats
+        p.xaxis.formatter = CustomJSTickFormatter(code="""
+            const d = new Date(tick);
+            const weekday = d.toLocaleDateString(undefined, { weekday: 'short' });
+            const date = d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' });
+            const time = d.toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            return `${weekday} ${date} ${time}`;
+        """)
         p.xaxis.ticker = DatetimeTicker(desired_num_ticks=10) # Fewer ticks might be cleaner
         p.yaxis.axis_label = "Frequency (Hz)"
         #p.xaxis.axis_label = "Time"
@@ -416,8 +429,13 @@ class SpectrogramComponent:
         
         mode_data_root = position_glyph_data.get(display_mode)
         if not mode_data_root:
-            logger.warning(f"No prepared data for mode '{display_mode}' in {self.position_name}.")
-            return
+            logger.warning(f"No prepared data for mode '{display_mode}' in {self.position_name}. Attempting to fall back to 'overview'.")
+            mode_data_root = position_glyph_data.get('overview') # Attempt fallback
+            if not mode_data_root:
+                logger.error(f"Fallback to 'overview' also failed. No spectral data available for {self.position_name}.")
+                self.figure.visible = False
+                self.hover_div.visible = False
+                return
 
         prepared_param_data = mode_data_root.get('prepared_params', {}).get(parameter)
         if not prepared_param_data:
@@ -766,7 +784,13 @@ class RangeSelectorComponent:
         range_tool.overlay.fill_alpha = 0.2
         select_figure.add_tools(range_tool)
 
-        select_figure.xaxis.formatter = DatetimeTickFormatter(days="%a %d/%m/%y", hours="%H:%M:%S")
+        select_figure.xaxis.formatter = CustomJSTickFormatter(code="""
+            const d = new Date(tick);
+            const weekday = d.toLocaleDateString(undefined, { weekday: 'short' });
+            const date = d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' });
+            const time = d.toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            return `${weekday} ${date} ${time}`;
+        """)
         select_figure.xaxis.ticker = DatetimeTicker(desired_num_ticks=8)
         select_figure.grid.grid_line_color = None
         select_figure.yaxis.visible = False
@@ -1175,4 +1199,3 @@ class SummaryTableComponent:
     def layout(self):
         """Returns the Bokeh layout object for this component."""
         return self.summary_div
-        

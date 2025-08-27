@@ -4,7 +4,7 @@ import logging
 import time
 from bokeh.plotting import curdoc
 from bokeh.models import ColumnDataSource, Button, Select, Div, CustomJS
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Assuming AudioPlaybackHandler has been updated with set_amplification
 from .audio_handler import AudioPlaybackHandler
@@ -69,7 +69,10 @@ class AppCallbacks:
                 if position_id:
                     self.audio_handler.set_current_position(position_id)
                     # The audio handler now defaults to playing from the start of the file if no valid time is given.
-                    play_timestamp = datetime.utcfromtimestamp(value / 1000.0) if value else None
+                    if value:
+                        play_timestamp = datetime.utcfromtimestamp(value / 1000.0).replace(tzinfo=timezone.utc)
+                    else:
+                        play_timestamp = None
                     self.audio_handler.play(play_timestamp)
             elif command == 'pause':
                 self.audio_handler.pause()
@@ -78,7 +81,9 @@ class AppCallbacks:
                 if position_id and self.audio_handler.current_position != position_id:
                     logger.info(f"Seek command received for new position '{position_id}', switching audio source.")
                     self.audio_handler.set_current_position(position_id)                
-                self.audio_handler.seek_to_time(datetime.utcfromtimestamp(value / 1000.0))
+                if value:
+                    seek_timestamp = datetime.utcfromtimestamp(value / 1000.0).replace(tzinfo=timezone.utc)
+                    self.audio_handler.seek_to_time(seek_timestamp)
             elif command == 'set_rate':
                 if position_id:
                     self.audio_handler.set_current_position(position_id)

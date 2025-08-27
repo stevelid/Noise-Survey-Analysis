@@ -21,6 +21,8 @@ This tool provides a powerful, interactive dashboard for analyzing noise survey 
     *   Playback seeks automatically when you click on the charts.
     *   Clear visual indicators show which position is currently playing.
     *   Controls for play/pause, playback speed, and a +20dB volume boost for quiet recordings.
+*   **Audio File Scanning (Wider Format Support):**
+    *   The audio directory scanner now uses `soundfile` (libsndfile) to read durations, enabling support for common formats like WAV, FLAC, OGG, etc. WAV remains supported even without `soundfile`.
 *   **Keyboard Navigation:** Use arrow keys for fine-grained time-stepping.
 *   **Static HTML Export:** Generate a single, self-contained HTML file of the dashboard for easy sharing and reporting (audio playback is disabled in static mode).
 
@@ -30,6 +32,8 @@ This tool provides a powerful, interactive dashboard for analyzing noise survey 
 
 *   Python 3.8+
 *   **VLC Media Player:** Must be installed on your system for audio playback to function in the live server mode.
+*   `soundfile` Python package (included in `requirements.txt`) to read audio durations for multiple formats. On most platforms, wheels include `libsndfile`.
+    *   If you build from source or encounter installation issues, install `libsndfile` via your OS package manager (e.g., `brew install libsndfile` on macOS, `apt-get install libsndfile1` on Debian/Ubuntu). Windows wheels typically bundle it.
 *   Install the required Python packages:
     ```bash
     pip install -r requirements.txt
@@ -37,11 +41,11 @@ This tool provides a powerful, interactive dashboard for analyzing noise survey 
 
 ### 2. Run the Application
 
-You can run the tool in two modes from your terminal:
+You can run the tool in three ways from your terminal:
 
 **A) Live Interactive Server (Recommended)**
 
-This is the primary mode for analysis. It starts a local web server and opens an interactive data source selector.
+This is the primary mode for analysis. It starts a local web server and opens the interactive data source selector.
 
 ```bash
 bokeh serve noise_survey_analysis --show
@@ -51,11 +55,11 @@ Your browser will open to the **Data Source Selector**, where you can:
 *   **Scan a job directory** by providing a base path and job number.
 *   **Drag and drop** data files or folders directly onto the window.
 *   Select the files you want to include, assign position names, and load the dashboard.
-*   Optionally **save the selection** as a configuration file for quick reloading later.
+*   **Save the selection** as a portable configuration file (`.json`) for quick reloading later.
 
-**B) Live Server with Direct Configuration Load**
+**B) Live Server with a Configuration File**
 
-If you have a previously saved configuration file, you can bypass the selector and load the dashboard directly.
+If you have a previously saved configuration file, you can bypass the selector and load the dashboard directly. This is ideal for quickly revisiting a specific analysis.
 
 ```bash
 bokeh serve noise_survey_analysis --show --args --config /path/to/your/config.json
@@ -63,54 +67,57 @@ bokeh serve noise_survey_analysis --show --args --config /path/to/your/config.js
 
 **C) Generate a Static HTML File**
 
-This mode processes data from the default `config.json` and packages the dashboard into a single `.html` file that you can easily email or archive. Audio playback is disabled in this mode.
+This mode processes data from a specified configuration file and packages the dashboard into a single `.html` file that you can easily email or archive. Audio playback is disabled in this mode.
 
 ```bash
-python noise_survey_analysis/main.py
+python -m noise_survey_analysis.main --generate-static /path/to/your/config.json
 ```
 
-This will generate the file specified by `output_filename` in `config.json`. The file will be saved in the lowest common directory of your source files.
+This will generate a dashboard HTML file in the same directory as your configuration file.
 
-### 4. Advanced Configuration (Manual `config.json`)
+### 4. Configuration File Format (`.json`)
 
-While the interactive Data Source Selector is the primary way to load data, you can still manually create or edit a `config.json` file. This is useful for generating static reports or for complex setups.
+Configuration files are the most robust way to manage your data selections. They are generated automatically when you click "Save Config" in the Data Source Selector, but you can also edit them manually.
 
-Here is an example demonstrating key features:
+The format is designed to be portable, meaning you can move the config file along with its data, and the application will still be able to find the files.
+
+Here is an example of the `v1.2` format:
 
 ```json
 {
-  "output_filename": "advanced_survey_dashboard.html",
+  "version": "1.2",
+  "created_at": "2023-10-27T15:00:00.000000",
+  "config_base_path": "C:/Users/YourUser/Documents/NoiseSurveys/Job1234",
   "sources": [
     {
-      "position_name": "North - Detailed",
-      "enabled": true,
-      "return_all_columns": true,
-      "file_paths": [
-        "C:\\path\\to\\data\\L259_log.csv",
-        "C:\\path\\to\\data\\L259_summary.csv"
-      ]
+      "path": "Svan/Logs/Position1_data.csv",
+      "position": "North",
+      "type": "svan_log",
+      "parser_type": "svan"
     },
     {
-      "position_name": "East with Audio",
-      "enabled": true,
-      "file_paths": [
-        "C:\\path\\to\\data\\Sentry_log.csv",
-        "C:\\path\\to\\audio\\files\\"
-      ]
+      "path": "Audio/Position1/",
+      "position": "North",
+      "type": "audio_dir",
+      "parser_type": "audio"
+    },
+    {
+      "path": "NTi/Position2_data.txt",
+      "position": "East",
+      "type": "nti_log",
+      "parser_type": "nti"
     }
   ]
 }
 ```
 
-**Key Configuration Options:**
+**Key Fields:**
 
-*   `"output_filename"`: (String) The name of the generated static HTML file.
-*   `"sources"`: (List) A list of measurement positions.
-*   `"position_name"`: (String) The name for the position that appears in the dashboard.
-*   `"enabled"`: (Boolean) Set to `false` to exclude this position from loading.
-*   `"file_paths"`: (List of Strings) A list of all files and directories for this position.
-    *   **Audio Directories**: To include audio, simply add the path to the directory containing your `.wav` files. The application will automatically find and list them.
-*   `"return_all_columns"`: (Boolean) Optional. If set to `true`, the parser will load every available column from the data file, not just the standard ones (like `LAeq`, `LAFmax`, etc.). This is useful for non-standard or diagnostic parameters.
+*   `"config_base_path"`: The absolute path to the directory that serves as the root for all relative paths below. This is the key to portability.
+*   `"sources"`: A list of data source entries.
+*   `"path"`: The path to the data file or directory, relative to the `config_base_path`. The application combines these two paths to find the data.
+*   `"position"`: The name for the measurement position that appears in the dashboard.
+*   `"parser_type"`: The specific parser to use (`svan`, `nti`, `sentry`, `audio`, or `auto`).
 
 ## Project Structure
 

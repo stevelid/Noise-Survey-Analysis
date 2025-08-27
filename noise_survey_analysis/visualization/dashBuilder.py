@@ -314,12 +314,19 @@ class DashBuilder:
             }}
         """
 
-        # Attach the initialization code to the 'visible' property of our trigger div.
-        self.js_init_trigger.js_on_change('visible', CustomJS(args=js_models_for_args, code=init_js_code))
+        # We use different JS initialization methods for live vs. static modes.
+        is_live_server = doc.session_context is not None
 
-        # Schedule the trigger to become visible on the next tick.
-        # This ensures the layout is in the DOM before the JS tries to run.
-        doc.add_next_tick_callback(lambda: setattr(self.js_init_trigger, 'visible', True))
+        if is_live_server:
+            # For the live server, the next_tick callback ensures the DOM is ready.
+            logger.debug("Initializing JS for LIVE SERVER using next_tick_callback.")
+            self.js_init_trigger.js_on_change('visible', CustomJS(args=js_models_for_args, code=init_js_code))
+            doc.add_next_tick_callback(lambda: setattr(self.js_init_trigger, 'visible', True))
+        else:
+            # For static HTML, the DocumentReady event is the correct trigger.
+            # It fires after all Bokeh models are rendered in the browser.
+            logger.debug("Initializing JS for STATIC HTML using DocumentReady event.")
+            doc.js_on_event(DocumentReady, CustomJS(args=js_models_for_args, code=init_js_code))
 
         #trigger_source = ColumnDataSource(data={'trigger': [0]}, name='js_init_trigger')
         #trigger_source.js_on_change('data', CustomJS(args=js_models_for_args, code=js_code))

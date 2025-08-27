@@ -11,7 +11,7 @@ from bokeh.layouts import column, row, layout, grid
 from bokeh.models import (
     ColumnDataSource, DataTable, TableColumn, StringEditor, CheckboxEditor,
     TextInput, Button, Div, Spacer, Select, MultiSelect, CustomJS, Panel, Tabs,
-    HTMLTemplateFormatter, SelectEditor
+    HTMLTemplateFormatter, SelectEditor, NumberFormatter
 )
 from bokeh.events import ButtonClick
 import os.path
@@ -108,15 +108,16 @@ class DataSourceSelector:
         
         self.add_button = Button(label="Add ▶", width=100, button_type="success", disabled=True)
         self.remove_button = Button(label="◀ Remove", width=100, button_type="danger", disabled=True)
-        self.transfer_buttons = column(Spacer(height=120), self.add_button, Spacer(height=20), self.remove_button, Spacer(height=120), width=120)
+        self.bulk_edit_button = Button(label="Bulk Edit Positions", width=120, button_type="warning", disabled=True)
+        self.transfer_buttons = column(Spacer(height=100), self.add_button, Spacer(height=10), self.remove_button, Spacer(height=10), self.bulk_edit_button, Spacer(height=100), width=120)
         
-        self.included_files_label = Div(text="<b>Included Files:</b>", width=400)
+        self.included_files_label = Div(text="<b>Included Files:</b> <i>(Click position names to edit)</i>", width=500)
         
         parser_options = ['auto', 'svan', 'sentry', 'nti', 'audio']
         self.included_files_columns = [
             TableColumn(field="display_path", title="File Path", width=250),
             TableColumn(field="type", title="Type", width=80),
-            TableColumn(field="position", title="Position", editor=StringEditor(), width=120),
+            TableColumn(field="position", title="Position ✏️", editor=StringEditor(), width=120),
             TableColumn(field="parser_type", title="Parser", editor=SelectEditor(options=parser_options), width=100), 
             TableColumn(field="file_size", title="Size", width=80)
         ]
@@ -158,8 +159,10 @@ class DataSourceSelector:
         self.load_config_button.on_click(self._load_config)
         self.add_button.on_click(self._add_selected_files)
         self.remove_button.on_click(self._remove_selected_files)
+        self.bulk_edit_button.on_click(self._bulk_edit_positions)
         self.available_files_table.source.selected.on_change('indices', self._on_available_selection_change)
         self.included_files_table.source.selected.on_change('indices', self._on_included_selection_change)
+        self.included_files_source.on_change('data', self._validate_positions)
         self.dropped_files_source.on_change('data', self._handle_dropped_files)
 
     def _attach_dnd_handlers(self):
@@ -282,6 +285,30 @@ class DataSourceSelector:
     def _on_available_selection_change(self, attr, old, new): self.add_button.disabled = len(new) == 0
     def _on_included_selection_change(self, attr, old, new): self.remove_button.disabled = len(new) == 0
     
+    def _validate_positions(self, attr, old, new):
+        """Validate and auto-format position names when data changes."""
+        if 'position' not in new:
+            return
+            
+        positions = new['position']
+        cleaned_positions = []
+        
+        for pos in positions:
+            if isinstance(pos, str):
+                # Clean up position name: strip whitespace, capitalize first letter
+                cleaned = pos.strip()
+                if cleaned and not cleaned[0].isupper():
+                    cleaned = cleaned.capitalize()
+                cleaned_positions.append(cleaned)
+            else:
+                cleaned_positions.append(str(pos) if pos is not None else "")
+        
+        # Only update if there were actual changes to avoid infinite loops
+        if cleaned_positions != positions:
+            new_data = new.copy()
+            new_data['position'] = cleaned_positions
+            self.included_files_source.data = new_data
+    
     def _add_selected_files(self, event=None):
         selected_indices = self.available_files_table.source.selected.indices
         if not selected_indices: return
@@ -312,6 +339,86 @@ class DataSourceSelector:
         self.included_files_table.source.selected.indices = []
         self._update_button_states()
     
+    def _bulk_edit_positions(self, event=None):
+        """Open a dialog for bulk editing position names."""
+        included_data = self.included_files_source.data
+        if not included_data.get('position'):
+            return self._update_status("No files available for position editing.", 'orange')
+        
+        # Create a simple bulk edit interface using JavaScript
+        js_code = f"""
+        const positions = {included_data['position']};
+        const filePaths = {[path.split('/')[-1] for path in included_data['display_path']]};
+        
+        let editDialog = `
+        <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                    background: white; border: 2px solid #ccc; border-radius: 8px; 
+                    padding: 20px; z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+                    max-height: 80vh; overflow-y: auto; min-width: 500px;">
+            <h3>Bulk Edit Position Names</h3>
+            <div style="margin-bottom: 15px;">
+                <label>Apply to all: <input type="text" id="bulk-position-all" placeholder="Enter position name for all files" style="width: 200px; margin-left: 10px;"></label>
+                <button onclick="applyToAll()" style="margin-left: 10px; padding: 5px 10px; background: #007bff; color: white; border: none; border-radius: 3px;">Apply to All</button>
+            </div>
+            <hr>
+            <div style="margin-bottom: 15px;"><strong>Individual Positions:</strong></div>
+            <div id="position-inputs">`;
+        
+        for (let i = 0; i < positions.length; i++) {{
+            editDialog += `
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{filePaths[i]}}">${{filePaths[i]}}</span>
+                    <input type="text" id="pos-${{i}}" value="${{positions[i]}}" style="width: 150px; margin-left: 10px; padding: 3px;">
+                </div>`;
+        }}
+        
+        editDialog += `
+            </div>
+            <div style="margin-top: 20px; text-align: right;">
+                <button onclick="cancelEdit()" style="margin-right: 10px; padding: 8px 15px; background: #6c757d; color: white; border: none; border-radius: 3px;">Cancel</button>
+                <button onclick="savePositions()" style="padding: 8px 15px; background: #28a745; color: white; border: none; border-radius: 3px;">Save Changes</button>
+            </div>
+        </div>
+        <div id="dialog-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999;"></div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', editDialog);
+        
+        window.applyToAll = function() {{
+            const allValue = document.getElementById('bulk-position-all').value.trim();
+            if (allValue) {{
+                for (let i = 0; i < positions.length; i++) {{
+                    document.getElementById(`pos-${{i}}`).value = allValue;
+                }}
+            }}
+        }};
+        
+        window.cancelEdit = function() {{
+            document.querySelector('#dialog-overlay').remove();
+            document.querySelector('#dialog-overlay').nextElementSibling.remove();
+        }};
+        
+        window.savePositions = function() {{
+            const newPositions = [];
+            for (let i = 0; i < positions.length; i++) {{
+                newPositions.push(document.getElementById(`pos-${{i}}`).value.trim() || positions[i]);
+            }}
+            
+            // Update the Bokeh data source
+            const includedSource = Bokeh.documents[0].get_model_by_name('{self.included_files_source.name}');
+            if (includedSource) {{
+                const data = includedSource.data;
+                data['position'] = newPositions;
+                includedSource.change.emit();
+            }}
+            
+            cancelEdit();
+        }};
+        """
+        
+        self.doc.add_root(CustomJS(code=js_code))
+        self._update_status("Bulk position editor opened. Edit positions and click 'Save Changes'.", 'blue')
+    
     def _load_selected_data(self, event=None):
         if not self.included_files_source.data['index']:
             return self._update_status("No files are included for loading.", 'orange')
@@ -341,21 +448,27 @@ class DataSourceSelector:
             included_data = self.included_files_source.data
             if not included_data['fullpath']:
                 return self._update_status("No files selected to save in configuration.", 'orange')
-            
+
             file_paths = included_data['fullpath']
-            common_parent = self._find_common_parent_directory(file_paths) or self.current_job_directory or os.getcwd()
-            
+            # The base path for the config is the common parent of all included files.
+            config_base_path = self._find_common_parent_directory(file_paths) or self.current_job_directory or os.getcwd()
+
             config_data = {
-                "version": "1.1", "created_at": datetime.now().isoformat(),
-                "base_directory": self.base_directory_input.value, "job_number": self.job_number_input.value,
+                "version": "1.2",
+                "created_at": datetime.now().isoformat(),
+                "config_base_path": config_base_path.replace('\\', '/'),
                 "sources": []
             }
-            
+
             for i in range(len(included_data['fullpath'])):
+                full_path = included_data['fullpath'][i]
                 try:
-                    relative_path = os.path.relpath(included_data['fullpath'][i], common_parent)
+                    # Make path relative to the config's future location
+                    relative_path = os.path.relpath(full_path, config_base_path)
                 except ValueError:
-                    relative_path = included_data['fullpath'][i]
+                    # This occurs if paths are on different drives (e.g., C: vs D:)
+                    # In this case, we store the absolute path as a fallback.
+                    relative_path = os.path.abspath(full_path)
 
                 config_data["sources"].append({
                     "path": relative_path.replace('\\', '/'),
@@ -363,15 +476,17 @@ class DataSourceSelector:
                     "type": included_data['type'][i],
                     "parser_type": included_data['parser_type'][i]
                 })
-            
-            config_filename = f"noise_survey_config_{self.job_number_input.value or 'unknown'}.json"
-            config_path = os.path.join(common_parent, config_filename)
-            
+
+            job_num_str = self.job_number_input.value or 'custom_selection'
+            config_filename = f"noise_survey_config_{job_num_str}.json"
+            config_path = os.path.join(config_base_path, config_filename)
+
             with open(config_path, 'w') as f:
                 json.dump(config_data, f, indent=2)
-            
+
             self.current_config_path = config_path
             self._update_status(f"Configuration saved to: {config_path}", 'green')
+
         except Exception as e:
             self._update_status(f"Error saving configuration: {e}", 'red')
             logger.error(f"Error saving config: {e}", exc_info=True)
@@ -381,51 +496,58 @@ class DataSourceSelector:
             selected_indices = self.available_files_table.source.selected.indices
             if not selected_indices:
                 return self._update_status("Please select a config file from the 'Available Files' list.", 'orange')
-            
+
             available_data = self.available_files_source.data
             config_path = next((available_data['fullpath'][i] for i in selected_indices if available_data['parser_type'][i] == 'config'), None)
-            
+
             if not config_path:
                 return self._update_status("The selected file is not a valid config file.", 'orange')
-            
-            with open(config_path, 'r') as f: config_data = json.load(f)
-            
+
+            with open(config_path, 'r') as f:
+                config_data = json.load(f)
+
             if "sources" not in config_data:
                 return self._update_status("Invalid configuration file format.", 'red')
-            
+
             self._clear_table()
-            self.base_directory_input.value = config_data.get("base_directory", "")
-            self.job_number_input.value = config_data.get("job_number", "")
-            
-            config_dir = os.path.dirname(config_path)
+
+            # Determine the base path for resolving relative paths
+            # New format uses 'config_base_path', old format relies on the config file's directory
+            base_path = config_data.get('config_base_path', os.path.dirname(config_path))
+
             included_data = defaultdict(list)
             files_not_found = 0
 
             for i, source in enumerate(config_data["sources"]):
                 stored_path = source["path"]
-                full_path = os.path.abspath(os.path.join(config_dir, stored_path)) if not os.path.isabs(stored_path) else stored_path
+                # If stored_path is absolute, join will use it directly. Otherwise, it's joined with base_path.
+                full_path = os.path.abspath(os.path.join(base_path, stored_path))
 
                 if not os.path.exists(full_path):
-                    logger.warning(f"File from config not found: {full_path}")
+                    logger.warning(f"File from config not found: {full_path} (resolved from base '{base_path}' and path '{stored_path}')")
                     files_not_found += 1
                     continue
-                
+
+                display_path = os.path.relpath(full_path, base_path) if base_path in full_path else stored_path
+
                 included_data['index'].append(i)
                 included_data['position'].append(source.get("position", ""))
                 included_data['relpath'].append(stored_path)
-                included_data['display_path'].append(stored_path)
+                included_data['display_path'].append(display_path.replace('\\', '/'))
                 included_data['fullpath'].append(full_path)
                 included_data['type'].append(source.get("type", "unknown"))
                 included_data['file_size'].append(self._format_file_size(os.path.getsize(full_path)) if os.path.isfile(full_path) else "Dir")
-                included_data['group'].append(os.path.dirname(stored_path) or ".")
+                included_data['group'].append(os.path.dirname(display_path) or ".")
                 included_data['parser_type'].append(source.get("parser_type", "auto"))
-            
+
             self.included_files_source.data = dict(included_data)
             if included_data['index']: self._update_button_states()
 
             status_msg = f"Config loaded from: {os.path.basename(config_path)}"
-            if files_not_found: status_msg += f". Warning: {files_not_found} file(s) not found."
+            if files_not_found:
+                status_msg += f". Warning: {files_not_found} file(s) not found."
             self._update_status(status_msg, 'green' if not files_not_found else 'orange')
+
         except Exception as e:
             self._update_status(f"Error loading configuration: {e}", 'red')
             logger.error(f"Error loading config: {e}", exc_info=True)
@@ -446,6 +568,7 @@ class DataSourceSelector:
         has_included = bool(self.included_files_source.data.get('index'))
         self.load_button.disabled = not has_included
         self.save_config_button.disabled = not has_included
+        self.bulk_edit_button.disabled = not has_included
 
     def _format_file_size(self, size_bytes):
         if size_bytes >= 1048576: return f"{size_bytes / 1048576:.1f} MB"

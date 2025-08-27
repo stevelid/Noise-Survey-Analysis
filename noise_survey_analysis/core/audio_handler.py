@@ -13,6 +13,7 @@ import re
 from typing import Callable, Optional, List, Tuple
 import logging
 import vlc
+import pandas as pd # Make sure pandas is imported
 
 # Configure Logging
 logger = logging.getLogger(__name__)
@@ -27,7 +28,8 @@ class AudioPlaybackHandler:
 
     def __init__(self, position_data: dict):
         """
-        Initialize the audio playback handler.
+        Initialize the audio playback handler. It now reads pre-processed,
+        anchored audio file information directly from the position_data.
 
         Args:
             position_data (dict): The main data dictionary containing all positions,
@@ -56,57 +58,31 @@ class AudioPlaybackHandler:
         self.position_callback = None
         self.stop_monitor = False
 
-        self._index_from_position_data(position_data)
-
-    def _index_from_position_data(self, position_data: dict):
-        """
-        Iterates through all positions and indexes their audio files
-        using the pre-parsed audio_files_list DataFrame.
-        """
+        # --- NEW, SIMPLIFIED INITIALIZATION LOGIC ---
+        logger.info("AudioPlaybackHandler: Indexing pre-processed audio data...")
         for position_name, data_dict in position_data.items():
             if not getattr(data_dict, 'has_audio_files', False):
                 continue
 
-            logger.info(f"Indexing audio files for position '{position_name}'.")
-
             audio_df = data_dict.audio_files_list
-            files_to_process = []
-
-            is_svan = any(audio_df['filename'].str.lower().str.startswith('r'))
-
-            if is_svan:
-                anchor_df = None
-                if getattr(data_dict, 'has_overview_totals', False):
-                    anchor_df = data_dict.overview_totals
-                elif getattr(data_dict, 'has_log_totals', False):
-                    anchor_df = data_dict.log_totals
-
-                anchor_time = anchor_df['Datetime'].min() if anchor_df is not None and not anchor_df.empty else None
-
-                if anchor_time:
-                    current_time = anchor_time
-                    for _, row in audio_df.iterrows():
-                        duration = row['duration_sec']
-                        if duration > 0:
-                            files_to_process.append((row['full_path'], current_time, duration))
-                            current_time += datetime.timedelta(seconds=duration)
-                else:
-                    logger.warning(f"No measurement data found for position '{position_name}'. Cannot timeline-sync Svan audio files.")
             
-            else: # Assume NTi or other file types where modified time is the start time
-                for _, row in audio_df.iterrows():
-                    # For NTi, the start time is derived from the file's modification time.
-                    # The duration is fixed (e.g., 12 hours) as it's not in the file header.
-                    start_dt = row['modified_time']
-                    duration = 12 * 3600  # Default NTi duration
-                    files_to_process.append((row['full_path'], start_dt, duration))
+            # The DataManager should have already added the 'Datetime' column.
+            if 'Datetime' not in audio_df.columns:
+                logger.warning(f"Audio file list for '{position_name}' is missing anchored 'Datetime' column. Skipping audio for this position.")
+                continue
 
-            files_to_process.sort(key=lambda x: x[1]) # Sort by start time
+            files_to_process = []
+            for _, row in audio_df.iterrows():
+                # The row['Datetime'] is now the correct, UTC-aware timestamp
+                files_to_process.append((row['full_path'], row['Datetime'], row['duration_sec']))
+            
             self.file_info_by_position[position_name] = files_to_process
-            logger.info(f"Indexed {len(files_to_process)} audio files for position '{position_name}'.")
+            logger.info(f"Indexed {len(files_to_process)} pre-anchored audio files for position '{position_name}'.")
 
     def set_current_position(self, position: str) -> bool:
-         """Sets the active position to get audio from."""
+         """
+         Sets the active position to get audio from.
+         """
          if position == self.current_position:
              return True
          if self._is_playing:
@@ -151,6 +127,7 @@ class AudioPlaybackHandler:
 
             end_time = start_time + datetime.timedelta(seconds=duration_sec)
 
+            # This comparison will now work because both 'start_time' and 'timestamp' are timezone-aware
             if start_time <= timestamp < end_time:
                 offset = (timestamp - start_time).total_seconds()
                 return filepath, offset, start_time, duration_sec
