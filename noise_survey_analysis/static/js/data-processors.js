@@ -153,32 +153,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             chunkStartTimeIdx = Math.max(0, n_times - chunk_time_length);
                         }
 
-                        const chunk_image = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, chunk_time_length);
+                        const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, chunk_time_length);
 
-                        finalGlyphData = {
-                            ...finalDataToUse.initial_glyph_data,
-                            image: [chunk_image],
-                            x: [times_ms[chunkStartTimeIdx]],
-                            dw: [chunk_time_length * time_step],
-                            times_ms: times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + chunk_time_length),
-                        };
+                        // Apply paint-on-canvas frequency slicing for spectrogram
+                        finalGlyphData = _applySpectrogramFreqSlicing(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataState, models);
+
                     } else {
                         // Log view active, but too zoomed out
                         finalDataToUse = overviewData;
                         displayReason = ' - Zoom in for Log Data';
-                        finalGlyphData = finalDataToUse ? { ...finalDataToUse.initial_glyph_data, times_ms: finalDataToUse.times_ms } : null;
+                        finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataState, models) : null;
                     }
                 } else {
                     // Log view active, but no log data exists
                     finalDataToUse = overviewData;
                     displayReason = ' (No Log Data Available)';
-                    finalGlyphData = finalDataToUse ? { ...finalDataToUse.initial_glyph_data, times_ms: finalDataToUse.times_ms } : null;
+                    finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataState, models) : null;
                 }
             } else {
                 // Overview view is explicitly active
                 finalDataToUse = overviewData;
                 displayReason = ' (Overview)';
-                finalGlyphData = finalDataToUse ? { ...finalDataToUse.initial_glyph_data, times_ms: finalDataToUse.times_ms } : null;
+                finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataState, models) : null;
             }
 
             // --- Final state update ---
@@ -205,13 +201,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * Updates the active frequency bar data based on the current interaction context.
      * 
      * This function determines the context (position and timestamp) for the frequency bar
-     * from the currently active interaction (hover or tap), and calls _updateActiveFreqBarData()
-     * to update the bar chart's data.
+     * from the currently active interaction (hover or tap), and applies independent frequency
+     * slicing for the bar chart's specific range.
      */
     function updateActiveFreqBarData() {
 
         try {
             const _state = app.state.getState(); // _state is correct here as we are not updating it
+            const models = _models;
             const blankData = { levels: [], frequency_labels: [], sourceposition: '', timestamp: null, setBy: null, param: null };
 
             // --- Step 1: Determine the context and priority from the global state ---
@@ -254,9 +251,39 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            // --- Step 3: Apply independent frequency slicing for bar chart ---
+            const barFreqRange = models?.config?.freq_bar_freq_range_hz;
+            if (barFreqRange && activeSpectralData.frequencies_hz) {
+                const [barMinHz, barMaxHz] = barFreqRange;
+                const bar_start_idx = activeSpectralData.frequencies_hz.findIndex(f => f >= barMinHz);
+                const bar_end_idx = activeSpectralData.frequencies_hz.findLastIndex(f => f <= barMaxHz);
+                
+                if (bar_start_idx !== -1 && bar_end_idx !== -1) {
+                    // Extract levels for the bar chart's frequency range
+                    const barFreqCount = (bar_end_idx - bar_start_idx) + 1;
+                    const barLevelsSlice = new Float32Array(barFreqCount);
+                    
+                    for (let i = 0; i < barFreqCount; i++) {
+                        const globalFreqIdx = bar_start_idx + i;
+                        barLevelsSlice[i] = activeSpectralData.levels_flat_transposed[globalFreqIdx * activeSpectralData.n_times + closestTimeIdx];
+                    }
+                    
+                    _state.data.activeFreqBarData = {
+                        levels: Array.from(barLevelsSlice).map(l => (l === null || isNaN(l)) ? 0 : l),
+                        frequency_labels: activeSpectralData.frequency_labels.slice(bar_start_idx, bar_end_idx + 1),
+                        sourceposition: position,
+                        timestamp: timestamp,
+                        setBy: setBy,
+                        param: _state.view.selectedParameter,
+                        dataViewType: _state.view.displayDetails[position]?.spec?.type || 'None'
+                    };
+                    return;
+                }
+            }
+            
+            // --- Fallback: Use full frequency range if slicing config is missing or invalid ---
             const freqDataSlice = new Float32Array(activeSpectralData.n_freqs);
             for (let i = 0; i < activeSpectralData.n_freqs; i++) {
-                // This logic for accessing the transposed flat array remains the same
                 freqDataSlice[i] = activeSpectralData.levels_flat_transposed[i * activeSpectralData.n_times + closestTimeIdx];
             }
 
@@ -328,6 +355,102 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
         catch (error) {
             console.error(" [data-processors.js - _extractTimeChunkFromFlatData()]", error);
+        }
+    }
+
+    /**
+     * Apply paint-on-canvas frequency slicing for spectrogram display.
+     */
+    function _applySpectrogramFreqSlicing(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataState, models) {
+        try {
+            if (!finalDataToUse || !finalDataToUse.frequencies_hz || !models.config) {
+                return {
+                    ...finalDataToUse.initial_glyph_data,
+                    image: [chunk_image_full_freqs],
+                    x: [finalDataToUse.times_ms[chunkStartTimeIdx]],
+                    dw: [finalDataToUse.chunk_time_length * finalDataToUse.time_step],
+                    times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + finalDataToUse.chunk_time_length),
+                };
+            }
+
+            // Get frequency range and find indices
+            const [minHz, maxHz] = models.config.spectrogram_freq_range_hz;
+            const all_freqs_hz = finalDataToUse.frequencies_hz;
+            
+            const start_freq_index = all_freqs_hz.findIndex(f => f >= minHz);
+            const end_freq_index = all_freqs_hz.findLastIndex(f => f <= maxHz);
+            
+            
+            if (start_freq_index === -1 || end_freq_index === -1) {
+                // Handle edge case - no frequencies in range, show all
+                console.warn(`No frequencies found in spectrogram range ${minHz}-${maxHz} Hz for position ${position}`);
+                return {
+                    ...finalDataToUse.initial_glyph_data,
+                    image: [chunk_image_full_freqs],
+                    x: [finalDataToUse.times_ms[chunkStartTimeIdx]],
+                    dw: [finalDataToUse.chunk_time_length * finalDataToUse.time_step],
+                    times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + finalDataToUse.chunk_time_length),
+                };
+            }
+            
+            const visible_n_freqs = (end_freq_index - start_freq_index) + 1;
+            
+            // CRITICAL: Maintain original buffer size to preserve Bokeh datasource structure
+            if (!dataState._spectrogramCanvasBuffers) dataState._spectrogramCanvasBuffers = {};
+            const bufferKey = `${position}_original_${chunk_image_full_freqs.length}`;
+            
+            if (!dataState._spectrogramCanvasBuffers[bufferKey]) {
+                dataState._spectrogramCanvasBuffers[bufferKey] = new Float32Array(chunk_image_full_freqs.length);
+            }
+            
+            const canvasBuffer = dataState._spectrogramCanvasBuffers[bufferKey];
+            const transparent_val = finalDataToUse.min_val - 100;
+            
+            // Clear entire buffer, then copy only visible frequencies to their original positions
+            canvasBuffer.fill(transparent_val);
+            
+            for (let freq_idx = start_freq_index; freq_idx < start_freq_index + visible_n_freqs; freq_idx++) {
+                const source_row_start = freq_idx * finalDataToUse.chunk_time_length;
+                const source_row_end = source_row_start + finalDataToUse.chunk_time_length;
+                
+                if (source_row_end > chunk_image_full_freqs.length) {
+                    console.error(`[DEBUG] Source overflow! freq_idx: ${freq_idx}, source_row_end: ${source_row_end}, source_length: ${chunk_image_full_freqs.length}`);
+                    break;
+                }
+                
+                // Copy visible frequency band to the same position in the buffer (preserves original layout)
+                for (let i = 0; i < finalDataToUse.chunk_time_length; i++) {
+                    canvasBuffer[source_row_start + i] = chunk_image_full_freqs[source_row_start + i];
+                }
+            }
+            
+            const result = {
+                ...finalDataToUse.initial_glyph_data,
+                image: [canvasBuffer],  // Same size buffer as original
+                x: [finalDataToUse.times_ms[chunkStartTimeIdx]],
+                dw: [finalDataToUse.chunk_time_length * finalDataToUse.time_step],
+                // CRITICAL: Use original glyph positioning to match full image data layout
+                y: finalDataToUse.initial_glyph_data.y,      // Original position (matches full image)
+                dh: finalDataToUse.initial_glyph_data.dh,    // Original height (matches full image)
+                times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + finalDataToUse.chunk_time_length),
+                y_range_start: start_freq_index - 0.5,
+                y_range_end: end_freq_index + 0.5,
+                visible_frequency_labels: finalDataToUse.frequency_labels.slice(start_freq_index, end_freq_index + 1),
+                visible_freq_indices: Array.from({length: visible_n_freqs}, (_, i) => start_freq_index + i)
+            };
+            
+            return result;
+        }
+        catch (error) {
+            console.error(" [data-processors.js - _applySpectrogramFreqSlicing()]", error);
+            // Fallback to original behavior on error
+            return {
+                ...finalDataToUse.initial_glyph_data,
+                image: [chunk_image_full_freqs],
+                x: [finalDataToUse.times_ms[chunkStartTimeIdx]],
+                dw: [finalDataToUse.chunk_time_length * finalDataToUse.time_step],
+                times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + finalDataToUse.chunk_time_length),
+            };
         }
     }
 

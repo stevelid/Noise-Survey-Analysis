@@ -180,12 +180,23 @@ class TimeSeriesComponent:
 
     def _configure_figure_formatting(self):
         """Configures the formatting for the figure."""
-        self.figure.xaxis.formatter = CustomJSTickFormatter(code="""
+        self.figure.xaxis.formatter = CustomJSTickFormatter(args={"fig": self.figure}, code="""
             const d = new Date(tick);
-            const weekday = d.toLocaleDateString(undefined, { weekday: 'short' });
-            const date = d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' });
-            const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
-            return `${weekday} ${date} ${time}`;
+            const xstart = fig.x_range.start;
+            const xend = fig.x_range.end;
+            const window_ms = (typeof xstart === 'number' && typeof xend === 'number') ? (xend - xstart) : Number.POSITIVE_INFINITY;
+            const showSeconds = window_ms <= 15 * 60 * 1000; // show :ss when zoomed within 15 minutes
+
+            const weekdayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+            const weekday = weekdayNames[d.getDay()];
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const yy = String(d.getFullYear()).slice(-2);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const min = String(d.getMinutes()).padStart(2, '0');
+            const ss = String(d.getSeconds()).padStart(2, '0');
+            const base = `${weekday} ${dd}/${mm}/${yy} ${hh}:${min}`;
+            return showSeconds ? `${base}:${ss}` : base;
         """)
         self.figure.xaxis.ticker = DatetimeTicker(desired_num_ticks=10) # Fewer ticks might be cleaner
         self.figure.yaxis.axis_label = "Sound Level (dB)"
@@ -314,12 +325,23 @@ class SpectrogramComponent:
             active_scroll=self.chart_settings['active_scroll'],
             name=f"figure_{self.name_id}"
         )
-        p.xaxis.formatter = CustomJSTickFormatter(code="""
+        p.xaxis.formatter = CustomJSTickFormatter(args={"fig": p}, code="""
             const d = new Date(tick);
-            const weekday = d.toLocaleDateString(undefined, { weekday: 'short' });
-            const date = d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' });
-            const time = d.toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            return `${weekday} ${date} ${time}`;
+            const xstart = fig.x_range.start;
+            const xend = fig.x_range.end;
+            const window_ms = (typeof xstart === 'number' && typeof xend === 'number') ? (xend - xstart) : Number.POSITIVE_INFINITY;
+            const showSeconds = window_ms <= 15 * 60 * 1000; // show :ss when zoomed within 15 minutes
+
+            const weekdayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+            const weekday = weekdayNames[d.getDay()];
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const yy = String(d.getFullYear()).slice(-2);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const min = String(d.getMinutes()).padStart(2, '0');
+            const ss = String(d.getSeconds()).padStart(2, '0');
+            const base = `${weekday} ${dd}/${mm}/${yy} ${hh}:${min}`;
+            return showSeconds ? `${base}:${ss}` : base;
         """)
         p.xaxis.ticker = DatetimeTicker(desired_num_ticks=10) # Fewer ticks might be cleaner
         p.yaxis.axis_label = "Frequency (Hz)"
@@ -359,16 +381,30 @@ class SpectrogramComponent:
             self.figure.x_range.start = 0
             self.figure.x_range.end = 60000
 
-        # Update y_range (categorical based on indices)
-        self.figure.y_range.start = -0.5
-        self.figure.y_range.end = n_freqs - 0.5
+        # Apply frequency range cropping from config settings
+        min_freq_hz, max_freq_hz = self.chart_settings['spectrogram_freq_range_hz']
         
-        # Update Y-axis ticks and labels
-        self.figure.yaxis.ticker = freq_indices.tolist()
-        self.figure.yaxis.major_label_overrides = {
-            int(i): (str(int(freq)) if freq >=10 else f"{freq:.1f}") # No " Hz" for brevity
-            for i, freq in enumerate(selected_frequencies_numeric)
-        }
+        # Find the frequency indices that fall within the display range
+        visible_freq_indices = []
+        visible_freq_labels = {}
+        
+        for i, freq in enumerate(selected_frequencies_numeric):
+            if min_freq_hz <= freq <= max_freq_hz:
+                visible_freq_indices.append(i)
+                visible_freq_labels[i] = str(int(freq)) if freq >= 10 else f"{freq:.1f}"
+        
+        # Set y_range to show only the visible frequency range
+        if visible_freq_indices:
+            self.figure.y_range.start = visible_freq_indices[0] - 0.5
+            self.figure.y_range.end = visible_freq_indices[-1] + 0.5
+        else:
+            # Fallback to full range if no frequencies match
+            self.figure.y_range.start = -0.5
+            self.figure.y_range.end = n_freqs - 0.5
+        
+        # Update Y-axis ticks and labels to show only visible frequencies
+        self.figure.yaxis.ticker = visible_freq_indices
+        self.figure.yaxis.major_label_overrides = visible_freq_labels
         
         # Update or create image glyph
         if self.image_glyph:

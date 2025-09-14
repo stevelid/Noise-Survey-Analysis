@@ -2,13 +2,13 @@ import logging
 import re
 from bokeh.plotting import curdoc
 from bokeh.models import ColumnDataSource, Div
-from bokeh.io import output_file, save
-from bokeh.document import Document
 import sys
 import json
 import argparse
 import os
 from pathlib import Path
+import threading
+from datetime import datetime
 
 # --- Project Root Setup ---
 current_file = Path(__file__)
@@ -19,6 +19,8 @@ from noise_survey_analysis.core.config import CHART_SETTINGS
 from noise_survey_analysis.core.data_manager import DataManager
 from noise_survey_analysis.core.app_setup import load_config_and_prepare_sources
 from noise_survey_analysis.core.utils import find_lowest_common_folder
+from noise_survey_analysis.core.config_io import save_config_from_selected_sources
+from noise_survey_analysis.export.static_export import generate_static_html
 from noise_survey_analysis.core.audio_handler import AudioPlaybackHandler
 from noise_survey_analysis.core.app_callbacks import AppCallbacks, session_destroyed
 from noise_survey_analysis.visualization.dashBuilder import DashBuilder
@@ -27,56 +29,6 @@ from noise_survey_analysis.ui.data_source_selector import create_data_source_sel
 # --- Configure Logging ---
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-
-
-def generate_static_html(config_path):
-    """
-    Builds the dashboard layout from a config file and saves it as a standalone HTML file.
-    """
-    logger.info(f"--- Generating static HTML from config: {config_path} ---")
-    
-    # Determine output filename from config path
-    config_filename = Path(config_path).name
-    job_number_match = re.search(r'(\d+)', config_filename)
-    if job_number_match:
-        job_number = job_number_match.group(1)
-        output_filename = f"{job_number}_survey_dashboard.html"
-    else:
-        # Fallback to the name specified inside the config file, or a default.
-        loaded_filename, _ = load_config_and_prepare_sources(config_path=config_path)
-        output_filename = loaded_filename or "default_dashboard.html"
-        logger.warning(f"Could not find job number in '{config_filename}'. Falling back to filename: {output_filename}")
-
-    # The output directory is the same as the config file's directory.
-    output_dir = Path(config_path).parent
-    output_full_path = output_dir / output_filename
-
-    # Now, load the source configs for the data manager
-    _, source_configs = load_config_and_prepare_sources(config_path=config_path)
-    if source_configs is None:
-        logger.error("Could not load source configurations. Aborting static generation.")
-        return
-
-    logger.info(f"Output will be saved to: {output_full_path}")
-
-    # 1. Load Data
-    app_data = DataManager(source_configurations=source_configs)
-
-    # 2. Instantiate builder (no audio for static version)
-    dash_builder = DashBuilder(audio_control_source=None, audio_status_source=None)
-
-    # 3. Create and build document
-    static_doc = Document()
-    dash_builder.build_layout(static_doc, app_data, CHART_SETTINGS)
-
-    # 4. Save the document
-    try:
-        output_file(output_full_path, title="Noise Survey Dashboard")
-        save(static_doc)
-        logger.info(f"--- Static HTML file saved successfully to {output_full_path} ---")
-    except Exception as e:
-        logger.error(f"Failed to save static HTML file: {e}", exc_info=True)
 
 
 def create_app(doc, config_path=None):
@@ -112,6 +64,17 @@ def create_app(doc, config_path=None):
         )
         doc.add_root(loading_div)
         
+        # Save a config derived from the user's selection and kick off static export in background
+        try:
+            cfg_path = save_config_from_selected_sources(source_configs)
+            if cfg_path:
+                logger.info(f"Auto-saved selector config to {cfg_path}. Starting static export in background...")
+                threading.Thread(target=generate_static_html, args=(str(cfg_path),), daemon=True).start()
+            else:
+                logger.warning("Auto-save of selector config failed or returned no path; skipping static export.")
+        except Exception as e:
+            logger.error(f"Error during auto-save/config-based static export: {e}", exc_info=True)
+        
         # This function will run after the loading screen is displayed.
         def build_dashboard():
             app_data = DataManager(source_configurations=source_configs)
@@ -130,6 +93,13 @@ def create_app(doc, config_path=None):
         doc.add_next_tick_callback(build_dashboard)
     
     if config_path:
+        # Ensure config_path is a string (Bokeh passes bytes for --args)
+        if isinstance(config_path, (bytes, bytearray)):
+            try:
+                config_path = config_path.decode('utf-8')
+            except Exception:
+                config_path = str(config_path)
+
         logger.info(f"Attempting to load data directly from config file: {config_path}")
         _, source_configs = load_config_and_prepare_sources(config_path=config_path)
         if source_configs is not None:
@@ -186,6 +156,11 @@ if doc.session_context:
     logger.info("Bokeh session context found. Setting up live application.")
     args = doc.session_context.request.arguments
     config_file_path = args.get('config', [None])[0]
+    if isinstance(config_file_path, (bytes, bytearray)):
+        try:
+            config_file_path = config_file_path.decode('utf-8')
+        except Exception:
+            config_file_path = str(config_file_path)
     create_app(doc, config_path=config_file_path)
 else:
     # No session context, so we're running as a standalone script.

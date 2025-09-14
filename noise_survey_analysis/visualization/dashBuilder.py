@@ -303,7 +303,7 @@ class DashBuilder:
                 clickLines: clickLines, hoverLines: hoverLines, labels: labels, hoverDivs: hoverDivs,
                 visibilityCheckBoxes: visibilityCheckBoxes, barSource: barSource, barChart: barChart,
                 paramSelect: paramSelect, freqTableDiv: freqTableDiv, summaryTableDiv: summaryTableDiv,
-                audio_controls: audio_controls, components: components,
+                audio_controls: audio_controls, components: components, config: config,
             }};
 
             if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init === 'function') {{
@@ -341,6 +341,11 @@ class DashBuilder:
             'chartsSources': [],
             'timeSeriesSources': {},
             'preparedGlyphData': self.prepared_glyph_data,
+            'config': {
+                'spectrogram_freq_range_hz': CHART_SETTINGS.get('spectrogram_freq_range_hz'),
+                'freq_bar_freq_range_hz': CHART_SETTINGS.get('freq_bar_freq_range_hz'),
+                'freq_table_freq_range_hz': CHART_SETTINGS.get('freq_table_freq_range_hz'),
+            },
             'uiPositionElements': {},
             'clickLines': [],
             'hoverLines': [],

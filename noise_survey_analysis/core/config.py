@@ -24,8 +24,17 @@ REQUIRED_SPECTRAL_PREFIXES = [
 
 # Chart settings
 CHART_SETTINGS = {
-    'lower_freq_band': 6,
-    'upper_freq_band': -10,
+    # Defines the master frequency range to be prepared in Python and sent to the browser.
+    'data_prep_freq_range_hz': [20, 20000],
+
+    # Defines the default visible frequency range for the spectrogram display.
+    'spectrogram_freq_range_hz': [31, 2000],
+    
+    # Defines the frequency range for the interactive bar chart.
+    'freq_bar_freq_range_hz': [20, 10000],
+
+    # Defines the frequency range for the detailed data table.
+    'freq_table_freq_range_hz': [20, 10000],
     'low_freq_height': 360,      
     'low_freq_width': 1600,      
     'high_freq_height': 360,     

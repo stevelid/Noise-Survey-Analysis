@@ -16,10 +16,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             console.error(`Mismatched image data lengths. Existing: ${existingImageData.length}, New: ${newData.length}. Cannot update.`);
             return;
         }
-        // This element-by-element copy mutates the original array, which is what Bokeh needs.
-        for (let i = 0; i < newData.length; i++) {
-            existingImageData[i] = newData[i];
-        }
+        existingImageData.set(newData);
     }
 
     class Chart {
@@ -91,18 +88,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const timestampsToAdd = masterTimestampList.filter(t => !existingTimestamps.includes(t));
             const markersToRemove = this.markerModels.filter(m => !masterTimestampList.includes(m.location));
 
-            // Add new markers
+            // Add new markers using Bokeh document API
             timestampsToAdd.forEach(timestamp => {
-                const newMarker = new Bokeh.Models.Span({
-                    location: timestamp,
-                    dimension: 'height',
-                    line_color: 'orange',
-                    line_width: 2,
-                    line_alpha: 0.7,
-                    level: 'underlay',
-                    visible: true,
-                    name: `marker_${this.name}_${timestamp}`
-                });
+                const doc = Bokeh.documents[0];
+                if (!doc) {
+                    console.error("Bokeh document not available for creating Span markers");
+                    return;
+                }
+                
+                const newMarker = doc.add_model(
+                    doc.create_model('Span', {
+                        location: timestamp,
+                        dimension: 'height',
+                        line_color: 'orange',
+                        line_width: 2,
+                        line_alpha: 0.7,
+                        level: 'underlay',
+                        visible: true,
+                        name: `marker_${this.name}_${timestamp}`
+                    })
+                );
                 this.model.add_layout(newMarker);
                 this.markerModels.push(newMarker);
             });
@@ -186,12 +191,40 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (replacement && this.imageRenderer) {
                 const glyph = this.imageRenderer.glyph;
 
+                // The image data MUST be updated first, using our special function.
                 _updateBokehImageData(this.source.data.image[0], replacement.image[0]);
-
+                
+                // Update the glyph's position and size on the "canvas"
                 glyph.x = replacement.x[0];
-                glyph.y = replacement.y[0];
                 glyph.dw = replacement.dw[0];
-                glyph.dh = replacement.dh[0];
+                
+                // Handle frequency slicing by updating plot range but keeping original glyph positioning
+                if (replacement.y_range_start !== undefined && replacement.y_range_end !== undefined) {
+                    
+                    // CRITICAL: Keep original glyph positioning to match image data layout
+                    glyph.y = replacement.y[0];  // Original image position (matches data layout)
+                    glyph.dh = replacement.dh[0]; // Original image height (matches data layout)
+                    
+                    // Let the plot range crop the view to show only visible frequencies
+                    this.model.y_range.start = replacement.y_range_start;
+                    this.model.y_range.end = replacement.y_range_end;
+                } else {
+                    // Fallback to original glyph positioning if no frequency slicing
+                    glyph.y = replacement.y[0];
+                    glyph.dh = replacement.dh[0];
+                }
+
+                // Update the y-axis ticks to only show labels for the visible range (if frequency slicing was applied)
+                if (replacement.visible_freq_indices && replacement.visible_frequency_labels && this.model.yaxis && this.model.yaxis.ticker) {
+                    this.model.yaxis.ticker.ticks = replacement.visible_freq_indices;
+                    this.model.yaxis.major_label_overrides = {}; // Clear old labels first
+                    replacement.visible_freq_indices.forEach((tickIndex, i) => {
+                        // Recreate label from label string (e.g., "5000 Hz" -> "5000")
+                        const labelText = replacement.visible_frequency_labels[i].split(' ')[0];
+                        this.model.yaxis.major_label_overrides[tickIndex] = labelText;
+                    });
+                }
+                
                 this.render();
             } 
             // Visibility is now handled exclusively by the renderPrimaryCharts function.

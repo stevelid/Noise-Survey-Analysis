@@ -135,10 +135,6 @@ class GlyphDataProcessor:
                 logger.warning("No valid dates after conversion in spectral data")
                 return None
         
-        # --- Get band slicing settings ---
-        lower_band_idx = chart_settings.get('lower_freq_band', 0)
-        upper_band_idx = chart_settings.get('upper_freq_band', -1) # Slices up to, but not including, upper_band_idx
-        
         # --- Find and Sort Frequency Columns for the given parameter_prefix ---
         freq_cols_found: List[str] = []
         all_frequencies_numeric: List[float] = []
@@ -167,16 +163,19 @@ class GlyphDataProcessor:
         frequencies_numeric_sorted = np.array(all_frequencies_numeric)[sorted_indices]
         freq_columns_sorted = np.array(freq_cols_found)[sorted_indices]
         
-        # --- Apply Band Slicing ---
-        # If upper_band_idx is -1 (python slice convention for "to the end"), convert for numpy
-        actual_upper_band_idx = len(frequencies_numeric_sorted) if upper_band_idx == -1 else upper_band_idx
+        # --- Apply Hz-Based Frequency Filtering ---
+        min_hz, max_hz = chart_settings.get('data_prep_freq_range_hz', [20, 20000])
         
-        selected_frequencies = frequencies_numeric_sorted[lower_band_idx:actual_upper_band_idx]
-        selected_freq_columns = freq_columns_sorted[lower_band_idx:actual_upper_band_idx]
+        # Find the indices of the frequencies that fall within our desired master range.
+        valid_indices = np.where((frequencies_numeric_sorted >= min_hz) & (frequencies_numeric_sorted <= max_hz))[0]
         
-        if len(selected_frequencies) == 0:
-            logger.warning(f"No frequencies remaining after band slicing for '{param_prefix}'. Original count: {len(frequencies_numeric_sorted)}")
+        if valid_indices.size == 0:
+            logger.warning(f"No frequencies found in the configured range {min_hz}-{max_hz} Hz for param '{param_prefix}'.")
             return None
+
+        # Slice the arrays to get the final set of data we will send to the browser.
+        selected_frequencies = frequencies_numeric_sorted[valid_indices]
+        selected_freq_columns = freq_columns_sorted[valid_indices]
         
         n_freqs = len(selected_frequencies)
         frequency_labels_str = [(str(int(f)) if f.is_integer() else f"{f:.1f}") + " Hz" for f in selected_frequencies]
@@ -254,6 +253,7 @@ class GlyphDataProcessor:
           
         return {
             'frequency_labels': frequency_labels_str,         # Formatted string labels for ticks
+            'frequencies_hz': selected_frequencies.tolist(),  # Numeric frequency values for robust JS indexing
             'n_times': int(final_n_times),                    # total number of times
             'n_freqs': int(n_freqs),                          # total number of frequencies
             'chunk_time_length': int(chunk_time_length),      # number of times in a chunk

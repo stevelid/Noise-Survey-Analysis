@@ -149,7 +149,6 @@ function renderPrimaryCharts(state) {
 
     function renderFrequencyTable() {
         const _state = app.state.getState();
-        const freqData = _state.data.activeFreqBarData;
         const tableDiv = models.freqTableDiv;
 
         if (!tableDiv) {
@@ -157,16 +156,67 @@ function renderPrimaryCharts(state) {
             return;
         }
 
-        // Determine the labels to use for the header. Fallback to the bar chart's current labels if none in active data.
-        const labels = (freqData && freqData.frequency_labels && freqData.frequency_labels.length > 0)
-            ? freqData.frequency_labels
-            : models.barSource.data.frequency_labels;
+        // Get tap context for independent table data processing
+        const { isActive, timestamp, position } = _state.interaction.tap;
+        
+        if (!isActive || !timestamp || !position) {
+            tableDiv.text = "<p>Tap on a time series chart to populate this table.</p>";
+            return;
+        }
 
-        // Determine the levels to display. Use an empty array if no data.
-        const levels = (freqData && freqData.levels) ? freqData.levels : [];
+        // Get the full spectral data for the tapped position and timestamp
+        const activeSpectralData = _state.data.activeSpectralData[position];
+        if (!activeSpectralData?.times_ms?.length || !activeSpectralData.frequencies_hz) {
+            tableDiv.text = "<p>No frequency data available for selected position.</p>";
+            return;
+        }
+
+        const closestTimeIdx = activeSpectralData.times_ms.findLastIndex(time => time <= timestamp);
+        if (closestTimeIdx === -1) {
+            tableDiv.text = "<p>No data available at selected time.</p>";
+            return;
+        }
+
+        // Apply independent frequency slicing for table's specific range
+        const tableFreqRange = models?.config?.freq_table_freq_range_hz;
+        let labels, levels;
+        
+        if (tableFreqRange && activeSpectralData.frequencies_hz) {
+            const [tableMinHz, tableMaxHz] = tableFreqRange;
+            const table_start_idx = activeSpectralData.frequencies_hz.findIndex(f => f >= tableMinHz);
+            const table_end_idx = activeSpectralData.frequencies_hz.findLastIndex(f => f <= tableMaxHz);
+            
+            if (table_start_idx !== -1 && table_end_idx !== -1) {
+                // Extract data for the table's frequency range
+                const tableFreqCount = (table_end_idx - table_start_idx) + 1;
+                labels = activeSpectralData.frequency_labels.slice(table_start_idx, table_end_idx + 1);
+                
+                const tableLevelsSlice = new Float32Array(tableFreqCount);
+                for (let i = 0; i < tableFreqCount; i++) {
+                    const globalFreqIdx = table_start_idx + i;
+                    tableLevelsSlice[i] = activeSpectralData.levels_flat_transposed[globalFreqIdx * activeSpectralData.n_times + closestTimeIdx];
+                }
+                levels = Array.from(tableLevelsSlice);
+            } else {
+                // Fallback if no frequencies found in table range
+                labels = activeSpectralData.frequency_labels;
+                const freqDataSlice = new Float32Array(activeSpectralData.n_freqs);
+                for (let i = 0; i < activeSpectralData.n_freqs; i++) {
+                    freqDataSlice[i] = activeSpectralData.levels_flat_transposed[i * activeSpectralData.n_times + closestTimeIdx];
+                }
+                levels = Array.from(freqDataSlice);
+            }
+        } else {
+            // Fallback if config is missing - use full range
+            labels = activeSpectralData.frequency_labels;
+            const freqDataSlice = new Float32Array(activeSpectralData.n_freqs);
+            for (let i = 0; i < activeSpectralData.n_freqs; i++) {
+                freqDataSlice[i] = activeSpectralData.levels_flat_transposed[i * activeSpectralData.n_times + closestTimeIdx];
+            }
+            levels = Array.from(freqDataSlice);
+        }
 
         if (!labels || labels.length === 0) {
-            // If there are absolutely no labels to draw, show a simple message.
             tableDiv.text = "<p>Frequency bands not available.</p>";
             return;
         }
@@ -186,19 +236,12 @@ function renderPrimaryCharts(state) {
 
         tableHtml += `</tr><tr>`;
 
-        // If there are levels, display them. Otherwise, display blank cells.
-        if (levels.length > 0) {
-            levels.forEach(level => {
-                const levelNum = (level === null || isNaN(level)) ? NaN : parseFloat(level);
-                const levelText = isNaN(levelNum) ? 'N/A' : levelNum.toFixed(1);
-                tableHtml += `<td>${levelText}</td>`;
-            });
-        } else {
-            // Create blank cells matching the number of labels
-            labels.forEach(() => {
-                tableHtml += `<td>-</td>`;
-            });
-        }
+        // Display the levels data
+        levels.forEach(level => {
+            const levelNum = (level === null || isNaN(level)) ? NaN : parseFloat(level);
+            const levelText = isNaN(levelNum) ? 'N/A' : levelNum.toFixed(1);
+            tableHtml += `<td>${levelText}</td>`;
+        });
 
         tableHtml += `</tr></table>`;
         tableDiv.text = tableHtml;
