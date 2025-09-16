@@ -299,9 +299,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
 
-        updateAllCharts(state) {
-            const activeLineData = state.data.activeLineData[this.id];
-            const activeSpecData = state.data.activeSpectralData[this.id];
+        updateAllCharts(state, dataCache) {
+            const activeLineData = dataCache.activeLineData[this.id];
+            const activeSpecData = dataCache.activeSpectralData[this.id];
             if (this.timeSeriesChart) {
                 this.timeSeriesChart.update(activeLineData, state.view.displayDetails[this.id].line);
             }

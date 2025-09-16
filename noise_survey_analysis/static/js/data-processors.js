@@ -29,7 +29,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      *    from the currently active interaction (hover or tap), and calling
      *    _updateActiveFreqBarData() to update the bar chart's data.
      */
-    function updateActiveData(viewState, dataState, models) {
+    function updateActiveData(viewState, dataCache, models) {
         viewState.availablePositions.forEach(position => {
             const tsChartName = `figure_${position}_timeseries`;
             const specChartName = `figure_${position}_spectrogram`;
@@ -38,13 +38,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             // Only process data for charts that are currently visible
             if (viewState.chartVisibility[tsChartName] || viewState.chartVisibility[specChartName]) {
-                updateActiveLineChartData(position, viewState, dataState, models);
-                updateActiveSpectralData(position, viewState, dataState, models);
+                updateActiveLineChartData(position, viewState, dataCache, models);
+                updateActiveSpectralData(position, viewState, dataCache, models);
             }
         });
 
-        // If neither is active, timestamp will be null and the function will handle it.
-        updateActiveFreqBarData();
+        // This function is now called from onStateChange, so we get the full state there.
+        // We'll need to get the state inside this function for now.
+        // updateActiveFreqBarData is now called from onStateChange, so this call is redundant.
+        // const state = app.store.getState();
+        // updateActiveFreqBarData(state, dataCache);
     }
 
     /**
@@ -57,7 +60,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * @param {string} position - The position identifier for which the line chart data is updated.
      * @param {string} viewType - The type of view ('overview' or 'log') to determine data selection.
      */
-    function updateActiveLineChartData(position, viewState, dataState, models) {
+    function updateActiveLineChartData(position, viewState, dataCache, models) {
         try {
             const viewType = viewState.globalViewType;
             const sourceData = models.timeSeriesSources[position];
@@ -76,7 +79,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
                     if (pointsInView > MAX_LINE_POINTS_TO_RENDER) {
                         // Log view is active, but user is too zoomed out
-                        dataState.activeLineData[position] = overviewData || {};
+                        dataCache.activeLineData[position] = overviewData || {};
                         displayDetails = { type: 'overview', reason: ' - Zoom in for Log Data' };
                     } else {
                         // Happy path: Show a chunk of log data
@@ -87,17 +90,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         for (const key in logData) {
                             chunk[key] = logData[key].slice(sliceStart, sliceEnd);
                         }
-                        dataState.activeLineData[position] = chunk;
+                        dataCache.activeLineData[position] = chunk;
                         displayDetails = { type: 'log', reason: ' (Log Data)' };
                     }
                 } else {
                     // Log view is active, but no log data exists for this position
-                    dataState.activeLineData[position] = overviewData || {}; // Show overview as a fallback
+                    dataCache.activeLineData[position] = overviewData || {}; // Show overview as a fallback
                     displayDetails = { type: 'overview', reason: ' (No Log Data Available)' };
                 }
             } else {
                 // Overview view is explicitly active
-                dataState.activeLineData[position] = overviewData || {};
+                dataCache.activeLineData[position] = overviewData || {};
                 displayDetails = { type: 'overview', reason: ' (Overview)' };
             }
 
@@ -122,7 +125,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * @param {string} viewType - The type of view ('overview' or 'log') to determine data selection.
      * @param {string} parameter - The parameter to be displayed in the spectrogram.
      */
-    function updateActiveSpectralData(position, viewState, dataState, models) {
+    function updateActiveSpectralData(position, viewState, dataCache, models) {
         try {
             const viewType = viewState.globalViewType;
             const parameter = viewState.selectedParameter;
@@ -156,33 +159,33 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, chunk_time_length);
 
                         // Apply paint-on-canvas frequency slicing for spectrogram
-                        finalGlyphData = _applySpectrogramFreqSlicing(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataState, models);
+                        finalGlyphData = _applySpectrogramFreqSlicing(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataCache, models);
 
                     } else {
                         // Log view active, but too zoomed out
                         finalDataToUse = overviewData;
                         displayReason = ' - Zoom in for Log Data';
-                        finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataState, models) : null;
+                        finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataCache, models) : null;
                     }
                 } else {
                     // Log view active, but no log data exists
                     finalDataToUse = overviewData;
                     displayReason = ' (No Log Data Available)';
-                    finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataState, models) : null;
+                    finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataCache, models) : null;
                 }
             } else {
                 // Overview view is explicitly active
                 finalDataToUse = overviewData;
                 displayReason = ' (Overview)';
-                finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataState, models) : null;
+                finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataCache, models) : null;
             }
 
             // --- Final state update ---
             if (finalGlyphData && finalDataToUse) {
-                dataState.activeSpectralData[position] = { ...finalDataToUse, source_replacement: finalGlyphData };
+                dataCache.activeSpectralData[position] = { ...finalDataToUse, source_replacement: finalGlyphData };
             } else {
                 // This case handles when overviewData was also null in one of the fallback paths.
-                dataState.activeSpectralData[position] = { source_replacement: null, reason: 'No Data Available' };
+                dataCache.activeSpectralData[position] = { source_replacement: null, reason: 'No Data Available' };
                 // If we ended up with no data, this reason overrides any previous one.
                 displayReason = ' (No Data Available)';
             }
@@ -204,50 +207,49 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * from the currently active interaction (hover or tap), and applies independent frequency
      * slicing for the bar chart's specific range.
      */
-    function updateActiveFreqBarData() {
+    function updateActiveFreqBarData(state, dataCache) {
 
         try {
-            const _state = app.state.getState(); // _state is correct here as we are not updating it
-            const models = _models;
+            const { models } = app.registry; // Get models from registry
             const blankData = { levels: [], frequency_labels: [], sourceposition: '', timestamp: null, setBy: null, param: null };
 
             // --- Step 1: Determine the context and priority from the global state ---
             let position, timestamp, setBy;
 
-            if (_state.interaction.hover.isActive) {
+            if (state.interaction.hover.isActive) {
                 // Priority 1: Active hover
-                position = _state.interaction.hover.position;
-                timestamp = _state.interaction.hover.timestamp;
+                position = state.interaction.hover.position;
+                timestamp = state.interaction.hover.timestamp;
                 setBy = 'hover';
             }
-            else if (_state.interaction.tap.isActive) {
+            else if (state.interaction.tap.isActive) {
                 // Priority 2: Active tap (which may be driven by audio)
-                position = _state.interaction.tap.position;
-                timestamp = _state.interaction.tap.timestamp;
-                setBy = _state.audio.isPlaying && _state.audio.activePositionId === position ? 'audio' : 'tap';
+                position = state.interaction.tap.position;
+                timestamp = state.interaction.tap.timestamp;
+                setBy = state.audio.isPlaying && state.audio.activePositionId === position ? 'audio' : 'tap';
             }
             else {
                 // No active interaction, so set to blank and exit
-                _state.data.activeFreqBarData = blankData;
+                dataCache.activeFreqBarData = blankData;
                 return;
             }
 
             // If there's no valid context, exit
             if (!timestamp || !position) {
-                _state.data.activeFreqBarData = blankData;
+                dataCache.activeFreqBarData = blankData;
                 return;
             }
 
             // --- Step 2: Fetch and process data based on the determined context ---
-            const activeSpectralData = _state.data.activeSpectralData[position];
+            const activeSpectralData = dataCache.activeSpectralData[position];
             if (!activeSpectralData?.times_ms?.length) {
-                _state.data.activeFreqBarData = blankData;
+                dataCache.activeFreqBarData = blankData;
                 return;
             }
 
             const closestTimeIdx = activeSpectralData.times_ms.findLastIndex(time => time <= timestamp);
             if (closestTimeIdx === -1) {
-                _state.data.activeFreqBarData = blankData;
+                dataCache.activeFreqBarData = blankData;
                 return;
             }
 
@@ -268,14 +270,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         barLevelsSlice[i] = activeSpectralData.levels_flat_transposed[globalFreqIdx * activeSpectralData.n_times + closestTimeIdx];
                     }
                     
-                    _state.data.activeFreqBarData = {
+                    dataCache.activeFreqBarData = {
                         levels: Array.from(barLevelsSlice).map(l => (l === null || isNaN(l)) ? 0 : l),
                         frequency_labels: activeSpectralData.frequency_labels.slice(bar_start_idx, bar_end_idx + 1),
                         sourceposition: position,
                         timestamp: timestamp,
                         setBy: setBy,
-                        param: _state.view.selectedParameter,
-                        dataViewType: _state.view.displayDetails[position]?.spec?.type || 'None'
+                        param: state.view.selectedParameter,
+                        dataViewType: state.view.displayDetails[position]?.spec?.type || 'None'
                     };
                     return;
                 }
@@ -287,14 +289,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 freqDataSlice[i] = activeSpectralData.levels_flat_transposed[i * activeSpectralData.n_times + closestTimeIdx];
             }
 
-            _state.data.activeFreqBarData = {
+            dataCache.activeFreqBarData = {
                 levels: Array.from(freqDataSlice).map(l => (l === null || isNaN(l)) ? 0 : l),
                 frequency_labels: activeSpectralData.frequency_labels,
                 sourceposition: position,
                 timestamp: timestamp,
                 setBy: setBy,
-                param: _state.view.selectedParameter,
-                dataViewType: _state.view.displayDetails[position]?.spec?.type || 'None'
+                param: state.view.selectedParameter,
+                dataViewType: state.view.displayDetails[position]?.spec?.type || 'None'
             };
         }
         catch (error) {
@@ -307,7 +309,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * time duration of the currently active dataset for the position with focus.
      * The position with focus is determined by checking audio state first, then tap state.
      */
-    function calculateStepSize(state) { // Accept the full state object
+    function calculateStepSize(state, dataCache) { // Accept the full state object
         try {
             // Determine the focused position from the interaction state
             const positionId = state.interaction.tap.position || state.audio.activePositionId;
@@ -317,7 +319,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
     
-            const activeData = state.data.activeLineData[positionId];
+            const activeData = dataCache.activeLineData[positionId];
     
             if (!activeData || !activeData.Datetime || activeData.Datetime.length < 11) {
                 console.warn(`[DEBUG] Can't calculate step size for '${positionId}' - no data or not enough data points.`);
@@ -348,7 +350,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             for (let i = 0; i < n_freqs; i++) {
                 const row_offset = i * n_times_total;
                 const slice_start_in_flat_array = row_offset + start_time_idx;
-                const row_slice = typedFlatData.subarray(slice_start_in_flat_array, slice_start_in_flat_array + actual_slice_width);
+                const source_row_start = slice_start_in_flat_array;
+                const source_row_end = slice_start_in_flat_array + actual_slice_width;
+                const row_slice = typedFlatData.subarray(source_row_start, source_row_end);
                 chunk_data.set(row_slice, i * chunk_time_length);
             }
             return chunk_data;
@@ -361,7 +365,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     /**
      * Apply paint-on-canvas frequency slicing for spectrogram display.
      */
-    function _applySpectrogramFreqSlicing(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataState, models) {
+    function _applySpectrogramFreqSlicing(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataCache, models) {
         try {
             if (!finalDataToUse || !finalDataToUse.frequencies_hz || !models.config) {
                 return {
@@ -396,14 +400,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const visible_n_freqs = (end_freq_index - start_freq_index) + 1;
             
             // CRITICAL: Maintain original buffer size to preserve Bokeh datasource structure
-            if (!dataState._spectrogramCanvasBuffers) dataState._spectrogramCanvasBuffers = {};
+            if (!dataCache._spectrogramCanvasBuffers) dataCache._spectrogramCanvasBuffers = {};
             const bufferKey = `${position}_original_${chunk_image_full_freqs.length}`;
             
-            if (!dataState._spectrogramCanvasBuffers[bufferKey]) {
-                dataState._spectrogramCanvasBuffers[bufferKey] = new Float32Array(chunk_image_full_freqs.length);
+            if (!dataCache._spectrogramCanvasBuffers[bufferKey]) {
+                dataCache._spectrogramCanvasBuffers[bufferKey] = new Float32Array(chunk_image_full_freqs.length);
             }
             
-            const canvasBuffer = dataState._spectrogramCanvasBuffers[bufferKey];
+            const canvasBuffer = dataCache._spectrogramCanvasBuffers[bufferKey];
             const transparent_val = finalDataToUse.min_val - 100;
             
             // Clear entire buffer, then copy only visible frequencies to their original positions

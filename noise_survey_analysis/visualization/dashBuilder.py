@@ -266,15 +266,27 @@ class DashBuilder:
     def _load_all_js_files(self):
         """Loads all JavaScript files in the correct order."""
         # Define the order in which JS files should be loaded
+        # This order is critical for dependencies to be met before they are used.
         js_files_order = [
-            'utils.js',
-            'chart-classes.js',
-            'state-management.js',
-            'data-processors.js',
-            'renderers.js',
-            'event-handlers.js',
-            'app.js'  # Main app file, likely depends on the others
-        ]
+                # 1. State Management Core (in dependency order)
+                'actions.js',
+                'reducers.js',        # Defines rootReducer, needed by store
+                'store.js',           # Creates the store, needs rootReducer
+                'init.js',            # Creates app.init and reInitializeStore, needs store
+
+                # 2. Core setup and utilities
+                'utils.js',
+
+                # 3. Application modules
+                'chart-classes.js',   # Defines Chart classes, needed by registry
+                'registry.js',        # Defines the model/controller registry
+                'data-processors.js', # (No hard dependencies on others)
+                'renderers.js',       # (No hard dependencies on others)
+                'event-handlers.js',  # Depends on actions and store
+
+                # 4. Main application entry point (loads last)
+                'app.js'              # Wires everything together, attaches app.init.initialize
+            ]
 
         all_js_code = []
         for file_name in js_files_order:
@@ -306,9 +318,9 @@ class DashBuilder:
                 audio_controls: audio_controls, components: components, config: config,
             }};
 
-            if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init === 'function') {{
+            if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init.initialize === 'function') {{
                 console.log('DEBUG: Found NoiseSurveyApp, calling init...');
-                window.NoiseSurveyApp.init(models);
+                window.NoiseSurveyApp.init.initialize(models);
             }} else {{
                 console.error('CRITICAL ERROR: NoiseSurveyApp.init not found. Check that app.js is loaded correctly.');
             }}

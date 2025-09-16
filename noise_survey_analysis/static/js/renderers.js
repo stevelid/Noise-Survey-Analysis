@@ -12,16 +12,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function(app) {
     'use strict';
 
-    let models = app.models;
-    let controllers = app.controllers;
-    let SpectrogramChart = app.classes.SpectrogramChart;
+    // Dependencies are accessed dynamically within each function (e.g., `app.registry.models`)
+    // to ensure they are not stale, especially in test environments.
 
 /**
      * Updates the primary data sources of the main charts.
      * This is a HEAVY operation and should only be called when the underlying
      * data view (zoom level, parameter, log/overview) changes.
      */
-function renderPrimaryCharts(state) {
+function renderPrimaryCharts(state, dataCache) {
+    const { controllers } = app.registry;
+    if (!controllers?.positions) return;
+
     for (const posId in controllers.positions) {        
         const controller = controllers.positions[posId];
         const tsChartName = `figure_${posId}_timeseries`;
@@ -39,7 +41,7 @@ function renderPrimaryCharts(state) {
             }
         }
         // Update the data for the controller if any of its charts are visible
-        controller.updateAllCharts(state);
+        controller.updateAllCharts(state, dataCache);
     }
 }
 
@@ -47,32 +49,34 @@ function renderPrimaryCharts(state) {
      * Updates lightweight UI overlays like lines and labels.
      * This is a LIGHT operation and can be called frequently.
      */
-    function renderOverlays() {
-        renderTapLines();
-        renderLabels();
-        renderHoverEffects();
-        renderSummaryTable();
+    function renderOverlays(state, dataCache) {
+        renderTapLines(state);
+        renderLabels(state);
+        renderHoverEffects(state, dataCache);
+        renderSummaryTable(state, dataCache);
     }
 
-    function renderAllVisuals(state) {
+    function renderAllVisuals(state, dataCache) {
         // This function is now deprecated. All rendering should go through _dispatchAction.
         // It's kept for backward compatibility during refactoring, but will be removed.
-        console.warn("[DEBUG] renderAllVisuals() called. This function is deprecated. Use _dispatchAction instead.");
-        renderPrimaryCharts(state);
-        renderOverlays();
-        renderFrequencyBar();
+        console.warn("[DEBUG] renderAllVisuals() called. This function is deprecated. Use app.state.dispatchAction instead.");
+        renderPrimaryCharts(state, dataCache);
+        renderOverlays(state, dataCache);
+        renderFrequencyBar(state, dataCache);
     }
 
-    function renderHoverEffects() {
-        const _state = app.state.getState();
-        const hoverState = _state.interaction.hover;
+    function renderHoverEffects(state, dataCache) {
+        const { controllers } = app.registry;
+        const SpectrogramChart = app.classes.SpectrogramChart;
+        if (!controllers || !SpectrogramChart) return;
 
-        // Update data for the bar chart based on hover
-        app.data_processors.updateActiveFreqBarData(hoverState.position, hoverState.timestamp, 'hover'); //TODO: ??this is impure. Should be moved outside this function. 
-        renderFrequencyBar();
+        const hoverState = state.interaction.hover;
+
+        // The data processing is now handled in onStateChange, so we just need to render.
+        renderFrequencyBar(state, dataCache);
 
         // Only render hover effects if hover is enabled
-        if (_state.view.hoverEnabled) {
+        if (state.view.hoverEnabled) {
             controllers.chartsByName.forEach(chart => {
                 if (hoverState.isActive) {
                     chart.renderHoverLine(hoverState.timestamp);
@@ -82,7 +86,7 @@ function renderPrimaryCharts(state) {
                 }
 
                 if (chart instanceof SpectrogramChart) {
-                    chart.renderHoverDetails(hoverState, _state.data.activeFreqBarData);
+                    chart.renderHoverDetails(hoverState, dataCache.activeFreqBarData);
                 }
             });
         } else {
@@ -93,12 +97,14 @@ function renderPrimaryCharts(state) {
         }
 
         // After updating hover effects, re-render the labels with the new context
-        renderLabels();
+        renderLabels(state);
     }
 
-    function renderTapLines() {
-        const _state = app.state.getState();
-        const { isActive, timestamp } = _state.interaction.tap;
+    function renderTapLines(state) {
+        const { models } = app.registry;
+        if (!models?.clickLines) return;
+
+        const { isActive, timestamp } = state.interaction.tap;
         models.clickLines.forEach(line => {
             if (line) {
                 line.location = timestamp;
@@ -107,10 +113,12 @@ function renderPrimaryCharts(state) {
         });
     }
 
-    function renderLabels() {
-        const _state = app.state.getState();
-        const hoverState = _state.interaction.hover;
-        const tapState = _state.interaction.tap;
+    function renderLabels(state) {
+        const { controllers } = app.registry;
+        if (!controllers?.chartsByName) return;
+
+        const hoverState = state.interaction.hover;
+        const tapState = state.interaction.tap;
 
         // If no interaction is active, hide all labels and exit.
         if (!hoverState.isActive && !tapState.isActive) {
@@ -120,7 +128,7 @@ function renderPrimaryCharts(state) {
 
         controllers.chartsByName.forEach(chart => {
             // For the chart being hovered, its label is tied to the hover line (only if hover is enabled).
-            if (hoverState.isActive && chart.name === hoverState.sourceChartName && _state.view.hoverEnabled) {
+            if (hoverState.isActive && chart.name === hoverState.sourceChartName && state.view.hoverEnabled) {
                 const text = chart.getLabelText(hoverState.timestamp);
                 chart.renderLabel(hoverState.timestamp, text);
             }
@@ -140,15 +148,19 @@ function renderPrimaryCharts(state) {
     * Iterates through all charts and tells them to synchronize their
     * marker visuals with the central state.
     */
-    function renderMarkers() {
-        const _state = app.state.getState();
+    function renderMarkers(state) {
+        const { controllers } = app.registry;
+        if (!controllers?.chartsByName) return;
+
         controllers.chartsByName.forEach(chart => {
-            chart.syncMarkers(_state.markers.timestamps, _state.markers.enabled);
+            chart.syncMarkers(state.markers.timestamps, state.markers.enabled);
         });
     }
 
-    function renderFrequencyTable() {
-        const _state = app.state.getState();
+    function renderFrequencyTable(state, dataCache) {
+        const { models } = app.registry;
+        if (!models) return;
+
         const tableDiv = models.freqTableDiv;
 
         if (!tableDiv) {
@@ -157,7 +169,7 @@ function renderPrimaryCharts(state) {
         }
 
         // Get tap context for independent table data processing
-        const { isActive, timestamp, position } = _state.interaction.tap;
+        const { isActive, timestamp, position } = state.interaction.tap;
         
         if (!isActive || !timestamp || !position) {
             tableDiv.text = "<p>Tap on a time series chart to populate this table.</p>";
@@ -165,7 +177,7 @@ function renderPrimaryCharts(state) {
         }
 
         // Get the full spectral data for the tapped position and timestamp
-        const activeSpectralData = _state.data.activeSpectralData[position];
+        const activeSpectralData = dataCache.activeSpectralData[position];
         if (!activeSpectralData?.times_ms?.length || !activeSpectralData.frequencies_hz) {
             tableDiv.text = "<p>No frequency data available for selected position.</p>";
             return;
@@ -247,10 +259,11 @@ function renderPrimaryCharts(state) {
         tableDiv.text = tableHtml;
     }
 
-    function renderFrequencyBar() {
-        const _state = app.state.getState();
+    function renderFrequencyBar(state, dataCache) {
+        const { models } = app.registry;
+        if (!models) return;
 
-        const freqData = _state.data.activeFreqBarData;
+        const freqData = dataCache.activeFreqBarData;
         models.barSource.data = {
             'levels': freqData.levels,
             'frequency_labels': freqData.frequency_labels
@@ -260,17 +273,19 @@ function renderPrimaryCharts(state) {
         models.barSource.change.emit();
 
         // Also update the HTML table
-        renderFrequencyTable();
+        renderFrequencyTable(state, dataCache);
     }
 
     const PLAYING_BACKGROUND_COLOR = '#e6f0ff'; // A light blue to highlight the active chart
     const DEFAULT_BACKGROUND_COLOR = '#ffffff'; // Standard white background
 
-    function renderAudioControls() {
-        const _state = app.state.getState();
-        const { isPlaying, activePositionId, playbackRate, volumeBoost } = _state.audio;
+    function renderControlWidgets(state) {
+        const { models, controllers } = app.registry;
+        if (!models || !controllers) return;
 
-        _state.view.availablePositions.forEach(pos => {
+        const { isPlaying, activePositionId, playbackRate, volumeBoost } = state.audio;
+
+        state.view.availablePositions.forEach(pos => {
             const controller = controllers.positions[pos];
             const controls = models.audio_controls[pos];
             const isThisPositionActive = isPlaying && activePositionId === pos;
@@ -279,13 +294,13 @@ function renderPrimaryCharts(state) {
             if (controller && controller.timeSeriesChart) {
                 const tsChart = controller.timeSeriesChart;
                 // Base title comes from the state's displayDetails
-                const baseTitle = `${pos} - Time History${_state.view.displayDetails[pos].line.reason}`;
+                const baseTitle = `${pos} - Time History${state.view.displayDetails[pos].line.reason}`;
                 tsChart.model.title.text = isThisPositionActive ? `${baseTitle} (▶ PLAYING)` : baseTitle;
                 tsChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }
             if (controller && controller.spectrogramChart) {
                 const specChart = controller.spectrogramChart;
-                const baseTitle = `${pos} - ${_state.view.selectedParameter} Spectrogram${_state.view.displayDetails[pos].spec.reason}`;
+                const baseTitle = `${pos} - ${state.view.selectedParameter} Spectrogram${state.view.displayDetails[pos].spec.reason}`;
                 specChart.model.title.text = isThisPositionActive ? `${baseTitle} (▶ PLAYING)` : baseTitle;
                 specChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }
@@ -310,15 +325,17 @@ function renderPrimaryCharts(state) {
         });
     }
 
-    function renderSummaryTable() {
-        const _state = app.state.getState();
+    function renderSummaryTable(state, dataCache) {
+        const { models } = app.registry;
+        if (!models) return;
+
         const tableDiv = models.summaryTableDiv;
         if (!tableDiv) {
             console.error("Summary table div model not found.");
             return;
         }
 
-        const { isActive, timestamp } = _state.interaction.tap;
+        const { isActive, timestamp } = state.interaction.tap;
 
         const initialDoc = new DOMParser().parseFromString(tableDiv.text, 'text/html');
         const headerCells = initialDoc.querySelectorAll("thead th:not(.position-header)");
@@ -333,9 +350,9 @@ function renderPrimaryCharts(state) {
             const timestampStr = new Date(timestamp).toLocaleString();
             tableBodyHtml += `<tr><td class='timestamp-info' colspan='${parameters.length + 1}'>Values at: ${timestampStr}</td></tr>`;
             
-            _state.view.availablePositions.forEach(pos => {
+            state.view.availablePositions.forEach(pos => {
                 let rowHtml = `<tr><td class="position-header">${pos}</td>`;
-                const activeLineData = _state.data.activeLineData[pos];
+                const activeLineData = dataCache.activeLineData[pos];
                 
                 if (activeLineData && activeLineData.Datetime && activeLineData.Datetime.length > 0) {
                     const idx = app.utils.findAssociatedDateIndex(activeLineData, timestamp);
@@ -381,7 +398,7 @@ function renderPrimaryCharts(state) {
         renderMarkers: renderMarkers,
         renderFrequencyTable: renderFrequencyTable,
         renderFrequencyBar: renderFrequencyBar,
-        renderAudioControls: renderAudioControls,
+        renderControlWidgets: renderControlWidgets,
         renderSummaryTable: renderSummaryTable,
         //formatTime: formatTime
     };

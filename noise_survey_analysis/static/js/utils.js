@@ -10,6 +10,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     function findAssociatedDateIndex(activeData, timestamp) {
+        if (!activeData || !activeData.Datetime || activeData.Datetime.length === 0) {
+            return -1;
+        }
         for (let i = activeData.Datetime.length - 1; i >= 0; i--) {
             if (activeData.Datetime[i] <= timestamp) return i;
         }
