@@ -39,23 +39,27 @@ class AppCallbacks:
 
         if not self.audio_handler:
             logger.info("AppCallbacks initialized without audio handler. Audio features disabled.")
+        elif not getattr(self.audio_handler, 'audio_available', True):
+            logger.warning("AppCallbacks initialized with audio handler but VLC is unavailable. Audio callbacks will be disabled.")
 
     def attach_callbacks(self):
         """Attaches all Python callbacks to the document."""
         self.attach_non_audio_callbacks()
 
-        if self.audio_handler:
+        if self.audio_handler and getattr(self.audio_handler, 'audio_available', False):
             logger.debug(f"[AppCallbacks.attach] Attaching audio control callback to source id: {id(self.audio_control_source)}")
             self.audio_control_source.on_change('data', self._handle_audio_control_command)
             self._start_periodic_update()
         else:
-            logger.warning("Audio callbacks not attached: Audio handler missing.")
+            logger.warning("Audio callbacks not attached: Audio handler missing or audio unavailable.")
 
         self.attach_js_callbacks()
         logger.info("All callbacks attached.")
 
     def _handle_audio_control_command(self, attr, old, new):
-        if not self.audio_handler: return
+        if not self.audio_handler or not getattr(self.audio_handler, 'audio_available', False):
+            logger.debug("Ignoring audio control command: audio handler missing or unavailable.")
+            return
         try:
             command = new.get('command', [None])[0]
             if command is None:
@@ -101,7 +105,7 @@ class AppCallbacks:
 
     def _periodic_update_audio_status(self):
         """Periodically updates the audio status source with current playback information."""
-        if not self.audio_handler:
+        if not self.audio_handler or not getattr(self.audio_handler, 'audio_available', False):
             return
 
         is_playing = self.audio_handler.is_playing()
