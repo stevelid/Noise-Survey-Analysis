@@ -39,6 +39,18 @@ class AudioPlaybackHandler:
         self.current_position = None
         self.current_amplification = 0
 
+        # Core playback state (initialised regardless of VLC availability)
+        self.vlc_instance = None
+        self.player = None
+        self._is_playing = False
+        self.current_file = None
+        self.media_start_time = None
+        self.current_file_duration = None
+        self.playback_monitor = None
+        self.position_callback = None
+        self.stop_monitor = False
+        self.audio_available = False
+
         # Initialize VLC
         try:
             self.vlc_instance = vlc.Instance('--no-xlib', '--quiet')
@@ -48,15 +60,9 @@ class AudioPlaybackHandler:
         except Exception as e:
             logger.error(f"VLC initialization failed: {e}. Audio will be disabled.", exc_info=True)
             self.vlc_instance = self.player = None
-            return
-
-        self._is_playing = False
-        self.current_file = None
-        self.media_start_time = None
-        self.current_file_duration = None
-        self.playback_monitor = None
-        self.position_callback = None
-        self.stop_monitor = False
+            self.audio_available = False
+        else:
+            self.audio_available = True
 
         # --- NEW, SIMPLIFIED INITIALIZATION LOGIC ---
         logger.info("AudioPlaybackHandler: Indexing pre-processed audio data...")
@@ -80,22 +86,39 @@ class AudioPlaybackHandler:
             logger.info(f"Indexed {len(files_to_process)} pre-anchored audio files for position '{position_name}'.")
 
     def set_current_position(self, position: str) -> bool:
-         """
-         Sets the active position to get audio from.
-         """
-         if position == self.current_position:
-             return True
-         if self._is_playing:
-             self.stop()
-         
-         if position in self.file_info_by_position:
-             self.current_position = position
-             logger.info(f"Audio position set to '{position}'.")
-             return True
-         else:
-             logger.warning(f"No indexed audio files found for position '{position}'.")
-             self.current_position = None
-             return False
+        """
+        Sets the active position to get audio from.
+        """
+        if position == self.current_position:
+            return True
+
+        if not self.audio_available:
+            available = position in self.file_info_by_position
+            if available:
+                self.current_position = position
+                logger.info(
+                    "Audio playback is disabled; recording position '%s' without enabling playback.",
+                    position,
+                )
+            else:
+                logger.warning(
+                    "Audio playback is disabled and no indexed audio files were found for position '%s'.",
+                    position,
+                )
+                self.current_position = None
+            return available
+
+        if self._is_playing:
+            self.stop()
+
+        if position in self.file_info_by_position:
+            self.current_position = position
+            logger.info(f"Audio position set to '{position}'.")
+            return True
+        else:
+            logger.warning(f"No indexed audio files found for position '{position}'.")
+            self.current_position = None
+            return False
 
     def _find_file_for_timestamp(self, timestamp: datetime.datetime, position: Optional[str] = None) -> Tuple[Optional[str], float, Optional[datetime.datetime], Optional[float]]:
         """Finds the correct audio file and offset for a timestamp in the current position."""
@@ -159,6 +182,11 @@ class AudioPlaybackHandler:
         bool: True if playback was successfully initiated, False if an error occurred.
         """
         logger.debug(f"Play call proceeding. Timestamp: {timestamp}")
+
+        if not self.audio_available or not self.player or not self.vlc_instance:
+            logger.warning("Play requested but audio playback is unavailable.")
+            self._is_playing = False
+            return False
 
         # Stop existing playback cleanly before starting new playback.
         # This is the key to handling rapid switching between positions.
@@ -240,6 +268,10 @@ class AudioPlaybackHandler:
         # --- End of Original Core Play Logic ---
 
     def pause(self):
+        if not self.audio_available or not self.player:
+            logger.debug("Pause requested but audio playback is unavailable.")
+            return False
+
         if self._is_playing and self.player.is_playing():
             self.player.pause()
             self._is_playing = False
@@ -249,6 +281,10 @@ class AudioPlaybackHandler:
 
     def resume(self):
         # ... (implementation unchanged)
+        if not self.audio_available or not self.player:
+            logger.debug("Resume requested but audio playback is unavailable.")
+            return False
+
         if not self._is_playing and self.player.get_media():
             if self.player.get_state() == vlc.State.Paused:
                  self.player.play()
@@ -265,6 +301,11 @@ class AudioPlaybackHandler:
         Stop audio playback.
         (No change needed for lockout strategy, but uses helper)
         """
+        if not self.audio_available or not self.player:
+            logger.debug("Stop requested but audio playback is unavailable.")
+            self._is_playing = False
+            return False
+
         # No lockout specific logic needed here, just perform the stop
         return self._perform_stop_actions()
 
@@ -281,6 +322,10 @@ class AudioPlaybackHandler:
                 logger.warning("Playback monitor thread did not stop cleanly.")
         else:
             monitor_stopped = True
+
+        if not self.audio_available or not self.player:
+            self._is_playing = False
+            return False
 
         # Stop VLC player
         was_playing_or_paused = self.player.is_playing() or self.player.get_state() == vlc.State.Paused
@@ -300,6 +345,9 @@ class AudioPlaybackHandler:
     # --- get_current_position remains the same ---
     def get_current_position(self) -> Optional[datetime.datetime]:
         # ... (implementation unchanged)
+        if not self.audio_available or not self.player:
+            return None
+
         if not self.player.get_media() or not self.media_start_time:
             return None
         time_ms = self.player.get_time()
@@ -340,13 +388,17 @@ class AudioPlaybackHandler:
             self.current_file = None
             self.media_start_time = None
             self.position_callback = None
-            
+            self.audio_available = False
+
             logger.info("VLC resources released successfully")
         except Exception as e:
             logger.error(f"Error releasing VLC resources: {e}", exc_info=True)
             # Don't re-raise - we want to continue cleanup even if release fails
 
     def _monitor_playback(self):
+        if not self.audio_available or not self.player:
+            return
+
         last_file = None
         while not self.stop_monitor and self.player.get_media():
             current_state = self.player.get_state()
@@ -390,6 +442,10 @@ class AudioPlaybackHandler:
             time.sleep(0.1)
 
     def set_playback_rate(self, rate: float) -> bool:
+        if not self.audio_available or not self.player:
+            logger.warning("Cannot change playback rate: Audio playback is unavailable.")
+            return False
+
         if not self.player.get_media():
             logger.warning("Cannot change playback rate: No media loaded")
             return False
@@ -404,6 +460,9 @@ class AudioPlaybackHandler:
             return False
 
     def get_playback_rate(self) -> float:
+        if not self.audio_available or not self.player:
+            return 1.0
+
         if not self.player.get_media():
             return 1.0
         try:
@@ -423,8 +482,8 @@ class AudioPlaybackHandler:
         Returns:
             bool: True if the volume was set successfully, False otherwise.
         """
-        if not self.player:
-            logger.warning("Cannot set amplification: player not available.")
+        if not self.audio_available or not self.player:
+            logger.warning("Cannot set amplification: Audio playback is unavailable.")
             return False
 
         # Simple mapping from dB gain to a percentage for VLC's set_volume
@@ -438,6 +497,8 @@ class AudioPlaybackHandler:
         return False
 
     def get_time(self):
+        if not self.audio_available or not self.player:
+            return 0
         return self.player.get_time()
 
     def is_playing(self) -> bool:
@@ -456,9 +517,9 @@ class AudioPlaybackHandler:
         Returns:
             bool: True if in terminal state, False otherwise
         """
-        if not self.player:
+        if not self.audio_available or not self.player:
             return True
-            
+
         try:
             current_state = self.player.get_state()
             return current_state in [vlc.State.Ended, vlc.State.Stopped, vlc.State.Error]
@@ -472,17 +533,21 @@ class AudioPlaybackHandler:
         Unlike play(), this method:
         1. Doesn't have a lockout mechanism for successive calls
         2. Avoids full stop/restart when seeking within the current file
-        
+
         Parameters:
         timestamp: Datetime object for the desired seek position
         position_callback: Optional callback function to report playback position
-        
+
         Returns:
         bool: True if seek was successful, False otherwise
         """
+        if not self.audio_available or not self.player or not self.vlc_instance:
+            logger.warning("Seek requested but audio playback is unavailable.")
+            return False
+
         # Remember if the player is currently playing before we do anything.
         was_playing = self.is_playing()
-        
+
         # Determine which position to use: the passed argument or the instance's current position
         position_to_use = position if position is not None else self.current_position
         
