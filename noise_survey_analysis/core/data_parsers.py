@@ -54,6 +54,21 @@ class ParsedData:
     sample_period_seconds: Optional[float] = None
 
 
+@dataclass
+class FileValidityHint:
+    """Lightweight metadata produced during a fast header inspection."""
+
+    status: str = "unknown"
+    reason: str = ""
+    header_excerpt: str = ""
+
+    def clipped_excerpt(self, max_chars: int = 200) -> str:
+        if not self.header_excerpt:
+            return ""
+        excerpt = self.header_excerpt.strip().replace("\r", " ")
+        return excerpt[:max_chars]
+
+
 class AbstractNoiseParser(ABC):
     """
     Abstract Base Class for all noise file parsers.
@@ -91,6 +106,24 @@ class AbstractNoiseParser(ABC):
                 except Exception as e:
                     logger.warning(f"Could not convert column '{col}' to numeric: {e}. Values set to NaN.")
         return df
+
+    def inspect_file_header(self, file_path: str, max_lines: int = 20) -> FileValidityHint:
+        """Quickly inspect the top of a file to gauge if it looks parseable."""
+
+        return FileValidityHint()
+
+    def _read_file_head(self, file_path: str, max_lines: int = 20) -> List[str]:
+        lines: List[str] = []
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as handle:
+                for _ in range(max_lines):
+                    line = handle.readline()
+                    if not line:
+                        break
+                    lines.append(line.rstrip('\n'))
+        except Exception as exc:
+            logger.debug(f"Failed to read header for {file_path}: {exc}")
+        return lines
 
     def _normalize_datetime_column(self, df: pd.DataFrame,
                                    dt_col_names: List[str],
@@ -293,6 +326,43 @@ class AbstractNoiseParser(ABC):
 
 
 class NoiseSentryFileParser(AbstractNoiseParser):
+    EXPECTED_KEYWORDS = (
+        'time', 'leq', 'lmax', 'l10', 'l90'
+    )
+
+    def inspect_file_header(self, file_path: str, max_lines: int = 20) -> FileValidityHint:
+        lines = self._read_file_head(file_path, max_lines=max_lines)
+        if not lines:
+            return FileValidityHint(status='unlikely_valid', reason='File appears to be empty.')
+
+        header_line = next((line for line in lines if line.strip()), '')
+        if not header_line:
+            return FileValidityHint(status='unlikely_valid', reason='No header row detected in file head.')
+
+        tokens = [t.strip().strip('"') for t in re.split('[;\t,]', header_line) if t.strip()]
+        normalized = [token.lower() for token in tokens]
+        matches = sum(1 for keyword in self.EXPECTED_KEYWORDS if any(keyword in token for token in normalized))
+
+        excerpt = header_line[:200]
+
+        if matches >= 4:
+            return FileValidityHint(
+                status='likely_valid',
+                reason=f"Detected {matches} standard Noise Sentry header columns.",
+                header_excerpt=excerpt,
+            )
+        if matches >= 2:
+            return FileValidityHint(
+                status='needs_review',
+                reason='Only a subset of expected Noise Sentry columns were detected.',
+                header_excerpt=excerpt,
+            )
+        return FileValidityHint(
+            status='needs_review',
+            reason='Header does not match typical Noise Sentry structure.',
+            header_excerpt=excerpt,
+        )
+
     def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
         logger.info(f"SentryParser: Parsing {file_path}")
         parsed_data_obj = ParsedData(
@@ -364,6 +434,52 @@ class NoiseSentryFileParser(AbstractNoiseParser):
 class SvanFileParser(AbstractNoiseParser):
     CLEAN_PAT = re.compile(r'\s*\((?:SR|TH|Lin|Fast|Slow|SPL)\)\s*|\s*\[dB\]\s*|\s*Histogram\s*', flags=re.IGNORECASE)
     FREQ_SUFFIX_PAT = re.compile(r'(\d+(?:\.\d+)?)(k?)_?Hz$', flags=re.IGNORECASE)
+
+    EXPECTED_KEYWORDS = (
+        'date', 'time', 'laeq', 'lafmax', 'lafmin', 'laf10', 'laf90', 'lzeq', 'band [hz]'
+    )
+
+    def inspect_file_header(self, file_path: str, max_lines: int = 25) -> FileValidityHint:
+        lines = self._read_file_head(file_path, max_lines=max_lines)
+        if not lines:
+            return FileValidityHint(status='unlikely_valid', reason='File appears to be empty.')
+
+        non_empty = [line for line in lines if line.strip()]
+        excerpt = '\n'.join(non_empty[:2])[:200]
+        if not non_empty:
+            return FileValidityHint(status='unlikely_valid', reason='No readable lines found in file header.')
+
+        header_line = ''
+        for line in non_empty:
+            lowered = line.lower()
+            if any(keyword in lowered for keyword in self.EXPECTED_KEYWORDS):
+                header_line = line
+                break
+        if not header_line:
+            header_line = non_empty[0]
+
+        tokens = [token.strip().strip('"') for token in re.split('[;\t,]', header_line) if token.strip()]
+        normalized = [token.lower() for token in tokens]
+        matches = sum(1 for keyword in self.EXPECTED_KEYWORDS if any(keyword in token for token in normalized))
+
+        if matches >= 4:
+            return FileValidityHint(
+                status='likely_valid',
+                reason=f"Detected {matches} typical SVAN column markers.",
+                header_excerpt=excerpt,
+            )
+        summary_text = '\n'.join(non_empty[:5]).lower()
+        if matches >= 2 or 'svan' in summary_text or 'svantek' in summary_text:
+            return FileValidityHint(
+                status='needs_review',
+                reason='Only a subset of SVAN markers detected in header.',
+                header_excerpt=excerpt,
+            )
+        return FileValidityHint(
+            status='needs_review',
+            reason='Header did not resemble typical SVAN exports.',
+            header_excerpt=excerpt,
+        )
 
     def _get_data_profile_heuristic(self, lines: List[str], file_path: str) -> str:
         filename_upper = os.path.basename(file_path).upper()
@@ -547,6 +663,48 @@ class SvanFileParser(AbstractNoiseParser):
             return parsed_data_obj
 
 class NTiFileParser(AbstractNoiseParser):
+
+    HEADER_MARKERS = (
+        '# HARDWARE CONFIGURATION',
+        '# MEASUREMENT SETUP',
+        '# BROADBAND RESULTS',
+        '# RTA RESULTS',
+        '# RTA LOG RESULTS',
+        '# BROADBAND LOG RESULTS',
+        'SERIAL NUMBER',
+        'NTI',
+    )
+
+    def inspect_file_header(self, file_path: str, max_lines: int = 40) -> FileValidityHint:
+        lines = self._read_file_head(file_path, max_lines=max_lines)
+        if not lines:
+            return FileValidityHint(status='unlikely_valid', reason='File appears to be empty.')
+
+        non_empty = [line for line in lines if line.strip()]
+        excerpt = '\n'.join(non_empty[:4])[:200]
+        if not non_empty:
+            return FileValidityHint(status='unlikely_valid', reason='No readable lines found in file header.')
+
+        upper_lines = [line.upper() for line in non_empty]
+        matches = sum(1 for marker in self.HEADER_MARKERS if any(marker in line for line in upper_lines))
+
+        if matches >= 3:
+            return FileValidityHint(
+                status='likely_valid',
+                reason=f"Found {matches} NTi section markers in header.",
+                header_excerpt=excerpt,
+            )
+        if matches >= 1:
+            return FileValidityHint(
+                status='needs_review',
+                reason='Detected limited NTi markers; double-check file contents.',
+                header_excerpt=excerpt,
+            )
+        return FileValidityHint(
+            status='needs_review',
+            reason='Header did not include recognizable NTi markers.',
+            header_excerpt=excerpt,
+        )
 
     def _extract_nti_metadata(self, lines: List[str]) -> Dict[str, Any]:
         meta = {'hardware_config': {}, 'measurement_setup': {}, 'time_info': {}}
