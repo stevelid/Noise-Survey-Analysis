@@ -13,7 +13,7 @@ from bokeh.models import (
     TextInput, Button, Div, Spacer, Select, MultiSelect, CustomJS, Panel, Tabs,
     HTMLTemplateFormatter, SelectEditor, NumberFormatter
 )
-from bokeh.events import ButtonClick
+from bokeh.events import ButtonClick, ValueSubmit
 import os.path
 
 from ..core.data_loaders import scan_directory_for_sources, summarize_scanned_sources
@@ -25,6 +25,46 @@ logger = logging.getLogger(__name__)
 if not os.path.isdir(DEFAULT_BASE_JOB_DIR):
     DEFAULT_BASE_JOB_DIR = os.path.expanduser("~")
     logger.warning(f"Default base job directory not found. Falling back to: {DEFAULT_BASE_JOB_DIR}")
+
+
+CSV_PRIORITY_KEYWORDS = ("log", "summary")
+CSV_HIGHLIGHT_COLOR = "rgba(255, 213, 0, 0.25)"
+NTI_HIGHLIGHT_COLOR = "rgba(171, 205, 239, 0.35)"
+NTI_DEFAULT_PRIORITY_THRESHOLD_BYTES = 3 * 1024 * 1024  # 3 MB default, tune per file type below
+NTI_SIZE_HINTS_BYTES = {
+    "rta_rpt": 5 * 1024 * 1024,
+    "rpt_report": 5 * 1024 * 1024,
+    "rta_log": 3 * 1024 * 1024,
+    "log": 3 * 1024 * 1024,
+    "spectral": 6 * 1024 * 1024,
+}
+
+VALIDITY_STATUS_DISPLAY = {
+    "likely_valid": {
+        "label": "Likely valid",
+        "text_color": "#0f5132",
+        "bg_color": "rgba(25, 135, 84, 0.18)",
+        "highlight_color": "",
+    },
+    "needs_review": {
+        "label": "Check header",
+        "text_color": "#664d03",
+        "bg_color": "rgba(255, 193, 7, 0.2)",
+        "highlight_color": "rgba(255, 193, 7, 0.25)",
+    },
+    "unlikely_valid": {
+        "label": "Header mismatch",
+        "text_color": "#842029",
+        "bg_color": "rgba(220, 53, 69, 0.18)",
+        "highlight_color": "rgba(220, 53, 69, 0.28)",
+    },
+    "unknown": {
+        "label": "Unknown",
+        "text_color": "#495057",
+        "bg_color": "rgba(108, 117, 125, 0.12)",
+        "highlight_color": "",
+    },
+}
 
 
 class DataSourceSelector:
@@ -46,13 +86,20 @@ class DataSourceSelector:
         self.available_files_source = ColumnDataSource({
             'index': [], 'position': [], 'relpath': [], 'display_path': [],
             'fullpath': [], 'type': [], 'file_size': [],
-            'group': [], 'parser_type': [] 
+            'group': [], 'parser_type': [], 'file_size_bytes': [],
+            'highlight_color': [], 'highlight_reason': [],
+            'validity_status': [], 'validity_reason': [], 'header_preview': [],
+            'validity_label': [], 'validity_text_color': [], 'validity_bg_color': [],
+            'validity_tooltip': []
         })
-        
+
         self.included_files_source = ColumnDataSource({
             'index': [], 'position': [], 'relpath': [], 'display_path': [],
             'fullpath': [], 'type': [], 'file_size': [],
-            'group': [], 'parser_type': [] 
+            'group': [], 'parser_type': [], 'file_size_bytes': [],
+            'validity_status': [], 'validity_reason': [], 'header_preview': [],
+            'validity_label': [], 'validity_text_color': [], 'validity_bg_color': [],
+            'validity_tooltip': []
         })
         
         self.source_table_data = ColumnDataSource({
@@ -66,6 +113,26 @@ class DataSourceSelector:
 
         self._create_ui_components()
         self._attach_dnd_handlers()
+
+
+    def _resolve_validity_fields(self, status, reason, header_preview):
+        normalized_status = (status or "unknown").lower()
+        display = VALIDITY_STATUS_DISPLAY.get(normalized_status, VALIDITY_STATUS_DISPLAY["unknown"])
+        safe_reason = reason or ""
+        safe_preview = header_preview or ""
+        tooltip_parts = [part for part in (safe_reason.strip(), safe_preview.strip()) if part]
+        tooltip = "\n".join(tooltip_parts)
+
+        return {
+            'status': normalized_status,
+            'reason': safe_reason,
+            'header': safe_preview,
+            'label': display["label"],
+            'text_color': display["text_color"],
+            'bg_color': display["bg_color"],
+            'tooltip': tooltip,
+            'highlight_color': display.get("highlight_color", "")
+        }
 
 
     def _create_ui_components(self):
@@ -90,14 +157,35 @@ class DataSourceSelector:
             width=800, styles={'color': 'blue', 'font-style': 'italic', 'margin-top': '10px'} 
         )
 
-        self.available_files_label = Div(text="<b>Available Files:</b>", width=400)
-        
+        self.available_files_label = Div(
+            text="<b>Available Files:</b> <i>(Highlights flag heuristics; Validity column shows header checks)</i>",
+            width=400
+        )
+
+        highlight_template = """
+        <div style="background-color:<% if (highlight_color) { %><%= highlight_color %><% } else { %>transparent<% } %>;
+                    padding:4px 6px; border-radius:4px;">
+            <span title="<%= highlight_reason %>"><%= value %></span>
+        </div>
+        """
+
+        validity_template = """
+        <div style=\"padding:4px 6px; border-radius:4px; background-color:<%= validity_bg_color %>;\">
+            <span style=\"color:<%= validity_text_color %>; font-weight:600;\" <% if (validity_tooltip) { %>title=\"<%- validity_tooltip %>\"<% } %>>
+                <%= validity_label %>
+            </span>
+        </div>
+        """
+
         self.available_files_columns = [
             TableColumn(field="group", title="Folder", width=120),
-            TableColumn(field="display_path", title="File Path", width=250),
+            TableColumn(field="display_path", title="File Path", width=250,
+                        formatter=HTMLTemplateFormatter(template=highlight_template)),
             TableColumn(field="type", title="Type", width=80),
             TableColumn(field="position", title="Position", width=120),
-            TableColumn(field="file_size", title="Size", width=80)
+            TableColumn(field="file_size", title="Size", width=80),
+            TableColumn(field="validity_label", title="Validity", width=140,
+                        formatter=HTMLTemplateFormatter(template=validity_template))
         ]
         
         self.available_files_table = DataTable(
@@ -152,6 +240,7 @@ class DataSourceSelector:
             name="data_source_selector_main_layout", width=1450,
         )
 
+        self.job_number_input.on_event(ValueSubmit, self._scan_directory)
         self.scan_button.on_click(self._scan_directory)
         self.load_button.on_click(self._load_selected_data)
         self.cancel_button.on_click(self._cancel_selection)
@@ -217,33 +306,115 @@ class DataSourceSelector:
             return
 
         indices = list(range(len(self.scanned_sources)))
-        positions = [src["position_name"] for src in self.scanned_sources]
-        fullpaths = [src["file_path"] for src in self.scanned_sources]
+        positions = [src.get("position_name", "") for src in self.scanned_sources]
+        fullpaths = [src.get("file_path", "") for src in self.scanned_sources]
         types = [src.get("data_type", "unknown") for src in self.scanned_sources]
         parsers = [src.get("parser_type", "auto") for src in self.scanned_sources]
         file_sizes = [src.get("file_size", "N/A") for src in self.scanned_sources]
-        
-        display_paths, groups = [], []
-        
-        for i, path in enumerate(fullpaths):
-            display_path = self.scanned_sources[i].get("display_path", os.path.basename(path))
+        file_sizes_bytes = [src.get("file_size_bytes", 0) for src in self.scanned_sources]
+
+        display_paths, groups, highlight_colors, highlight_reasons = [], [], [], []
+        validity_statuses, validity_reasons, header_previews = [], [], []
+        validity_labels, validity_text_colors, validity_bg_colors, validity_tooltips = [], [], [], []
+
+        for source in self.scanned_sources:
+            path = source.get("file_path", "")
+            display_path = source.get("display_path", os.path.basename(path))
             display_paths.append(display_path)
+
             folder = os.path.dirname(display_path)
             groups.append(folder if folder else "Root")
 
-        sorted_data = sorted(zip(indices, positions, display_paths, fullpaths, types, file_sizes, groups, parsers), key=lambda x: x[6])
-        
-        if sorted_data:
-            s_indices, s_pos, s_disp, s_full, s_types, s_sizes, s_groups, s_parsers = zip(*sorted_data)
-        else:
-            s_indices, s_pos, s_disp, s_full, s_types, s_sizes, s_groups, s_parsers = ([],)*8
+            color, reason = self._determine_highlight(source)
+            highlight_colors.append(color)
+            highlight_reasons.append(reason)
+
+            validity = self._resolve_validity_fields(
+                source.get("validity_status"),
+                source.get("validity_reason"),
+                source.get("header_preview")
+            )
+            validity_statuses.append(validity['status'])
+            validity_reasons.append(validity['reason'])
+            header_previews.append(validity['header'])
+            validity_labels.append(validity['label'])
+            validity_text_colors.append(validity['text_color'])
+            validity_bg_colors.append(validity['bg_color'])
+            validity_tooltips.append(validity['tooltip'])
+
+        sorted_indices = sorted(range(len(indices)), key=lambda idx: groups[idx])
 
         self.available_files_source.data = {
-            'index': list(s_indices), 'position': list(s_pos), 
-            'display_path': list(s_disp), 'fullpath': list(s_full), 'type': list(s_types),
-            'file_size': list(s_sizes), 'group': list(s_groups), 'parser_type': list(s_parsers),
-            'relpath': list(s_disp)
+            'index': [indices[i] for i in sorted_indices],
+            'position': [positions[i] for i in sorted_indices],
+            'display_path': [display_paths[i] for i in sorted_indices],
+            'fullpath': [fullpaths[i] for i in sorted_indices],
+            'type': [types[i] for i in sorted_indices],
+            'file_size': [file_sizes[i] for i in sorted_indices],
+            'group': [groups[i] for i in sorted_indices],
+            'parser_type': [parsers[i] for i in sorted_indices],
+            'relpath': [display_paths[i] for i in sorted_indices],
+            'file_size_bytes': [file_sizes_bytes[i] for i in sorted_indices],
+            'highlight_color': [highlight_colors[i] for i in sorted_indices],
+            'highlight_reason': [highlight_reasons[i] for i in sorted_indices],
+            'validity_status': [validity_statuses[i] for i in sorted_indices],
+            'validity_reason': [validity_reasons[i] for i in sorted_indices],
+            'header_preview': [header_previews[i] for i in sorted_indices],
+            'validity_label': [validity_labels[i] for i in sorted_indices],
+            'validity_text_color': [validity_text_colors[i] for i in sorted_indices],
+            'validity_bg_color': [validity_bg_colors[i] for i in sorted_indices],
+            'validity_tooltip': [validity_tooltips[i] for i in sorted_indices],
         }
+
+    def _determine_highlight(self, source):
+        """Determine if a file should be visually highlighted in the available list."""
+        filename = (source.get("display_path") or source.get("file_path") or "").split('/')[-1]
+        filename_lower = filename.lower()
+        parser_type = (source.get("parser_type") or "").lower()
+        file_size_bytes = source.get("file_size_bytes") or 0
+
+        highlight_reasons = []
+        highlight_colors = []
+
+        if filename_lower.endswith('.csv') and all(keyword in filename_lower for keyword in CSV_PRIORITY_KEYWORDS):
+            highlight_colors.append(CSV_HIGHLIGHT_COLOR)
+            highlight_reasons.append("CSV includes log & summary keywords")
+
+        if parser_type == 'nti':
+            threshold = NTI_DEFAULT_PRIORITY_THRESHOLD_BYTES
+            for keyword, size_threshold in NTI_SIZE_HINTS_BYTES.items():
+                if keyword in filename_lower:
+                    threshold = max(threshold, size_threshold)
+
+            if file_size_bytes >= threshold > 0:
+                highlight_colors.append(NTI_HIGHLIGHT_COLOR)
+                approx_mb = file_size_bytes / (1024 * 1024)
+                highlight_reasons.append(f"NTi file ~{approx_mb:.1f} MB")
+
+        validity = self._resolve_validity_fields(
+            source.get("validity_status"),
+            source.get("validity_reason"),
+            source.get("header_preview"),
+        )
+        validity_highlight = validity.get('highlight_color')
+        if validity_highlight:
+            highlight_colors.append(validity_highlight)
+            reason_text = validity.get('reason') or validity.get('label')
+            highlight_reasons.append(f"Header check: {reason_text}")
+
+        if not highlight_colors:
+            return "", ""
+
+        if len(highlight_colors) == 1:
+            highlight_color = highlight_colors[0]
+        else:
+            stops = []
+            for idx, color in enumerate(highlight_colors):
+                position = int(100 * idx / (len(highlight_colors) - 1)) if len(highlight_colors) > 1 else 100
+                stops.append(f"{color} {position}%")
+            highlight_color = f"linear-gradient(90deg, {', '.join(stops)})"
+
+        return highlight_color, "; ".join(highlight_reasons)
 
     def _scan_directory(self, event=None):
         base_dir, job_num = self.base_directory_input.value.strip(), self.job_number_input.value.strip()
@@ -313,28 +484,42 @@ class DataSourceSelector:
         selected_indices = self.available_files_table.source.selected.indices
         if not selected_indices: return
         
-        available_data, included_data = self.available_files_source.data, self.included_files_source.data.copy()
-        
+        available_data = self.available_files_source.data
+        included_data = {key: list(values) for key, values in self.included_files_source.data.items()}
+
         # Create a set of existing fullpaths for efficient lookup
         existing_fullpaths = set(included_data.get('fullpath', []))
 
         for i in selected_indices:
-            if available_data['fullpath'][i] not in existing_fullpaths:
+            file_path = available_data['fullpath'][i]
+            if file_path not in existing_fullpaths:
                 for key in included_data.keys():
-                    included_data[key].append(available_data[key][i])
-                existing_fullpaths.add(available_data['fullpath'][i])
-        
+                    if key in available_data:
+                        included_data[key].append(available_data[key][i])
+                existing_fullpaths.add(file_path)
+            else:
+                logger.debug(f"File already included, skipping duplicate add: {file_path}")
+
+        # Refresh indices to remain sequential inside the included table
+        included_count = len(included_data.get('fullpath', []))
+        included_data['index'] = list(range(included_count))
+
         self.included_files_source.data = included_data
         self.available_files_table.source.selected.indices = []
         self._update_button_states()
-    
+
     def _remove_selected_files(self, event=None):
         selected_indices = self.included_files_table.source.selected.indices
         if not selected_indices: return
         
-        included_data = self.included_files_source.data.copy()
-        new_included_data = {k: [v for i, v in enumerate(included_data[k]) if i not in selected_indices] for k in included_data}
-        
+        included_data = {key: list(values) for key, values in self.included_files_source.data.items()}
+        new_included_data = {
+            key: [value for i, value in enumerate(values) if i not in selected_indices]
+            for key, values in included_data.items()
+        }
+
+        new_included_data['index'] = list(range(len(new_included_data.get('fullpath', []))))
+
         self.included_files_source.data = new_included_data
         self.included_files_table.source.selected.indices = []
         self._update_button_states()
@@ -474,7 +659,10 @@ class DataSourceSelector:
                     "path": relative_path.replace('\\', '/'),
                     "position": included_data['position'][i],
                     "type": included_data['type'][i],
-                    "parser_type": included_data['parser_type'][i]
+                    "parser_type": included_data['parser_type'][i],
+                    "validity_status": included_data['validity_status'][i],
+                    "validity_reason": included_data['validity_reason'][i],
+                    "header_preview": included_data['header_preview'][i],
                 })
 
             job_num_str = self.job_number_input.value or 'custom_selection'
@@ -539,6 +727,19 @@ class DataSourceSelector:
                 included_data['file_size'].append(self._format_file_size(os.path.getsize(full_path)) if os.path.isfile(full_path) else "Dir")
                 included_data['group'].append(os.path.dirname(display_path) or ".")
                 included_data['parser_type'].append(source.get("parser_type", "auto"))
+                included_data['file_size_bytes'].append(os.path.getsize(full_path) if os.path.isfile(full_path) else 0)
+                validity = self._resolve_validity_fields(
+                    source.get("validity_status"),
+                    source.get("validity_reason"),
+                    source.get("header_preview")
+                )
+                included_data['validity_status'].append(validity['status'])
+                included_data['validity_reason'].append(validity['reason'])
+                included_data['header_preview'].append(validity['header'])
+                included_data['validity_label'].append(validity['label'])
+                included_data['validity_text_color'].append(validity['text_color'])
+                included_data['validity_bg_color'].append(validity['bg_color'])
+                included_data['validity_tooltip'].append(validity['tooltip'])
 
             self.included_files_source.data = dict(included_data)
             if included_data['index']: self._update_button_states()

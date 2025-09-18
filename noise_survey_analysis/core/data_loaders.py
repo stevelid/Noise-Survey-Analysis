@@ -2,9 +2,10 @@
 
 import os
 import glob
+import json
 import logging
 from typing import List, Dict, Any, Optional
-from .data_parsers import NoiseParserFactory, ParsedData
+from .data_parsers import NoiseParserFactory, FileValidityHint
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,10 @@ def scan_directory_for_sources(base_dir: str) -> List[Dict[str, Any]]:
                 try:
                     num_wav_files = len([f for f in os.listdir(audio_dir_path) if f.lower().endswith('.wav')])
                     
+                    wav_sizes = [os.path.getsize(os.path.join(audio_dir_path, f)) for f in os.listdir(audio_dir_path)
+                                 if f.lower().endswith('.wav')]
+                    total_wav_bytes = sum(wav_sizes)
+
                     found_sources.append({
                         'position_name': os.path.basename(audio_dir_path),
                         'file_path': audio_dir_path,
@@ -46,7 +51,11 @@ def scan_directory_for_sources(base_dir: str) -> List[Dict[str, Any]]:
                         'enabled': True,
                         'data_type': 'Audio',
                         'parser_type': 'audio',
-                        'file_size': f"{num_wav_files} .wav files"
+                        'file_size': f"{num_wav_files} .wav files",
+                        'file_size_bytes': total_wav_bytes,
+                        'validity_status': 'likely_valid' if num_wav_files else 'needs_review',
+                        'validity_reason': f"Contains {num_wav_files} WAV file(s)",
+                        'header_preview': ''
                     })
                     processed_audio_dirs.add(audio_dir_path)
                     logger.info(f"Found audio source directory: {audio_dir_path} (represented by {file})")
@@ -58,7 +67,6 @@ def scan_directory_for_sources(base_dir: str) -> List[Dict[str, Any]]:
             # --- Config File Handling ---
             if file.startswith("noise_survey_config_") and file.endswith(".json"):
                 try:
-                    import json
                     with open(file_path, 'r') as f: config_data = json.load(f)
                     job_number = config_data.get("job_number", "unknown")
                     source_count = len(config_data.get("sources", []))
@@ -70,7 +78,11 @@ def scan_directory_for_sources(base_dir: str) -> List[Dict[str, Any]]:
                         'enabled': True,
                         'data_type': 'Config',
                         'parser_type': 'config',
-                        'file_size': f"{os.path.getsize(file_path)} B ({source_count} sources)"
+                        'file_size': f"{os.path.getsize(file_path)} B ({source_count} sources)",
+                        'file_size_bytes': os.path.getsize(file_path),
+                        'validity_status': 'likely_valid',
+                        'validity_reason': f"Config references {source_count} source(s)",
+                        'header_preview': json.dumps({k: config_data.get(k) for k in ('job_number', 'project_name') if k in config_data})[:200]
                     })
                 except Exception as e:
                     logger.warning(f"Could not parse config file {file_path}: {e}")
@@ -86,7 +98,14 @@ def scan_directory_for_sources(base_dir: str) -> List[Dict[str, Any]]:
                     if not position_name: position_name = os.path.splitext(file)[0]
                     
                     file_size = os.path.getsize(file_path)
-                    
+
+                    validity_hint = FileValidityHint()
+                    try:
+                        validity_hint = try_parser.inspect_file_header(file_path)
+                    except Exception as hint_exc:
+                        logger.debug(f"Header inspection failed for {file_path}: {hint_exc}")
+                        validity_hint = FileValidityHint(status='needs_review', reason=f'Header inspection failed: {hint_exc}')
+
                     found_sources.append({
                         'position_name': position_name,
                         'file_path': file_path,
@@ -94,7 +113,11 @@ def scan_directory_for_sources(base_dir: str) -> List[Dict[str, Any]]:
                         'enabled': True,
                         'data_type': type(try_parser).__name__.replace('FileParser', ''),
                         'parser_type': type(try_parser).__name__.replace('FileParser', '').lower(),
-                        'file_size': f"{file_size / 1048576:.1f} MB" if file_size > 1048576 else f"{file_size/1024:.1f} KB"
+                        'file_size': f"{file_size / 1048576:.1f} MB" if file_size > 1048576 else f"{file_size/1024:.1f} KB",
+                        'file_size_bytes': file_size,
+                        'validity_status': validity_hint.status,
+                        'validity_reason': validity_hint.reason,
+                        'header_preview': validity_hint.clipped_excerpt()
                     })
                 except Exception as e:
                     logger.error(f"Error processing file '{file_path}' with parser '{type(try_parser).__name__}': {e}")
