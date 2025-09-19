@@ -24,6 +24,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         _spectrogramCanvasBuffers: {}
     };
 
+    function handleDragToolKeyDown(event) {
+        if (event.key !== 'Shift') {
+            return;
+        }
+        const state = app.store.getState();
+        if (state?.interaction?.activeDragTool !== 'box_select') {
+            app.store.dispatch(app.actions.dragToolChanged('box_select'));
+        }
+    }
+
+    function handleDragToolKeyUp(event) {
+        if (event.key !== 'Shift') {
+            return;
+        }
+        const state = app.store.getState();
+        if (state?.interaction?.activeDragTool !== 'pan') {
+            app.store.dispatch(app.actions.dragToolChanged('pan'));
+        }
+    }
+
     /**
      * The main application entry point, called from the Bokeh template.
      * @param {object} bokehModels - The collection of models passed from Bokeh.
@@ -52,6 +72,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             // --- 3. SETUP KEYBOARD & OTHER GLOBAL EVENT LISTENERS ---
             document.addEventListener('keydown', app.eventHandlers.handleKeyPress);
+            document.addEventListener('keydown', handleDragToolKeyDown);
+            document.addEventListener('keyup', handleDragToolKeyUp);
             app.store.dispatch(app.actions.keyboardSetupComplete());
 
             // --- 4. SUBSCRIBE TO STORE CHANGES ---
@@ -90,6 +112,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didVisibilityChange = state.view.chartVisibility !== previousState.view.chartVisibility;
         const didMarkersChange = state.markers.timestamps !== previousState.markers.timestamps;
         const didRegionsChange = state.markers.regions !== previousState.markers.regions;
+        const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
 
         const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange;
 
@@ -136,6 +159,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         if (app.renderers && typeof app.renderers.renderComparisonMode === 'function') {
             app.renderers.renderComparisonMode(state);
+        }
+
+        if (isInitialLoad || didActiveDragToolChange) {
+            app.renderers.renderActiveTool(state, models);
         }
 
         // --- C. HANDLE SIDE EFFECTS ---
