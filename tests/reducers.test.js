@@ -233,6 +233,19 @@ describe('rootReducer', () => {
             expect(state.markers.regions.byId[7].note).toBe('A');
         });
 
+        it('should add multiple regions in a single batch', () => {
+            const batch = [
+                { positionId: 'P1', start: 400, end: 800 },
+                { positionId: 'P2', start: 500, end: 900 }
+            ];
+            const state = rootReducer(initialState, actions.regionsAdded(batch));
+            expect(state.markers.regions.allIds).toEqual([1, 2]);
+            expect(state.markers.regions.byId[1]).toMatchObject({ positionId: 'P1', start: 400, end: 800 });
+            expect(state.markers.regions.byId[2]).toMatchObject({ positionId: 'P2', start: 500, end: 900 });
+            expect(state.markers.regions.counter).toBe(3);
+            expect(state.markers.regions.selectedId).toBe(1);
+        });
+
         it('should clear regions when replace payload is empty', () => {
             let state = rootReducer(initialState, actions.regionAdd('P1', 100, 200));
             state = rootReducer(state, actions.regionReplaceAll([]));

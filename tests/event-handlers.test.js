@@ -18,6 +18,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     let resizeSelectedRegionIntentSpy;
     let nudgeTapLineIntentSpy;
     let updateComparisonSliceIntentSpy;
+    let createRegionsFromComparisonIntentSpy;
 
     beforeEach(() => {
         vi.useFakeTimers();
@@ -43,6 +44,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         resizeSelectedRegionIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'resizeSelectedRegionIntent').mockImplementation(() => () => {});
         nudgeTapLineIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'nudgeTapLineIntent').mockImplementation(() => () => {});
         updateComparisonSliceIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'updateComparisonSliceIntent').mockImplementation(() => () => {});
+        createRegionsFromComparisonIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createRegionsFromComparisonIntent').mockImplementation(() => () => {});
     });
 
     afterEach(() => {
@@ -118,6 +120,14 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             });
             expect(createRegionIntentSpy).not.toHaveBeenCalled();
             expect(dispatchSpy).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('handleComparisonMakeRegions', () => {
+        it('should dispatch the createRegionsFromComparisonIntent thunk', () => {
+            eventHandlers.handleComparisonMakeRegions();
+            expect(createRegionsFromComparisonIntentSpy).toHaveBeenCalledWith();
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
     });
 

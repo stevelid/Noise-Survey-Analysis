@@ -238,7 +238,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function handleComparisonMakeRegions() {
-        console.info('[EventHandler] Comparison region creation is not implemented yet.');
+        const thunkCreator = app.thunks && app.thunks.createRegionsFromComparisonIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing createRegionsFromComparisonIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+        dispatch(thunkCreator());
     }
 
     function handleKeyPress(e) {

@@ -43,6 +43,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // Regions
         REGION_ADDED: 'markers/regionAdded',
+        REGIONS_ADDED: 'markers/regionsAdded',
         REGION_UPDATED: 'markers/regionUpdated',
         REGION_REMOVED: 'markers/regionRemoved',
         REGION_SELECTED: 'markers/regionSelected',
@@ -112,6 +113,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         regionAdd: (positionId, start, end) => ({
             type: actionTypes.REGION_ADDED,
             payload: { positionId, start, end }
+        }),
+
+        regionsAdded: (regions) => ({
+            type: actionTypes.REGIONS_ADDED,
+            payload: { regions }
         }),
 
         regionUpdate: (id, changes) => ({

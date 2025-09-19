@@ -337,6 +337,81 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 };
 
+            case actionTypes.REGIONS_ADDED: {
+                const incoming = Array.isArray(action.payload?.regions)
+                    ? action.payload.regions
+                    : [];
+                if (incoming.length === 0) {
+                    return state;
+                }
+
+                const currentRegions = state.markers.regions;
+                const newById = { ...currentRegions.byId };
+                const newAllIds = [...currentRegions.allIds];
+                let nextCounter = currentRegions.counter;
+                let createdAny = false;
+                let fallbackSelectedId = null;
+
+                incoming.forEach(region => {
+                    if (!region) return;
+                    const bounds = normalizeRegionBounds(region.start, region.end);
+                    if (!bounds) return;
+                    const positionId = region.positionId;
+                    if (!positionId) return;
+
+                    let candidateId = Number.isFinite(region.id) ? region.id : null;
+                    if (candidateId === null || Object.prototype.hasOwnProperty.call(newById, candidateId)) {
+                        candidateId = nextCounter;
+                        while (Object.prototype.hasOwnProperty.call(newById, candidateId)) {
+                            candidateId += 1;
+                        }
+                    }
+
+                    nextCounter = Math.max(nextCounter, candidateId + 1);
+
+                    newById[candidateId] = {
+                        id: candidateId,
+                        positionId,
+                        start: bounds.start,
+                        end: bounds.end,
+                        note: typeof region.note === 'string' ? region.note : '',
+                        metrics: region.metrics || null
+                    };
+
+                    if (!newAllIds.includes(candidateId)) {
+                        newAllIds.push(candidateId);
+                    }
+
+                    if (fallbackSelectedId === null) {
+                        fallbackSelectedId = candidateId;
+                    }
+
+                    createdAny = true;
+                });
+
+                if (!createdAny) {
+                    return state;
+                }
+
+                const currentSelectedId = currentRegions.selectedId;
+                const nextSelectedId = currentSelectedId && newById[currentSelectedId]
+                    ? currentSelectedId
+                    : (fallbackSelectedId !== null ? fallbackSelectedId : (newAllIds[0] ?? null));
+
+                return {
+                    ...state,
+                    markers: {
+                        ...state.markers,
+                        regions: {
+                            byId: newById,
+                            allIds: newAllIds,
+                            selectedId: nextSelectedId,
+                            counter: Math.max(nextCounter, 1)
+                        }
+                    }
+                };
+            }
+
             case actionTypes.REGION_ADDED: {
                 const { positionId, start, end } = action.payload;
                 if (!positionId) return state;

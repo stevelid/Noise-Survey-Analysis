@@ -64,6 +64,48 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    function createRegionsFromComparisonIntent() {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') return;
+
+            const state = getState();
+            const viewState = state?.view || {};
+            const comparisonState = viewState.comparison || {};
+
+            if (viewState.mode !== 'comparison' || !comparisonState.isActive) {
+                return;
+            }
+
+            const rawStart = Number(comparisonState.start);
+            const rawEnd = Number(comparisonState.end);
+            if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart === rawEnd) {
+                return;
+            }
+
+            const start = Math.min(rawStart, rawEnd);
+            const end = Math.max(rawStart, rawEnd);
+
+            const includedPositions = Array.isArray(comparisonState.includedPositions)
+                ? comparisonState.includedPositions
+                : [];
+
+            if (!includedPositions.length) {
+                return;
+            }
+
+            const regions = includedPositions
+                .filter(positionId => typeof positionId === 'string' && positionId)
+                .map(positionId => ({ positionId, start, end }));
+
+            if (!regions.length) {
+                return;
+            }
+
+            dispatch(actions.regionsAdded(regions));
+            dispatch(actions.comparisonModeExited());
+        };
+    }
+
     function findRegionByTimestamp(state, positionId, timestamp) {
         const regionsState = state?.markers?.regions;
         if (!regionsState || !positionId || !Number.isFinite(timestamp)) return null;
@@ -180,6 +222,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         exitComparisonModeIntent,
         updateIncludedPositionsIntent,
         updateComparisonSliceIntent,
+        createRegionsFromComparisonIntent,
         handleTapIntent,
         createRegionIntent,
         resizeSelectedRegionIntent,

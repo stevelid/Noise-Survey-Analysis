@@ -169,4 +169,21 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.view.comparison.start).toBeNull();
         expect(state.view.comparison.end).toBeNull();
     });
+
+    it('createRegionsFromComparisonIntent creates regions and exits comparison mode', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1', 'P2'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 1000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(thunks.enterComparisonModeIntent());
+        store.dispatch(thunks.updateComparisonSliceIntent({ start: 1000, end: 3000 }));
+        store.dispatch(thunks.createRegionsFromComparisonIntent());
+        const state = store.getState();
+        expect(state.view.mode).toBe('normal');
+        expect(state.markers.regions.allIds).toEqual([1, 2]);
+        expect(state.markers.regions.byId[1].positionId).toBe('P1');
+        expect(state.markers.regions.byId[2].positionId).toBe('P2');
+    });
 });
