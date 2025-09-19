@@ -28,15 +28,17 @@ if not os.path.isdir(DEFAULT_BASE_JOB_DIR):
 
 
 CSV_PRIORITY_KEYWORDS = ("log", "summary")
-CSV_HIGHLIGHT_COLOR = "rgba(255, 213, 0, 0.25)"
-NTI_HIGHLIGHT_COLOR = "rgba(171, 205, 239, 0.35)"
-NTI_DEFAULT_PRIORITY_THRESHOLD_BYTES = 3 * 1024 * 1024  # 3 MB default, tune per file type below
+PRIORITY_HIGHLIGHT_COLOR = "#1f3c88"  # Deep accent for likely valid sources
+PRIORITY_HIGHLIGHT_TEXT_COLOR = "#f8f9fa"  # Light text for dark background
+SECONDARY_HIGHLIGHT_COLOR = "#f1f3f5"  # Muted backdrop for other files
+SECONDARY_HIGHLIGHT_TEXT_COLOR = "#212529"
+NTI_DEFAULT_PRIORITY_THRESHOLD_BYTES = 0.1 * 1024 * 1024  # 3 MB default, tune per file type below
 NTI_SIZE_HINTS_BYTES = {
-    "rta_rpt": 5 * 1024 * 1024,
-    "rpt_report": 5 * 1024 * 1024,
-    "rta_log": 3 * 1024 * 1024,
-    "log": 3 * 1024 * 1024,
-    "spectral": 6 * 1024 * 1024,
+    "rta_rpt": 0.1 * 1024 * 1024,
+    "rpt_report": 0.1 * 1024 * 1024,
+    "rta_log": 1 * 1024 * 1024,
+    "log": 0.5 * 1024 * 1024,
+    "spectral": 0.5 * 1024 * 1024,
 }
 
 VALIDITY_STATUS_DISPLAY = {
@@ -87,7 +89,7 @@ class DataSourceSelector:
             'index': [], 'position': [], 'relpath': [], 'display_path': [],
             'fullpath': [], 'type': [], 'file_size': [],
             'group': [], 'parser_type': [], 'file_size_bytes': [],
-            'highlight_color': [], 'highlight_reason': [],
+            'highlight_color': [], 'highlight_text_color': [], 'highlight_reason': [],
             'validity_status': [], 'validity_reason': [], 'header_preview': [],
             'validity_label': [], 'validity_text_color': [], 'validity_bg_color': [],
             'validity_tooltip': []
@@ -163,7 +165,7 @@ class DataSourceSelector:
         )
 
         highlight_template = """
-        <div style="background-color:<% if (highlight_color) { %><%= highlight_color %><% } else { %>transparent<% } %>;
+        <div style="background-color:<% if (highlight_color) { %><%= highlight_color %><% } else { %>transparent<% } %>; color:<%= highlight_text_color %>;
                     padding:4px 6px; border-radius:4px;">
             <span title="<%= highlight_reason %>"><%= value %></span>
         </div>
@@ -313,7 +315,7 @@ class DataSourceSelector:
         file_sizes = [src.get("file_size", "N/A") for src in self.scanned_sources]
         file_sizes_bytes = [src.get("file_size_bytes", 0) for src in self.scanned_sources]
 
-        display_paths, groups, highlight_colors, highlight_reasons = [], [], [], []
+        display_paths, groups, highlight_colors, highlight_text_colors, highlight_reasons = [], [], [], [], []
         validity_statuses, validity_reasons, header_previews = [], [], []
         validity_labels, validity_text_colors, validity_bg_colors, validity_tooltips = [], [], [], []
 
@@ -325,8 +327,9 @@ class DataSourceSelector:
             folder = os.path.dirname(display_path)
             groups.append(folder if folder else "Root")
 
-            color, reason = self._determine_highlight(source)
+            color, text_color, reason = self._determine_highlight(source)
             highlight_colors.append(color)
+            highlight_text_colors.append(text_color)
             highlight_reasons.append(reason)
 
             validity = self._resolve_validity_fields(
@@ -356,6 +359,7 @@ class DataSourceSelector:
             'relpath': [display_paths[i] for i in sorted_indices],
             'file_size_bytes': [file_sizes_bytes[i] for i in sorted_indices],
             'highlight_color': [highlight_colors[i] for i in sorted_indices],
+            'highlight_text_color': [highlight_text_colors[i] for i in sorted_indices],
             'highlight_reason': [highlight_reasons[i] for i in sorted_indices],
             'validity_status': [validity_statuses[i] for i in sorted_indices],
             'validity_reason': [validity_reasons[i] for i in sorted_indices],
@@ -372,13 +376,14 @@ class DataSourceSelector:
         filename_lower = filename.lower()
         parser_type = (source.get("parser_type") or "").lower()
         file_size_bytes = source.get("file_size_bytes") or 0
+        validity_status = (source.get("validity_status") or "").lower()
 
-        highlight_reasons = []
-        highlight_colors = []
+        reasons = []
+        has_priority = False
 
         if filename_lower.endswith('.csv') and all(keyword in filename_lower for keyword in CSV_PRIORITY_KEYWORDS):
-            highlight_colors.append(CSV_HIGHLIGHT_COLOR)
-            highlight_reasons.append("CSV includes log & summary keywords")
+            has_priority = True
+            reasons.append("CSV includes log & summary keywords")
 
         if parser_type == 'nti':
             threshold = NTI_DEFAULT_PRIORITY_THRESHOLD_BYTES
@@ -387,34 +392,28 @@ class DataSourceSelector:
                     threshold = max(threshold, size_threshold)
 
             if file_size_bytes >= threshold > 0:
-                highlight_colors.append(NTI_HIGHLIGHT_COLOR)
+                has_priority = True
                 approx_mb = file_size_bytes / (1024 * 1024)
-                highlight_reasons.append(f"NTi file ~{approx_mb:.1f} MB")
+                reasons.append(f"NTi file ~{approx_mb:.1f} MB")
 
-        validity = self._resolve_validity_fields(
-            source.get("validity_status"),
-            source.get("validity_reason"),
-            source.get("header_preview"),
-        )
-        validity_highlight = validity.get('highlight_color')
-        if validity_highlight:
-            highlight_colors.append(validity_highlight)
-            reason_text = validity.get('reason') or validity.get('label')
-            highlight_reasons.append(f"Header check: {reason_text}")
+        if parser_type == 'audio':
+            has_priority = True
+            audio_reason = source.get("validity_reason") or "Audio capture folder"
+            reasons.append(audio_reason)
 
-        if not highlight_colors:
-            return "", ""
+        if has_priority and validity_status not in ("likely_valid", ""):
+            has_priority = False
+            reasons.append("Header check needs review")
 
-        if len(highlight_colors) == 1:
-            highlight_color = highlight_colors[0]
+        if has_priority:
+            highlight_color = PRIORITY_HIGHLIGHT_COLOR
+            text_color = PRIORITY_HIGHLIGHT_TEXT_COLOR
         else:
-            stops = []
-            for idx, color in enumerate(highlight_colors):
-                position = int(100 * idx / (len(highlight_colors) - 1)) if len(highlight_colors) > 1 else 100
-                stops.append(f"{color} {position}%")
-            highlight_color = f"linear-gradient(90deg, {', '.join(stops)})"
+            highlight_color = SECONDARY_HIGHLIGHT_COLOR
+            text_color = SECONDARY_HIGHLIGHT_TEXT_COLOR
 
-        return highlight_color, "; ".join(highlight_reasons)
+        reason_text = "; ".join(reasons)
+        return highlight_color, text_color, reason_text
 
     def _scan_directory(self, event=None):
         base_dir, job_num = self.base_directory_input.value.strip(), self.job_number_input.value.strip()

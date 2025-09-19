@@ -169,9 +169,6 @@ class PositionData:
             if parsed_data_obj.spectral_df is not None:
                 self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
             logger.debug(f"  After merge - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
-            if parsed_data_obj.spectral_df is not None:
-                self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
-            logger.debug(f"  After merge - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
 
         elif profile == 'file_list' and parsed_data_obj.parser_type == 'Audio': # Audio parser result
             # Set the path for the audio handler to use later
