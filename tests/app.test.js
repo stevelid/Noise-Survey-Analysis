@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Ensure correct load order: Store -> actions -> reducers -> init
-import '../noise_survey_analysis/static/js/Store.js';
+import '../noise_survey_analysis/static/js/store.js';
 import '../noise_survey_analysis/static/js/actions.js';
 import '../noise_survey_analysis/static/js/reducers.js';
 import '../noise_survey_analysis/static/js/init.js';
@@ -16,6 +16,7 @@ beforeEach(() => {
     renderOverlays: vi.fn(),
     renderControlWidgets: vi.fn(),
     renderMarkers: vi.fn(),
+    renderRegions: vi.fn(),
   };
   window.NoiseSurveyApp.data_processors = {
     updateActiveData: vi.fn(),

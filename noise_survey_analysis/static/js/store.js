@@ -47,8 +47,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
          * @param {Object} action - The action object to dispatch.
          */
         const dispatch = (action) => {
+            if (typeof action === 'function') {
+                return action(dispatch, getState);
+            }
+
             state = reducer(state, action);
             listeners.forEach(listener => listener());
+            return action;
         };
 
         //--- Initialisation ---

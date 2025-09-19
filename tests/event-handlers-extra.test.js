@@ -2,10 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Load modules in order
 import '../noise_survey_analysis/static/js/actions.js';
+import '../noise_survey_analysis/static/js/thunks.js';
 import '../noise_survey_analysis/static/js/event-handlers.js';
 
 describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
   let dispatchAction;
+  let handleTapIntentSpy;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -17,12 +19,19 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
         audio_control_source: { data: {} },
       },
     };
+
+    handleTapIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleTapIntent').mockImplementation(() => () => {});
   });
 
   it('handleTap with ctrl modifier should dispatch removeMarker', () => {
     const cb_obj = { origin: { name: 'figure_P1_timeseries' }, x: 100, modifiers: { ctrl: true } };
     window.NoiseSurveyApp.eventHandlers.handleTap(cb_obj);
-    expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.removeMarker(100));
+    expect(handleTapIntentSpy).toHaveBeenCalledWith({
+      timestamp: 100,
+      positionId: 'P1',
+      chartName: 'figure_P1_timeseries',
+      modifiers: { ctrl: true },
+    });
   });
 
   it('handleChartHover with no geometry should dispatch inactive hover', () => {
@@ -54,14 +63,14 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     // Make an internal dependency of a wrapped function fail
-    window.NoiseSurveyApp.store.dispatch.mockImplementation(() => {
-      throw new Error('Dispatch Failed');
+    handleTapIntentSpy.mockImplementation(() => {
+      throw new Error('Thunk Failed');
     });
 
     const cb_obj = { origin: { name: 'figure_P1_timeseries' }, x: 100, modifiers: {} };
 
     // Call the public, wrapped handler and expect it to re-throw
-    expect(() => window.NoiseSurveyApp.eventHandlers.handleTap(cb_obj)).toThrow('Dispatch Failed');
+    expect(() => window.NoiseSurveyApp.eventHandlers.handleTap(cb_obj)).toThrow('Thunk Failed');
 
     // Verify the wrapper caught and logged the specific error
     expect(errorSpy).toHaveBeenCalledWith(
@@ -116,6 +125,6 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
   it('handleTap should ignore events from frequency_bar', () => {
     const cb_obj = { origin: { name: 'frequency_bar' }, x: 100, modifiers: {} };
     window.NoiseSurveyApp.eventHandlers.handleTap(cb_obj);
-    expect(dispatchAction).not.toHaveBeenCalled();
+    expect(handleTapIntentSpy).not.toHaveBeenCalled();
   });
 });

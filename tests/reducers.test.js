@@ -88,6 +88,66 @@ describe('rootReducer', () => {
         });
     });
 
+    describe('Region Actions', () => {
+        it('should add a region and select it', () => {
+            const state = rootReducer(initialState, actions.regionAdd('P1', 2000, 1000));
+            const region = state.markers.regions.byId[1];
+            expect(region.start).toBe(1000);
+            expect(region.end).toBe(2000);
+            expect(state.markers.regions.selectedId).toBe(1);
+        });
+
+        it('should update region bounds and reset metrics', () => {
+            let state = rootReducer(initialState, actions.regionAdd('P1', 1000, 2000));
+            state = rootReducer(state, actions.regionSetMetrics(1, { laeq: 50 }));
+            state = rootReducer(state, actions.regionUpdate(1, { end: 4000 }));
+            const region = state.markers.regions.byId[1];
+            expect(region.end).toBe(4000);
+            expect(region.metrics).toBeNull();
+        });
+
+        it('should remove a region and clear selection', () => {
+            let state = rootReducer(initialState, actions.regionAdd('P1', 1000, 2000));
+            state = rootReducer(state, actions.regionRemove(1));
+            expect(state.markers.regions.allIds).toHaveLength(0);
+            expect(state.markers.regions.selectedId).toBeNull();
+            expect(state.markers.regions.counter).toBe(2);
+        });
+
+        it('should continue incrementing counters after removals', () => {
+            let state = rootReducer(initialState, actions.regionAdd('P1', 1000, 2000));
+            state = rootReducer(state, actions.regionAdd('P1', 3000, 4000));
+            expect(state.markers.regions.counter).toBe(3);
+            state = rootReducer(state, actions.regionRemove(2));
+            expect(state.markers.regions.counter).toBe(3);
+            state = rootReducer(state, actions.regionAdd('P1', 5000, 6000));
+            expect(state.markers.regions.byId[3]).toBeTruthy();
+            expect(state.markers.regions.counter).toBe(4);
+        });
+
+        it('should set notes without affecting other fields', () => {
+            let state = rootReducer(initialState, actions.regionAdd('P1', 1000, 2000));
+            state = rootReducer(state, actions.regionSetNote(1, 'Important observation'));
+            expect(state.markers.regions.byId[1].note).toBe('Important observation');
+        });
+
+        it('should replace all regions from payload', () => {
+            const regions = [
+                { id: 7, positionId: 'P1', start: 100, end: 200, note: 'A' },
+                { positionId: 'P2', start: 300, end: 500 }
+            ];
+            const state = rootReducer(initialState, actions.regionReplaceAll(regions));
+            expect(state.markers.regions.allIds).toHaveLength(2);
+            expect(state.markers.regions.byId[7].note).toBe('A');
+        });
+
+        it('should clear regions when replace payload is empty', () => {
+            let state = rootReducer(initialState, actions.regionAdd('P1', 100, 200));
+            state = rootReducer(state, actions.regionReplaceAll([]));
+            expect(state.markers.regions.allIds).toEqual([]);
+        });
+    });
+
     describe('Audio Actions', () => {
         it('should handle AUDIO_STATUS_UPDATE action', () => {
             const status = {
