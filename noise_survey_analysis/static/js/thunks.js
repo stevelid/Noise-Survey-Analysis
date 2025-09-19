@@ -60,8 +60,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function createRegionIntent(payload) {
         return function (dispatch) {
             if (!actions) return;
-            const { positionId, start, end, isFinal, modifiers = {} } = payload || {};
-            if (!isFinal || !modifiers.shift) return;
+            const { positionId, start, end } = payload || {};
             if (!positionId || !Number.isFinite(start) || !Number.isFinite(end)) return;
             if (Math.abs(end - start) < MIN_REGION_WIDTH_MS) return;
 

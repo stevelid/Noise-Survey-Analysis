@@ -37,14 +37,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         CLEAR_ALL_MARKERS: 'CLEAR_ALL_MARKERS',
 
         // Regions
-        REGION_ADD: 'markers/REGION_ADD',
-        REGION_UPDATE: 'markers/REGION_UPDATE',
-        REGION_REMOVE: 'markers/REGION_REMOVE',
-        REGION_SELECT: 'markers/REGION_SELECT',
-        REGION_CLEAR_SELECTION: 'markers/REGION_CLEAR_SELECTION',
-        REGION_SET_NOTE: 'markers/REGION_SET_NOTE',
-        REGION_SET_METRICS: 'markers/REGION_SET_METRICS',
-        REGION_REPLACE_ALL: 'markers/REGION_REPLACE_ALL',
+        REGION_ADDED: 'markers/regionAdded',
+        REGION_UPDATED: 'markers/regionUpdated',
+        REGION_REMOVED: 'markers/regionRemoved',
+        REGION_SELECTED: 'markers/regionSelected',
+        REGION_SELECTION_CLEARED: 'markers/regionSelectionCleared',
+        REGION_NOTE_SET: 'markers/regionNoteSet',
+        REGION_METRICS_SET: 'markers/regionMetricsSet',
+        REGIONS_REPLACED: 'markers/regionsReplaced',
 
         // Audio
         AUDIO_STATUS_UPDATE: 'AUDIO_STATUS_UPDATE',
@@ -91,26 +91,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         clearAllMarkers: () => ({ type: actionTypes.CLEAR_ALL_MARKERS }),
 
         regionAdd: (positionId, start, end) => ({
-            type: actionTypes.REGION_ADD,
+            type: actionTypes.REGION_ADDED,
             payload: { positionId, start, end }
         }),
 
         regionUpdate: (id, changes) => ({
-            type: actionTypes.REGION_UPDATE,
+            type: actionTypes.REGION_UPDATED,
             payload: { id, changes }
         }),
 
-        regionRemove: (id) => ({ type: actionTypes.REGION_REMOVE, payload: { id } }),
+        regionRemove: (id) => ({ type: actionTypes.REGION_REMOVED, payload: { id } }),
 
-        regionSelect: (id) => ({ type: actionTypes.REGION_SELECT, payload: { id } }),
+        regionSelect: (id) => ({ type: actionTypes.REGION_SELECTED, payload: { id } }),
 
-        regionClearSelection: () => ({ type: actionTypes.REGION_CLEAR_SELECTION }),
+        regionClearSelection: () => ({ type: actionTypes.REGION_SELECTION_CLEARED }),
 
-        regionSetNote: (id, note) => ({ type: actionTypes.REGION_SET_NOTE, payload: { id, note } }),
+        regionSetNote: (id, note) => ({ type: actionTypes.REGION_NOTE_SET, payload: { id, note } }),
 
-        regionSetMetrics: (id, metrics) => ({ type: actionTypes.REGION_SET_METRICS, payload: { id, metrics } }),
+        regionSetMetrics: (id, metrics) => ({ type: actionTypes.REGION_METRICS_SET, payload: { id, metrics } }),
 
-        regionReplaceAll: (regions) => ({ type: actionTypes.REGION_REPLACE_ALL, payload: { regions } }),
+        regionReplaceAll: (regions) => ({ type: actionTypes.REGIONS_REPLACED, payload: { regions } }),
 
         audioStatusUpdate: (status) => ({ type: actionTypes.AUDIO_STATUS_UPDATE, payload: { status } }),
 

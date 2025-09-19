@@ -238,7 +238,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 };
 
-            case actionTypes.REGION_ADD: {
+            case actionTypes.REGION_ADDED: {
                 const { positionId, start, end } = action.payload;
                 if (!positionId) return state;
                 const bounds = normalizeRegionBounds(start, end);
@@ -269,7 +269,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             }
 
-            case actionTypes.REGION_UPDATE: {
+            case actionTypes.REGION_UPDATED: {
                 const { id, changes } = action.payload || {};
                 if (!id || !changes) return state;
                 const currentRegions = state.markers.regions;
@@ -302,7 +302,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             }
 
-            case actionTypes.REGION_REMOVE: {
+            case actionTypes.REGION_REMOVED: {
                 const { id } = action.payload || {};
                 const currentRegions = state.markers.regions;
                 if (!id || !currentRegions.byId[id]) return state;
@@ -310,9 +310,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 delete newById[id];
                 const newAllIds = currentRegions.allIds.filter(regionId => regionId !== id);
                 const newSelectedId = currentRegions.selectedId === id ? null : currentRegions.selectedId;
-                const highestExistingId = newAllIds.reduce((max, regionId) => Math.max(max, Number(regionId) || 0), 0);
-                const nextCounter = newAllIds.length === 0 ? 1 : highestExistingId + 1;
-
                 return {
                     ...state,
                     markers: {
@@ -321,14 +318,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             ...currentRegions,
                             byId: newById,
                             allIds: newAllIds,
-                            selectedId: newSelectedId,
-                            counter: nextCounter
+                            selectedId: newSelectedId
                         }
                     }
                 };
             }
 
-            case actionTypes.REGION_SELECT: {
+            case actionTypes.REGION_SELECTED: {
                 const { id } = action.payload || {};
                 const currentRegions = state.markers.regions;
                 const nextSelected = id && currentRegions.byId[id] ? id : null;
@@ -345,7 +341,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             }
 
-            case actionTypes.REGION_CLEAR_SELECTION: {
+            case actionTypes.REGION_SELECTION_CLEARED: {
                 const currentRegions = state.markers.regions;
                 if (currentRegions.selectedId === null) return state;
                 return {
@@ -360,7 +356,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             }
 
-            case actionTypes.REGION_SET_NOTE: {
+            case actionTypes.REGION_NOTE_SET: {
                 const { id, note } = action.payload || {};
                 const currentRegions = state.markers.regions;
                 const region = currentRegions.byId[id];
@@ -381,7 +377,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             }
 
-            case actionTypes.REGION_SET_METRICS: {
+            case actionTypes.REGION_METRICS_SET: {
                 const { id, metrics } = action.payload || {};
                 const currentRegions = state.markers.regions;
                 const region = currentRegions.byId[id];
@@ -401,7 +397,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             }
 
-            case actionTypes.REGION_REPLACE_ALL: {
+            case actionTypes.REGIONS_REPLACED: {
                 const incoming = Array.isArray(action.payload?.regions) ? action.payload.regions : [];
                 if (incoming.length === 0) {
                     return {

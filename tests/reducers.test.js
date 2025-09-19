@@ -111,18 +111,18 @@ describe('rootReducer', () => {
             state = rootReducer(state, actions.regionRemove(1));
             expect(state.markers.regions.allIds).toHaveLength(0);
             expect(state.markers.regions.selectedId).toBeNull();
-            expect(state.markers.regions.counter).toBe(1);
+            expect(state.markers.regions.counter).toBe(2);
         });
 
-        it('should advance counter to the next available id after removal', () => {
+        it('should continue incrementing counters after removals', () => {
             let state = rootReducer(initialState, actions.regionAdd('P1', 1000, 2000));
             state = rootReducer(state, actions.regionAdd('P1', 3000, 4000));
             expect(state.markers.regions.counter).toBe(3);
             state = rootReducer(state, actions.regionRemove(2));
-            expect(state.markers.regions.counter).toBe(2);
-            state = rootReducer(state, actions.regionAdd('P1', 5000, 6000));
-            expect(state.markers.regions.byId[2]).toBeTruthy();
             expect(state.markers.regions.counter).toBe(3);
+            state = rootReducer(state, actions.regionAdd('P1', 5000, 6000));
+            expect(state.markers.regions.byId[3]).toBeTruthy();
+            expect(state.markers.regions.counter).toBe(4);
         });
 
         it('should set notes without affecting other fields', () => {

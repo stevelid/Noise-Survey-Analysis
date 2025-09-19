@@ -50,7 +50,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     });
 
     describe('handleTap', () => {
-        it('should dispatch a TAP action', () => {
+        it('should dispatch a TAP intent', () => {
             const cb_obj = { origin: { name: 'figure_P1_timeseries' }, x: 12345 };
             eventHandlers.handleTap(cb_obj);
             expect(handleTapIntentSpy).toHaveBeenCalledWith({
@@ -59,9 +59,10 @@ describe('NoiseSurveyApp.eventHandlers', () => {
                 chartName: 'figure_P1_timeseries',
                 modifiers: { ctrl: false }
             });
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
 
-        it('should dispatch a REMOVE_MARKER action on ctrl+tap', () => {
+        it('should dispatch a ctrl+tap intent when ctrl held', () => {
             const cb_obj = { origin: { name: 'figure_P1_timeseries' }, x: 12345, modifiers: { ctrl: true } };
             eventHandlers.handleTap(cb_obj);
             expect(handleTapIntentSpy).toHaveBeenCalledWith({
@@ -70,6 +71,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
                 chartName: 'figure_P1_timeseries',
                 modifiers: { ctrl: true }
             });
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
     });
 
@@ -85,10 +87,21 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             expect(createRegionIntentSpy).toHaveBeenCalledWith({
                 positionId: 'P1',
                 start: 1000,
-                end: 2000,
-                isFinal: true,
-                modifiers: { shift: true }
+                end: 2000
             });
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
+        });
+
+        it('should ignore drag updates until final shift release', () => {
+            const geometryEvent = {
+                model: { name: 'figure_P1_timeseries' },
+                final: false,
+                modifiers: { shift: true },
+                geometry: { type: 'rect', x0: 1000, x1: 2000 }
+            };
+            eventHandlers.handleRegionBoxSelect(geometryEvent);
+            expect(createRegionIntentSpy).not.toHaveBeenCalled();
+            expect(dispatchSpy).not.toHaveBeenCalled();
         });
     });
 

@@ -55,16 +55,14 @@ describe('NoiseSurveyApp thunks', () => {
         thunk(store.dispatch, store.getState);
         const state = store.getState();
         expect(state.markers.regions.allIds).toHaveLength(0);
-        expect(state.markers.regions.counter).toBe(1);
+        expect(state.markers.regions.counter).toBe(2);
     });
 
-    it('createRegionIntent adds region only when shift and final', () => {
+    it('createRegionIntent adds region when bounds valid', () => {
         const thunk = thunks.createRegionIntent({
             positionId: 'P1',
             start: 1000,
-            end: 2000,
-            isFinal: true,
-            modifiers: { shift: true }
+            end: 2000
         });
         thunk(store.dispatch, store.getState);
         const state = store.getState();
