@@ -13,6 +13,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // --- Dependencies ---
     const { actionTypes } = app; //TODO: move to a separate file (split reducer) approach
 
+    const initialComparisonState = {
+        isActive: false,
+        start: null,
+        end: null,
+        includedPositions: []
+    };
+
     const initialState = {
         view: {
             availablePositions: [],
@@ -22,6 +29,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             chartVisibility: {},
             displayDetails: {},
             hoverEnabled: true,
+            mode: 'normal',
+            comparison: { ...initialComparisonState },
         },
         interaction: {
             tap: { isActive: false, timestamp: null, position: null, sourceChartName: null },
@@ -77,6 +86,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         selectedParameter: action.payload.selectedParameter,
                         viewport: action.payload.viewport,
                         chartVisibility: action.payload.chartVisibility,
+                        mode: 'normal',
+                        comparison: {
+                            ...initialComparisonState,
+                            includedPositions: Array.isArray(action.payload.availablePositions)
+                                ? [...action.payload.availablePositions]
+                                : []
+                        },
                     },
                     system: {
                         ...state.system,
@@ -185,6 +201,89 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 };
 
+            case actionTypes.COMPARISON_MODE_ENTERED: {
+                const availablePositions = Array.isArray(state.view.availablePositions)
+                    ? state.view.availablePositions
+                    : [];
+                return {
+                    ...state,
+                    view: {
+                        ...state.view,
+                        mode: 'comparison',
+                        comparison: {
+                            ...state.view.comparison,
+                            isActive: true,
+                            start: null,
+                            end: null,
+                            includedPositions: [...availablePositions]
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.COMPARISON_MODE_EXITED: {
+                const availablePositions = Array.isArray(state.view.availablePositions)
+                    ? state.view.availablePositions
+                    : [];
+                return {
+                    ...state,
+                    view: {
+                        ...state.view,
+                        mode: 'normal',
+                        comparison: {
+                            ...initialComparisonState,
+                            includedPositions: [...availablePositions]
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.COMPARISON_POSITIONS_UPDATED: {
+                const availablePositions = Array.isArray(state.view.availablePositions)
+                    ? state.view.availablePositions
+                    : [];
+                const incoming = Array.isArray(action.payload?.includedPositions)
+                    ? action.payload.includedPositions
+                    : [];
+                const incomingSet = new Set(incoming);
+                const filtered = availablePositions.filter(pos => incomingSet.has(pos));
+                return {
+                    ...state,
+                    view: {
+                        ...state.view,
+                        comparison: {
+                            ...state.view.comparison,
+                            includedPositions: filtered
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.COMPARISON_SLICE_UPDATED: {
+                const rawStart = Number(action.payload?.start);
+                const rawEnd = Number(action.payload?.end);
+                const hasValidBounds = Number.isFinite(rawStart) && Number.isFinite(rawEnd) && rawStart !== rawEnd;
+
+                const nextStart = hasValidBounds ? Math.min(rawStart, rawEnd) : null;
+                const nextEnd = hasValidBounds ? Math.max(rawStart, rawEnd) : null;
+
+                if (state.view.comparison.start === nextStart && state.view.comparison.end === nextEnd) {
+                    return state;
+                }
+
+                return {
+                    ...state,
+                    view: {
+                        ...state.view,
+                        comparison: {
+                            ...state.view.comparison,
+                            start: nextStart,
+                            end: nextEnd
+                        }
+                    }
+                };
+            }
+
             // --- Marker Actions ---
             case actionTypes.ADD_MARKER: {
                 if (!state.markers.timestamps.includes(action.payload.timestamp)) {
@@ -237,6 +336,81 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         timestamps: []
                     }
                 };
+
+            case actionTypes.REGIONS_ADDED: {
+                const incoming = Array.isArray(action.payload?.regions)
+                    ? action.payload.regions
+                    : [];
+                if (incoming.length === 0) {
+                    return state;
+                }
+
+                const currentRegions = state.markers.regions;
+                const newById = { ...currentRegions.byId };
+                const newAllIds = [...currentRegions.allIds];
+                let nextCounter = currentRegions.counter;
+                let createdAny = false;
+                let fallbackSelectedId = null;
+
+                incoming.forEach(region => {
+                    if (!region) return;
+                    const bounds = normalizeRegionBounds(region.start, region.end);
+                    if (!bounds) return;
+                    const positionId = region.positionId;
+                    if (!positionId) return;
+
+                    let candidateId = Number.isFinite(region.id) ? region.id : null;
+                    if (candidateId === null || Object.prototype.hasOwnProperty.call(newById, candidateId)) {
+                        candidateId = nextCounter;
+                        while (Object.prototype.hasOwnProperty.call(newById, candidateId)) {
+                            candidateId += 1;
+                        }
+                    }
+
+                    nextCounter = Math.max(nextCounter, candidateId + 1);
+
+                    newById[candidateId] = {
+                        id: candidateId,
+                        positionId,
+                        start: bounds.start,
+                        end: bounds.end,
+                        note: typeof region.note === 'string' ? region.note : '',
+                        metrics: region.metrics || null
+                    };
+
+                    if (!newAllIds.includes(candidateId)) {
+                        newAllIds.push(candidateId);
+                    }
+
+                    if (fallbackSelectedId === null) {
+                        fallbackSelectedId = candidateId;
+                    }
+
+                    createdAny = true;
+                });
+
+                if (!createdAny) {
+                    return state;
+                }
+
+                const currentSelectedId = currentRegions.selectedId;
+                const nextSelectedId = currentSelectedId && newById[currentSelectedId]
+                    ? currentSelectedId
+                    : (fallbackSelectedId !== null ? fallbackSelectedId : (newAllIds[0] ?? null));
+
+                return {
+                    ...state,
+                    markers: {
+                        ...state.markers,
+                        regions: {
+                            byId: newById,
+                            allIds: newAllIds,
+                            selectedId: nextSelectedId,
+                            counter: Math.max(nextCounter, 1)
+                        }
+                    }
+                };
+            }
 
             case actionTypes.REGION_ADDED: {
                 const { positionId, start, end } = action.payload;

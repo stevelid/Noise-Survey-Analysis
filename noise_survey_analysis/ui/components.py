@@ -595,6 +595,7 @@ class ControlsComponent:
         self.hover_toggle = self.add_hover_toggle()
         self.clear_markers_button = self.add_clear_markers_button()
         self.param_select = self.add_parameter_selector(available_params)
+        self.start_comparison_button = self.add_start_comparison_button()
 
         logger.info("ControlsComponent initialized.")
 
@@ -660,6 +661,20 @@ class ControlsComponent:
             }""")) #active for overview, inactive for log
         return select
 
+    def add_start_comparison_button(self):
+        button = Button(
+            label="Start Comparison",
+            button_type="primary",
+            width=160,
+            name="start_comparison_button"
+        )
+        button.js_on_event("button_click", CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleStartComparison) {
+                window.NoiseSurveyApp.eventHandlers.handleStartComparison();
+            } else {
+                console.error('NoiseSurveyApp.eventHandlers.handleStartComparison not defined!');
+            }"""))
+        return button
+
     def add_visibility_checkbox(self, chart_name: str, chart_label: str, initial_state: bool = True):
         """
         Adds a visibility checkbox for a specific chart.
@@ -719,12 +734,13 @@ class ControlsComponent:
         if self.visibility_layout is None:
             self._build_visibility_layout()
 
-        # Main controls row (parameter select, view toggle, hover toggle, clear markers button)
+        # Main controls row (parameter select, view toggle, hover toggle, clear markers button, comparison button)
         main_controls_row = Row(
             self.param_select,
             self.view_toggle,
             self.hover_toggle,
             self.clear_markers_button,
+            self.start_comparison_button,
             sizing_mode="scale_width", # Or "stretch_width"
             name="main_controls_row"
         )
@@ -1058,6 +1074,243 @@ class FrequencyBarComponent:
         self._update_table(levels, frequency_labels)
         
         logger.debug(f"FrequencyBarComponent data updated. Factors: {frequency_labels[:5]}..., Levels: {levels[:5]}...")
+
+
+class ComparisonPanelComponent:
+    """Container for comparison mode controls and placeholders."""
+
+    def __init__(self, position_ids: Optional[List[str]] = None):
+        self.position_ids: List[str] = list(position_ids or [])
+
+        instructions_html = (
+            "<div class='comparison-panel-instructions'>"
+            "<h3>Comparison Mode</h3>"
+            "<p>Select the positions you want to include. Drag on a chart to choose a time slice.</p>"
+            "</div>"
+        )
+        self.instructions_div = Div(
+            text=instructions_html,
+            width=320,
+            name="comparison_panel_instructions",
+            styles={"margin-bottom": "8px"}
+        )
+
+        labels = [str(position_id) for position_id in self.position_ids]
+        self.position_selector = CheckboxGroup(
+            labels=labels,
+            active=list(range(len(labels))),
+            width=300,
+            name="comparison_position_selector"
+        )
+        self.position_selector.js_on_change(
+            "active",
+            CustomJS(
+                args={"positionIds": self.position_ids},
+                code="""
+                    if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleComparisonPositionsChange) {
+                        const selected = cb_obj.active
+                            .map(index => positionIds[index])
+                            .filter(id => id !== undefined && id !== null);
+                        window.NoiseSurveyApp.eventHandlers.handleComparisonPositionsChange(selected);
+                    } else {
+                        console.error('NoiseSurveyApp.eventHandlers.handleComparisonPositionsChange not defined!');
+                    }
+                """
+            )
+        )
+
+        metrics_table_html = """
+            <style>
+                .comparison-metrics-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                .comparison-metrics-table th, .comparison-metrics-table td {
+                    border: 1px solid #ddd;
+                    padding: 4px 6px;
+                    text-align: center;
+                }
+                .comparison-metrics-table th {
+                    background-color: #f5f5f5;
+                    font-weight: 600;
+                }
+                .comparison-metrics-table__placeholder {
+                    font-style: italic;
+                    color: #666;
+                }
+            </style>
+            <table class="comparison-metrics-table">
+                <thead>
+                    <tr>
+                        <th>Position</th>
+                        <th>Duration</th>
+                        <th>LAeq</th>
+                        <th>LAFmax</th>
+                        <th>LA90</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="comparison-metrics-table__placeholder" colspan="5">Select a time slice to populate metrics.</td>
+                    </tr>
+                </tbody>
+            </table>
+        """
+        self.metrics_table_div = Div(
+            text=metrics_table_html,
+            width=320,
+            height=220,
+            name="comparison_metrics_div",
+            styles={
+                "border": "1px solid #ccc",
+                "padding": "12px",
+                "background-color": "#fafafa",
+                "overflow-y": "auto"
+            }
+        )
+
+        self.make_regions_button = Button(
+            label="Make Region(s)",
+            button_type="primary",
+            width=150,
+            name="comparison_make_regions_button",
+            disabled=True
+        )
+        self.make_regions_button.js_on_event(
+            "button_click",
+            CustomJS(code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleComparisonMakeRegions) {
+                    window.NoiseSurveyApp.eventHandlers.handleComparisonMakeRegions();
+                } else {
+                    console.info('Comparison region creation will be implemented in a future update.');
+                }
+            """)
+        )
+
+        self.finish_button = Button(
+            label="Finish Comparison",
+            button_type="success",
+            width=150,
+            name="comparison_finish_button",
+            disabled=True
+        )
+        self.finish_button.js_on_event(
+            "button_click",
+            CustomJS(code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleFinishComparison) {
+                    window.NoiseSurveyApp.eventHandlers.handleFinishComparison();
+                } else {
+                    console.error('NoiseSurveyApp.eventHandlers.handleFinishComparison not defined!');
+                }
+            """)
+        )
+
+        buttons_row = Row(
+            self.make_regions_button,
+            self.finish_button,
+            name="comparison_panel_buttons",
+            sizing_mode="scale_width"
+        )
+
+        self.container = Column(
+            self.instructions_div,
+            self.position_selector,
+            self.metrics_table_div,
+            buttons_row,
+            name="comparison_panel_layout",
+            sizing_mode="stretch_width"
+        )
+        self.container.visible = False
+
+    def layout(self):
+        return self.container
+
+
+class ComparisonFrequencyBarComponent:
+    """Multi-series frequency comparison chart."""
+
+    def __init__(self, width: Optional[int] = None):
+        chart_width = width or CHART_SETTINGS.get('frequency_bar_width', 800)
+        initial_data = {
+            'x': [],
+            'level': [],
+            'position': [],
+            'color': []
+        }
+        self.source = ColumnDataSource(data=initial_data, name="comparison_frequency_source")
+        self.x_range = FactorRange(factors=[])
+        self.palette = Category10[10]
+        self.figure = self._create_figure(chart_width)
+        self.table_div = Div(
+            text=self._empty_table_html(),
+            width=chart_width,
+            name="comparison_frequency_table",
+            styles={
+                "border": "1px solid #ccc",
+                "padding": "12px",
+                "background-color": "#fafafa",
+                "margin-top": "8px"
+            }
+        )
+
+        self.container = column(self.figure, self.table_div, name="comparison_frequency_layout")
+        self.container.visible = False
+
+    def _empty_table_html(self) -> str:
+        return """
+            <table class="comparison-frequency-table" style="width:100%; border-collapse: collapse; font-size:12px;">
+                <thead>
+                    <tr>
+                        <th style="border:1px solid #ddd; padding:4px; background:#f5f5f5;">Position</th>
+                        <th style="border:1px solid #ddd; padding:4px; background:#f5f5f5;">Spectrum</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="2" style="border:1px solid #ddd; padding:6px; text-align:center; font-style:italic; color:#666;">
+                            Select a time slice to view averaged spectra.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        """
+
+    def _create_figure(self, chart_width: int):
+        p = figure(
+            title="Comparison Spectrum",
+            height=CHART_SETTINGS.get('high_freq_height', 300),
+            width=chart_width,
+            x_range=self.x_range,
+            x_axis_label='Frequency Band',
+            y_axis_label='Level (dB)',
+            tools="pan,wheel_zoom,box_zoom,reset,save",
+            name="comparison_frequency_chart"
+        )
+
+        p.vbar(
+            x='x',
+            top='level',
+            width=0.8,
+            source=self.source,
+            fill_color='color',
+            line_color='color',
+            legend_field='position'
+        )
+
+        p.legend.location = "top_left"
+        p.legend.click_policy = "hide"
+        p.xaxis.major_label_orientation = 0.8
+        p.xaxis.major_label_text_font_size = "8pt"
+        p.yaxis.formatter = NumeralTickFormatter(format="0.0")
+
+        hover = HoverTool(tooltips=[
+            ("Position", "@position"),
+            ("Frequency", "@x{safe}"),
+            ("Level", "@level{0.1f} dB")
+        ])
+        p.add_tools(hover)
+
+        return p
+
+    def layout(self):
+        return self.container
 
 if __name__ == '__main__':
     # This part is for standalone testing of the component, not for the main Bokeh app

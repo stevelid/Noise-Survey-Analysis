@@ -31,6 +31,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         HOVER_TOGGLE: 'HOVER_TOGGLE',
         STEP_SIZE_CALCULATED: 'view/STEP_SIZE_CALCULATED',
 
+        COMPARISON_MODE_ENTERED: 'view/comparisonModeEntered',
+        COMPARISON_MODE_EXITED: 'view/comparisonModeExited',
+        COMPARISON_POSITIONS_UPDATED: 'view/comparisonPositionsUpdated',
+        COMPARISON_SLICE_UPDATED: 'view/comparisonSliceUpdated',
+
         // Markers
         ADD_MARKER: 'ADD_MARKER',
         REMOVE_MARKER: 'REMOVE_MARKER',
@@ -38,6 +43,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // Regions
         REGION_ADDED: 'markers/regionAdded',
+        REGIONS_ADDED: 'markers/regionsAdded',
         REGION_UPDATED: 'markers/regionUpdated',
         REGION_REMOVED: 'markers/regionRemoved',
         REGION_SELECTED: 'markers/regionSelected',
@@ -84,6 +90,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         stepSizeCalculated: (stepSizeMs) => ({ type: actionTypes.STEP_SIZE_CALCULATED, payload: { stepSizeMs } }),
 
+        comparisonModeEntered: () => ({ type: actionTypes.COMPARISON_MODE_ENTERED }),
+
+        comparisonModeExited: () => ({ type: actionTypes.COMPARISON_MODE_EXITED }),
+
+        comparisonPositionsUpdated: (includedPositions) => ({
+            type: actionTypes.COMPARISON_POSITIONS_UPDATED,
+            payload: { includedPositions }
+        }),
+
+        comparisonSliceUpdated: (start, end) => ({
+            type: actionTypes.COMPARISON_SLICE_UPDATED,
+            payload: { start, end }
+        }),
+
         addMarker: (timestamp) => ({ type: actionTypes.ADD_MARKER, payload: { timestamp } }),
 
         removeMarker: (clickTimestamp) => ({ type: actionTypes.REMOVE_MARKER, payload: { clickTimestamp } }),
@@ -93,6 +113,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         regionAdd: (positionId, start, end) => ({
             type: actionTypes.REGION_ADDED,
             payload: { positionId, start, end }
+        }),
+
+        regionsAdded: (regions) => ({
+            type: actionTypes.REGIONS_ADDED,
+            payload: { regions }
         }),
 
         regionUpdate: (id, changes) => ({

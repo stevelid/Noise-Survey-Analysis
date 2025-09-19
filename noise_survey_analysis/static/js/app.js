@@ -134,6 +134,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             });
         }
 
+        if (app.renderers && typeof app.renderers.renderComparisonMode === 'function') {
+            app.renderers.renderComparisonMode(state);
+        }
+
         // --- C. HANDLE SIDE EFFECTS ---
         // These are tasks that interact with the outside world (e.g., Bokeh backend)
         handleAudioSideEffects(state, previousState, models);

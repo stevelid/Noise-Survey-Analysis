@@ -77,6 +77,239 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return parts.join('');
     }
 
+    const COMPARISON_METRICS_STYLE = `
+        <style>
+            .comparison-metrics-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            .comparison-metrics-table th, .comparison-metrics-table td {
+                border: 1px solid #ddd;
+                padding: 4px 6px;
+                text-align: center;
+            }
+            .comparison-metrics-table th {
+                background-color: #f5f5f5;
+                font-weight: 600;
+            }
+            .comparison-metrics-table__placeholder {
+                font-style: italic;
+                color: #666;
+            }
+        </style>
+    `;
+
+    const COMPARISON_METRICS_EMPTY_HTML = `${COMPARISON_METRICS_STYLE}
+        <table class="comparison-metrics-table">
+            <thead>
+                <tr>
+                    <th>Position</th>
+                    <th>Duration</th>
+                    <th>LAeq</th>
+                    <th>LAFmax</th>
+                    <th>LA90</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="comparison-metrics-table__placeholder" colspan="5">Select a time slice to populate metrics.</td>
+                </tr>
+            </tbody>
+        </table>`;
+
+    const COMPARISON_SPECTRUM_EMPTY_HTML = `
+        <table class="comparison-frequency-table" style="width:100%; border-collapse: collapse; font-size:12px;">
+            <thead>
+                <tr>
+                    <th style="border:1px solid #ddd; padding:4px; background:#f5f5f5;">Position</th>
+                    <th style="border:1px solid #ddd; padding:4px; background:#f5f5f5;">Dataset</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="2" style="border:1px solid #ddd; padding:6px; text-align:center; font-style:italic; color:#666;">
+                        Select a time slice to view averaged spectra.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    `;
+
+    const DEFAULT_COMPARISON_COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'];
+
+    function buildComparisonMetricsTable(rows) {
+        if (!Array.isArray(rows) || !rows.length) {
+            return COMPARISON_METRICS_EMPTY_HTML;
+        }
+        const bodyHtml = rows.map(row => {
+            const positionCell = escapeHtml(String(row.positionId || '—'));
+            const durationCell = formatDuration(row.durationMs);
+            const laeqCell = Number.isFinite(row.laeq) ? row.laeq.toFixed(1) : 'N/A';
+            const lafmaxCell = Number.isFinite(row.lafmax) ? row.lafmax.toFixed(1) : 'N/A';
+            const la90Cell = row.la90Available && Number.isFinite(row.la90)
+                ? row.la90.toFixed(1)
+                : 'N/A';
+            return `<tr><td>${positionCell}</td><td>${durationCell}</td><td>${laeqCell}</td><td>${lafmaxCell}</td><td>${la90Cell}</td></tr>`;
+        }).join('');
+        return `${COMPARISON_METRICS_STYLE}
+            <table class="comparison-metrics-table">
+                <thead>
+                    <tr>
+                        <th>Position</th>
+                        <th>Duration</th>
+                        <th>LAeq</th>
+                        <th>LAFmax</th>
+                        <th>LA90</th>
+                    </tr>
+                </thead>
+                <tbody>${bodyHtml}</tbody>
+            </table>`;
+    }
+
+    function buildComparisonSpectrumTable(series) {
+        if (!Array.isArray(series) || !series.length) {
+            return COMPARISON_SPECTRUM_EMPTY_HTML;
+        }
+        const rowsHtml = series.map(entry => {
+            const positionCell = escapeHtml(String(entry?.positionId || '—'));
+            const datasetLabel = entry?.dataset === 'log'
+                ? 'Log'
+                : entry?.dataset === 'overview'
+                    ? 'Overview'
+                    : 'No Data';
+            return `<tr><td style="border:1px solid #ddd; padding:4px;">${positionCell}</td><td style="border:1px solid #ddd; padding:4px;">${datasetLabel}</td></tr>`;
+        }).join('');
+        return `
+            <table class="comparison-frequency-table" style="width:100%; border-collapse: collapse; font-size:12px;">
+                <thead>
+                    <tr>
+                        <th style="border:1px solid #ddd; padding:4px; background:#f5f5f5;">Position</th>
+                        <th style="border:1px solid #ddd; padding:4px; background:#f5f5f5;">Dataset</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        `;
+    }
+
+    function ensureComparisonSliceSpans(chart) {
+        if (!chart || !chart.model) return null;
+        if (chart._comparisonSliceSpans) {
+            return chart._comparisonSliceSpans;
+        }
+        const doc = window.Bokeh?.documents?.[0];
+        if (!doc || typeof doc.create_model !== 'function' || typeof doc.add_model !== 'function') {
+            return null;
+        }
+        try {
+            const startSpan = doc.add_model(doc.create_model('Span', {
+                location: 0,
+                dimension: 'height',
+                line_color: '#d81b60',
+                line_width: 2,
+                level: 'overlay',
+                visible: false,
+                name: `comparison_slice_start_${chart.name}`
+            }));
+            const endSpan = doc.add_model(doc.create_model('Span', {
+                location: 0,
+                dimension: 'height',
+                line_color: '#1e88e5',
+                line_width: 2,
+                level: 'overlay',
+                visible: false,
+                name: `comparison_slice_end_${chart.name}`
+            }));
+            chart.model.add_layout(startSpan);
+            chart.model.add_layout(endSpan);
+            chart._comparisonSliceSpans = { start: startSpan, end: endSpan };
+            return chart._comparisonSliceSpans;
+        } catch (error) {
+            console.error('[Renderers] Failed to initialize comparison slice spans:', error);
+            return null;
+        }
+    }
+
+    function setComparisonSliceVisibility(chart, isVisible, start, end) {
+        const spans = ensureComparisonSliceSpans(chart);
+        if (!spans) return;
+        if (isVisible && Number.isFinite(start) && Number.isFinite(end)) {
+            spans.start.location = start;
+            spans.end.location = end;
+            spans.start.visible = true;
+            spans.end.visible = true;
+        } else {
+            spans.start.visible = false;
+            spans.end.visible = false;
+        }
+    }
+
+    function updateComparisonSliceLines(controllersByPosition, isActive, start, end) {
+        Object.keys(controllersByPosition || {}).forEach(positionId => {
+            const controller = controllersByPosition[positionId];
+            if (!controller) return;
+            setComparisonSliceVisibility(controller.timeSeriesChart, isActive, start, end);
+            setComparisonSliceVisibility(controller.spectrogramChart, isActive, start, end);
+        });
+    }
+
+    function updateComparisonFrequencyVisualization(models, spectrum) {
+        const source = models.comparisonFrequencySource;
+        const figure = models.comparisonFrequencyFigure;
+        const tableDiv = models.comparisonFrequencyTable;
+        const labels = Array.isArray(spectrum?.labels) ? spectrum.labels : [];
+        const series = Array.isArray(spectrum?.series) ? spectrum.series : [];
+        const palette = Array.isArray(models.comparisonFrequencyPalette) && models.comparisonFrequencyPalette.length
+            ? models.comparisonFrequencyPalette
+            : DEFAULT_COMPARISON_COLORS;
+
+        if (!source) {
+            return;
+        }
+
+        if (!labels.length || !series.length) {
+            source.data = { x: [], level: [], position: [], color: [] };
+            if (figure?.x_range) {
+                figure.x_range.factors = [];
+            }
+            if (tableDiv) {
+                tableDiv.text = COMPARISON_SPECTRUM_EMPTY_HTML;
+            }
+            return;
+        }
+
+        const xValues = [];
+        const levels = [];
+        const positions = [];
+        const colors = [];
+        const factors = [];
+
+        series.forEach((entry, index) => {
+            const positionId = entry?.positionId || `Series ${index + 1}`;
+            const color = palette[index % palette.length];
+            const values = Array.isArray(entry?.values) ? entry.values : [];
+            labels.forEach((label, labelIndex) => {
+                const tuple = [String(label ?? `Band ${labelIndex + 1}`), positionId];
+                factors.push(tuple);
+                xValues.push(tuple);
+                const numericValue = Number(values[labelIndex]);
+                levels.push(Number.isFinite(numericValue) ? numericValue : null);
+                positions.push(positionId);
+                colors.push(color);
+            });
+        });
+
+        source.data = {
+            x: xValues,
+            level: levels,
+            position: positions,
+            color: colors
+        };
+        if (figure?.x_range) {
+            figure.x_range.factors = factors;
+        }
+        if (tableDiv) {
+            tableDiv.text = buildComparisonSpectrumTable(series);
+        }
+    }
+
 /**
      * Updates the primary data sources of the main charts.
      * This is a HEAVY operation and should only be called when the underlying
@@ -634,9 +867,109 @@ function renderPrimaryCharts(state, dataCache) {
         tableDiv.text = newTableHtml;
     }
 
+    function renderComparisonMode(state) {
+        const { models, controllers } = app.registry;
+        if (!models) return;
 
+        const viewState = state?.view || {};
+        const comparisonState = viewState.comparison || {};
+        const isComparisonActive = viewState.mode === 'comparison';
 
+        if (models.regionPanelLayout) {
+            models.regionPanelLayout.visible = !isComparisonActive;
+        }
+        if (models.comparisonPanelLayout) {
+            models.comparisonPanelLayout.visible = isComparisonActive;
+        }
+        if (models.frequencyBarLayout) {
+            models.frequencyBarLayout.visible = !isComparisonActive;
+        }
+        if (models.comparisonFrequencyLayout) {
+            models.comparisonFrequencyLayout.visible = isComparisonActive;
+        }
 
+        if (models.startComparisonButton) {
+            models.startComparisonButton.disabled = isComparisonActive;
+        }
+        if (models.comparisonFinishButton) {
+            models.comparisonFinishButton.disabled = !isComparisonActive;
+        }
+        const hasSlice = Number.isFinite(comparisonState.start) && Number.isFinite(comparisonState.end);
+        if (models.comparisonMakeRegionsButton) {
+            models.comparisonMakeRegionsButton.disabled = !(isComparisonActive && hasSlice);
+        }
+
+        const selector = models.comparisonPositionSelector;
+        if (selector) {
+            selector.disabled = !isComparisonActive;
+            const orderedPositions = Array.isArray(models.comparisonPositionIds)
+                ? models.comparisonPositionIds
+                : [];
+            const includedPositions = Array.isArray(comparisonState.includedPositions)
+                ? comparisonState.includedPositions
+                : [];
+            const desiredActive = includedPositions
+                .map(positionId => orderedPositions.indexOf(positionId))
+                .filter(index => index >= 0)
+                .sort((a, b) => a - b);
+
+            const isDifferentLength = selector.active.length !== desiredActive.length;
+            const hasDifferentValues = !isDifferentLength && selector.active.some((value, idx) => value !== desiredActive[idx]);
+            if (isDifferentLength || hasDifferentValues) {
+                selector.active = desiredActive;
+            }
+        }
+
+        const includedPositions = Array.isArray(comparisonState.includedPositions)
+            ? comparisonState.includedPositions
+            : [];
+        const includedSet = new Set(includedPositions);
+        const controllersByPosition = controllers?.positions || {};
+        const chartVisibility = viewState.chartVisibility || {};
+
+        Object.keys(controllersByPosition).forEach(positionId => {
+            const controller = controllersByPosition[positionId];
+            if (!controller || !controller.timeSeriesChart) {
+                return;
+            }
+            const chartName = `figure_${positionId}_timeseries`;
+            const baseVisible = Object.prototype.hasOwnProperty.call(chartVisibility, chartName)
+                ? Boolean(chartVisibility[chartName])
+                : true;
+            const shouldBeVisible = !isComparisonActive || includedSet.has(positionId);
+            controller.timeSeriesChart.setVisible(baseVisible && shouldBeVisible);
+        });
+
+        updateComparisonSliceLines(controllersByPosition, isComparisonActive && hasSlice, comparisonState.start, comparisonState.end);
+
+        if (!isComparisonActive || !hasSlice || !includedPositions.length) {
+            if (models.comparisonMetricsDiv) {
+                models.comparisonMetricsDiv.text = COMPARISON_METRICS_EMPTY_HTML;
+            }
+            updateComparisonFrequencyVisualization(models, null);
+            return;
+        }
+
+        const processor = app.comparisonMetrics?.processComparisonSliceMetrics;
+        if (typeof processor !== 'function') {
+            return;
+        }
+
+        const metricsResult = processor({
+            start: comparisonState.start,
+            end: comparisonState.end,
+            positionIds: includedPositions,
+            timeSeriesSources: models.timeSeriesSources,
+            preparedGlyphData: models.preparedGlyphData,
+            selectedParameter: viewState.selectedParameter
+        }) || {};
+
+        if (models.comparisonMetricsDiv) {
+            models.comparisonMetricsDiv.text = buildComparisonMetricsTable(metricsResult.metricsRows || []);
+        }
+
+        updateComparisonFrequencyVisualization(models, metricsResult.spectrum);
+    }
 
     // Attach the public functions to the global object
     app.renderers = {
@@ -652,6 +985,7 @@ function renderPrimaryCharts(state, dataCache) {
         renderFrequencyBar: renderFrequencyBar,
         renderControlWidgets: renderControlWidgets,
         renderSummaryTable: renderSummaryTable,
+        renderComparisonMode: renderComparisonMode,
         //formatTime: formatTime
     };
 })(window.NoiseSurveyApp);
