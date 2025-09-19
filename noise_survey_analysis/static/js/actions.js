@@ -36,6 +36,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REMOVE_MARKER: 'REMOVE_MARKER',
         CLEAR_ALL_MARKERS: 'CLEAR_ALL_MARKERS',
 
+        // Regions
+        REGION_ADDED: 'markers/regionAdded',
+        REGION_UPDATED: 'markers/regionUpdated',
+        REGION_REMOVED: 'markers/regionRemoved',
+        REGION_SELECTED: 'markers/regionSelected',
+        REGION_SELECTION_CLEARED: 'markers/regionSelectionCleared',
+        REGION_NOTE_SET: 'markers/regionNoteSet',
+        REGION_METRICS_SET: 'markers/regionMetricsSet',
+        REGIONS_REPLACED: 'markers/regionsReplaced',
+
         // Audio
         AUDIO_STATUS_UPDATE: 'AUDIO_STATUS_UPDATE',
         AUDIO_RATE_CHANGE_REQUEST: 'audio/RATE_CHANGE_REQUEST', 
@@ -79,6 +89,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         removeMarker: (clickTimestamp) => ({ type: actionTypes.REMOVE_MARKER, payload: { clickTimestamp } }),
 
         clearAllMarkers: () => ({ type: actionTypes.CLEAR_ALL_MARKERS }),
+
+        regionAdd: (positionId, start, end) => ({
+            type: actionTypes.REGION_ADDED,
+            payload: { positionId, start, end }
+        }),
+
+        regionUpdate: (id, changes) => ({
+            type: actionTypes.REGION_UPDATED,
+            payload: { id, changes }
+        }),
+
+        regionRemove: (id) => ({ type: actionTypes.REGION_REMOVED, payload: { id } }),
+
+        regionSelect: (id) => ({ type: actionTypes.REGION_SELECTED, payload: { id } }),
+
+        regionClearSelection: () => ({ type: actionTypes.REGION_SELECTION_CLEARED }),
+
+        regionSetNote: (id, note) => ({ type: actionTypes.REGION_NOTE_SET, payload: { id, note } }),
+
+        regionSetMetrics: (id, metrics) => ({ type: actionTypes.REGION_METRICS_SET, payload: { id, metrics } }),
+
+        regionReplaceAll: (regions) => ({ type: actionTypes.REGIONS_REPLACED, payload: { regions } }),
 
         audioStatusUpdate: (status) => ({ type: actionTypes.AUDIO_STATUS_UPDATE, payload: { status } }),
 

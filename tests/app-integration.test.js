@@ -8,6 +8,7 @@ const mockRenderers = {
     renderFrequencyBar: vi.fn(),
     renderMarkers: vi.fn(),
     renderControlWidgets: vi.fn(),
+    renderRegions: vi.fn(),
 };
 
 
@@ -19,13 +20,14 @@ beforeAll(() => {
 });
 
 // --- STEP 3: IMPORT THE REAL APPLICATION STACK ---
-import '../noise_survey_analysis/static/js/Store.js';
+import '../noise_survey_analysis/static/js/store.js';
 import '../noise_survey_analysis/static/js/actions.js';
 import '../noise_survey_analysis/static/js/reducers.js';
 import '../noise_survey_analysis/static/js/init.js'; // Provides init.reInitializeStore
 import '../noise_survey_analysis/static/js/renderers.js'; // Execute mocked factory, attach to app
 import '../noise_survey_analysis/static/js/data-processors.js'; // Execute real factory, attach to app
 import '../noise_survey_analysis/static/js/registry.js';
+import '../noise_survey_analysis/static/js/thunks.js';
 import '../noise_survey_analysis/static/js/event-handlers.js';
 import '../noise_survey_analysis/static/js/app.js'; // Import app (defines side-effect handlers)
 

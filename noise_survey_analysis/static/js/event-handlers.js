@@ -25,7 +25,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return parts.length >= 2 ? parts[1] : null;
     };
 
-
     /**
      * Debounces a function call, ensuring it's only executed after a certain delay.
      * @param {function} func - The function to debounce.
@@ -43,16 +42,68 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // --- Event Handlers ---
 
     function handleTap(cb_obj) {
-        const chartName = cb_obj.origin.name;
-        if (chartName === 'frequency_bar') return;
+        const chartName = cb_obj?.origin?.name;
+        if (!chartName || chartName === 'frequency_bar') return;
         const positionId = _getChartPositionByName(chartName);
+        if (!positionId) return;
+        const timestamp = cb_obj?.x;
+        if (!Number.isFinite(timestamp)) return;
 
-        // Check if Ctrl key is pressed for marker removal
-        if (cb_obj.modifiers && cb_obj.modifiers.ctrl) {
-            app.store.dispatch(actions.removeMarker(cb_obj.x));
-        } else {
-            app.store.dispatch(actions.tap(cb_obj.x, positionId, chartName));
+        const thunkCreator = app.thunks && app.thunks.handleTapIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing handleTapIntent thunk.');
+            return;
         }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+
+        dispatch(thunkCreator({
+            timestamp,
+            positionId,
+            chartName,
+            modifiers: {
+                ctrl: Boolean(cb_obj?.modifiers?.ctrl)
+            }
+        }));
+    }
+
+    function handleRegionBoxSelect(cb_obj) {
+        const modelName = cb_obj?.model?.name;
+        if (!modelName || modelName === 'frequency_bar') return;
+
+        if (!cb_obj?.final || !cb_obj?.modifiers?.shift) {
+            return;
+        }
+
+        const geometry = cb_obj?.geometry;
+        if (!geometry || geometry.type !== 'rect') return;
+
+        const x0 = geometry.x0;
+        const x1 = geometry.x1;
+        if (!Number.isFinite(x0) || !Number.isFinite(x1)) return;
+
+        const positionId = _getChartPositionByName(modelName);
+        if (!positionId) return;
+
+        const thunkCreator = app.thunks && app.thunks.createRegionIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing createRegionIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+
+        dispatch(thunkCreator({
+            positionId,
+            start: x0,
+            end: x1
+        }));
     }
 
     function handleChartHover(cb_data, chartName) {
@@ -135,10 +186,46 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const targetTagName = e.target.tagName.toLowerCase();
         if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') return;
 
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            e.preventDefault();
-            app.store.dispatch(actions.keyNav(e.key === 'ArrowLeft' ? 'left' : 'right'));
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
+            return;
         }
+
+        if (e.shiftKey || e.altKey) {
+            e.preventDefault();
+            const thunkCreator = app.thunks && app.thunks.resizeSelectedRegionIntent;
+            const dispatch = app.store && app.store.dispatch;
+            if (typeof thunkCreator !== 'function') {
+                console.error('[EventHandler] Missing resizeSelectedRegionIntent thunk.');
+                return;
+            }
+            if (typeof dispatch !== 'function') {
+                console.error('[EventHandler] Store is not available for dispatch.');
+                return;
+            }
+
+            dispatch(thunkCreator({
+                key: e.key,
+                modifiers: {
+                    shift: Boolean(e.shiftKey),
+                    alt: Boolean(e.altKey)
+                }
+            }));
+            return;
+        }
+
+        e.preventDefault();
+        const thunkCreator = app.thunks && app.thunks.nudgeTapLineIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing nudgeTapLineIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+
+        dispatch(thunkCreator({ key: e.key }));
     }
 
 
@@ -168,6 +255,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleChartHover: withErrorHandling(handleChartHover, 'handleChartHover'),
         handleRangeUpdate: withErrorHandling(handleRangeUpdate, 'handleRangeUpdate'),
         handleDoubleClick: withErrorHandling(handleDoubleClick, 'handleDoubleClick'),
+        handleRegionBoxSelect: withErrorHandling(handleRegionBoxSelect, 'handleRegionBoxSelect'),
         handleParameterChange: withErrorHandling(handleParameterChange, 'handleParameterChange'),
         handleViewToggle: withErrorHandling(handleViewToggle, 'handleViewToggle'),
         handleHoverToggle: withErrorHandling(handleHoverToggle, 'handleHoverToggle'),

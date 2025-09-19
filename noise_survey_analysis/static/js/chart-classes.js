@@ -28,6 +28,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.name = chartModel.name;
             this.positionId = positionId; // Store the position ID
             this.markerModels = []; // Each chart instance manages its own marker models.
+            this.regionAnnotations = new Map();
         }
 
         setVisible(isVisible) {
@@ -123,6 +124,47 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (hasChanges && this.source) {
                 this.render();
             }
+        }
+
+        syncRegions(regionList, selectedId) {
+            if (!Array.isArray(regionList)) return;
+            const doc = window.Bokeh?.documents?.[0];
+            if (!doc) return;
+
+            const seen = new Set();
+            regionList.forEach(region => {
+                if (!region || region.positionId !== this.positionId) return;
+                seen.add(region.id);
+                let annotation = this.regionAnnotations.get(region.id);
+                if (!annotation) {
+                    annotation = doc.add_model(doc.create_model('BoxAnnotation', {
+                        left: region.start,
+                        right: region.end,
+                        fill_alpha: 0.1,
+                        fill_color: '#1e88e5',
+                        line_color: '#1e88e5',
+                        line_alpha: 0.6,
+                        line_width: 1,
+                        level: 'underlay',
+                        name: `region_${this.name}_${region.id}`
+                    }));
+                    this.model.add_layout(annotation);
+                    this.regionAnnotations.set(region.id, annotation);
+                }
+
+                annotation.left = region.start;
+                annotation.right = region.end;
+                annotation.fill_alpha = region.id === selectedId ? 0.2 : 0.08;
+                annotation.line_width = region.id === selectedId ? 3 : 1;
+                annotation.visible = true;
+            });
+
+            this.regionAnnotations.forEach((annotation, id) => {
+                if (!seen.has(id)) {
+                    this.model.remove_layout(annotation);
+                    this.regionAnnotations.delete(id);
+                }
+            });
         }
 
         update() {

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Import source files for side effects to enable coverage tracking.
-import '../noise_survey_analysis/static/js/Store.js';
+import '../noise_survey_analysis/static/js/store.js';
 import '../noise_survey_analysis/static/js/actions.js';
 import '../noise_survey_analysis/static/js/reducers.js';
+import '../noise_survey_analysis/static/js/thunks.js';
 import '../noise_survey_analysis/static/js/event-handlers.js';
 
 // Now we can safely destructure from the global object.
@@ -12,6 +13,10 @@ const { createStore, actions, rootReducer, eventHandlers } = window.NoiseSurveyA
 describe('NoiseSurveyApp.eventHandlers', () => {
     let store;
     let dispatchSpy;
+    let handleTapIntentSpy;
+    let createRegionIntentSpy;
+    let resizeSelectedRegionIntentSpy;
+    let nudgeTapLineIntentSpy;
 
     beforeEach(() => {
         vi.useFakeTimers();
@@ -31,24 +36,72 @@ describe('NoiseSurveyApp.eventHandlers', () => {
                 chartsByName: new Map()
             }
         };
+
+        handleTapIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleTapIntent').mockImplementation(() => () => {});
+        createRegionIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createRegionIntent').mockImplementation(() => () => {});
+        resizeSelectedRegionIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'resizeSelectedRegionIntent').mockImplementation(() => () => {});
+        nudgeTapLineIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'nudgeTapLineIntent').mockImplementation(() => () => {});
     });
 
     afterEach(() => {
         vi.useRealTimers();
+        vi.restoreAllMocks();
         vi.clearAllMocks();
     });
 
     describe('handleTap', () => {
-        it('should dispatch a TAP action', () => {
+        it('should dispatch a TAP intent', () => {
             const cb_obj = { origin: { name: 'figure_P1_timeseries' }, x: 12345 };
             eventHandlers.handleTap(cb_obj);
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.tap(12345, 'P1', 'figure_P1_timeseries'));
+            expect(handleTapIntentSpy).toHaveBeenCalledWith({
+                timestamp: 12345,
+                positionId: 'P1',
+                chartName: 'figure_P1_timeseries',
+                modifiers: { ctrl: false }
+            });
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
 
-        it('should dispatch a REMOVE_MARKER action on ctrl+tap', () => {
+        it('should dispatch a ctrl+tap intent when ctrl held', () => {
             const cb_obj = { origin: { name: 'figure_P1_timeseries' }, x: 12345, modifiers: { ctrl: true } };
             eventHandlers.handleTap(cb_obj);
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.removeMarker(12345));
+            expect(handleTapIntentSpy).toHaveBeenCalledWith({
+                timestamp: 12345,
+                positionId: 'P1',
+                chartName: 'figure_P1_timeseries',
+                modifiers: { ctrl: true }
+            });
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
+        });
+    });
+
+    describe('handleRegionBoxSelect', () => {
+        it('should add a region when shift-drag completes', () => {
+            const geometryEvent = {
+                model: { name: 'figure_P1_timeseries' },
+                final: true,
+                modifiers: { shift: true },
+                geometry: { type: 'rect', x0: 1000, x1: 2000 }
+            };
+            eventHandlers.handleRegionBoxSelect(geometryEvent);
+            expect(createRegionIntentSpy).toHaveBeenCalledWith({
+                positionId: 'P1',
+                start: 1000,
+                end: 2000
+            });
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
+        });
+
+        it('should ignore drag updates until final shift release', () => {
+            const geometryEvent = {
+                model: { name: 'figure_P1_timeseries' },
+                final: false,
+                modifiers: { shift: true },
+                geometry: { type: 'rect', x0: 1000, x1: 2000 }
+            };
+            eventHandlers.handleRegionBoxSelect(geometryEvent);
+            expect(createRegionIntentSpy).not.toHaveBeenCalled();
+            expect(dispatchSpy).not.toHaveBeenCalled();
         });
     });
 
@@ -113,7 +166,27 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             const event = { key: 'ArrowLeft', preventDefault: vi.fn(), target: { tagName: 'div' } };
             eventHandlers.handleKeyPress(event);
             expect(event.preventDefault).toHaveBeenCalled();
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.keyNav('left'));
+            expect(nudgeTapLineIntentSpy).toHaveBeenCalledWith({ key: 'ArrowLeft' });
+        });
+
+        it('should nudge the right edge when shift+ArrowRight is pressed', () => {
+            const event = { key: 'ArrowRight', shiftKey: true, altKey: false, preventDefault: vi.fn(), target: { tagName: 'div' } };
+            eventHandlers.handleKeyPress(event);
+            expect(event.preventDefault).toHaveBeenCalled();
+            expect(resizeSelectedRegionIntentSpy).toHaveBeenCalledWith({
+                key: 'ArrowRight',
+                modifiers: { shift: true, alt: false }
+            });
+        });
+
+        it('should nudge the left edge when alt+ArrowLeft is pressed', () => {
+            const event = { key: 'ArrowLeft', shiftKey: false, altKey: true, preventDefault: vi.fn(), target: { tagName: 'div' } };
+            eventHandlers.handleKeyPress(event);
+            expect(event.preventDefault).toHaveBeenCalled();
+            expect(resizeSelectedRegionIntentSpy).toHaveBeenCalledWith({
+                key: 'ArrowLeft',
+                modifiers: { shift: false, alt: true }
+            });
         });
     });
 });
