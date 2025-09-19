@@ -182,6 +182,53 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.store.dispatch(actions.audioBoostToggleRequest(positionId, isBoostActive));
     }
 
+    function handleStartComparison() {
+        const thunkCreator = app.thunks && app.thunks.enterComparisonModeIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing enterComparisonModeIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+        dispatch(thunkCreator());
+    }
+
+    function handleFinishComparison() {
+        const thunkCreator = app.thunks && app.thunks.exitComparisonModeIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing exitComparisonModeIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+        dispatch(thunkCreator());
+    }
+
+    function handleComparisonPositionsChange(positionIds) {
+        const thunkCreator = app.thunks && app.thunks.updateIncludedPositionsIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing updateIncludedPositionsIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+        const payload = Array.isArray(positionIds) ? positionIds : [];
+        dispatch(thunkCreator({ includedPositions: payload }));
+    }
+
+    function handleComparisonMakeRegions() {
+        console.info('[EventHandler] Comparison region creation is not implemented yet.');
+    }
+
     function handleKeyPress(e) {
         const targetTagName = e.target.tagName.toLowerCase();
         if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') return;
@@ -265,6 +312,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handlePlaybackRateChange: withErrorHandling(handlePlaybackRateChange, 'handlePlaybackRateChange'),
         handleVolumeBoostToggle: withErrorHandling(handleVolumeBoostToggle, 'handleVolumeBoostToggle'),
         handleKeyPress: withErrorHandling(handleKeyPress, 'handleKeyPress'),
-        clearAllMarkers: withErrorHandling(clearAllMarkers, 'clearAllMarkers')
+        clearAllMarkers: withErrorHandling(clearAllMarkers, 'clearAllMarkers'),
+        handleStartComparison: withErrorHandling(handleStartComparison, 'handleStartComparison'),
+        handleFinishComparison: withErrorHandling(handleFinishComparison, 'handleFinishComparison'),
+        handleComparisonPositionsChange: withErrorHandling(handleComparisonPositionsChange, 'handleComparisonPositionsChange'),
+        handleComparisonMakeRegions: withErrorHandling(handleComparisonMakeRegions, 'handleComparisonMakeRegions')
     };
 })(window.NoiseSurveyApp);

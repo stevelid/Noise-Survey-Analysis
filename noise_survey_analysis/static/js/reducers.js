@@ -13,6 +13,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // --- Dependencies ---
     const { actionTypes } = app; //TODO: move to a separate file (split reducer) approach
 
+    const initialComparisonState = {
+        isActive: false,
+        start: null,
+        end: null,
+        includedPositions: []
+    };
+
     const initialState = {
         view: {
             availablePositions: [],
@@ -22,6 +29,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             chartVisibility: {},
             displayDetails: {},
             hoverEnabled: true,
+            mode: 'normal',
+            comparison: { ...initialComparisonState },
         },
         interaction: {
             tap: { isActive: false, timestamp: null, position: null, sourceChartName: null },
@@ -77,6 +86,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         selectedParameter: action.payload.selectedParameter,
                         viewport: action.payload.viewport,
                         chartVisibility: action.payload.chartVisibility,
+                        mode: 'normal',
+                        comparison: {
+                            ...initialComparisonState,
+                            includedPositions: Array.isArray(action.payload.availablePositions)
+                                ? [...action.payload.availablePositions]
+                                : []
+                        },
                     },
                     system: {
                         ...state.system,
@@ -184,6 +200,64 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         hoverEnabled: action.payload.isActive
                     }
                 };
+
+            case actionTypes.COMPARISON_MODE_ENTERED: {
+                const availablePositions = Array.isArray(state.view.availablePositions)
+                    ? state.view.availablePositions
+                    : [];
+                return {
+                    ...state,
+                    view: {
+                        ...state.view,
+                        mode: 'comparison',
+                        comparison: {
+                            ...state.view.comparison,
+                            isActive: true,
+                            start: null,
+                            end: null,
+                            includedPositions: [...availablePositions]
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.COMPARISON_MODE_EXITED: {
+                const availablePositions = Array.isArray(state.view.availablePositions)
+                    ? state.view.availablePositions
+                    : [];
+                return {
+                    ...state,
+                    view: {
+                        ...state.view,
+                        mode: 'normal',
+                        comparison: {
+                            ...initialComparisonState,
+                            includedPositions: [...availablePositions]
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.COMPARISON_POSITIONS_UPDATED: {
+                const availablePositions = Array.isArray(state.view.availablePositions)
+                    ? state.view.availablePositions
+                    : [];
+                const incoming = Array.isArray(action.payload?.includedPositions)
+                    ? action.payload.includedPositions
+                    : [];
+                const incomingSet = new Set(incoming);
+                const filtered = availablePositions.filter(pos => incomingSet.has(pos));
+                return {
+                    ...state,
+                    view: {
+                        ...state.view,
+                        comparison: {
+                            ...state.view.comparison,
+                            includedPositions: filtered
+                        }
+                    }
+                };
+            }
 
             // --- Marker Actions ---
             case actionTypes.ADD_MARKER: {

@@ -31,6 +31,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         HOVER_TOGGLE: 'HOVER_TOGGLE',
         STEP_SIZE_CALCULATED: 'view/STEP_SIZE_CALCULATED',
 
+        COMPARISON_MODE_ENTERED: 'view/comparisonModeEntered',
+        COMPARISON_MODE_EXITED: 'view/comparisonModeExited',
+        COMPARISON_POSITIONS_UPDATED: 'view/comparisonPositionsUpdated',
+
         // Markers
         ADD_MARKER: 'ADD_MARKER',
         REMOVE_MARKER: 'REMOVE_MARKER',
@@ -83,6 +87,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         hoverToggle: (isActive) => ({ type: actionTypes.HOVER_TOGGLE, payload: { isActive } }),
 
         stepSizeCalculated: (stepSizeMs) => ({ type: actionTypes.STEP_SIZE_CALCULATED, payload: { stepSizeMs } }),
+
+        comparisonModeEntered: () => ({ type: actionTypes.COMPARISON_MODE_ENTERED }),
+
+        comparisonModeExited: () => ({ type: actionTypes.COMPARISON_MODE_EXITED }),
+
+        comparisonPositionsUpdated: (includedPositions) => ({
+            type: actionTypes.COMPARISON_POSITIONS_UPDATED,
+            payload: { includedPositions }
+        }),
 
         addMarker: (timestamp) => ({ type: actionTypes.ADD_MARKER, payload: { timestamp } }),
 

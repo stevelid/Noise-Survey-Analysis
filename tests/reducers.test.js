@@ -68,6 +68,64 @@ describe('rootReducer', () => {
         });
     });
 
+    describe('Comparison Mode actions', () => {
+        it('should enter comparison mode with all positions included', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    availablePositions: ['P1', 'P2'],
+                    comparison: { ...initialState.view.comparison, includedPositions: [] }
+                }
+            };
+            const state = rootReducer(baseState, actions.comparisonModeEntered());
+            expect(state.view.mode).toBe('comparison');
+            expect(state.view.comparison.isActive).toBe(true);
+            expect(state.view.comparison.includedPositions).toEqual(['P1', 'P2']);
+        });
+
+        it('should exit comparison mode and reset comparison state', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    mode: 'comparison',
+                    availablePositions: ['P1'],
+                    comparison: {
+                        isActive: true,
+                        start: 10,
+                        end: 20,
+                        includedPositions: ['P1']
+                    }
+                }
+            };
+            const state = rootReducer(baseState, actions.comparisonModeExited());
+            expect(state.view.mode).toBe('normal');
+            expect(state.view.comparison.isActive).toBe(false);
+            expect(state.view.comparison.includedPositions).toEqual(['P1']);
+            expect(state.view.comparison.start).toBeNull();
+            expect(state.view.comparison.end).toBeNull();
+        });
+
+        it('should update included positions based on available ordering', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    mode: 'comparison',
+                    availablePositions: ['P1', 'P2', 'P3'],
+                    comparison: {
+                        ...initialState.view.comparison,
+                        isActive: true,
+                        includedPositions: ['P1', 'P2']
+                    }
+                }
+            };
+            const state = rootReducer(baseState, actions.comparisonPositionsUpdated(['P3', 'P2', 'P2', 'PX']));
+            expect(state.view.comparison.includedPositions).toEqual(['P2', 'P3']);
+        });
+    });
+
     describe('Marker Actions', () => {
         it('should handle ADD_MARKER action', () => {
             const state = rootReducer(initialState, actions.addMarker(12345));

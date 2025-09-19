@@ -634,9 +634,75 @@ function renderPrimaryCharts(state, dataCache) {
         tableDiv.text = newTableHtml;
     }
 
+    function renderComparisonMode(state) {
+        const { models, controllers } = app.registry;
+        if (!models) return;
 
+        const viewState = state?.view || {};
+        const comparisonState = viewState.comparison || {};
+        const isComparisonActive = viewState.mode === 'comparison';
 
+        if (models.regionPanelLayout) {
+            models.regionPanelLayout.visible = !isComparisonActive;
+        }
+        if (models.comparisonPanelLayout) {
+            models.comparisonPanelLayout.visible = isComparisonActive;
+        }
+        if (models.frequencyBarLayout) {
+            models.frequencyBarLayout.visible = !isComparisonActive;
+        }
+        if (models.comparisonFrequencyLayout) {
+            models.comparisonFrequencyLayout.visible = isComparisonActive;
+        }
 
+        if (models.startComparisonButton) {
+            models.startComparisonButton.disabled = isComparisonActive;
+        }
+        if (models.comparisonFinishButton) {
+            models.comparisonFinishButton.disabled = !isComparisonActive;
+        }
+        if (models.comparisonMakeRegionsButton) {
+            models.comparisonMakeRegionsButton.disabled = true;
+        }
+
+        const selector = models.comparisonPositionSelector;
+        if (selector) {
+            selector.disabled = !isComparisonActive;
+            const orderedPositions = Array.isArray(models.comparisonPositionIds)
+                ? models.comparisonPositionIds
+                : [];
+            const includedPositions = Array.isArray(comparisonState.includedPositions)
+                ? comparisonState.includedPositions
+                : [];
+            const desiredActive = includedPositions
+                .map(positionId => orderedPositions.indexOf(positionId))
+                .filter(index => index >= 0)
+                .sort((a, b) => a - b);
+
+            const isDifferentLength = selector.active.length !== desiredActive.length;
+            const hasDifferentValues = !isDifferentLength && selector.active.some((value, idx) => value !== desiredActive[idx]);
+            if (isDifferentLength || hasDifferentValues) {
+                selector.active = desiredActive;
+            }
+        }
+
+        const includedSet = new Set(comparisonState.includedPositions || []);
+        const controllersByPosition = controllers?.positions || {};
+        const chartVisibility = viewState.chartVisibility || {};
+
+        Object.keys(controllersByPosition).forEach(positionId => {
+            const controller = controllersByPosition[positionId];
+            if (!controller || !controller.timeSeriesChart) {
+                return;
+            }
+            const chartName = `figure_${positionId}_timeseries`;
+            const baseVisible = Object.prototype.hasOwnProperty.call(chartVisibility, chartName)
+                ? Boolean(chartVisibility[chartName])
+                : true;
+            const shouldBeVisible = !isComparisonActive || includedSet.has(positionId);
+            controller.timeSeriesChart.setVisible(baseVisible && shouldBeVisible);
+        });
+    }
 
     // Attach the public functions to the global object
     app.renderers = {
@@ -652,6 +718,7 @@ function renderPrimaryCharts(state, dataCache) {
         renderFrequencyBar: renderFrequencyBar,
         renderControlWidgets: renderControlWidgets,
         renderSummaryTable: renderSummaryTable,
+        renderComparisonMode: renderComparisonMode,
         //formatTime: formatTime
     };
 })(window.NoiseSurveyApp);

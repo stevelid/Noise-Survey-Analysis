@@ -586,6 +586,7 @@ class ControlsComponent:
         self.hover_toggle = self.add_hover_toggle()
         self.clear_markers_button = self.add_clear_markers_button()
         self.param_select = self.add_parameter_selector(available_params)
+        self.start_comparison_button = self.add_start_comparison_button()
 
         logger.info("ControlsComponent initialized.")
 
@@ -651,6 +652,20 @@ class ControlsComponent:
             }""")) #active for overview, inactive for log
         return select
 
+    def add_start_comparison_button(self):
+        button = Button(
+            label="Start Comparison",
+            button_type="primary",
+            width=160,
+            name="start_comparison_button"
+        )
+        button.js_on_event("button_click", CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleStartComparison) {
+                window.NoiseSurveyApp.eventHandlers.handleStartComparison();
+            } else {
+                console.error('NoiseSurveyApp.eventHandlers.handleStartComparison not defined!');
+            }"""))
+        return button
+
     def add_visibility_checkbox(self, chart_name: str, chart_label: str, initial_state: bool = True):
         """
         Adds a visibility checkbox for a specific chart.
@@ -710,12 +725,13 @@ class ControlsComponent:
         if self.visibility_layout is None:
             self._build_visibility_layout()
 
-        # Main controls row (parameter select, view toggle, hover toggle, clear markers button)
+        # Main controls row (parameter select, view toggle, hover toggle, clear markers button, comparison button)
         main_controls_row = Row(
             self.param_select,
             self.view_toggle,
             self.hover_toggle,
             self.clear_markers_button,
+            self.start_comparison_button,
             sizing_mode="scale_width", # Or "stretch_width"
             name="main_controls_row"
         )
@@ -1049,6 +1065,145 @@ class FrequencyBarComponent:
         self._update_table(levels, frequency_labels)
         
         logger.debug(f"FrequencyBarComponent data updated. Factors: {frequency_labels[:5]}..., Levels: {levels[:5]}...")
+
+
+class ComparisonPanelComponent:
+    """Container for comparison mode controls and placeholders."""
+
+    def __init__(self, position_ids: Optional[List[str]] = None):
+        self.position_ids: List[str] = list(position_ids or [])
+
+        instructions_html = (
+            "<div class='comparison-panel-instructions'>"
+            "<h3>Comparison Mode</h3>"
+            "<p>Select the positions you want to include. Drag on a chart to choose a time slice.</p>"
+            "</div>"
+        )
+        self.instructions_div = Div(
+            text=instructions_html,
+            width=320,
+            name="comparison_panel_instructions",
+            styles={"margin-bottom": "8px"}
+        )
+
+        labels = [str(position_id) for position_id in self.position_ids]
+        self.position_selector = CheckboxGroup(
+            labels=labels,
+            active=list(range(len(labels))),
+            width=300,
+            name="comparison_position_selector"
+        )
+        self.position_selector.js_on_change(
+            "active",
+            CustomJS(
+                args={"positionIds": self.position_ids},
+                code="""
+                    if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleComparisonPositionsChange) {
+                        const selected = cb_obj.active
+                            .map(index => positionIds[index])
+                            .filter(id => id !== undefined && id !== null);
+                        window.NoiseSurveyApp.eventHandlers.handleComparisonPositionsChange(selected);
+                    } else {
+                        console.error('NoiseSurveyApp.eventHandlers.handleComparisonPositionsChange not defined!');
+                    }
+                """
+            )
+        )
+
+        self.metrics_placeholder = Div(
+            text="<div class='comparison-metrics-placeholder'>Metrics for the selected slice will appear here.</div>",
+            width=320,
+            height=200,
+            name="comparison_metrics_placeholder",
+            styles={
+                "border": "1px dashed #ccc",
+                "padding": "12px",
+                "background-color": "#fafafa"
+            }
+        )
+
+        self.make_regions_button = Button(
+            label="Make Region(s)",
+            button_type="primary",
+            width=150,
+            name="comparison_make_regions_button",
+            disabled=True
+        )
+        self.make_regions_button.js_on_event(
+            "button_click",
+            CustomJS(code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleComparisonMakeRegions) {
+                    window.NoiseSurveyApp.eventHandlers.handleComparisonMakeRegions();
+                } else {
+                    console.info('Comparison region creation will be implemented in a future update.');
+                }
+            """)
+        )
+
+        self.finish_button = Button(
+            label="Finish Comparison",
+            button_type="success",
+            width=150,
+            name="comparison_finish_button",
+            disabled=True
+        )
+        self.finish_button.js_on_event(
+            "button_click",
+            CustomJS(code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleFinishComparison) {
+                    window.NoiseSurveyApp.eventHandlers.handleFinishComparison();
+                } else {
+                    console.error('NoiseSurveyApp.eventHandlers.handleFinishComparison not defined!');
+                }
+            """)
+        )
+
+        buttons_row = Row(
+            self.make_regions_button,
+            self.finish_button,
+            name="comparison_panel_buttons",
+            sizing_mode="scale_width"
+        )
+
+        self.container = Column(
+            self.instructions_div,
+            self.position_selector,
+            self.metrics_placeholder,
+            buttons_row,
+            name="comparison_panel_layout",
+            sizing_mode="stretch_width"
+        )
+        self.container.visible = False
+
+    def layout(self):
+        return self.container
+
+
+class ComparisonFrequencyBarComponent:
+    """Placeholder component for the comparison frequency chart."""
+
+    def __init__(self, width: Optional[int] = None):
+        placeholder_width = width or CHART_SETTINGS.get('frequency_bar_width', 800)
+        self.placeholder_div = Div(
+            text=(
+                "<div class='comparison-frequency-placeholder'>"
+                "A comparison spectrum will appear here when a time slice is selected."
+                "</div>"
+            ),
+            width=placeholder_width,
+            name="comparison_frequency_placeholder",
+            styles={
+                "border": "1px dashed #ccc",
+                "padding": "16px",
+                "background-color": "#fafafa",
+                "min-height": "140px"
+            }
+        )
+        self.container = column(self.placeholder_div, name="comparison_frequency_layout")
+        self.container.visible = False
+
+    def layout(self):
+        return self.container
 
 if __name__ == '__main__':
     # This part is for standalone testing of the component, not for the main Bokeh app

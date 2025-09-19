@@ -13,6 +13,30 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const { actions } = app;
     const MIN_REGION_WIDTH_MS = 1;
 
+    function enterComparisonModeIntent() {
+        return function (dispatch) {
+            if (!actions) return;
+            dispatch(actions.comparisonModeEntered());
+        };
+    }
+
+    function exitComparisonModeIntent() {
+        return function (dispatch) {
+            if (!actions) return;
+            dispatch(actions.comparisonModeExited());
+        };
+    }
+
+    function updateIncludedPositionsIntent(payload) {
+        return function (dispatch) {
+            if (!actions) return;
+            const includedPositions = Array.isArray(payload?.includedPositions)
+                ? payload.includedPositions
+                : [];
+            dispatch(actions.comparisonPositionsUpdated(includedPositions));
+        };
+    }
+
     function findRegionByTimestamp(state, positionId, timestamp) {
         const regionsState = state?.markers?.regions;
         if (!regionsState || !positionId || !Number.isFinite(timestamp)) return null;
@@ -125,6 +149,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     app.thunks = {
+        enterComparisonModeIntent,
+        exitComparisonModeIntent,
+        updateIncludedPositionsIntent,
         handleTapIntent,
         createRegionIntent,
         resizeSelectedRegionIntent,
