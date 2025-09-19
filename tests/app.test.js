@@ -17,6 +17,7 @@ beforeEach(() => {
     renderControlWidgets: vi.fn(),
     renderMarkers: vi.fn(),
     renderRegions: vi.fn(),
+    renderActiveTool: vi.fn(),
   };
   window.NoiseSurveyApp.data_processors = {
     updateActiveData: vi.fn(),

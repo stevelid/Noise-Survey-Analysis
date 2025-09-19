@@ -971,6 +971,52 @@ function renderPrimaryCharts(state, dataCache) {
         updateComparisonFrequencyVisualization(models, metricsResult.spectrum);
     }
 
+    function renderActiveTool(state, models) {
+        const desired = state?.interaction?.activeDragTool === 'box_select' ? 'box_select' : 'pan';
+        const charts = Array.isArray(models?.charts) ? models.charts : [];
+
+        charts.forEach(chart => {
+            if (!chart?.toolbar) {
+                return;
+            }
+
+            const tools = Array.isArray(chart.toolbar.tools) ? chart.toolbar.tools : [];
+            let panTool = null;
+            let boxSelectTool = null;
+
+            tools.forEach(tool => {
+                if (!tool) {
+                    return;
+                }
+                const typeName = typeof tool.type === 'string' ? tool.type.toLowerCase() : '';
+                const ctorName = typeof tool.constructor?.name === 'string' ? tool.constructor.name.toLowerCase() : '';
+                const toolName = typeof tool.tool_name === 'string' ? tool.tool_name.toLowerCase() : '';
+
+                if (!panTool && (typeName === 'pantool' || ctorName === 'pantool' || toolName === 'pan')) {
+                    panTool = tool;
+                    return;
+                }
+
+                const isBoxSelectName = toolName.includes('box select');
+                const isBoxSelectType = typeName === 'boxselecttool' || ctorName === 'boxselecttool' || typeName.includes('boxselect') || ctorName.includes('boxselect');
+                if (!boxSelectTool && (isBoxSelectName || isBoxSelectType)) {
+                    boxSelectTool = tool;
+                }
+            });
+
+            let targetTool = null;
+            if (desired === 'box_select') {
+                targetTool = boxSelectTool || panTool || null;
+            } else {
+                targetTool = panTool || boxSelectTool || null;
+            }
+
+            if (targetTool && chart.toolbar.active_drag !== targetTool) {
+                chart.toolbar.active_drag = targetTool;
+            }
+        });
+    }
+
     // Attach the public functions to the global object
     app.renderers = {
         renderPrimaryCharts: renderPrimaryCharts,
@@ -986,6 +1032,7 @@ function renderPrimaryCharts(state, dataCache) {
         renderControlWidgets: renderControlWidgets,
         renderSummaryTable: renderSummaryTable,
         renderComparisonMode: renderComparisonMode,
+        renderActiveTool: renderActiveTool,
         //formatTime: formatTime
     };
 })(window.NoiseSurveyApp);
