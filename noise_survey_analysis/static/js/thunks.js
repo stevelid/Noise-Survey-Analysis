@@ -13,6 +13,99 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const { actions } = app;
     const MIN_REGION_WIDTH_MS = 1;
 
+    function enterComparisonModeIntent() {
+        return function (dispatch) {
+            if (!actions) return;
+            dispatch(actions.comparisonModeEntered());
+        };
+    }
+
+    function exitComparisonModeIntent() {
+        return function (dispatch) {
+            if (!actions) return;
+            dispatch(actions.comparisonModeExited());
+        };
+    }
+
+    function updateIncludedPositionsIntent(payload) {
+        return function (dispatch) {
+            if (!actions) return;
+            const includedPositions = Array.isArray(payload?.includedPositions)
+                ? payload.includedPositions
+                : [];
+            dispatch(actions.comparisonPositionsUpdated(includedPositions));
+        };
+    }
+
+    function updateComparisonSliceIntent(payload) {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') return;
+
+            const state = getState();
+            if (state?.view?.mode !== 'comparison') {
+                return;
+            }
+
+            const rawStart = Number(payload?.start);
+            const rawEnd = Number(payload?.end);
+            const hasBounds = Number.isFinite(rawStart) && Number.isFinite(rawEnd) && rawStart !== rawEnd;
+
+            const nextStart = hasBounds ? Math.min(rawStart, rawEnd) : null;
+            const nextEnd = hasBounds ? Math.max(rawStart, rawEnd) : null;
+
+            const currentStart = state.view.comparison.start;
+            const currentEnd = state.view.comparison.end;
+
+            if (currentStart === nextStart && currentEnd === nextEnd) {
+                return;
+            }
+
+            dispatch(actions.comparisonSliceUpdated(nextStart, nextEnd));
+        };
+    }
+
+    function createRegionsFromComparisonIntent() {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') return;
+
+            const state = getState();
+            const viewState = state?.view || {};
+            const comparisonState = viewState.comparison || {};
+
+            if (viewState.mode !== 'comparison' || !comparisonState.isActive) {
+                return;
+            }
+
+            const rawStart = Number(comparisonState.start);
+            const rawEnd = Number(comparisonState.end);
+            if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart === rawEnd) {
+                return;
+            }
+
+            const start = Math.min(rawStart, rawEnd);
+            const end = Math.max(rawStart, rawEnd);
+
+            const includedPositions = Array.isArray(comparisonState.includedPositions)
+                ? comparisonState.includedPositions
+                : [];
+
+            if (!includedPositions.length) {
+                return;
+            }
+
+            const regions = includedPositions
+                .filter(positionId => typeof positionId === 'string' && positionId)
+                .map(positionId => ({ positionId, start, end }));
+
+            if (!regions.length) {
+                return;
+            }
+
+            dispatch(actions.regionsAdded(regions));
+            dispatch(actions.comparisonModeExited());
+        };
+    }
+
     function findRegionByTimestamp(state, positionId, timestamp) {
         const regionsState = state?.markers?.regions;
         if (!regionsState || !positionId || !Number.isFinite(timestamp)) return null;
@@ -125,6 +218,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     app.thunks = {
+        enterComparisonModeIntent,
+        exitComparisonModeIntent,
+        updateIncludedPositionsIntent,
+        updateComparisonSliceIntent,
+        createRegionsFromComparisonIntent,
         handleTapIntent,
         createRegionIntent,
         resizeSelectedRegionIntent,

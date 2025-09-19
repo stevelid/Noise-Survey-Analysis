@@ -68,6 +68,98 @@ describe('rootReducer', () => {
         });
     });
 
+    describe('Comparison Mode actions', () => {
+        it('should enter comparison mode with all positions included', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    availablePositions: ['P1', 'P2'],
+                    comparison: { ...initialState.view.comparison, includedPositions: [] }
+                }
+            };
+            const state = rootReducer(baseState, actions.comparisonModeEntered());
+            expect(state.view.mode).toBe('comparison');
+            expect(state.view.comparison.isActive).toBe(true);
+            expect(state.view.comparison.includedPositions).toEqual(['P1', 'P2']);
+        });
+
+        it('should exit comparison mode and reset comparison state', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    mode: 'comparison',
+                    availablePositions: ['P1'],
+                    comparison: {
+                        isActive: true,
+                        start: 10,
+                        end: 20,
+                        includedPositions: ['P1']
+                    }
+                }
+            };
+            const state = rootReducer(baseState, actions.comparisonModeExited());
+            expect(state.view.mode).toBe('normal');
+            expect(state.view.comparison.isActive).toBe(false);
+            expect(state.view.comparison.includedPositions).toEqual(['P1']);
+            expect(state.view.comparison.start).toBeNull();
+            expect(state.view.comparison.end).toBeNull();
+        });
+
+        it('should update included positions based on available ordering', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    mode: 'comparison',
+                    availablePositions: ['P1', 'P2', 'P3'],
+                    comparison: {
+                        ...initialState.view.comparison,
+                        isActive: true,
+                        includedPositions: ['P1', 'P2']
+                    }
+                }
+            };
+            const state = rootReducer(baseState, actions.comparisonPositionsUpdated(['P3', 'P2', 'P2', 'PX']));
+            expect(state.view.comparison.includedPositions).toEqual(['P2', 'P3']);
+        });
+
+        it('should update comparison slice with normalized bounds', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    comparison: {
+                        ...initialState.view.comparison,
+                        start: null,
+                        end: null
+                    }
+                }
+            };
+            const state = rootReducer(baseState, actions.comparisonSliceUpdated(3000, 1000));
+            expect(state.view.comparison.start).toBe(1000);
+            expect(state.view.comparison.end).toBe(3000);
+        });
+
+        it('should clear comparison slice when bounds are invalid', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    comparison: {
+                        ...initialState.view.comparison,
+                        start: 1000,
+                        end: 2000
+                    }
+                }
+            };
+            const state = rootReducer(baseState, actions.comparisonSliceUpdated(NaN, Infinity));
+            expect(state.view.comparison.start).toBeNull();
+            expect(state.view.comparison.end).toBeNull();
+        });
+    });
+
     describe('Marker Actions', () => {
         it('should handle ADD_MARKER action', () => {
             const state = rootReducer(initialState, actions.addMarker(12345));
@@ -139,6 +231,19 @@ describe('rootReducer', () => {
             const state = rootReducer(initialState, actions.regionReplaceAll(regions));
             expect(state.markers.regions.allIds).toHaveLength(2);
             expect(state.markers.regions.byId[7].note).toBe('A');
+        });
+
+        it('should add multiple regions in a single batch', () => {
+            const batch = [
+                { positionId: 'P1', start: 400, end: 800 },
+                { positionId: 'P2', start: 500, end: 900 }
+            ];
+            const state = rootReducer(initialState, actions.regionsAdded(batch));
+            expect(state.markers.regions.allIds).toEqual([1, 2]);
+            expect(state.markers.regions.byId[1]).toMatchObject({ positionId: 'P1', start: 400, end: 800 });
+            expect(state.markers.regions.byId[2]).toMatchObject({ positionId: 'P2', start: 500, end: 900 });
+            expect(state.markers.regions.counter).toBe(3);
+            expect(state.markers.regions.selectedId).toBe(1);
         });
 
         it('should clear regions when replace payload is empty', () => {

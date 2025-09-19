@@ -100,4 +100,90 @@ describe('NoiseSurveyApp thunks', () => {
         const state = store.getState();
         expect(state.interaction.tap.timestamp).toBe(4000);
     });
+
+    it('enterComparisonModeIntent enables comparison mode', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1', 'P2'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 1000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(thunks.enterComparisonModeIntent());
+        const state = store.getState();
+        expect(state.view.mode).toBe('comparison');
+        expect(state.view.comparison.includedPositions).toEqual(['P1', 'P2']);
+    });
+
+    it('exitComparisonModeIntent returns to normal mode', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 1000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(thunks.enterComparisonModeIntent());
+        store.dispatch(thunks.exitComparisonModeIntent());
+        const state = store.getState();
+        expect(state.view.mode).toBe('normal');
+        expect(state.view.comparison.isActive).toBe(false);
+    });
+
+    it('updateIncludedPositionsIntent updates included positions', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1', 'P2'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 1000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(thunks.enterComparisonModeIntent());
+        store.dispatch(thunks.updateIncludedPositionsIntent({ includedPositions: ['P2'] }));
+        const state = store.getState();
+        expect(state.view.comparison.includedPositions).toEqual(['P2']);
+    });
+
+    it('updateComparisonSliceIntent records normalized bounds when active', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 1000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(thunks.enterComparisonModeIntent());
+        store.dispatch(thunks.updateComparisonSliceIntent({ start: 4000, end: 2000 }));
+        const state = store.getState();
+        expect(state.view.comparison.start).toBe(2000);
+        expect(state.view.comparison.end).toBe(4000);
+    });
+
+    it('updateComparisonSliceIntent clears slice when bounds collapse', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 1000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(thunks.enterComparisonModeIntent());
+        store.dispatch(thunks.updateComparisonSliceIntent({ start: 4000, end: 2000 }));
+        store.dispatch(thunks.updateComparisonSliceIntent({ start: 2500, end: 2500 }));
+        const state = store.getState();
+        expect(state.view.comparison.start).toBeNull();
+        expect(state.view.comparison.end).toBeNull();
+    });
+
+    it('createRegionsFromComparisonIntent creates regions and exits comparison mode', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1', 'P2'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 1000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(thunks.enterComparisonModeIntent());
+        store.dispatch(thunks.updateComparisonSliceIntent({ start: 1000, end: 3000 }));
+        store.dispatch(thunks.createRegionsFromComparisonIntent());
+        const state = store.getState();
+        expect(state.view.mode).toBe('normal');
+        expect(state.markers.regions.allIds).toEqual([1, 2]);
+        expect(state.markers.regions.byId[1].positionId).toBe('P1');
+        expect(state.markers.regions.byId[2].positionId).toBe('P2');
+    });
 });

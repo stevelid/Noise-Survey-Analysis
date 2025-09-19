@@ -22,9 +22,11 @@ from noise_survey_analysis.ui.components import (
     TimeSeriesComponent,
     SpectrogramComponent,
     FrequencyBarComponent,
+    ComparisonFrequencyBarComponent,
     ControlsComponent,
     RangeSelectorComponent,
     SummaryTableComponent,
+    ComparisonPanelComponent,
     create_audio_controls_for_position,
     create_region_panel_div
 )
@@ -134,6 +136,8 @@ class DashBuilder:
         self.shared_components['freq_bar'] = FrequencyBarComponent()
 
         all_positions = list(app_data.positions())
+        self.shared_components['comparison_panel'] = ComparisonPanelComponent(all_positions)
+        self.shared_components['comparison_frequency'] = ComparisonFrequencyBarComponent()
         self.shared_components['summary_table'] = SummaryTableComponent(all_positions, ['LAeq', 'LAFmax', 'LAF90'])
 
         region_panel_div = create_region_panel_div()
@@ -271,11 +275,22 @@ class DashBuilder:
         )
 
         controls_layout = self.shared_components['controls'].layout()
+        range_selector_layout = self.shared_components['range_selector'].layout()
+
+        freq_bar_layout = self.shared_components['freq_bar'].layout() if 'freq_bar' in self.shared_components else Div()
+        freq_bar_layout.name = "frequency_bar_layout"
+        self.shared_components['freq_bar_layout'] = freq_bar_layout
+
+        comparison_frequency_layout = self.shared_components['comparison_frequency'].layout()
+        comparison_frequency_layout.visible = False
+        self.shared_components['comparison_frequency_layout'] = comparison_frequency_layout
+
         main_layout = column(
             controls_layout,
-            self.shared_components['range_selector'].layout(),
+            range_selector_layout,
             *position_layouts,
-            self.shared_components['freq_bar'].layout() if 'freq_bar' in self.shared_components else Div(),
+            freq_bar_layout,
+            comparison_frequency_layout,
             self.shared_components['summary_table'].layout(),
             self.js_init_trigger,
             name="main_layout",
@@ -287,10 +302,21 @@ class DashBuilder:
             self.shared_components['region_panel'],
             name="region_panel_layout",
         )
+        self.shared_components['region_panel_layout'] = region_panel_layout
+
+        comparison_panel_layout = self.shared_components['comparison_panel'].layout()
+        comparison_panel_layout.visible = False
+        self.shared_components['comparison_panel_layout'] = comparison_panel_layout
+
+        side_panel = column(
+            region_panel_layout,
+            comparison_panel_layout,
+            name="side_panel_container",
+        )
 
         final_layout = row(
             main_layout,
-            region_panel_layout,
+            side_panel,
             name="root_layout",
         )
 
@@ -410,6 +436,20 @@ class DashBuilder:
             #'audio_status_source': self.audio_status_source,
             'audio_controls': {},
             'components': {},
+            'startComparisonButton': self.shared_components['controls'].start_comparison_button,
+            'frequencyBarLayout': self.shared_components.get('freq_bar_layout'),
+            'regionPanelLayout': self.shared_components.get('region_panel_layout'),
+            'comparisonPanelLayout': self.shared_components.get('comparison_panel_layout'),
+            'comparisonPositionSelector': self.shared_components['comparison_panel'].position_selector,
+            'comparisonPositionIds': self.shared_components['comparison_panel'].position_ids,
+            'comparisonFinishButton': self.shared_components['comparison_panel'].finish_button,
+            'comparisonMakeRegionsButton': self.shared_components['comparison_panel'].make_regions_button,
+            'comparisonMetricsDiv': self.shared_components['comparison_panel'].metrics_table_div,
+            'comparisonFrequencyLayout': self.shared_components.get('comparison_frequency_layout'),
+            'comparisonFrequencySource': self.shared_components['comparison_frequency'].source,
+            'comparisonFrequencyFigure': self.shared_components['comparison_frequency'].figure,
+            'comparisonFrequencyTable': self.shared_components['comparison_frequency'].table_div,
+            'comparisonFrequencyPalette': self.shared_components['comparison_frequency'].palette,
             'regionPanelDiv': self.shared_components['region_panel'],
             'regionExportButton': self.shared_components['region_export_button'],
             'regionImportButton': self.shared_components['region_import_button'],
