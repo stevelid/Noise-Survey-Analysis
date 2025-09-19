@@ -140,4 +140,33 @@ describe('NoiseSurveyApp thunks', () => {
         const state = store.getState();
         expect(state.view.comparison.includedPositions).toEqual(['P2']);
     });
+
+    it('updateComparisonSliceIntent records normalized bounds when active', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 1000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(thunks.enterComparisonModeIntent());
+        store.dispatch(thunks.updateComparisonSliceIntent({ start: 4000, end: 2000 }));
+        const state = store.getState();
+        expect(state.view.comparison.start).toBe(2000);
+        expect(state.view.comparison.end).toBe(4000);
+    });
+
+    it('updateComparisonSliceIntent clears slice when bounds collapse', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 1000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(thunks.enterComparisonModeIntent());
+        store.dispatch(thunks.updateComparisonSliceIntent({ start: 4000, end: 2000 }));
+        store.dispatch(thunks.updateComparisonSliceIntent({ start: 2500, end: 2500 }));
+        const state = store.getState();
+        expect(state.view.comparison.start).toBeNull();
+        expect(state.view.comparison.end).toBeNull();
+    });
 });

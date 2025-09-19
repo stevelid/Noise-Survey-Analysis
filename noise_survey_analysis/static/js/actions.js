@@ -34,6 +34,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         COMPARISON_MODE_ENTERED: 'view/comparisonModeEntered',
         COMPARISON_MODE_EXITED: 'view/comparisonModeExited',
         COMPARISON_POSITIONS_UPDATED: 'view/comparisonPositionsUpdated',
+        COMPARISON_SLICE_UPDATED: 'view/comparisonSliceUpdated',
 
         // Markers
         ADD_MARKER: 'ADD_MARKER',
@@ -95,6 +96,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         comparisonPositionsUpdated: (includedPositions) => ({
             type: actionTypes.COMPARISON_POSITIONS_UPDATED,
             payload: { includedPositions }
+        }),
+
+        comparisonSliceUpdated: (start, end) => ({
+            type: actionTypes.COMPARISON_SLICE_UPDATED,
+            payload: { start, end }
         }),
 
         addMarker: (timestamp) => ({ type: actionTypes.ADD_MARKER, payload: { timestamp } }),

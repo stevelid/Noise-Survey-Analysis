@@ -259,6 +259,31 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             }
 
+            case actionTypes.COMPARISON_SLICE_UPDATED: {
+                const rawStart = Number(action.payload?.start);
+                const rawEnd = Number(action.payload?.end);
+                const hasValidBounds = Number.isFinite(rawStart) && Number.isFinite(rawEnd) && rawStart !== rawEnd;
+
+                const nextStart = hasValidBounds ? Math.min(rawStart, rawEnd) : null;
+                const nextEnd = hasValidBounds ? Math.max(rawStart, rawEnd) : null;
+
+                if (state.view.comparison.start === nextStart && state.view.comparison.end === nextEnd) {
+                    return state;
+                }
+
+                return {
+                    ...state,
+                    view: {
+                        ...state.view,
+                        comparison: {
+                            ...state.view.comparison,
+                            start: nextStart,
+                            end: nextEnd
+                        }
+                    }
+                };
+            }
+
             // --- Marker Actions ---
             case actionTypes.ADD_MARKER: {
                 if (!state.markers.timestamps.includes(action.payload.timestamp)) {

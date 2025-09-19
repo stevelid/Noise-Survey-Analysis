@@ -124,6 +124,40 @@ describe('rootReducer', () => {
             const state = rootReducer(baseState, actions.comparisonPositionsUpdated(['P3', 'P2', 'P2', 'PX']));
             expect(state.view.comparison.includedPositions).toEqual(['P2', 'P3']);
         });
+
+        it('should update comparison slice with normalized bounds', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    comparison: {
+                        ...initialState.view.comparison,
+                        start: null,
+                        end: null
+                    }
+                }
+            };
+            const state = rootReducer(baseState, actions.comparisonSliceUpdated(3000, 1000));
+            expect(state.view.comparison.start).toBe(1000);
+            expect(state.view.comparison.end).toBe(3000);
+        });
+
+        it('should clear comparison slice when bounds are invalid', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    comparison: {
+                        ...initialState.view.comparison,
+                        start: 1000,
+                        end: 2000
+                    }
+                }
+            };
+            const state = rootReducer(baseState, actions.comparisonSliceUpdated(NaN, Infinity));
+            expect(state.view.comparison.start).toBeNull();
+            expect(state.view.comparison.end).toBeNull();
+        });
     });
 
     describe('Marker Actions', () => {

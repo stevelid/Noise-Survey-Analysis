@@ -1110,15 +1110,50 @@ class ComparisonPanelComponent:
             )
         )
 
-        self.metrics_placeholder = Div(
-            text="<div class='comparison-metrics-placeholder'>Metrics for the selected slice will appear here.</div>",
+        metrics_table_html = """
+            <style>
+                .comparison-metrics-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                .comparison-metrics-table th, .comparison-metrics-table td {
+                    border: 1px solid #ddd;
+                    padding: 4px 6px;
+                    text-align: center;
+                }
+                .comparison-metrics-table th {
+                    background-color: #f5f5f5;
+                    font-weight: 600;
+                }
+                .comparison-metrics-table__placeholder {
+                    font-style: italic;
+                    color: #666;
+                }
+            </style>
+            <table class="comparison-metrics-table">
+                <thead>
+                    <tr>
+                        <th>Position</th>
+                        <th>Duration</th>
+                        <th>LAeq</th>
+                        <th>LAFmax</th>
+                        <th>LA90</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="comparison-metrics-table__placeholder" colspan="5">Select a time slice to populate metrics.</td>
+                    </tr>
+                </tbody>
+            </table>
+        """
+        self.metrics_table_div = Div(
+            text=metrics_table_html,
             width=320,
-            height=200,
-            name="comparison_metrics_placeholder",
+            height=220,
+            name="comparison_metrics_div",
             styles={
-                "border": "1px dashed #ccc",
+                "border": "1px solid #ccc",
                 "padding": "12px",
-                "background-color": "#fafafa"
+                "background-color": "#fafafa",
+                "overflow-y": "auto"
             }
         )
 
@@ -1168,7 +1203,7 @@ class ComparisonPanelComponent:
         self.container = Column(
             self.instructions_div,
             self.position_selector,
-            self.metrics_placeholder,
+            self.metrics_table_div,
             buttons_row,
             name="comparison_panel_layout",
             sizing_mode="stretch_width"
@@ -1180,27 +1215,90 @@ class ComparisonPanelComponent:
 
 
 class ComparisonFrequencyBarComponent:
-    """Placeholder component for the comparison frequency chart."""
+    """Multi-series frequency comparison chart."""
 
     def __init__(self, width: Optional[int] = None):
-        placeholder_width = width or CHART_SETTINGS.get('frequency_bar_width', 800)
-        self.placeholder_div = Div(
-            text=(
-                "<div class='comparison-frequency-placeholder'>"
-                "A comparison spectrum will appear here when a time slice is selected."
-                "</div>"
-            ),
-            width=placeholder_width,
-            name="comparison_frequency_placeholder",
+        chart_width = width or CHART_SETTINGS.get('frequency_bar_width', 800)
+        initial_data = {
+            'x': [],
+            'level': [],
+            'position': [],
+            'color': []
+        }
+        self.source = ColumnDataSource(data=initial_data, name="comparison_frequency_source")
+        self.x_range = FactorRange(factors=[])
+        self.palette = Category10[10]
+        self.figure = self._create_figure(chart_width)
+        self.table_div = Div(
+            text=self._empty_table_html(),
+            width=chart_width,
+            name="comparison_frequency_table",
             styles={
-                "border": "1px dashed #ccc",
-                "padding": "16px",
+                "border": "1px solid #ccc",
+                "padding": "12px",
                 "background-color": "#fafafa",
-                "min-height": "140px"
+                "margin-top": "8px"
             }
         )
-        self.container = column(self.placeholder_div, name="comparison_frequency_layout")
+
+        self.container = column(self.figure, self.table_div, name="comparison_frequency_layout")
         self.container.visible = False
+
+    def _empty_table_html(self) -> str:
+        return """
+            <table class="comparison-frequency-table" style="width:100%; border-collapse: collapse; font-size:12px;">
+                <thead>
+                    <tr>
+                        <th style="border:1px solid #ddd; padding:4px; background:#f5f5f5;">Position</th>
+                        <th style="border:1px solid #ddd; padding:4px; background:#f5f5f5;">Spectrum</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="2" style="border:1px solid #ddd; padding:6px; text-align:center; font-style:italic; color:#666;">
+                            Select a time slice to view averaged spectra.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        """
+
+    def _create_figure(self, chart_width: int):
+        p = figure(
+            title="Comparison Spectrum",
+            height=CHART_SETTINGS.get('high_freq_height', 300),
+            width=chart_width,
+            x_range=self.x_range,
+            x_axis_label='Frequency Band',
+            y_axis_label='Level (dB)',
+            tools="pan,wheel_zoom,box_zoom,reset,save",
+            name="comparison_frequency_chart"
+        )
+
+        p.vbar(
+            x='x',
+            top='level',
+            width=0.8,
+            source=self.source,
+            fill_color='color',
+            line_color='color',
+            legend_field='position'
+        )
+
+        p.legend.location = "top_left"
+        p.legend.click_policy = "hide"
+        p.xaxis.major_label_orientation = 0.8
+        p.xaxis.major_label_text_font_size = "8pt"
+        p.yaxis.formatter = NumeralTickFormatter(format="0.0")
+
+        hover = HoverTool(tooltips=[
+            ("Position", "@position"),
+            ("Frequency", "@x{safe}"),
+            ("Level", "@level{0.1f} dB")
+        ])
+        p.add_tools(hover)
+
+        return p
 
     def layout(self):
         return self.container

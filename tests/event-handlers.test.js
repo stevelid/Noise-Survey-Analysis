@@ -17,6 +17,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     let createRegionIntentSpy;
     let resizeSelectedRegionIntentSpy;
     let nudgeTapLineIntentSpy;
+    let updateComparisonSliceIntentSpy;
 
     beforeEach(() => {
         vi.useFakeTimers();
@@ -41,6 +42,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         createRegionIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createRegionIntent').mockImplementation(() => () => {});
         resizeSelectedRegionIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'resizeSelectedRegionIntent').mockImplementation(() => () => {});
         nudgeTapLineIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'nudgeTapLineIntent').mockImplementation(() => () => {});
+        updateComparisonSliceIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'updateComparisonSliceIntent').mockImplementation(() => () => {});
     });
 
     afterEach(() => {
@@ -84,12 +86,19 @@ describe('NoiseSurveyApp.eventHandlers', () => {
                 geometry: { type: 'rect', x0: 1000, x1: 2000 }
             };
             eventHandlers.handleRegionBoxSelect(geometryEvent);
+            expect(updateComparisonSliceIntentSpy).toHaveBeenCalledWith({
+                start: 1000,
+                end: 2000,
+                positionId: 'P1',
+                sourceChartName: 'figure_P1_timeseries',
+                final: true
+            });
             expect(createRegionIntentSpy).toHaveBeenCalledWith({
                 positionId: 'P1',
                 start: 1000,
                 end: 2000
             });
-            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
+            expect(dispatchSpy).toHaveBeenCalledTimes(2);
         });
 
         it('should ignore drag updates until final shift release', () => {
@@ -100,8 +109,15 @@ describe('NoiseSurveyApp.eventHandlers', () => {
                 geometry: { type: 'rect', x0: 1000, x1: 2000 }
             };
             eventHandlers.handleRegionBoxSelect(geometryEvent);
+            expect(updateComparisonSliceIntentSpy).toHaveBeenCalledWith({
+                start: 1000,
+                end: 2000,
+                positionId: 'P1',
+                sourceChartName: 'figure_P1_timeseries',
+                final: false
+            });
             expect(createRegionIntentSpy).not.toHaveBeenCalled();
-            expect(dispatchSpy).not.toHaveBeenCalled();
+            expect(dispatchSpy).toHaveBeenCalledTimes(1);
         });
     });
 

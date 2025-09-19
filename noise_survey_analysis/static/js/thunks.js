@@ -37,6 +37,33 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    function updateComparisonSliceIntent(payload) {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') return;
+
+            const state = getState();
+            if (state?.view?.mode !== 'comparison') {
+                return;
+            }
+
+            const rawStart = Number(payload?.start);
+            const rawEnd = Number(payload?.end);
+            const hasBounds = Number.isFinite(rawStart) && Number.isFinite(rawEnd) && rawStart !== rawEnd;
+
+            const nextStart = hasBounds ? Math.min(rawStart, rawEnd) : null;
+            const nextEnd = hasBounds ? Math.max(rawStart, rawEnd) : null;
+
+            const currentStart = state.view.comparison.start;
+            const currentEnd = state.view.comparison.end;
+
+            if (currentStart === nextStart && currentEnd === nextEnd) {
+                return;
+            }
+
+            dispatch(actions.comparisonSliceUpdated(nextStart, nextEnd));
+        };
+    }
+
     function findRegionByTimestamp(state, positionId, timestamp) {
         const regionsState = state?.markers?.regions;
         if (!regionsState || !positionId || !Number.isFinite(timestamp)) return null;
@@ -152,6 +179,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         enterComparisonModeIntent,
         exitComparisonModeIntent,
         updateIncludedPositionsIntent,
+        updateComparisonSliceIntent,
         handleTapIntent,
         createRegionIntent,
         resizeSelectedRegionIntent,

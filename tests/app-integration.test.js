@@ -23,6 +23,8 @@ beforeAll(() => {
 import '../noise_survey_analysis/static/js/store.js';
 import '../noise_survey_analysis/static/js/actions.js';
 import '../noise_survey_analysis/static/js/reducers.js';
+import '../noise_survey_analysis/static/js/calcMetrics.js';
+import '../noise_survey_analysis/static/js/comparison-metrics.js';
 import '../noise_survey_analysis/static/js/init.js'; // Provides init.reInitializeStore
 import '../noise_survey_analysis/static/js/renderers.js'; // Execute mocked factory, attach to app
 import '../noise_survey_analysis/static/js/data-processors.js'; // Execute real factory, attach to app
