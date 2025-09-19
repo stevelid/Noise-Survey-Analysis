@@ -99,6 +99,7 @@ ENV/
 
 # HTML and example files from original .gitignore
 *.html
+!tests/e2e/*.html
 example files/
 
 # Other
