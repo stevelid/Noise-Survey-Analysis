@@ -42,7 +42,7 @@ CHART_SETTINGS = {
     'spectrogram_height': 360,   
     'spectrogram_width': 1600,    
     'sync_charts': True,
-    'tools': 'xzoom_in,xzoom_out,xpan,reset,xwheel_zoom',  # X-axis only tools
+    'tools': 'xzoom_in,xzoom_out,xpan,reset,xwheel_zoom,xbox_select',  # X-axis only tools
     'active_scroll': 'xwheel_zoom',
     'line_width': 1,
     'colormap': 'Turbo256',

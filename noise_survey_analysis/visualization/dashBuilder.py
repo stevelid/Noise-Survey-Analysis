@@ -1,7 +1,7 @@
 import logging
 from bokeh.plotting import curdoc
-from bokeh.layouts import column, LayoutDOM # Ensure column is imported
-from bokeh.models import Div, ColumnDataSource, CustomJS # Import for assertions and error messages
+from bokeh.layouts import column, row, LayoutDOM # Ensure column is imported
+from bokeh.models import Div, ColumnDataSource, CustomJS, Button # Import for assertions and error messages
 import pandas as pd
 import numpy as np  # Import numpy for array operations
 import os
@@ -10,7 +10,6 @@ from bokeh.embed import file_html  # Add import for standalone HTML generation
 import logging
 import os
 from bokeh.events import DocumentReady
-from bokeh.models import CustomJS, ColumnDataSource
 from typing import Dict, Any, Optional
 
 import sys
@@ -26,7 +25,8 @@ from noise_survey_analysis.ui.components import (
     ControlsComponent,
     RangeSelectorComponent,
     SummaryTableComponent,
-    create_audio_controls_for_position
+    create_audio_controls_for_position,
+    create_region_panel_div
 )
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
@@ -135,6 +135,28 @@ class DashBuilder:
 
         all_positions = list(app_data.positions())
         self.shared_components['summary_table'] = SummaryTableComponent(all_positions, ['LAeq', 'LAFmax', 'LAF90'])
+
+        region_panel_div = create_region_panel_div()
+        export_button = Button(label="Export Regions", width=150, name="region_export_button")
+        export_button.js_on_event('button_click', CustomJS(code="""
+            if (window.NoiseSurveyApp?.regions?.handleExport) {
+                window.NoiseSurveyApp.regions.handleExport();
+            } else {
+                console.error('Region export handler not available.');
+            }
+        """))
+        import_button = Button(label="Import Regions", width=150, name="region_import_button")
+        import_button.js_on_event('button_click', CustomJS(code="""
+            if (window.NoiseSurveyApp?.regions?.handleImport) {
+                window.NoiseSurveyApp.regions.handleImport();
+            } else {
+                console.error('Region import handler not available.');
+            }
+        """))
+
+        self.shared_components['region_panel'] = region_panel_div
+        self.shared_components['region_export_button'] = export_button
+        self.shared_components['region_import_button'] = import_button
 
         first_position_processed = False
         # Create components for each position found in the data
@@ -249,15 +271,27 @@ class DashBuilder:
         )
 
         controls_layout = self.shared_components['controls'].layout()
-        # The final layout assembly
-        final_layout = column(
-            controls_layout, 
-            self.shared_components['range_selector'].layout(), 
-            *position_layouts, 
+        main_layout = column(
+            controls_layout,
+            self.shared_components['range_selector'].layout(),
+            *position_layouts,
             self.shared_components['freq_bar'].layout() if 'freq_bar' in self.shared_components else Div(),
             self.shared_components['summary_table'].layout(),
-            self.js_init_trigger, # Add the invisible trigger to the layout
+            self.js_init_trigger,
             name="main_layout",
+        )
+
+        region_panel_layout = column(
+            self.shared_components['region_export_button'],
+            self.shared_components['region_import_button'],
+            self.shared_components['region_panel'],
+            name="region_panel_layout",
+        )
+
+        final_layout = row(
+            main_layout,
+            region_panel_layout,
+            name="root_layout",
         )
 
         doc.add_root(final_layout)
@@ -276,6 +310,9 @@ class DashBuilder:
 
                 # 2. Core setup and utilities
                 'utils.js',
+                'calcMetrics.js',
+                'regions.js',
+                'thunks.js',
 
                 # 3. Application modules
                 'chart-classes.js',   # Defines Chart classes, needed by registry
@@ -373,6 +410,9 @@ class DashBuilder:
             #'audio_status_source': self.audio_status_source,
             'audio_controls': {},
             'components': {},
+            'regionPanelDiv': self.shared_components['region_panel'],
+            'regionExportButton': self.shared_components['region_export_button'],
+            'regionImportButton': self.shared_components['region_import_button'],
         }
 
         # Populate position-specific models

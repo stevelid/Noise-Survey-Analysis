@@ -25,6 +25,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return parts.length >= 2 ? parts[1] : null;
     };
 
+    function dispatchIntent(thunkName, payload) {
+        const thunkCreator = app.thunks && typeof app.thunks[thunkName] === 'function'
+            ? app.thunks[thunkName]
+            : null;
+        if (!thunkCreator) {
+            console.error(`[EventHandler] Missing thunk: ${thunkName}`);
+            return;
+        }
+        if (!app.store || typeof app.store.dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+        const thunk = thunkCreator(payload);
+        if (typeof thunk === 'function') {
+            app.store.dispatch(thunk);
+        } else {
+            console.error(`[EventHandler] Thunk '${thunkName}' did not return a function.`);
+        }
+    }
+
 
     /**
      * Debounces a function call, ensuring it's only executed after a certain delay.
@@ -43,16 +63,46 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // --- Event Handlers ---
 
     function handleTap(cb_obj) {
-        const chartName = cb_obj.origin.name;
-        if (chartName === 'frequency_bar') return;
+        const chartName = cb_obj?.origin?.name;
+        if (!chartName || chartName === 'frequency_bar') return;
         const positionId = _getChartPositionByName(chartName);
+        if (!positionId) return;
+        const timestamp = cb_obj?.x;
+        if (!Number.isFinite(timestamp)) return;
 
-        // Check if Ctrl key is pressed for marker removal
-        if (cb_obj.modifiers && cb_obj.modifiers.ctrl) {
-            app.store.dispatch(actions.removeMarker(cb_obj.x));
-        } else {
-            app.store.dispatch(actions.tap(cb_obj.x, positionId, chartName));
-        }
+        dispatchIntent('handleTapIntent', {
+            timestamp,
+            positionId,
+            chartName,
+            modifiers: {
+                ctrl: Boolean(cb_obj?.modifiers?.ctrl)
+            }
+        });
+    }
+
+    function handleRegionBoxSelect(cb_obj) {
+        const modelName = cb_obj?.model?.name;
+        if (!modelName || modelName === 'frequency_bar') return;
+
+        const geometry = cb_obj?.geometry;
+        if (!geometry || geometry.type !== 'rect') return;
+
+        const x0 = geometry.x0;
+        const x1 = geometry.x1;
+        if (!Number.isFinite(x0) || !Number.isFinite(x1)) return;
+
+        const positionId = _getChartPositionByName(modelName);
+        if (!positionId) return;
+
+        dispatchIntent('createRegionIntent', {
+            positionId,
+            start: x0,
+            end: x1,
+            isFinal: Boolean(cb_obj?.final),
+            modifiers: {
+                shift: Boolean(cb_obj?.modifiers?.shift)
+            }
+        });
     }
 
     function handleChartHover(cb_data, chartName) {
@@ -135,10 +185,24 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const targetTagName = e.target.tagName.toLowerCase();
         if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') return;
 
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            e.preventDefault();
-            app.store.dispatch(actions.keyNav(e.key === 'ArrowLeft' ? 'left' : 'right'));
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
+            return;
         }
+
+        if (e.shiftKey || e.altKey) {
+            e.preventDefault();
+            dispatchIntent('resizeSelectedRegionIntent', {
+                key: e.key,
+                modifiers: {
+                    shift: Boolean(e.shiftKey),
+                    alt: Boolean(e.altKey)
+                }
+            });
+            return;
+        }
+
+        e.preventDefault();
+        dispatchIntent('nudgeTapLineIntent', { key: e.key });
     }
 
 
@@ -168,6 +232,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleChartHover: withErrorHandling(handleChartHover, 'handleChartHover'),
         handleRangeUpdate: withErrorHandling(handleRangeUpdate, 'handleRangeUpdate'),
         handleDoubleClick: withErrorHandling(handleDoubleClick, 'handleDoubleClick'),
+        handleRegionBoxSelect: withErrorHandling(handleRegionBoxSelect, 'handleRegionBoxSelect'),
         handleParameterChange: withErrorHandling(handleParameterChange, 'handleParameterChange'),
         handleViewToggle: withErrorHandling(handleViewToggle, 'handleViewToggle'),
         handleHoverToggle: withErrorHandling(handleHoverToggle, 'handleHoverToggle'),

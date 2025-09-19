@@ -41,6 +41,22 @@ from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 
 logger = logging.getLogger(__name__)
 
+
+def create_region_panel_div() -> Div:
+    """Create the static container for the region analysis panel."""
+    return Div(
+        text="<div class='region-panel-empty'>No regions defined.</div>",
+        width=320,
+        height=500,
+        name="region_panel_div",
+        styles={
+            "border": "1px solid #ccc",
+            "padding": "8px",
+            "overflow-y": "auto",
+            "background-color": "#fafafa"
+        }
+    )
+
 class TimeSeriesComponent:
     """
     A self-contained Time Series chart component for displaying broadband noise data.
@@ -246,6 +262,15 @@ class TimeSeriesComponent:
             name=f"hover_tool_{self.position_name}_timeseries"
         )
         self.figure.add_tools(hover_tool)
+
+        selection_js = CustomJS(code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleRegionBoxSelect) {
+                    window.NoiseSurveyApp.eventHandlers.handleRegionBoxSelect(cb_obj);
+                } else {
+                    console.error('NoiseSurveyApp.eventHandlers.handleRegionBoxSelect not defined!');
+                }
+        """)
+        self.figure.js_on_event('selectiongeometry', selection_js)
 
     def layout(self):
         """
@@ -532,6 +557,15 @@ class SpectrogramComponent:
             name=f"hover_tool_{self.name_id}"
         )
         self.figure.add_tools(hover_tool)
+
+        selection_js = CustomJS(code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleRegionBoxSelect) {
+                    window.NoiseSurveyApp.eventHandlers.handleRegionBoxSelect(cb_obj);
+                } else {
+                    console.error('NoiseSurveyApp.eventHandlers.handleRegionBoxSelect not defined!');
+                }
+        """)
+        self.figure.js_on_event('selectiongeometry', selection_js)
 
     def layout(self):
         """Returns the Bokeh layout object for this component."""

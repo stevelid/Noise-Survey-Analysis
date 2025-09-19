@@ -89,6 +89,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didViewToggleChange = state.view.globalViewType !== previousState.view.globalViewType;
         const didVisibilityChange = state.view.chartVisibility !== previousState.view.chartVisibility;
         const didMarkersChange = state.markers.timestamps !== previousState.markers.timestamps;
+        const didRegionsChange = state.markers.regions !== previousState.markers.regions;
 
         const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange;
 
@@ -120,6 +121,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         // Always sync markers
         if (isInitialLoad || didMarkersChange) {
             app.renderers.renderMarkers(state);
+        }
+
+        if (isInitialLoad || didRegionsChange) {
+            app.renderers.renderRegions(state, dataCache);
+        }
+
+        if ((isInitialLoad || didRegionsChange) && app.regions?.prepareMetricsUpdates) {
+            const updates = app.regions.prepareMetricsUpdates(state, dataCache, models) || [];
+            updates.forEach(update => {
+                app.store.dispatch(app.actions.regionSetMetrics(update.id, update.metrics));
+            });
         }
 
         // --- C. HANDLE SIDE EFFECTS ---

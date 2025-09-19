@@ -17,6 +17,8 @@ describe('NoiseSurveyApp.renderers', () => {
     let mockRenderHoverDetails;
 
     let mockDispatchAction;
+    let panelElement;
+    let mockSyncRegions;
 
     beforeEach(() => {
         vi.useFakeTimers(); // Use fake timers for debounce testing
@@ -29,6 +31,7 @@ describe('NoiseSurveyApp.renderers', () => {
         mockHideHoverLine = vi.fn();
         mockHideLabel = vi.fn();
         mockSyncMarkers = vi.fn();
+        mockSyncRegions = vi.fn();
         mockGetLabelText = vi.fn();
         mockRenderLabel = vi.fn();
         mockRenderHoverLine = vi.fn();
@@ -53,6 +56,7 @@ describe('NoiseSurveyApp.renderers', () => {
                             hideHoverLine: mockHideHoverLine,
                             hideLabel: mockHideLabel,
                             syncMarkers: mockSyncMarkers,
+                            syncRegions: mockSyncRegions,
                             getLabelText: mockGetLabelText,
                             renderLabel: mockRenderLabel,
                             renderHoverLine: mockRenderHoverLine,
@@ -64,6 +68,7 @@ describe('NoiseSurveyApp.renderers', () => {
                             hideHoverLine: mockHideHoverLine,
                             hideLabel: mockHideLabel,
                             syncMarkers: mockSyncMarkers,
+                            syncRegions: mockSyncRegions,
                             getLabelText: mockGetLabelText,
                             renderLabel: mockRenderLabel,
                             renderHoverLine: mockRenderHoverLine,
@@ -75,6 +80,7 @@ describe('NoiseSurveyApp.renderers', () => {
                 models: {
                     clickLines: [{ location: null, visible: false }],
                     freqTableDiv: { text: '' },
+                    regionPanelDiv: null,
                     summaryTableDiv: { text: '<thead><tr><th>Position</th><th class="position-header">LAeq</th><th class="position-header">LCeq</th></tr></thead><tbody></tbody>' },
                     barSource: { data: {}, change: { emit: vi.fn() } },
                     barChart: { x_range: { factors: [] }, title: { text: '' } },
@@ -98,10 +104,31 @@ describe('NoiseSurveyApp.renderers', () => {
             }
         });
         renderers = window.NoiseSurveyApp.renderers;
+
+        panelElement = document.createElement('div');
+        panelElement.id = 'region-panel';
+        document.body.appendChild(panelElement);
+        window.NoiseSurveyApp.registry.models.regionPanelDiv = {
+            id: 'region-panel',
+            _text: '',
+            get text() {
+                return this._text;
+            },
+            set text(value) {
+                this._text = value;
+                const el = document.getElementById(this.id);
+                if (el) {
+                    el.innerHTML = value;
+                }
+            }
+        };
     });
 
     afterEach(() => {
         vi.useRealTimers(); // Restore real timers
+        if (panelElement && panelElement.parentNode) {
+            panelElement.parentNode.removeChild(panelElement);
+        }
     });
 
     describe('renderPrimaryCharts', () => {
@@ -173,6 +200,84 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(window.NoiseSurveyApp.registry.models.barSource.change.emit).toHaveBeenCalled();
             // Note: We do not assert internal calls to summary renderer here because
             // it is a local function inside the module. We verify observable effects instead.
+        });
+    });
+
+    describe('renderRegions', () => {
+        it('should refresh region metrics in the side panel for the selected region', () => {
+            const stateWithMetrics = {
+                markers: {
+                    regions: {
+                        byId: {
+                            1: {
+                                id: 1,
+                                positionId: 'P1',
+                                start: 0,
+                                end: 60000,
+                                note: '',
+                                metrics: {
+                                    laeq: 50.12,
+                                    lafmax: 65.5,
+                                    la90: null,
+                                    la90Available: false,
+                                    durationMs: 60000,
+                                    dataResolution: 'log',
+                                    spectrum: { bands: ['63 Hz'], values: [40] }
+                                }
+                            }
+                        },
+                        allIds: [1],
+                        selectedId: 1,
+                        counter: 2
+                    }
+                }
+            };
+
+            renderers.renderRegions(stateWithMetrics, {});
+
+            let panelHtml = document.getElementById('region-panel').innerHTML;
+            expect(panelHtml).toContain('50.1 dB');
+            expect(panelHtml).toContain('65.5 dB');
+
+            const updatedState = {
+                markers: {
+                    regions: {
+                        byId: {
+                            1: {
+                                id: 1,
+                                positionId: 'P1',
+                                start: 0,
+                                end: 62000,
+                                note: '',
+                                metrics: {
+                                    laeq: 55.44,
+                                    lafmax: 70.2,
+                                    la90: 45.3,
+                                    la90Available: true,
+                                    durationMs: 62000,
+                                    dataResolution: 'log',
+                                    spectrum: { bands: ['63 Hz'], values: [45] }
+                                }
+                            }
+                        },
+                        allIds: [1],
+                        selectedId: 1,
+                        counter: 2
+                    }
+                }
+            };
+
+            renderers.renderRegions(updatedState, {});
+
+            panelHtml = document.getElementById('region-panel').innerHTML;
+            expect(panelHtml).toContain('55.4 dB');
+            expect(panelHtml).toContain('70.2 dB');
+            expect(panelHtml).toContain('45.3 dB');
+
+            const lastCall = mockSyncRegions.mock.calls.at(-1);
+            const syncedRegions = lastCall[0];
+            expect(Array.isArray(syncedRegions)).toBe(true);
+            expect(syncedRegions[0].metrics.laeq).toBeCloseTo(55.44);
         });
     });
 

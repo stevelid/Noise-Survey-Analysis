@@ -30,7 +30,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         },
         markers: {
             timestamps: [],  // Array of marker timestamps
-            enabled: true    // Global toggle for marker visibility
+            enabled: true,   // Global toggle for marker visibility
+            regions: {
+                byId: {},
+                allIds: [],
+                selectedId: null,
+                counter: 1
+            }
         },
         audio: {
             isPlaying: false,
@@ -43,6 +49,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             lastAction: null, 
         }
     };
+
+    function normalizeRegionBounds(start, end) {
+        if (!Number.isFinite(start) || !Number.isFinite(end)) {
+            return null;
+        }
+        if (start === end) {
+            return null;
+        }
+        const normalizedStart = Math.min(start, end);
+        const normalizedEnd = Math.max(start, end);
+        return { start: normalizedStart, end: normalizedEnd };
+    }
 
     function appReducer(state = initialState, action) {
 
@@ -219,6 +237,233 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         timestamps: []
                     }
                 };
+
+            case actionTypes.REGION_ADD: {
+                const { positionId, start, end } = action.payload;
+                if (!positionId) return state;
+                const bounds = normalizeRegionBounds(start, end);
+                if (!bounds) return state;
+
+                const currentRegions = state.markers.regions;
+                const id = currentRegions.counter;
+                const newRegion = {
+                    id,
+                    positionId,
+                    start: bounds.start,
+                    end: bounds.end,
+                    note: '',
+                    metrics: null
+                };
+
+                return {
+                    ...state,
+                    markers: {
+                        ...state.markers,
+                        regions: {
+                            byId: { ...currentRegions.byId, [id]: newRegion },
+                            allIds: [...currentRegions.allIds, id],
+                            selectedId: id,
+                            counter: id + 1
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.REGION_UPDATE: {
+                const { id, changes } = action.payload || {};
+                if (!id || !changes) return state;
+                const currentRegions = state.markers.regions;
+                const existing = currentRegions.byId[id];
+                if (!existing) return state;
+
+                let updated = { ...existing, ...changes };
+                if (Object.prototype.hasOwnProperty.call(changes, 'start') || Object.prototype.hasOwnProperty.call(changes, 'end')) {
+                    const candidateBounds = normalizeRegionBounds(
+                        Object.prototype.hasOwnProperty.call(changes, 'start') ? changes.start : existing.start,
+                        Object.prototype.hasOwnProperty.call(changes, 'end') ? changes.end : existing.end
+                    );
+                    if (!candidateBounds) {
+                        return state;
+                    }
+                    updated.start = candidateBounds.start;
+                    updated.end = candidateBounds.end;
+                    updated.metrics = null;
+                }
+
+                return {
+                    ...state,
+                    markers: {
+                        ...state.markers,
+                        regions: {
+                            ...currentRegions,
+                            byId: { ...currentRegions.byId, [id]: updated }
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.REGION_REMOVE: {
+                const { id } = action.payload || {};
+                const currentRegions = state.markers.regions;
+                if (!id || !currentRegions.byId[id]) return state;
+                const newById = { ...currentRegions.byId };
+                delete newById[id];
+                const newAllIds = currentRegions.allIds.filter(regionId => regionId !== id);
+                const newSelectedId = currentRegions.selectedId === id ? null : currentRegions.selectedId;
+                const highestExistingId = newAllIds.reduce((max, regionId) => Math.max(max, Number(regionId) || 0), 0);
+                const nextCounter = newAllIds.length === 0 ? 1 : highestExistingId + 1;
+
+                return {
+                    ...state,
+                    markers: {
+                        ...state.markers,
+                        regions: {
+                            ...currentRegions,
+                            byId: newById,
+                            allIds: newAllIds,
+                            selectedId: newSelectedId,
+                            counter: nextCounter
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.REGION_SELECT: {
+                const { id } = action.payload || {};
+                const currentRegions = state.markers.regions;
+                const nextSelected = id && currentRegions.byId[id] ? id : null;
+                if (currentRegions.selectedId === nextSelected) return state;
+                return {
+                    ...state,
+                    markers: {
+                        ...state.markers,
+                        regions: {
+                            ...currentRegions,
+                            selectedId: nextSelected
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.REGION_CLEAR_SELECTION: {
+                const currentRegions = state.markers.regions;
+                if (currentRegions.selectedId === null) return state;
+                return {
+                    ...state,
+                    markers: {
+                        ...state.markers,
+                        regions: {
+                            ...currentRegions,
+                            selectedId: null
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.REGION_SET_NOTE: {
+                const { id, note } = action.payload || {};
+                const currentRegions = state.markers.regions;
+                const region = currentRegions.byId[id];
+                if (!region) return state;
+                if (region.note === note) return state;
+                return {
+                    ...state,
+                    markers: {
+                        ...state.markers,
+                        regions: {
+                            ...currentRegions,
+                            byId: {
+                                ...currentRegions.byId,
+                                [id]: { ...region, note: typeof note === 'string' ? note : '' }
+                            }
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.REGION_SET_METRICS: {
+                const { id, metrics } = action.payload || {};
+                const currentRegions = state.markers.regions;
+                const region = currentRegions.byId[id];
+                if (!region) return state;
+                return {
+                    ...state,
+                    markers: {
+                        ...state.markers,
+                        regions: {
+                            ...currentRegions,
+                            byId: {
+                                ...currentRegions.byId,
+                                [id]: { ...region, metrics: metrics || null }
+                            }
+                        }
+                    }
+                };
+            }
+
+            case actionTypes.REGION_REPLACE_ALL: {
+                const incoming = Array.isArray(action.payload?.regions) ? action.payload.regions : [];
+                if (incoming.length === 0) {
+                    return {
+                        ...state,
+                        markers: {
+                            ...state.markers,
+                            regions: {
+                                byId: {},
+                                allIds: [],
+                                selectedId: null,
+                                counter: 1
+                            }
+                        }
+                    };
+                }
+
+                const byId = {};
+                const allIds = [];
+                let maxId = 0;
+                let nextGeneratedId = state.markers.regions.counter;
+
+                incoming.forEach(region => {
+                    if (!region) return;
+                    const bounds = normalizeRegionBounds(region.start, region.end);
+                    if (!bounds) return;
+                    const positionId = region.positionId;
+                    if (!positionId) return;
+
+                    let candidateId = Number.isFinite(region.id) ? region.id : nextGeneratedId++;
+                    while (byId[candidateId]) {
+                        candidateId = nextGeneratedId++;
+                    }
+                    maxId = Math.max(maxId, candidateId);
+
+                    byId[candidateId] = {
+                        id: candidateId,
+                        positionId,
+                        start: bounds.start,
+                        end: bounds.end,
+                        note: typeof region.note === 'string' ? region.note : '',
+                        metrics: region.metrics || null
+                    };
+                    allIds.push(candidateId);
+                });
+
+                const selectedId = byId[state.markers.regions.selectedId]
+                    ? state.markers.regions.selectedId
+                    : (allIds[0] ?? null);
+
+                return {
+                    ...state,
+                    markers: {
+                        ...state.markers,
+                        regions: {
+                            byId,
+                            allIds,
+                            selectedId,
+                            counter: Math.max(maxId + 1, state.markers.regions.counter, 1)
+                        }
+                    }
+                };
+            }
 
             // --- Audio Actions
 
