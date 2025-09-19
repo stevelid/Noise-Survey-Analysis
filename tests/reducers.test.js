@@ -35,10 +35,10 @@ describe('rootReducer', () => {
         });
 
         it('should handle KEY_NAV action for right navigation', () => {
-            let state = { 
-                ...initialState, 
-                interaction: { 
-                    ...initialState.interaction, 
+            let state = {
+                ...initialState,
+                interaction: {
+                    ...initialState.interaction,
                     tap: { isActive: true, timestamp: 10000, position: 'P1', sourceChartName: 'line_P1' }
                 },
                 view: {
@@ -48,6 +48,11 @@ describe('rootReducer', () => {
             };
             const newState = rootReducer(state, actions.keyNav('right'));
             expect(newState.interaction.tap.timestamp).toBe(20000); // Should be clamped to max viewport
+        });
+
+        it('should update the active drag tool', () => {
+            const state = rootReducer(initialState, actions.dragToolChanged('box_select'));
+            expect(state.interaction.activeDragTool).toBe('box_select');
         });
     });
 

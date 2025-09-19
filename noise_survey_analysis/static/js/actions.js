@@ -22,6 +22,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         HOVER: 'HOVER',
         KEY_NAV: 'KEY_NAV',
         AUDIO_PLAY_PAUSE_TOGGLE: 'audio/PLAY_PAUSE_TOGGLE',
+        DRAG_TOOL_CHANGED: 'interaction/dragToolChanged',
 
         // View
         VIEWPORT_CHANGE: 'VIEWPORT_CHANGE',
@@ -75,6 +76,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         hover: (payload) => ({ type: actionTypes.HOVER, payload }),
 
         keyNav: (direction) => ({ type: actionTypes.KEY_NAV, payload: { direction } }),
+
+        dragToolChanged: (tool) => ({ type: actionTypes.DRAG_TOOL_CHANGED, payload: { tool } }),
 
         paramChange: (parameter) => ({ type: actionTypes.PARAM_CHANGE, payload: { parameter } }),
 

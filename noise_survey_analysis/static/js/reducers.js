@@ -36,6 +36,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             tap: { isActive: false, timestamp: null, position: null, sourceChartName: null },
             hover: { isActive: false, timestamp: null, position: null, sourceChartName: null, spec_y: null },
             keyboard: { enabled: false, stepSizeMs: 300000 },
+            activeDragTool: 'pan',
         },
         markers: {
             timestamps: [],  // Array of marker timestamps
@@ -124,6 +125,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         ...state.interaction,
                         hover: { ...action.payload },
                     }
+                };
+
+            case actionTypes.DRAG_TOOL_CHANGED:
+                return {
+                    ...state,
+                    interaction: {
+                        ...state.interaction,
+                        activeDragTool: action.payload?.tool ?? state.interaction.activeDragTool,
+                    },
                 };
 
             case actionTypes.KEY_NAV: {
