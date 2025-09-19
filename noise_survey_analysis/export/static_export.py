@@ -30,6 +30,12 @@ def generate_static_html(config_path: str, resources: str = "CDN") -> Optional[P
     try:
         logger.info(f"--- Generating static HTML from config: {config_path} ---")
 
+        # Load config and prepare sources once.
+        loaded_filename, source_configs = load_config_and_prepare_sources(config_path=config_path)
+        if source_configs is None:
+            logger.error("Could not load source configurations. Aborting static generation.")
+            return None
+
         # Determine output filename from config path
         config_filename = Path(config_path).name
         job_number_match = re.search(r"(\d+)", config_filename)
@@ -38,7 +44,6 @@ def generate_static_html(config_path: str, resources: str = "CDN") -> Optional[P
             output_filename = f"{job_number}_survey_dashboard.html"
         else:
             # Fallback to the name specified inside the config file, or a default.
-            loaded_filename, _ = load_config_and_prepare_sources(config_path=config_path)
             output_filename = loaded_filename or "default_dashboard.html"
             logger.warning(
                 f"Could not find job number in '{config_filename}'. Falling back to filename: {output_filename}"
@@ -47,12 +52,6 @@ def generate_static_html(config_path: str, resources: str = "CDN") -> Optional[P
         # The output directory is the same as the config file's directory.
         output_dir = Path(config_path).parent
         output_full_path = output_dir / output_filename
-
-        # Now, load the source configs for the data manager
-        _, source_configs = load_config_and_prepare_sources(config_path=config_path)
-        if source_configs is None:
-            logger.error("Could not load source configurations. Aborting static generation.")
-            return None
 
         logger.info(f"Output will be saved to: {output_full_path}")
 

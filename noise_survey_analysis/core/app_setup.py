@@ -55,7 +55,18 @@ def load_config_and_prepare_sources(config_path='config.json'):
     output_filename = config.get("output_filename", "default_dashboard.html")
     
     source_configurations = []
-    config_dir = os.path.dirname(config_full_path)
+    
+    # Determine the base path for resolving relative source paths.
+    # Prioritize "config_base_path" if it exists in the config.
+    # Otherwise, fall back to the directory where the config file is located.
+    config_base_path = config.get("config_base_path")
+    if config_base_path and os.path.isdir(config_base_path):
+        base_path = config_base_path
+        logger.info(f"Using '{config_base_path}' from config as the base path for sources.")
+    else:
+        base_path = os.path.dirname(config_full_path)
+        logger.info(f"Using config file's directory as the base path for sources: {base_path}")
+
 
     # Group files by position, as the saved config has one entry per file
     grouped_sources = {}
@@ -74,7 +85,7 @@ def load_config_and_prepare_sources(config_path='config.json'):
         # Resolve the relative path from the config file's location
         relative_path = source.get("path")
         if relative_path:
-            absolute_path = os.path.abspath(os.path.join(config_dir, relative_path))
+            absolute_path = os.path.abspath(os.path.join(base_path, relative_path))
             if os.path.exists(absolute_path):
                 grouped_sources[position]["file_paths"].add(absolute_path)
             else:

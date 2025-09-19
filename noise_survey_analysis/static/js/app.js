@@ -148,6 +148,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * This function is the single point of contact with the audio_control_source.
      */
     function handleAudioSideEffects(current, previous, models) {
+        if (!models.audio_control_source) {
+            return; // Do nothing if the audio control model isn't present
+        }
+
         const { actionTypes } = app;
         const lastAction = current.system.lastAction;
         if (!lastAction) return;

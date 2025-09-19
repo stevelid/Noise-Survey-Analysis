@@ -39,6 +39,8 @@ from noise_survey_analysis.core.data_manager import PositionData
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 
 
+from noise_survey_analysis.ui.custom_tools import CustomPanBoxTool
+
 logger = logging.getLogger(__name__)
 
 
@@ -132,8 +134,13 @@ class TimeSeriesComponent:
         """Creates and configures the Bokeh figure for the time series plot."""
         title = f"{self.position_name} - Time History"
 
+        custom_tool = CustomPanBoxTool()
+
         # Common tools for time series charts
-        tools = self.chart_settings['tools']
+        tools = [
+            "xzoom_in", "xzoom_out", "reset", "xwheel_zoom",
+            custom_tool
+        ]
         
         fig_kwargs = {
             "height": self.chart_settings['low_freq_height'],
@@ -143,7 +150,7 @@ class TimeSeriesComponent:
             "x_axis_label": "Time",
             "y_axis_label": "Sound Level (dB)",
             "tools": tools,
-            "active_drag": "xpan",
+            "active_drag": custom_tool,
             "active_scroll": "xwheel_zoom",
             "name": f"figure_{self.name_id}"
         }
@@ -339,14 +346,16 @@ class SpectrogramComponent:
     def _create_empty_figure(self) -> Figure:
         """Creates a blank Bokeh figure as a placeholder."""
         title = f"{self.position_name} - Spectrogram"
+        custom_tool = CustomPanBoxTool()
+
         p = figure(
             title=title,
             x_axis_type="datetime",
             y_axis_type="linear",
             height=self.chart_settings['spectrogram_height'],
             width=self.chart_settings['spectrogram_width'], # Use width for initial sizing
-            tools=self.chart_settings['tools'],
-            active_drag=self.chart_settings['active_drag'],
+            tools=["xzoom_in", "xzoom_out", "reset", "xwheel_zoom", custom_tool],
+            active_drag=custom_tool,
             active_scroll=self.chart_settings['active_scroll'],
             name=f"figure_{self.name_id}"
         )

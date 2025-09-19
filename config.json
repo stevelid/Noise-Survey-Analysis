@@ -1,23 +1,68 @@
 {
-    "output_filename": "noise_survey_dashboard_static.html",
-    "sources": [
-      {
-        "position_name": "971-1",
-        "enabled": true,
-        "file_paths": [
-          "G:\\Shared drives\\Venta\\Jobs\\5959 18-20 High Street, Maidenhead\\5959 Surveys\\971-1\\L304_log.csv",
-          "G:\\Shared drives\\Venta\\Jobs\\5959 18-20 High Street, Maidenhead\\5959 Surveys\\971-1\\L304_summary.csv",
-          "G:\\Shared drives\\Venta\\Jobs\\5959 18-20 High Street, Maidenhead\\5959 Surveys\\971-1"
-        ]
-      },
-      {
-        "position_name": "971-3",
-        "enabled": true,
-        "file_paths": [
-          "G:\\Shared drives\\Venta\\Jobs\\5959 18-20 High Street, Maidenhead\\5959 Surveys\\971-3\\L261_log.csv",
-          "G:\\Shared drives\\Venta\\Jobs\\5959 18-20 High Street, Maidenhead\\5959 Surveys\\971-3\\L261_summary.csv",
-          "G:\\Shared drives\\Venta\\Jobs\\5959 18-20 High Street, Maidenhead\\5959 Surveys\\971-3"
-        ]
-      }
-    ]
-  }
+  "version": "1.2",
+  "created_at": "2025-09-19T10:53:20.039033",
+  "config_base_path": "G:/Shared drives/Venta/Jobs/6030 1-2 Dems House, Storrington/6030 surveys",
+  "output_filename": "6030_survey_dashboard.html",
+  "sources": [
+    {
+      "path": "6030-1/2025-08-06_SLM_000_123_Rpt_Report.txt",
+      "position": "6030-1",
+      "type": "NTi",
+      "parser_type": "nti"
+    },
+    {
+      "path": "6030-1/2025-08-06_SLM_000_RTA_3rd_Rpt_Report.txt",
+      "position": "6030-1",
+      "type": "NTi",
+      "parser_type": "nti"
+    },
+    {
+      "path": "6030-1/2025-08-06_SLM_000_123_Log.txt",
+      "position": "6030-1",
+      "type": "NTi",
+      "parser_type": "nti"
+    },
+    {
+      "path": "6030-1/2025-08-06_SLM_000_RTA_3rd_Log.txt",
+      "position": "6030-1",
+      "type": "NTi",
+      "parser_type": "nti"
+    },
+    {
+      "path": "6030-1",
+      "position": "6030-1",
+      "type": "Audio",
+      "parser_type": "audio"
+    },
+    {
+      "path": "6030-3/2025-08-06_SLM_006_123_Rpt_Report.txt",
+      "position": "6030-3",
+      "type": "NTi",
+      "parser_type": "nti"
+    },
+    {
+      "path": "6030-3/2025-08-06_SLM_006_RTA_3rd_Rpt_Report.txt",
+      "position": "6030-3",
+      "type": "NTi",
+      "parser_type": "nti"
+    },
+    {
+      "path": "6030-3/2025-08-06_SLM_006_123_Log.txt",
+      "position": "6030-3",
+      "type": "NTi",
+      "parser_type": "nti"
+    },
+    {
+      "path": "6030-3/2025-08-06_SLM_006_RTA_3rd_Log.txt",
+      "position": "6030-3",
+      "type": "NTi",
+      "parser_type": "nti"
+    },
+    {
+      "path": "6030-3",
+      "position": "6030-3",
+      "type": "Audio",
+      "parser_type": "audio"
+    }
+  ]
+}
