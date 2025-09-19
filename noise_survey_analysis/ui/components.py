@@ -27,7 +27,9 @@ from bokeh.models import (
     CheckboxGroup,
     ColorBar,
     Div,
-    LinearColorMapper
+    LinearColorMapper,
+    PanTool,
+    BoxSelectTool,
 )
 from bokeh.layouts import column, Row, Column
 from bokeh.palettes import Category10
@@ -38,8 +40,6 @@ from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETT
 from noise_survey_analysis.core.data_manager import PositionData
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 
-
-from noise_survey_analysis.ui.custom_tools import CustomPanBoxTool
 
 logger = logging.getLogger(__name__)
 
@@ -134,12 +134,14 @@ class TimeSeriesComponent:
         """Creates and configures the Bokeh figure for the time series plot."""
         title = f"{self.position_name} - Time History"
 
-        custom_tool = CustomPanBoxTool()
+        pan_tool = PanTool(dimensions="width")
+        box_select_tool = BoxSelectTool(dimensions="width")
 
         # Common tools for time series charts
         tools = [
+            pan_tool,
+            box_select_tool,
             "xzoom_in", "xzoom_out", "reset", "xwheel_zoom",
-            custom_tool
         ]
         
         fig_kwargs = {
@@ -150,7 +152,7 @@ class TimeSeriesComponent:
             "x_axis_label": "Time",
             "y_axis_label": "Sound Level (dB)",
             "tools": tools,
-            "active_drag": custom_tool,
+            "active_drag": pan_tool,
             "active_scroll": "xwheel_zoom",
             "name": f"figure_{self.name_id}"
         }
@@ -346,7 +348,8 @@ class SpectrogramComponent:
     def _create_empty_figure(self) -> Figure:
         """Creates a blank Bokeh figure as a placeholder."""
         title = f"{self.position_name} - Spectrogram"
-        custom_tool = CustomPanBoxTool()
+        pan_tool = PanTool(dimensions="width")
+        box_select_tool = BoxSelectTool(dimensions="width")
 
         p = figure(
             title=title,
@@ -354,8 +357,8 @@ class SpectrogramComponent:
             y_axis_type="linear",
             height=self.chart_settings['spectrogram_height'],
             width=self.chart_settings['spectrogram_width'], # Use width for initial sizing
-            tools=["xzoom_in", "xzoom_out", "reset", "xwheel_zoom", custom_tool],
-            active_drag=custom_tool,
+            tools=[pan_tool, box_select_tool, "xzoom_in", "xzoom_out", "reset", "xwheel_zoom"],
+            active_drag=pan_tool,
             active_scroll=self.chart_settings['active_scroll'],
             name=f"figure_{self.name_id}"
         )
