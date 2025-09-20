@@ -214,7 +214,7 @@ describe('App Orchestration Integration Tests', () => {
             vi.clearAllMocks();
 
             const beforeControls = renderers.renderControlWidgets.mock.calls.length;
-            eventHandlers.togglePlayPause('P1', true);
+            eventHandlers.togglePlayPause({ positionId: 'P1', isActive: true });
 
             expect(store.getState().audio.isPlaying).toBe(true);
             expect(mockBokehModels.audio_control_source.data.command[0]).toBe('play');

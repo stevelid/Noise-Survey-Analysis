@@ -8,6 +8,9 @@ import '../noise_survey_analysis/static/js/event-handlers.js';
 describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
   let dispatchAction;
   let handleTapIntentSpy;
+  let togglePlayPauseIntentSpy;
+  let changePlaybackRateIntentSpy;
+  let toggleVolumeBoostIntentSpy;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -21,6 +24,9 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
     };
 
     handleTapIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleTapIntent').mockImplementation(() => () => {});
+    togglePlayPauseIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'togglePlayPauseIntent').mockImplementation(() => () => {});
+    changePlaybackRateIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'changePlaybackRateIntent').mockImplementation(() => () => {});
+    toggleVolumeBoostIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleVolumeBoostIntent').mockImplementation(() => () => {});
   });
 
   it('handleTap with ctrl modifier should dispatch removeMarker', () => {
@@ -46,11 +52,11 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
     expect(dispatchAction).not.toHaveBeenCalled();
   });
 
-  it('togglePlayPause with isActive=false should send pause command', () => {
-    // This test now focuses on the action dispatching, not the side effect,
-    // as side effects are handled by the app orchestrator, not the event handler itself.
-    window.NoiseSurveyApp.eventHandlers.togglePlayPause('P1', false);
-    expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.audioPlayPauseToggle('P1', false));
+  it('togglePlayPause with isActive=false should dispatch the intent thunk', () => {
+    const payload = { positionId: 'P1', isActive: false };
+    window.NoiseSurveyApp.eventHandlers.togglePlayPause(payload);
+    expect(togglePlayPauseIntentSpy).toHaveBeenCalledWith(payload);
+    expect(dispatchAction).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('handleAudioStatusUpdate should dispatch the status from the model', () => {
@@ -112,14 +118,18 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
     expect(toggleWidget.label).toBe('Hover Disabled');
   });
 
-  it('handlePlaybackRateChange should dispatch the correct request action', () => {
-    window.NoiseSurveyApp.eventHandlers.handlePlaybackRateChange('P1');
-    expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.audioRateChangeRequest('P1'));
+  it('handlePlaybackRateChange should dispatch the intent thunk', () => {
+    const payload = { positionId: 'P1' };
+    window.NoiseSurveyApp.eventHandlers.handlePlaybackRateChange(payload);
+    expect(changePlaybackRateIntentSpy).toHaveBeenCalledWith(payload);
+    expect(dispatchAction).toHaveBeenCalledWith(expect.any(Function));
   });
 
-  it('handleVolumeBoostToggle should dispatch the correct request action', () => {
-    window.NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle('P1', true);
-    expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.audioBoostToggleRequest('P1', true));
+  it('handleVolumeBoostToggle should dispatch the intent thunk', () => {
+    const payload = { positionId: 'P1', isBoostActive: true };
+    window.NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle(payload);
+    expect(toggleVolumeBoostIntentSpy).toHaveBeenCalledWith(payload);
+    expect(dispatchAction).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('handleTap should ignore events from frequency_bar', () => {
