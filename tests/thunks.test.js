@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import '../noise_survey_analysis/static/js/store.js';
 import '../noise_survey_analysis/static/js/actions.js';
@@ -185,5 +185,94 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.markers.regions.allIds).toEqual([1, 2]);
         expect(state.markers.regions.byId[1].positionId).toBe('P1');
         expect(state.markers.regions.byId[2].positionId).toBe('P2');
+    });
+
+    describe('audio control intents', () => {
+        it('togglePlayPauseIntent ignores redundant play requests', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            const thunk = thunks.togglePlayPauseIntent({ positionId: 'P1', isActive: true });
+            const dispatchSpy = vi.fn();
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).not.toHaveBeenCalled();
+        });
+
+        it('togglePlayPauseIntent dispatches when switching positions', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            const thunk = thunks.togglePlayPauseIntent({ positionId: 'P2', isActive: true });
+            const dispatchSpy = vi.fn();
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioPlayPauseToggle('P2', true));
+        });
+
+        it('togglePlayPauseIntent dispatches pause when active', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            const thunk = thunks.togglePlayPauseIntent({ positionId: 'P1', isActive: false });
+            const dispatchSpy = vi.fn();
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioPlayPauseToggle('P1', false));
+        });
+
+        it('togglePlayPauseIntent ignores redundant pause', () => {
+            const thunk = thunks.togglePlayPauseIntent({ positionId: 'P1', isActive: false });
+            const dispatchSpy = vi.fn();
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).not.toHaveBeenCalled();
+        });
+
+        it('changePlaybackRateIntent ignores inactive positions', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            const thunk = thunks.changePlaybackRateIntent({ positionId: 'P2', playbackRate: 1.5 });
+            const dispatchSpy = vi.fn();
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).not.toHaveBeenCalled();
+        });
+
+        it('changePlaybackRateIntent ignores redundant rate request when provided', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            const thunk = thunks.changePlaybackRateIntent({ positionId: 'P1', playbackRate: 1.0 });
+            const dispatchSpy = vi.fn();
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).not.toHaveBeenCalled();
+        });
+
+        it('changePlaybackRateIntent dispatches when rate differs', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            const thunk = thunks.changePlaybackRateIntent({ positionId: 'P1', playbackRate: 1.5 });
+            const dispatchSpy = vi.fn();
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioRateChangeRequest('P1'));
+        });
+
+        it('toggleVolumeBoostIntent ignores inactive positions', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            const thunk = thunks.toggleVolumeBoostIntent({ positionId: 'P2', isBoostActive: true });
+            const dispatchSpy = vi.fn();
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).not.toHaveBeenCalled();
+        });
+
+        it('toggleVolumeBoostIntent ignores redundant boost state', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            const status = {
+                is_playing: [true],
+                active_position_id: ['P1'],
+                playback_rate: [1.0],
+                volume_boost: [true],
+                current_time: [0]
+            };
+            store.dispatch(actions.audioStatusUpdate(status));
+            const thunk = thunks.toggleVolumeBoostIntent({ positionId: 'P1', isBoostActive: true });
+            const dispatchSpy = vi.fn();
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).not.toHaveBeenCalled();
+        });
+
+        it('toggleVolumeBoostIntent dispatches when toggling boost', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            const thunk = thunks.toggleVolumeBoostIntent({ positionId: 'P1', isBoostActive: true });
+            const dispatchSpy = vi.fn();
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioBoostToggleRequest('P1', true));
+        });
     });
 });

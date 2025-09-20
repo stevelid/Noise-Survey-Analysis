@@ -1407,9 +1407,8 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         args=dict(position_id=position_id, button=play_toggle),
         code="""
             if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.togglePlayPause) {
-                // Call the togglePlayPause function that we exposed on the main app object
-                // Pass the button's new active state to the handler
-                window.NoiseSurveyApp.eventHandlers.togglePlayPause(position_id, button.active);
+                // Call the togglePlayPause handler with the new toggle state so the thunk can validate the intent
+                window.NoiseSurveyApp.eventHandlers.togglePlayPause({ positionId: position_id, isActive: button.active });
             } else {
                 console.error('NoiseSurveyApp.eventHandlers.togglePlayPause function not found!');
             }
@@ -1427,7 +1426,7 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         args=dict(position_id=position_id),
         code="""
             if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handlePlaybackRateChange) {
-                window.NoiseSurveyApp.eventHandlers.handlePlaybackRateChange(position_id);
+                window.NoiseSurveyApp.eventHandlers.handlePlaybackRateChange({ positionId: position_id });
             } else {
                 console.error('NoiseSurveyApp.eventHandlers.handlePlaybackRateChange function not found!');
             }
@@ -1445,7 +1444,7 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         args=dict(position_id=position_id, button=volume_boost_button),
         code="""
             if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle) {
-                window.NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle(position_id, button.active);
+                window.NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle({ positionId: position_id, isBoostActive: button.active });
             } else {
                 console.error('NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle function not found!');
             }

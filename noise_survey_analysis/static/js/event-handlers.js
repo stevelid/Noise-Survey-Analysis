@@ -182,16 +182,58 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.store.dispatch(actions.audioStatusUpdate(status));
     }
 
-    function togglePlayPause(positionId, isActive) {
-        app.store.dispatch(actions.audioPlayPauseToggle(positionId, isActive));
+    function togglePlayPause(payload) {
+        const thunkCreator = app.thunks && app.thunks.togglePlayPauseIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing togglePlayPauseIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+
+        dispatch(thunkCreator({
+            positionId: payload?.positionId,
+            isActive: payload?.isActive
+        }));
     }
 
-    function handlePlaybackRateChange(positionId) {
-        app.store.dispatch(actions.audioRateChangeRequest(positionId))
+    function handlePlaybackRateChange(payload) {
+        const thunkCreator = app.thunks && app.thunks.changePlaybackRateIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing changePlaybackRateIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+
+        dispatch(thunkCreator({
+            positionId: payload?.positionId,
+            playbackRate: payload?.playbackRate
+        }));
     }
 
-    function handleVolumeBoostToggle(positionId, isBoostActive) {
-        app.store.dispatch(actions.audioBoostToggleRequest(positionId, isBoostActive));
+    function handleVolumeBoostToggle(payload) {
+        const thunkCreator = app.thunks && app.thunks.toggleVolumeBoostIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing toggleVolumeBoostIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+
+        dispatch(thunkCreator({
+            positionId: payload?.positionId,
+            isBoostActive: payload?.isBoostActive
+        }));
     }
 
     function handleStartComparison() {

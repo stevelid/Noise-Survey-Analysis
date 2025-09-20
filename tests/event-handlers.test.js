@@ -19,6 +19,9 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     let nudgeTapLineIntentSpy;
     let updateComparisonSliceIntentSpy;
     let createRegionsFromComparisonIntentSpy;
+    let togglePlayPauseIntentSpy;
+    let changePlaybackRateIntentSpy;
+    let toggleVolumeBoostIntentSpy;
 
     beforeEach(() => {
         vi.useFakeTimers();
@@ -45,6 +48,9 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         nudgeTapLineIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'nudgeTapLineIntent').mockImplementation(() => () => {});
         updateComparisonSliceIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'updateComparisonSliceIntent').mockImplementation(() => () => {});
         createRegionsFromComparisonIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createRegionsFromComparisonIntent').mockImplementation(() => () => {});
+        togglePlayPauseIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'togglePlayPauseIntent').mockImplementation(() => () => {});
+        changePlaybackRateIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'changePlaybackRateIntent').mockImplementation(() => () => {});
+        toggleVolumeBoostIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleVolumeBoostIntent').mockImplementation(() => () => {});
     });
 
     afterEach(() => {
@@ -179,9 +185,11 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     });
 
     describe('togglePlayPause', () => {
-        it('should dispatch AUDIO_PLAY_PAUSE_TOGGLE action', () => {
-            eventHandlers.togglePlayPause('P1', true);
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioPlayPauseToggle('P1', true));
+        it('should dispatch the togglePlayPauseIntent thunk', () => {
+            const payload = { positionId: 'P1', isActive: true };
+            eventHandlers.togglePlayPause(payload);
+            expect(togglePlayPauseIntentSpy).toHaveBeenCalledWith(payload);
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
     });
 
