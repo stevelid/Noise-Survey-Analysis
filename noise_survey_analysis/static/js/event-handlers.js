@@ -101,7 +101,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }));
         }
 
-        if (!cb_obj?.final || !cb_obj?.modifiers?.shift) {
+        const isShiftDrag = Boolean(
+            cb_obj?.shiftKey ??
+            (Array.isArray(cb_obj?.keyModifiers)
+                ? cb_obj.keyModifiers.includes('Shift')
+                : undefined) ??
+            (cb_obj?.modifiers ? cb_obj.modifiers.shift : undefined)
+        );
+
+        if (!cb_obj?.final || !isShiftDrag) {
             return;
         }
 

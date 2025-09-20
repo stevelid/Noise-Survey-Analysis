@@ -80,11 +80,11 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     });
 
     describe('handleRegionBoxSelect', () => {
-        it('should add a region when shift-drag completes', () => {
+        it('should add a region when shift-drag completes (shiftKey flag)', () => {
             const geometryEvent = {
                 model: { name: 'figure_P1_timeseries' },
                 final: true,
-                modifiers: { shift: true },
+                shiftKey: true,
                 geometry: { type: 'rect', x0: 1000, x1: 2000 }
             };
             eventHandlers.handleRegionBoxSelect(geometryEvent);
