@@ -728,8 +728,16 @@ class ControlsComponent:
             position_column = Column(*checkbox_widgets, name=f"visibility_col_{position_name}")
             position_columns.append(position_column)
         
-        # Arrange the vertical columns in a horizontal row
-        self.visibility_layout = Row(*position_columns, name="visibility_controls_row", sizing_mode="scale_width")
+        # Arrange the vertical columns in a horizontal row that can wrap on smaller screens
+        self.visibility_layout = Row(
+            *position_columns,
+            name="visibility_controls_row",
+            sizing_mode="scale_width",
+            styles={
+                "flex-wrap": "wrap",
+                "gap": "8px"
+            }
+        )
 
 
     def layout(self):
@@ -745,11 +753,23 @@ class ControlsComponent:
             self.clear_markers_button,
             self.start_comparison_button,
             sizing_mode="scale_width", # Or "stretch_width"
-            name="main_controls_row"
+            name="main_controls_row",
+            styles={
+                "flex-wrap": "wrap",
+                "gap": "8px"
+            }
         )
 
-        # Return a column containing the main controls and then the visibility controls
-        return Row(main_controls_row, self.visibility_layout, name="controls_component_layout")
+        # Return a column containing the main controls stacked above the visibility controls
+        return column(
+            main_controls_row,
+            self.visibility_layout,
+            name="controls_component_layout",
+            sizing_mode="scale_width",
+            styles={
+                "gap": "12px"
+            }
+        )
 
     def get_all_visibility_checkboxes(self) -> list:
         """Returns a flat list of all checkbox widgets."""
