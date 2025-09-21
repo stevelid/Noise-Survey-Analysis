@@ -129,7 +129,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const state = getState();
             const regionHit = findRegionByTimestamp(state, positionId, timestamp);
             const isCtrl = Boolean(modifiers.ctrl);
+            const isShift = Boolean(modifiers.shift);
 
+            //No action on shift + tap
+            if (isShift){
+                //making a new region between the existing tap point and the new tap point
+                if(!state.interaction.tap.isActive) return;
+                const prevoiusTapPoint = state.interaction.tap.timestamp;
+                if(!Number.isFinite(prevoiusTapPoint)) return;
+                
+                const start = Math.min(prevoiusTapPoint, timestamp);
+                const end = Math.max(prevoiusTapPoint, timestamp);
+                if(Math.abs(end - start) < MIN_REGION_WIDTH_MS) return;
+                
+                dispatch(actions.regionAdd(positionId, start, end));                
+            };
+            
             if (isCtrl && regionHit) {
                 dispatch(actions.regionRemove(regionHit.id));
                 return;

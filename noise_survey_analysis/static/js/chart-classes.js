@@ -85,6 +85,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return; // Stop here if markers are globally disabled
             }
 
+            if (!window.Bokeh || !window.Bokeh.Models) {
+                console.error("CRITICAL: window.Bokeh.Models is not available. BokehJS may not be loaded correctly.");
+                return;
+            }
+
             const existingTimestamps = this.markerModels.map(m => m.location);
             const timestampsToAdd = masterTimestampList.filter(t => !existingTimestamps.includes(t));
             const markersToRemove = this.markerModels.filter(m => !masterTimestampList.includes(m.location));
@@ -97,18 +102,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     return;
                 }
                 
-                const newMarker = doc.add_model(
-                    doc.create_model('Span', {
-                        location: timestamp,
-                        dimension: 'height',
-                        line_color: 'orange',
-                        line_width: 2,
-                        line_alpha: 0.7,
-                        level: 'underlay',
-                        visible: true,
-                        name: `marker_${this.name}_${timestamp}`
-                    })
-                );
+                const Span = Bokeh.Models.get("Span");
+                if (!Span) {
+                    console.error("Could not retrieve Span model constructor from Bokeh.Models.");
+                    return;
+                }
+                
+                const newMarker = new Span({
+                    location: timestamp,
+                    dimension: 'height',
+                    line_color: 'orange',
+                    line_width: 2,
+                    line_alpha: 0.7,
+                    level: 'underlay',
+                    visible: true,
+                    name: `marker_${this.name}_${timestamp}`
+                });
                 this.model.add_layout(newMarker);
                 this.markerModels.push(newMarker);
             });
@@ -129,7 +138,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         syncRegions(regionList, selectedId) {
             if (!Array.isArray(regionList)) return;
             const doc = window.Bokeh?.documents?.[0];
-            if (!doc) return;
+            if (!window.Bokeh || !window.Bokeh.Models) {
+                console.error("CRITICAL: window.Bokeh.Models is not available. BokehJS may not be loaded correctly.");
+                return;
+            }
 
             const seen = new Set();
             regionList.forEach(region => {
@@ -137,8 +149,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 seen.add(region.id);
                 let annotation = this.regionAnnotations.get(region.id);
                 if (!annotation) {
-                    annotation = doc.add_model(doc.create_model('BoxAnnotation', {
-                        left: region.start,
+
+                    try{
+                        const BoxAnnotation = Bokeh.Models.get("BoxAnnotation");
+                        if (!BoxAnnotation) {
+                            console.error("Could not retrieve BoxAnnotation model constructor from Bokeh.Models.");
+                            return;
+                        }
+
+                        annotation = new BoxAnnotation({
+                            left: region.start,
                         right: region.end,
                         fill_alpha: 0.1,
                         fill_color: '#1e88e5',
@@ -147,16 +167,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         line_width: 1,
                         level: 'underlay',
                         name: `region_${this.name}_${region.id}`
-                    }));
+                    });
                     this.model.add_layout(annotation);
                     this.regionAnnotations.set(region.id, annotation);
+                } catch (e) {
+                    console.error("Error creating or adding new BoxAnnotation:", e);
                 }
-
+            } 
+                if (annotation) {
                 annotation.left = region.start;
                 annotation.right = region.end;
                 annotation.fill_alpha = region.id === selectedId ? 0.2 : 0.08;
                 annotation.line_width = region.id === selectedId ? 3 : 1;
                 annotation.visible = true;
+            }
             });
 
             this.regionAnnotations.forEach((annotation, id) => {

@@ -142,7 +142,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.renderers.renderControlWidgets(state);
 
         // Always sync markers
-        if (isInitialLoad || didMarkersChange) {
+        if (isInitialLoad || didMarkersChange || state.system.lastAction.type === app.actionTypes.CLEAR_ALL_MARKERS) {
             app.renderers.renderMarkers(state);
         }
 

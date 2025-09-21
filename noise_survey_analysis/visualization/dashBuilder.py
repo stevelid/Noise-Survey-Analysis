@@ -371,37 +371,34 @@ class DashBuilder:
 
             {app_js_code}
 
-            // This block will run once the trigger div becomes visible
-            const models = {{
-                charts: charts, chartsSources: chartsSources, timeSeriesSources: timeSeriesSources,
-                preparedGlyphData: preparedGlyphData, uiPositionElements: uiPositionElements,
-                clickLines: clickLines, hoverLines: hoverLines, labels: labels, hoverDivs: hoverDivs,
-                visibilityCheckBoxes: visibilityCheckBoxes, barSource: barSource, barChart: barChart,
-                paramSelect: paramSelect, freqTableDiv: freqTableDiv, summaryTableDiv: summaryTableDiv,
-                audio_controls: audio_controls, components: components, config: config,
-            }};
+            // The 'all_models' variable is automatically created by BokehJS
+            // because it was the key in our 'args' dictionary.
+            // Its value is the entire dictionary of models we built in Python.
+            const models = all_models;
 
-            if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init.initialize === 'function') {{
-                console.log('DEBUG: Found NoiseSurveyApp, calling init...');
-                window.NoiseSurveyApp.init.initialize(models);
-            }} else {{
-                console.error('CRITICAL ERROR: NoiseSurveyApp.init not found. Check that app.js is loaded correctly.');
-            }}
-        """
+                if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init.initialize === 'function') {{
+                    console.log('DEBUG: Found NoiseSurveyApp, calling init...');
+                    window.NoiseSurveyApp.init.initialize(models);
+                }} else {{
+                    console.error('CRITICAL ERROR: NoiseSurveyApp.init not found. Check that app.js is loaded correctly.');
+                }}
+            """
 
+        js_args = {'all_models': js_models_for_args}
+        
         # We use different JS initialization methods for live vs. static modes.
         is_live_server = doc.session_context is not None
 
         if is_live_server:
             # For the live server, the next_tick callback ensures the DOM is ready.
             logger.debug("Initializing JS for LIVE SERVER using next_tick_callback.")
-            self.js_init_trigger.js_on_change('visible', CustomJS(args=js_models_for_args, code=init_js_code))
+            self.js_init_trigger.js_on_change('visible', CustomJS(args=js_args, code=init_js_code))
             doc.add_next_tick_callback(lambda: setattr(self.js_init_trigger, 'visible', True))
         else:
             # For static HTML, the DocumentReady event is the correct trigger.
             # It fires after all Bokeh models are rendered in the browser.
             logger.debug("Initializing JS for STATIC HTML using DocumentReady event.")
-            doc.js_on_event(DocumentReady, CustomJS(args=js_models_for_args, code=init_js_code))
+            doc.js_on_event(DocumentReady, CustomJS(args=js_args, code=init_js_code))
 
         #trigger_source = ColumnDataSource(data={'trigger': [0]}, name='js_init_trigger')
         #trigger_source.js_on_change('data', CustomJS(args=js_models_for_args, code=js_code))
