@@ -10,6 +10,9 @@ describe('NoiseSurveyApp.classes', () => {
     vi.restoreAllMocks();
     classes = window.NoiseSurveyApp.classes;
 
+    const MockSpan = function(props) { Object.assign(this, props); };
+    const MockBoxAnnotation = function(props) { Object.assign(this, props); };
+
     // Minimal Bokeh-like chart and glyph models
     global.Bokeh = {
       documents: [
@@ -18,6 +21,13 @@ describe('NoiseSurveyApp.classes', () => {
           create_model: (type, props) => ({ type, ...props }),
         },
       ],
+      Models: {
+        get: vi.fn((name) => {
+          if (name === 'Span') return MockSpan;
+          if (name === 'BoxAnnotation') return MockBoxAnnotation;
+          return null;
+        }),
+      },
     };
   });
 
@@ -120,6 +130,33 @@ describe('NoiseSurveyApp.classes', () => {
     // Hide markers when disabled
     chart.syncMarkers([200, 300], false);
     expect(chart.markerModels.every(m => m.visible === false)).toBe(true);
+  });
+
+  it('Chart.syncRegions should create, update, and remove annotations per state', () => {
+    const requestRender = vi.fn();
+    const chartModel = {
+      name: 'figure_P1_timeseries',
+      add_layout: vi.fn(),
+      remove_layout: vi.fn(),
+      request_render: requestRender,
+      x_range: { start: 0, end: 100 },
+      y_range: { start: 0, end: 1 },
+    };
+    const sourceModel = { change: { emit: vi.fn() } };
+    const chart = new classes.Chart(chartModel, sourceModel, {}, {}, 'P1');
+
+    chart.syncRegions([{ id: 1, positionId: 'P1', start: 10, end: 20 }], 1);
+    expect(chartModel.add_layout).toHaveBeenCalledTimes(1);
+    const annotation = chart.regionAnnotations.get(1);
+    expect(annotation).toBeDefined();
+    expect(annotation.visible).toBe(true);
+    expect(annotation.line_width).toBe(3);
+
+    chart.syncRegions([], null);
+    expect(chartModel.remove_layout).toHaveBeenCalledWith(annotation);
+    expect(annotation.visible).toBe(false);
+    expect(chart.regionAnnotations.has(1)).toBe(false);
+    expect(requestRender).toHaveBeenCalled();
   });
 
   it('Chart label and hover line methods should set visibility and positions', () => {
