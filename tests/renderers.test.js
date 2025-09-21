@@ -110,7 +110,8 @@ describe('NoiseSurveyApp.renderers', () => {
                         P1: {
                             playToggle: { active: false, label: '', button_type: '' },
                             playbackRateButton: { label: '' },
-                            volumeBoostButton: { active: false, button_type: '' }
+                            volumeBoostButton: { active: false, button_type: '' },
+                            layout: { visible: true }
                         }
                     },
                     config: { // Add config mock
@@ -587,6 +588,44 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(controls.playbackRateButton.label).toBe('1.5x');
             expect(controls.volumeBoostButton.active).toBe(true);
             expect(controls.volumeBoostButton.button_type).toBe('warning');
+        });
+
+        it('should hide audio controls when all charts for a position are hidden', () => {
+            const baseState = {
+                audio: { isPlaying: false, activePositionId: null, playbackRate: 1.0, volumeBoost: false },
+                view: {
+                    availablePositions: ['P1'],
+                    selectedParameter: 'LAeq',
+                    displayDetails: { P1: { line: { reason: '' }, spec: { reason: '' } } }
+                }
+            };
+
+            renderers.renderControlWidgets({
+                ...baseState,
+                view: {
+                    ...baseState.view,
+                    chartVisibility: {
+                        figure_P1_timeseries: false,
+                        figure_P1_spectrogram: false
+                    }
+                }
+            });
+
+            const controls = window.NoiseSurveyApp.registry.models.audio_controls.P1;
+            expect(controls.layout.visible).toBe(false);
+
+            renderers.renderControlWidgets({
+                ...baseState,
+                view: {
+                    ...baseState.view,
+                    chartVisibility: {
+                        figure_P1_timeseries: true,
+                        figure_P1_spectrogram: false
+                    }
+                }
+            });
+
+            expect(controls.layout.visible).toBe(true);
         });
     });
 
