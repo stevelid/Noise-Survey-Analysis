@@ -51,6 +51,7 @@ def create_region_panel_div() -> Div:
         width=320,
         height=500,
         name="region_panel_div",
+        css_classes=["region-panel-container"], # Use a list of strings
         styles={
             "border": "1px solid #ccc",
             "padding": "8px",
@@ -643,7 +644,7 @@ class ControlsComponent:
             name="clear_markers_button"
         )
         
-        button.js_on_click(CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.clearAllMarkers) {
+        button.js_on_event("button_click", CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.clearAllMarkers) {
                 window.NoiseSurveyApp.eventHandlers.clearAllMarkers();
             } else {
                 console.error('window.NoiseSurveyApp.eventHandlers.clearAllMarkers function not found!');

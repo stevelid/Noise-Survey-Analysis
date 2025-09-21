@@ -9,7 +9,7 @@
  */
 
 window.NoiseSurveyApp = window.NoiseSurveyApp || {};
-(function(app) {
+(function (app) {
     'use strict';
 
     // Dependencies are accessed dynamically within each function (e.g., `app.registry.models`)
@@ -46,7 +46,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const debounce = (fn, delay = 200) => {
         let timerId;
-        return function(...args) {
+        return function (...args) {
             clearTimeout(timerId);
             timerId = setTimeout(() => fn.apply(this, args), delay);
         };
@@ -312,35 +312,35 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
-/**
-     * Updates the primary data sources of the main charts.
-     * This is a HEAVY operation and should only be called when the underlying
-     * data view (zoom level, parameter, log/overview) changes.
-     */
-function renderPrimaryCharts(state, dataCache) {
-    const { controllers } = app.registry;
-    if (!controllers?.positions) return;
+    /**
+         * Updates the primary data sources of the main charts.
+         * This is a HEAVY operation and should only be called when the underlying
+         * data view (zoom level, parameter, log/overview) changes.
+         */
+    function renderPrimaryCharts(state, dataCache) {
+        const { controllers } = app.registry;
+        if (!controllers?.positions) return;
 
-    for (const posId in controllers.positions) {        
-        const controller = controllers.positions[posId];
-        const tsChartName = `figure_${posId}_timeseries`;
-        const specChartName = `figure_${posId}_spectrogram`;
+        for (const posId in controllers.positions) {
+            const controller = controllers.positions[posId];
+            const tsChartName = `figure_${posId}_timeseries`;
+            const specChartName = `figure_${posId}_spectrogram`;
 
-        // Explicitly set visibility for each chart based on the state
-        if (controller.timeSeriesChart) {
-            controller.timeSeriesChart.setVisible(state.view.chartVisibility[tsChartName]);
-        }
-        if (controller.spectrogramChart) {
-            const isSpecVisible = state.view.chartVisibility[specChartName];
-            controller.spectrogramChart.setVisible(isSpecVisible);
-            if (controller.spectrogramChart.hoverDivModel) {
-                controller.spectrogramChart.hoverDivModel.visible = isSpecVisible;
+            // Explicitly set visibility for each chart based on the state
+            if (controller.timeSeriesChart) {
+                controller.timeSeriesChart.setVisible(state.view.chartVisibility[tsChartName]);
             }
+            if (controller.spectrogramChart) {
+                const isSpecVisible = state.view.chartVisibility[specChartName];
+                controller.spectrogramChart.setVisible(isSpecVisible);
+                if (controller.spectrogramChart.hoverDivModel) {
+                    controller.spectrogramChart.hoverDivModel.visible = isSpecVisible;
+                }
+            }
+            // Update the data for the controller if any of its charts are visible
+            controller.updateAllCharts(state, dataCache);
         }
-        // Update the data for the controller if any of its charts are visible
-        controller.updateAllCharts(state, dataCache);
     }
-}
 
     /**
      * Updates lightweight UI overlays like lines and labels.
@@ -810,7 +810,7 @@ function renderPrimaryCharts(state, dataCache) {
 
         // Get tap context for independent table data processing
         const { isActive, timestamp, position } = state.interaction.tap;
-        
+
         if (!isActive || !timestamp || !position) {
             tableDiv.text = "<p>Tap on a time series chart to populate this table.</p>";
             return;
@@ -832,17 +832,17 @@ function renderPrimaryCharts(state, dataCache) {
         // Apply independent frequency slicing for table's specific range
         const tableFreqRange = models?.config?.freq_table_freq_range_hz;
         let labels, levels;
-        
+
         if (tableFreqRange && activeSpectralData.frequencies_hz) {
             const [tableMinHz, tableMaxHz] = tableFreqRange;
             const table_start_idx = activeSpectralData.frequencies_hz.findIndex(f => f >= tableMinHz);
             const table_end_idx = activeSpectralData.frequencies_hz.findLastIndex(f => f <= tableMaxHz);
-            
+
             if (table_start_idx !== -1 && table_end_idx !== -1) {
                 // Extract data for the table's frequency range
                 const tableFreqCount = (table_end_idx - table_start_idx) + 1;
                 labels = activeSpectralData.frequency_labels.slice(table_start_idx, table_end_idx + 1);
-                
+
                 const tableLevelsSlice = new Float32Array(tableFreqCount);
                 for (let i = 0; i < tableFreqCount; i++) {
                     const globalFreqIdx = table_start_idx + i;
@@ -924,11 +924,28 @@ function renderPrimaryCharts(state, dataCache) {
         if (!models || !controllers) return;
 
         const { isPlaying, activePositionId, playbackRate, volumeBoost } = state.audio;
+        const chartVisibility = state?.view?.chartVisibility || {};
+        const isChartVisible = chartName => {
+            if (!chartName) {
+                return true;
+            }
+            if (Object.prototype.hasOwnProperty.call(chartVisibility, chartName)) {
+                return Boolean(chartVisibility[chartName]);
+            }
+            return true;
+        };
 
         state.view.availablePositions.forEach(pos => {
             const controller = controllers.positions[pos];
             const controls = models.audio_controls[pos];
             const isThisPositionActive = isPlaying && activePositionId === pos;
+            const timeSeriesChartName = `figure_${pos}_timeseries`;
+            const spectrogramChartName = `figure_${pos}_spectrogram`;
+            const shouldShowControls = isChartVisible(timeSeriesChartName) || isChartVisible(spectrogramChartName);
+
+            if (controls?.layout && controls.layout.visible !== shouldShowControls) {
+                controls.layout.visible = shouldShowControls;
+            }
 
             // --- Update Chart Visuals (Title and Background) ---
             if (controller && controller.timeSeriesChart) {
@@ -946,7 +963,7 @@ function renderPrimaryCharts(state, dataCache) {
             }
 
             // --- Update Control Widget Visuals ---
-            if (controls) {                
+            if (controls) {
                 // Update Play/Pause button state, label, and color
                 if (controls.playToggle.active !== isThisPositionActive) {
                     controls.playToggle.active = isThisPositionActive;
@@ -982,18 +999,18 @@ function renderPrimaryCharts(state, dataCache) {
         const parameters = Array.from(headerCells).map(th => th.textContent.trim());
 
         let tableBodyHtml = '';
-        
+
         if (!isActive || !timestamp) {
             tableBodyHtml = `<tr><td class='placeholder' colspan='${parameters.length + 1}'>Tap on a time series chart to populate this table.</td></tr>`;
         } else {
             // Add timestamp info row
             const timestampStr = new Date(timestamp).toLocaleString();
             tableBodyHtml += `<tr><td class='timestamp-info' colspan='${parameters.length + 1}'>Values at: ${timestampStr}</td></tr>`;
-            
+
             state.view.availablePositions.forEach(pos => {
                 let rowHtml = `<tr><td class="position-header">${pos}</td>`;
                 const activeLineData = dataCache.activeLineData[pos];
-                
+
                 if (activeLineData && activeLineData.Datetime && activeLineData.Datetime.length > 0) {
                     const idx = app.utils.findAssociatedDateIndex(activeLineData, timestamp);
 
@@ -1006,7 +1023,7 @@ function renderPrimaryCharts(state, dataCache) {
                             rowHtml += `<td>${formattedValue}</td>`;
                         });
                     } else {
-                         // Data exists for position, but not at this timestamp
+                        // Data exists for position, but not at this timestamp
                         parameters.forEach(() => rowHtml += `<td>N/A</td>`);
                     }
                 } else {
@@ -1017,7 +1034,7 @@ function renderPrimaryCharts(state, dataCache) {
                 tableBodyHtml += rowHtml;
             });
         }
-        
+
         // Use regex to replace only the content of the <tbody> tag, preserving the header and style
         const newTableHtml = tableDiv.text.replace(/<tbody>[\s\S]*<\/tbody>/, `<tbody>${tableBodyHtml}</tbody>`);
         tableDiv.text = newTableHtml;

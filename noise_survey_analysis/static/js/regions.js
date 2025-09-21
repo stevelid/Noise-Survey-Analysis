@@ -112,6 +112,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 la90Available: false,
                 dataResolution: 'none',
                 spectrum: { labels: [], values: [] },
+                parameter: state?.view?.selectedParameter || null,
                 durationMs
             };
         }
@@ -147,18 +148,42 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             la90Available: selection.dataset === 'log' && la90 !== null,
             dataResolution: selection.dataset,
             spectrum,
+            parameter: selectedParam || null,
             durationMs
         };
+    }
+
+    function hasSpectralDataForParam(prepared, parameter) {
+        if (!prepared || !parameter) return false;
+        const log = prepared?.log?.prepared_params?.[parameter];
+        if (log) return true;
+        const overview = prepared?.overview?.prepared_params?.[parameter];
+        return Boolean(overview);
+    }
+
+    function hasSpectrumValues(metrics) {
+        if (!metrics?.spectrum) return false;
+        const values = metrics.spectrum.values;
+        if (!Array.isArray(values) || !values.length) return false;
+        return values.some(value => Number.isFinite(value));
     }
 
     function prepareMetricsUpdates(state, dataCache, models) {
         const regionsState = state?.markers?.regions;
         if (!regionsState) return [];
         const updates = [];
+        const selectedParam = state?.view?.selectedParameter || null;
         regionsState.allIds.forEach(id => {
             const region = regionsState.byId[id];
             if (!region) return;
-            if (region.metrics) return;
+            const prepared = models?.preparedGlyphData?.[region.positionId];
+            const currentMetrics = region.metrics || null;
+            const shouldUpdate =
+                !currentMetrics
+                || currentMetrics.parameter !== selectedParam
+                || (currentMetrics.dataResolution === 'none' && hasSpectralDataForParam(prepared, selectedParam))
+                || (!hasSpectrumValues(currentMetrics) && hasSpectralDataForParam(prepared, selectedParam));
+            if (!shouldUpdate) return;
             const metrics = computeRegionMetrics(region, state, dataCache, models);
             updates.push({ id, metrics });
         });

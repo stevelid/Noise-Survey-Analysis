@@ -64,15 +64,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             timestamp,
             positionId,
             chartName,
-            modifiers: {
-                ctrl: Boolean(cb_obj?.modifiers?.ctrl)
-            }
+            modifiers: cb_obj?.modifiers || {}
         }));
     }
 
     function handleRegionBoxSelect(cb_obj) {
-        const modelName = cb_obj?.model?.name;
-        if (!modelName || modelName === 'frequency_bar') return;
+        const chartName = cb_obj?.origin?.name;
+        if (!chartName || chartName === 'frequency_bar') return;
 
         const geometry = cb_obj?.geometry;
         if (!geometry || geometry.type !== 'rect') return;
@@ -81,7 +79,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const x1 = geometry.x1;
         if (!Number.isFinite(x0) || !Number.isFinite(x1)) return;
 
-        const positionId = _getChartPositionByName(modelName);
+        const positionId = _getChartPositionByName(chartName);
         if (!positionId) return;
 
         const dispatch = app.store && app.store.dispatch;
@@ -96,20 +94,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 start: x0,
                 end: x1,
                 positionId,
-                sourceChartName: modelName,
+                sourceChartName: chartName,
                 final: Boolean(cb_obj?.final)
             }));
         }
 
-        const isShiftDrag = Boolean(
-            cb_obj?.shiftKey ??
-            (Array.isArray(cb_obj?.keyModifiers)
-                ? cb_obj.keyModifiers.includes('Shift')
-                : undefined) ??
-            (cb_obj?.modifiers ? cb_obj.modifiers.shift : undefined)
-        );
-
-        if (!cb_obj?.final || !isShiftDrag) {
+        if (!cb_obj?.final) {
             return;
         }
 
