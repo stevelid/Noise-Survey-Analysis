@@ -863,11 +863,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!models || !controllers) return;
 
         const { isPlaying, activePositionId, playbackRate, volumeBoost } = state.audio;
+        const chartVisibility = state?.view?.chartVisibility || {};
+        const isChartVisible = chartName => {
+            if (!chartName) {
+                return true;
+            }
+            if (Object.prototype.hasOwnProperty.call(chartVisibility, chartName)) {
+                return Boolean(chartVisibility[chartName]);
+            }
+            return true;
+        };
 
         state.view.availablePositions.forEach(pos => {
             const controller = controllers.positions[pos];
             const controls = models.audio_controls[pos];
             const isThisPositionActive = isPlaying && activePositionId === pos;
+            const timeSeriesChartName = `figure_${pos}_timeseries`;
+            const spectrogramChartName = `figure_${pos}_spectrogram`;
+            const shouldShowControls = isChartVisible(timeSeriesChartName) || isChartVisible(spectrogramChartName);
+
+            if (controls?.layout && controls.layout.visible !== shouldShowControls) {
+                controls.layout.visible = shouldShowControls;
+            }
 
             // --- Update Chart Visuals (Title and Background) ---
             if (controller && controller.timeSeriesChart) {

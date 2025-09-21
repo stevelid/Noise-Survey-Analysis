@@ -54,7 +54,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 models.audio_controls[posId] = {
                     playToggle: bokehModels.audio_controls[posId].play_toggle,
                     playbackRateButton: bokehModels.audio_controls[posId].playback_rate_button,
-                    volumeBoostButton: bokehModels.audio_controls[posId].volume_boost_button
+                    volumeBoostButton: bokehModels.audio_controls[posId].volume_boost_button,
+                    layout: bokehModels.audio_controls[posId].layout || null
                 };
             }
         }
