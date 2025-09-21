@@ -58,6 +58,60 @@ describe('regions module', () => {
         expect(metrics.la90).toBeCloseTo(52, 0);
         expect(metrics.spectrum.values[0]).toBeCloseTo(42, 0);
         expect(metrics.spectrum.values[1]).toBeCloseTo(52, 0);
+        expect(metrics.parameter).toBe('LZeq');
+    });
+
+    it('recomputes metrics when selected parameter changes', () => {
+        const spectral = buildSpectralData();
+        const state = {
+            view: { selectedParameter: 'LAeq' },
+            markers: {
+                regions: {
+                    byId: {
+                        1: {
+                            id: 1,
+                            positionId: 'P1',
+                            start: 0,
+                            end: 2000,
+                            note: '',
+                            metrics: {
+                                laeq: 60,
+                                lafmax: 65,
+                                la90: null,
+                                la90Available: false,
+                                dataResolution: 'log',
+                                spectrum: { labels: ['63 Hz', '125 Hz'], values: [55, 60] },
+                                parameter: 'LZeq',
+                                durationMs: 2000
+                            }
+                        }
+                    },
+                    allIds: [1],
+                    selectedId: 1,
+                    counter: 2
+                }
+            }
+        };
+        const models = {
+            timeSeriesSources: {
+                P1: {
+                    log: { data: { Datetime: [0, 1000, 2000], LAeq: [50, 60, 70], LAFmax: [55, 65, 75] } }
+                }
+            },
+            preparedGlyphData: {
+                P1: {
+                    log: { prepared_params: { LAeq: spectral } },
+                    overview: { prepared_params: {} }
+                }
+            }
+        };
+
+        const updates = regions.prepareMetricsUpdates(state, {}, models);
+        expect(updates).toHaveLength(1);
+        const metrics = updates[0].metrics;
+        expect(metrics.parameter).toBe('LAeq');
+        expect(metrics.spectrum.values[0]).toBeCloseTo(42, 0);
+        expect(metrics.spectrum.values[1]).toBeCloseTo(52, 0);
     });
 
     it('exports and imports region payloads', () => {
