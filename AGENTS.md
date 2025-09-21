@@ -1,131 +1,112 @@
-# Development Notes
+# Noise Survey Analysis — LLM Developer Handbook
 
-This file contains important notes and reminders for future development.
+This handbook combines all project guidance to help contributors (especially LLMs) quickly understand the Noise Survey Analysis codebase and follow its conventions. The application follows a unidirectional data flow inspired by Redux: the UI is always a function of a central state object.
 
-## JavaScript Architecture: State vs. Data Cache
+## 1. Core Architectural Principles
+- **Single Source of Truth:** `app.store` is the sole, immutable source of truth for all UI state.
+- **State Is Read-Only:** State changes only occur via dispatched actions.
+- **Pure State Transitions:** Reducers are pure functions that take the previous state plus an action and return the next state.
+- **Strict Separation of Concerns:** Logic is split into distinct layers; each file type has exactly one responsibility.
+- **UI State vs. Data Cache:** Maintain the clear separation between lightweight immutable UI state and the mutable, performance-oriented data cache described below.
 
-The front-end application is architected around a clear separation between **UI State** and a **Data Cache**. This design is critical for maintaining performance, especially when handling large datasets like time series and spectrograms. It should avoid changes to the shape of the data to feed into the glyph (See below).
+## 2. Architectural Layers & Responsibilities
+All new features must place logic in the correct layer. The flow is: event handler → thunk → actions → reducer → selectors/renderers.
 
-### principles
+### Event Handlers (`event-handlers.js`) — “Dumb Routers”
+- Translate raw UI events into a single, high-level intent (thunk).
+- Must be as thin as possible and may normalize events (e.g., `preventDefault`, extracting keys, coercing timestamps) or contain simple, state-free logic (e.g., `if (event.shiftKey)`).
+- Must not read application state, branch on business rules, or contain business logic.
+- Must dispatch a thunk for any complex logic.
 
-**Handlers** (router-only): may normalise the raw event (preventDefault, extract keys, coerce timestamps) but must not read state or branch on business rules.
+### Thunks (`thunks.js`) — “Smart Controllers”
+- Primary home of business logic and orchestration of complex actions.
+- Required for asynchronous logic or logic that reads multiple state slices.
+- May perform lightweight reads from `getState()` directly for single values; when coordinating multiple slices or deriving data (e.g., finding a region for a timestamp), use selectors to keep logic reusable and testable.
+- Must dispatch simple, semantic actions to reducers. No DOM reads/writes, no chart API calls, and no heavy number crunching here.
 
-**Thunks** (feature logic only): no DOM reads/writes, no chart API calls, no heavy number crunching. They read state, make decisions, and dispatch semantic actions.
+### Actions & Action Creators (`actions.js`) — “Vocabulary”
+- Actions are plain JavaScript objects with a `type` property describing discrete events.
+- Action creators are pure functions returning action objects.
 
-**Reducers** (accountants): pure, synchronous, immutable, no derived computation beyond simple field changes.
+### Reducers (`reducers.js`, `features/.../reducer.js`) — “Pure Accountants”
+- Pure `(state, action) => newState` functions with no side effects (no API calls, no nested dispatches).
+- Perform immutable updates only (spread syntax, non-mutating helpers) and depend solely on their state slice plus the action payload.
+- Contain no derived computation beyond simple field changes.
 
-**Selectors** (derive data from state): when data is derived from different state objects, use selectors. Not needed for direct state access.
+### Selectors (`selectors.js`, `features/.../selectors.js`) — “Librarians”
+- The canonical way to read data from state, returning direct or derived data.
+- Must be pure functions that take the full state; thunks and renderers use selectors instead of reaching into the state tree directly.
+- Use selectors when data must be derived from multiple state objects.
 
-### Naming Conventions
-* Selectors: select<DerivedDataDescription> (e.g. selectRegionsOverTimestamp)
-* Thunks / Intents: <Verb><Noun>Intent (e.g. resizeSelectedRegionIntent, handleTapIntent) 
-* Action Types: "feature/nounVerb" (e.g. "interaction/tapOccurred", "region/replaceAll"). n.b past tense for handled events
-* Action Creators: <noun><Verb> (e.g. tapOccurred(payload), regionUpdateBounds(payload))
-* Event Handlers: handle<UIEventDescription> (e.g. handleKeyPress(e))
+### Renderers (`renderers.js`) — “Dumb Painters”
+- Synchronize Bokeh models with the current state by reading data via selectors and updating the UI.
+- Must remain dumb: no business logic, no dispatching actions.
 
+## 3. Naming Conventions
+Follow consistent naming to make intent obvious:
+
+| Type | Convention | Example |
+| --- | --- | --- |
+| Selectors | `select<Description>` | `selectSelectedRegion(state)`; `selectRegionsOverTimestamp` |
+| Thunks / Intents | `<Verb><Noun>Intent` | `resizeSelectedRegionIntent(payload)`; `handleTapIntent` |
+| Action Types | `feature/nounVerb` (past tense for handled events) | `'markers/regionRemoved'`; `'interaction/tapOccurred'`; `'region/replaceAll'` |
+| Action Creators | `<noun><Verb>` (past tense) | `regionAdded(payload)`; `regionUpdateBounds(payload)` |
+| Event Handlers | `handle<Event>` | `handleKeyPress(e)` |
+
+## 4. UI State (`app.store`) vs. Data Cache (`dataCache`)
 ### UI State (`app.store`)
-
-*   **Purpose:** To be the single, immutable source of truth for the *UI's configuration and interaction status*.
-*   **Contents:** Lightweight, serializable data. This includes things like:
-    *   Current viewport (zoom level).
-    *   Selected parameters (e.g., 'LZeq').
-    *   UI toggles (e.g., Log/Overview view, chart visibility).
-    *   User interaction status (tap timestamp, hover position).
-    *   Audio playback status.
-*   **Management:** Handled by a Redux-style pattern.
-    *   **`store.js`:** Creates the store.
-    *   **`actions.js`:** Defines all possible state changes.
-    *   **`reducers.js`:** Pure functions that compute the next state.
-*   **Key Principle:** The state object is considered **immutable**. It is never modified directly. Actions produce a new state object, ensuring predictable state transitions. This makes debugging straightforward.
+- **Purpose:** Single, immutable source of truth for UI configuration and interaction status.
+- **Contents:** Lightweight, serializable data (e.g., viewport/zoom, selected parameters such as `LZeq`, UI toggles, user interaction status, audio playback state).
+- **Management:** Redux-style pattern handled by `store.js`, `actions.js`, and `reducers.js`.
+- **Key Principle:** State objects are immutable—never mutate them directly; actions produce new state objects for predictability and easy debugging.
 
 ### Data Cache (`dataCache`)
+- **Purpose:** Store large, non-serializable arrays derived from source data and ready for rendering.
+- **Contents:** Heavy structures such as `activeLineData`, `activeSpectralData`, and `_spectrogramCanvasBuffers`.
+- **Management:** A single mutable JavaScript object initialized and owned by `app.js`, passed by reference to `data-processors.js` (which mutates it with new slices) and `renderers.js` (which reads it to update charts).
+- **Key Principle:** The cache stays mutable to avoid copying large arrays on every state change, ensuring high performance and responsiveness.
 
-*   **Purpose:** To hold large, non-serializable data arrays that are derived from the original source data and are ready for rendering.
-*   **Contents:** Heavy data structures that are expensive to copy. This includes:
-    *   `activeLineData`: The currently visible slice of time series data.
-    *   `activeSpectralData`: The currently visible slice of spectrogram data.
-    *   `_spectrogramCanvasBuffers`: Reusable buffers for efficient spectrogram rendering.
-*   **Management:**
-    *   The `dataCache` is a single, **mutable** JavaScript object.
-    *   It is initialized and "owned" by the main `app.js` orchestrator.
-    *   It is passed by reference to `data-processors.js` (which mutates it with new data slices) and `renderers.js` (which reads from it to update the charts).
-*   **Key Principle:** The `dataCache` is intentionally **mutable** to avoid the massive performance overhead of copying large arrays on every state change (e.g., every pan or zoom). By mutating the contents of the cache directly, we achieve high performance and a responsive UI.
+## 5. Application Loop (`app.js: onStateChange`)
+1. A user interaction dispatches an action.
+2. Reducers create a new, lightweight UI state reflecting the change.
+3. `onStateChange` triggers in `app.js` due to the state update.
+4. `onStateChange` passes the new `state` and persistent `dataCache` to the `data_processors`.
+5. `data_processors` read the new viewport from state, compute the correct data slice, and write it into the mutable `dataCache`.
+6. `onStateChange` then passes the state plus updated `dataCache` to the renderers.
+7. Renderers use state for UI configuration and `dataCache` for chart data updates.
 
-### The Application Loop (`app.js: onStateChange`)
+## 6. Spectrogram Data Handling for Bokeh `Image` Glyphs
+- **Core Constraint:** The `source.data.image` buffer is fixed-size in the browser—you cannot change its dimensions after initialization. All JavaScript updates must keep the exact same array size.
 
-The core application loop demonstrates how these two concepts work together:
-1.  A user interaction (e.g., zoom) dispatches an **action**.
-2.  The **reducer** creates a new, lightweight **UI State** object reflecting the new zoom level.
-3.  The `onStateChange` subscriber in `app.js` is triggered by the state update.
-4.  `onStateChange` passes the new `state` object and the persistent `dataCache` object to the `data_processors`.
-5.  The `data_processors` read the new viewport from the `state` and use it to calculate the correct data slice, which they then write into the **mutable `dataCache`**.
-6.  `onStateChange` then passes the `state` and the now-updated `dataCache` to the `renderers`.
-7.  The `renderers` read from both sources: they use the `state` to configure UI elements (like titles and visibility) and the `dataCache` to update the data in the chart sources.
+### Python (`data_processors.py`)
+- `prepare_single_spectrogram_data` defines initial spectrogram data.
+- Uses `MAX_DATA_SIZE` to set a fixed `chunk_time_length`.
+- Pads all spectral data (overview and log) to this `chunk_time_length` before sending to the browser, ensuring consistent `ColumnDataSource` array sizes.
 
-This separation provides the best of both worlds: the predictability of immutable state for UI logic and the high performance of mutable data handling for large datasets.
-
-## Spectrogram Data Handling for Bokeh `Image` Glyphs
-
-**Core Constraint:** The data source for a Bokeh `Image` glyph (`source.data.image`) is a fixed-size buffer in the browser. You **cannot** change the size of this array after it has been initialized. Any new data sent to update the glyph in JavaScript **must** be the exact same size as the original data array.
-
-### Implementation Details
-
-1.  **Python (`data_processors.py`):**
-    *   The `prepare_single_spectrogram_data` function is responsible for creating the initial data for the spectrogram.
-    *   It uses a `MAX_DATA_SIZE` constant to define a fixed `chunk_time_length`.
-    *   **Crucially, all spectral data (both low-resolution 'overview' and high-resolution 'log' data) is padded to this `chunk_time_length` before being sent to the browser.** This ensures that the JavaScript `ColumnDataSource` is always initialized with a data array of a consistent, predictable size.
-
-2.  **JavaScript (`data-processors.js`):**
-    *   The `getTimeChunkFromSerialData` function handles the dynamic display of data based on zoom level.
-    *   When a smaller, high-resolution chunk of data needs to be displayed, it does **not** create a new data source.
-    *   It extracts a slice from the full dataset.
-    *   It then uses `MatrixUtils.updateBokehImageData` to **overwrite the contents of the existing `source.data.image[0]` array in-place**.
-    *   Finally, it calls `source.change.emit()` to trigger a redraw.
-
-**Reminder for Future Changes:** When modifying any part of the spectrogram data pipeline, you must respect this fixed-size buffer constraint. Any changes to the data chunking logic must ensure that the data passed to the `Image` glyph in JavaScript always has the same dimensions as the data it was initialized with.
-
-## JavaScript State Management
-
-The front-end interactivity is managed by a self-contained JavaScript application architecture (in static/js/). It follows a modern state management pattern similar to Redux:
-
-*   **store.js:** Holds the single source of truth for the UI state. The `dispatch` function is the only way to modify the state.
-*   **actions.js:** Defines the actions that can be dispatched to modify the state.
-*   **reducers.js:** Specifies how the application's state changes in response to actions.
-*   **event-handlers.js:** Listens for Bokeh UI events (e.g., tap, zoom), translates them into semantic actions (e.g., { type: 'TAP', payload: ... }), and dispatches them.
-*   **data-processors.js:** When the state changes, these functions compute the derived data needed for the charts (e.g., slicing the correct chunk of spectrogram data).
-*   **renderers.js:** These functions take the new state and derived data and update the Bokeh models to change what the user sees on screen.
-
-This pattern keeps the code organized, predictable, and easier to debug and extend.
-
-## Additional Notes on Bokeh Image Glyphs and ColumnDataSource
-
-To further clarify the behavior and requirements of Bokeh's `Image` glyphs and `ColumnDataSource` when handling dynamic data, especially for spectrograms:
-
-### Bokeh Image Data Format (Bokeh 3.x+)
--   Bokeh 3.x and later strictly require 2D NumPy `ndarray` data for `ImageGlyph` (and `ImageRGBA`). This translates to JavaScript `TypedArray`s (e.g., `Float64Array`, `Uint32Array`) on the client side.
--   The older "lists of lists" (e.g., `[[row1_pixel1, row1_pixel2], ...]`) format is no longer supported for dynamic updates. This is a critical breaking change from pre-3.x versions.
+### JavaScript (`data-processors.js`)
+- `getTimeChunkFromSerialData` manages zoom-dependent display.
+- Extracts slices from the full dataset instead of creating new data sources.
+- Uses `MatrixUtils.updateBokehImageData` to overwrite `source.data.image[0]` in place.
+- Calls `source.change.emit()` to trigger redraws after in-place updates.
 
 ### ColumnDataSource Update Mechanisms in JavaScript
-There are two primary methods for updating `ColumnDataSource` data via JavaScript, each suited for different scenarios:
+1. **Replacing `.data` entirely:** Use when column lengths (e.g., image dimensions) change. Assign a new object with all column names and matching lengths. `source.change.emit()` is unnecessary afterward.
+2. **In-place modifications with `source.change.emit()`:** Use when values change but lengths stay constant. Modify arrays directly (e.g., `source.data['image'][0] = new_typed_array;`) and explicitly call `source.change.emit()`.
 
-1.  **Replacing the entire `.data` property:**
-    -   **When to use:** When the underlying data for a glyph changes in a way that alters the *length* of its columns (e.g., an image changing from 100x100 pixels to 200x200 pixels, implying a new total number of pixels). This is necessary if the *dimensions* of the image data change.
-    -   **How:** Assign an entirely new JavaScript object to its `.data` property (e.g., `source.data = new_dict;`). This `new_dict` must contain all original column names, and the arrays for each column must all have the same new length.
-    -   **`source.change.emit()`:** *Not* required after this operation, as BokehJS automatically detects the change.
+### Additional Bokeh Notes
+- Bokeh 3.x+ requires 2D NumPy `ndarray` data (JS `TypedArray`s) for `Image`/`ImageRGBA`; older list-of-lists formats are no longer supported.
+- `dw` and `dh` define image dimensions in data space; update them with image data changes if display size in data units must change.
+- Even for single images, the `image` column remains a list containing the 2D array (e.g., `image=[img]`) to keep `ColumnDataSource` column lengths consistent.
+- Common errors:
+  - `expected a 2D array, not undefined`: indicates incorrect or missing 2D array (`TypedArray`) in `source.data.image`.
+  - Size mismatch errors: occur when column lengths diverge; fix by replacing the entire `.data` dictionary with consistent-length arrays.
 
-2.  **Modifying data in-place with `source.change.emit()`:**
-    -   **When to use:** If modifications are made to the *values* within an existing data array in a `ColumnDataSource` *without changing its length* (e.g., updating pixel values of an image that retains its 100x100 dimensions). This is the method currently employed for spectrogram updates.
-    -   **How:** Modify the array directly (e.g., `source.data['image'][0] = new_typed_array;`).
-    -   **`source.change.emit()`:** *Essential* to explicitly notify BokehJS to redraw the plot after in-place modifications.
+## 7. Example Workflow — Ctrl+Click to Delete a Region
+1. **User Action:** User holds Ctrl and clicks a region.
+2. **Event Handler (`handleTap`):** Normalizes tap event, packages context `{ timestamp, positionId, modifiers: { ctrl: true } }`, and dispatches `handleTapIntent(payload)`.
+3. **Thunk (`handleTapIntent`):** Uses selectors (e.g., `selectRegionByTimestamp(state, ...)`) to find the region, checks `modifiers.ctrl`, and dispatches `regionRemoved({ id: region.id })`.
+4. **Reducer (`markersReducer`):** Handles `{ type: 'markers/regionRemoved', ... }`, performs a pure immutable update to remove the region from `state.markers`, and returns the new slice.
+5. **Orchestrator (`onStateChange`):** Detects changes to `state.markers.regions` and invokes `renderers.renderRegions(newState)`.
+6. **Renderer (`renderRegions`):** Reads the updated region list via a selector, removes the corresponding `BoxAnnotation`, and updates the side panel UI.
 
-### `dw` and `dh`: Dimensions in Data Space
--   For `ImageGlyph` and `ImageRGBA`, the properties `dw` and `dh` define the width and height of the image in the plot's *data coordinates*, not in pixels.
--   `dw` and `dh` control how large the image appears on the plot relative to the plot's x and y axes ranges. They should be updated in conjunction with image data changes if the desired display size in data units changes.
-
-### "List of Array" Convention for Single Images
--   Even when displaying a single image, the `image` column in `ColumnDataSource` is consistently represented as a list containing the 2D array (e.g., `image=[img]`).
--   This is a design choice to maintain the `ColumnDataSource`'s strict "all columns must have the same length" rule. By wrapping the 2D image array in a list, the `image` column itself becomes an array of length 1, aligning its length with `x`, `y`, `dw`, `dh` (which are also arrays of length 1 for a single image). Adhering to this convention is crucial to avoid "Size mismatch" errors.
-
-### Common Errors
--   `'expected a 2D array, not undefined'`: Often indicates that the `image` field within `source.data` is not conforming to the expected 2D array format (i.e., a `TypedArray` representing a 2D array) or is missing.
--   `'Size mismatch errors'`: Occurs when violating the `ColumnDataSource`'s rule that all columns must have the same length. This typically happens when updating a subset of columns or when new data for one column has a different length than existing data in other columns. The solution is to replace the entire `source.data` dictionary with a new one where all columns have consistent lengths.
+By following this handbook, contributors maintain a clean, scalable, and predictable codebase that respects the project’s performance constraints and architectural conventions.
