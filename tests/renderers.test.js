@@ -314,13 +314,19 @@ describe('NoiseSurveyApp.renderers', () => {
                     this.callback = callback;
                     observers.push(this);
                 }
-                observe() {}
+
+                observe(target, options) {
+                    this.target = target;
+                    this.options = options;
+                }
                 disconnect() {}
             }
             window.MutationObserver = MockMutationObserver;
 
-            const viewHost = document.createElement('div');
             const panelId = 'region-panel-shadow';
+            const viewHost = document.createElement('div');
+            let shadowRoot = null;
+
             const bokehView = { shadow_el: null };
             window.Bokeh = { index: { [panelId]: bokehView } };
 
@@ -332,8 +338,10 @@ describe('NoiseSurveyApp.renderers', () => {
                 },
                 set text(value) {
                     this._text = value;
-                    if (bokehView.shadow_el) {
-                        bokehView.shadow_el.innerHTML = value;
+
+                    if (shadowRoot) {
+                        shadowRoot.innerHTML = value;
+
                     }
                 }
             };
@@ -371,16 +379,26 @@ describe('NoiseSurveyApp.renderers', () => {
                 expect(observers.length).toBeGreaterThan(0);
                 expect(mockStoreDispatch).not.toHaveBeenCalled();
 
-                bokehView.shadow_el = viewHost;
+                shadowRoot = viewHost;
+                bokehView.shadow_el = shadowRoot;
                 document.body.appendChild(viewHost);
-                viewHost.innerHTML = panelDiv.text;
+                shadowRoot.innerHTML = panelDiv.text;
 
-                observers.forEach(observer => {
-                    observer.callback([], observer);
+                const docObserver = observers.find(observer => {
+                    return observer.target === document.body || observer.target === document.documentElement;
                 });
+                expect(docObserver).toBeDefined();
+                docObserver.callback([], docObserver);
 
                 const entry = viewHost.querySelector('[data-region-entry="1"]');
                 expect(entry).not.toBeNull();
+
+                const regionList = viewHost.querySelector('.region-list');
+                expect(regionList).not.toBeNull();
+
+                const regionListObserver = observers.find(observer => observer.target === regionList);
+                expect(regionListObserver).toBeDefined();
+
                 entry.click();
                 expect(mockRegionSelect).toHaveBeenCalledWith(1);
                 expect(mockStoreDispatch).toHaveBeenCalledWith({ type: 'regions/select', payload: 1 });

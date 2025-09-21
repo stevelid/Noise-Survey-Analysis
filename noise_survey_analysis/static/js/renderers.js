@@ -540,6 +540,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     const regionPanelObservers = new WeakMap();
+    const regionListObservers = new WeakMap();
 
     function getPanelRoot(panelDiv) {
         if (!panelDiv) return null;
@@ -569,10 +570,42 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
 
+        const directPanelRoot = document.querySelector('.region-panel-root');
+        if (directPanelRoot) {
+            candidates.push(directPanelRoot);
+            const rootNode = directPanelRoot.getRootNode?.();
+            if (rootNode && rootNode !== directPanelRoot) {
+                candidates.push(rootNode);
+            }
+        }
+
+        const directRegionList = document.querySelector('.region-list');
+        if (directRegionList) {
+            const panelRoot = directRegionList.closest?.('.region-panel-root');
+            if (panelRoot) {
+                candidates.push(panelRoot);
+            }
+            const rootNode = directRegionList.getRootNode?.();
+            if (rootNode && rootNode !== directRegionList) {
+                candidates.push(rootNode);
+            }
+        }
+
+        const potentialHosts = document.querySelectorAll?.('.bk-Column') || [];
+        potentialHosts.forEach(host => {
+            if (host?.shadowRoot) {
+                candidates.push(host.shadowRoot);
+            }
+            candidates.push(host);
+        });
+
         const ShadowRootCtor = window.ShadowRoot;
 
         for (const candidate of candidates) {
             if (!candidate) continue;
+            if (typeof Node !== 'undefined' && candidate.nodeType === Node.DOCUMENT_NODE) {
+                continue;
+            }
             if (ShadowRootCtor && candidate instanceof ShadowRootCtor) {
                 return candidate;
             }
@@ -580,11 +613,37 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return candidate.shadowRoot;
             }
             if (typeof candidate.querySelector === 'function') {
-                return candidate;
+                const panelRoot = candidate.classList?.contains('region-panel-root')
+                    ? candidate
+                    : candidate.querySelector('.region-panel-root');
+                if (panelRoot) {
+                    return panelRoot;
+                }
             }
         }
 
         return null;
+    }
+
+    function observeRegionListMutations(root) {
+        if (!root || typeof root.querySelector !== 'function') {
+            return;
+        }
+        if (typeof window.MutationObserver !== 'function') {
+            return;
+        }
+
+        const regionList = root.querySelector('.region-list');
+        if (!regionList || regionListObservers.has(regionList)) {
+            return;
+        }
+
+        const observer = new window.MutationObserver(() => {
+            bindRegionPanelListeners(root);
+        });
+
+        regionListObservers.set(regionList, observer);
+        observer.observe(regionList, { childList: true, subtree: true });
     }
 
     function bindRegionPanelListeners(root) {
@@ -655,6 +714,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const root = getPanelRoot(panelDiv);
         if (root) {
             bindRegionPanelListeners(root);
+            observeRegionListMutations(root);
             return;
         }
 
@@ -675,6 +735,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             observer.disconnect();
             regionPanelObservers.delete(panelDiv);
             bindRegionPanelListeners(resolvedRoot);
+            observeRegionListMutations(resolvedRoot);
         });
 
         const target = document.body || document.documentElement;
