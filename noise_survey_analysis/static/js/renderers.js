@@ -14,8 +14,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     // Dependencies are accessed dynamically within each function (e.g., `app.registry.models`)
     // to ensure they are not stale, especially in test environments.
-    const { actions } = app;
     const regionsModule = app.regions;
+    function getActions() {
+        return app.actions || {};
+    }
     const REGION_PANEL_STYLE = `
         <style>
             .region-panel-root { font-family: 'Segoe UI', sans-serif; font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
@@ -537,18 +539,127 @@ function renderPrimaryCharts(state, dataCache) {
         return `${REGION_PANEL_STYLE}<div class="region-panel-root"><div class="region-list">${listHtml}</div><div class="region-detail">${detailHtml}</div></div>`;
     }
 
-    function attachRegionPanelListeners(panelDiv) {
-        if (!panelDiv || !panelDiv.id) return;
-        const root = document.getElementById(panelDiv.id);
-        if (!root) return;
+    const regionPanelObservers = new WeakMap();
+    const regionListObservers = new WeakMap();
 
+    function getPanelRoot(panelDiv) {
+        if (!panelDiv) return null;
+
+        const candidates = [];
+
+        if (panelDiv.el) {
+            candidates.push(panelDiv.el);
+        }
+
+        if (panelDiv.id) {
+            const view = window.Bokeh?.index?.[panelDiv.id];
+            if (view) {
+                if (view.shadow_el) {
+                    candidates.push(view.shadow_el);
+                }
+                if (view.el?.shadowRoot) {
+                    candidates.push(view.el.shadowRoot);
+                }
+                if (view.el) {
+                    candidates.push(view.el);
+                }
+            }
+            const hostById = document.getElementById(panelDiv.id);
+            if (hostById) {
+                candidates.push(hostById);
+            }
+        }
+
+        const directPanelRoot = document.querySelector('.region-panel-root');
+        if (directPanelRoot) {
+            candidates.push(directPanelRoot);
+            const rootNode = directPanelRoot.getRootNode?.();
+            if (rootNode && rootNode !== directPanelRoot) {
+                candidates.push(rootNode);
+            }
+        }
+
+        const directRegionList = document.querySelector('.region-list');
+        if (directRegionList) {
+            const panelRoot = directRegionList.closest?.('.region-panel-root');
+            if (panelRoot) {
+                candidates.push(panelRoot);
+            }
+            const rootNode = directRegionList.getRootNode?.();
+            if (rootNode && rootNode !== directRegionList) {
+                candidates.push(rootNode);
+            }
+        }
+
+        const potentialHosts = document.querySelectorAll?.('.bk-Column') || [];
+        potentialHosts.forEach(host => {
+            if (host?.shadowRoot) {
+                candidates.push(host.shadowRoot);
+            }
+            candidates.push(host);
+        });
+
+        const ShadowRootCtor = window.ShadowRoot;
+
+        for (const candidate of candidates) {
+            if (!candidate) continue;
+            if (typeof Node !== 'undefined' && candidate.nodeType === Node.DOCUMENT_NODE) {
+                continue;
+            }
+            if (ShadowRootCtor && candidate instanceof ShadowRootCtor) {
+                return candidate;
+            }
+            if (ShadowRootCtor && candidate.shadowRoot instanceof ShadowRootCtor) {
+                return candidate.shadowRoot;
+            }
+            if (typeof candidate.querySelector === 'function') {
+                const panelRoot = candidate.classList?.contains('region-panel-root')
+                    ? candidate
+                    : candidate.querySelector('.region-panel-root');
+                if (panelRoot) {
+                    return panelRoot;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    function observeRegionListMutations(root) {
+        if (!root || typeof root.querySelector !== 'function') {
+            return;
+        }
+        if (typeof window.MutationObserver !== 'function') {
+            return;
+        }
+
+        const regionList = root.querySelector('.region-list');
+        if (!regionList || regionListObservers.has(regionList)) {
+            return;
+        }
+
+        const observer = new window.MutationObserver(() => {
+            bindRegionPanelListeners(root);
+        });
+
+        regionListObservers.set(regionList, observer);
+        observer.observe(regionList, { childList: true, subtree: true });
+    }
+
+    function bindRegionPanelListeners(root) {
+        if (!root || typeof root.querySelectorAll !== 'function') {
+            return;
+        }
         root.querySelectorAll('[data-region-entry]').forEach(entry => {
             if (entry.dataset.bound === 'true') return;
             entry.dataset.bound = 'true';
             entry.addEventListener('click', () => {
                 const id = Number(entry.getAttribute('data-region-entry'));
                 if (Number.isFinite(id)) {
-                    app.store.dispatch(actions.regionSelect(id));
+                    const actions = getActions();
+                    if (actions?.regionSelect && typeof app.store?.dispatch === 'function') {
+                        app.store.dispatch(actions.regionSelect(id));
+                    }
                 }
             });
         });
@@ -560,7 +671,10 @@ function renderPrimaryCharts(state, dataCache) {
                 event.stopPropagation();
                 const id = Number(button.getAttribute('data-region-delete'));
                 if (Number.isFinite(id)) {
-                    app.store.dispatch(actions.regionRemove(id));
+                    const actions = getActions();
+                    if (actions?.regionRemove && typeof app.store?.dispatch === 'function') {
+                        app.store.dispatch(actions.regionRemove(id));
+                    }
                 }
             });
         });
@@ -571,7 +685,10 @@ function renderPrimaryCharts(state, dataCache) {
             const regionId = Number(noteField.getAttribute('data-region-note'));
             const debounced = debounce(value => {
                 if (Number.isFinite(regionId)) {
-                    app.store.dispatch(actions.regionSetNote(regionId, value));
+                    const actions = getActions();
+                    if (actions?.regionSetNote && typeof app.store?.dispatch === 'function') {
+                        app.store.dispatch(actions.regionSetNote(regionId, value));
+                    }
                 }
             }, 250);
             noteField.addEventListener('input', event => {
@@ -589,6 +706,45 @@ function renderPrimaryCharts(state, dataCache) {
                 }
             });
         }
+    }
+
+    function attachRegionPanelListeners(panelDiv) {
+        if (!panelDiv) return;
+
+        const root = getPanelRoot(panelDiv);
+        if (root) {
+            bindRegionPanelListeners(root);
+            observeRegionListMutations(root);
+            return;
+        }
+
+        if (typeof window.MutationObserver !== 'function') {
+            return;
+        }
+
+        if (regionPanelObservers.has(panelDiv)) {
+            return;
+        }
+
+        const observer = new window.MutationObserver(() => {
+            const resolvedRoot = getPanelRoot(panelDiv);
+            if (!resolvedRoot) {
+                return;
+            }
+
+            observer.disconnect();
+            regionPanelObservers.delete(panelDiv);
+            bindRegionPanelListeners(resolvedRoot);
+            observeRegionListMutations(resolvedRoot);
+        });
+
+        const target = document.body || document.documentElement;
+        if (!target) {
+            return;
+        }
+
+        regionPanelObservers.set(panelDiv, observer);
+        observer.observe(target, { childList: true, subtree: true });
     }
 
     function handleCopyRegion(id) {

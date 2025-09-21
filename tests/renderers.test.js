@@ -21,12 +21,19 @@ describe('NoiseSurveyApp.renderers', () => {
     let mockDispatchAction;
     let panelElement;
     let mockSyncRegions;
+    let mockStoreDispatch;
+    let mockGetState;
+    let mockRegionSelect;
+    let mockRegionRemove;
+    let mockRegionSetNote;
 
     beforeEach(() => {
         vi.useFakeTimers(); // Use fake timers for debounce testing
         vi.restoreAllMocks(); // Ensure any spies from previous tests are reset
         vi.clearAllMocks();
         mockDispatchAction = vi.fn();
+        mockStoreDispatch = vi.fn();
+        mockGetState = vi.fn(() => ({ markers: { regions: { byId: {} } } }));
 
         mockUpdateAllCharts = vi.fn();
         mockSetVisible = vi.fn();
@@ -39,9 +46,22 @@ describe('NoiseSurveyApp.renderers', () => {
         mockRenderHoverLine = vi.fn();
         mockRenderHoverDetails = vi.fn();
 
+        mockRegionSelect = vi.fn(id => ({ type: 'regions/select', payload: id }));
+        mockRegionRemove = vi.fn(id => ({ type: 'regions/remove', payload: id }));
+        mockRegionSetNote = vi.fn((id, value) => ({ type: 'regions/setNote', payload: { id, value } }));
+
         Object.assign(window.NoiseSurveyApp, {
             state: {
                 dispatchAction: vi.fn()
+            },
+            store: {
+                dispatch: mockStoreDispatch,
+                getState: mockGetState
+            },
+            actions: {
+                regionSelect: mockRegionSelect,
+                regionRemove: mockRegionRemove,
+                regionSetNote: mockRegionSetNote
             },
             registry: {
                 controllers: {
@@ -131,6 +151,7 @@ describe('NoiseSurveyApp.renderers', () => {
         if (panelElement && panelElement.parentNode) {
             panelElement.parentNode.removeChild(panelElement);
         }
+        delete window.Bokeh;
     });
 
     describe('renderPrimaryCharts', () => {
@@ -280,6 +301,122 @@ describe('NoiseSurveyApp.renderers', () => {
             const syncedRegions = lastCall[0];
             expect(Array.isArray(syncedRegions)).toBe(true);
             expect(syncedRegions[0].metrics.laeq).toBeCloseTo(55.44);
+        });
+    });
+
+    describe('region panel listeners', () => {
+        it('attaches listeners when the panel root appears via MutationObserver', () => {
+            const originalMutationObserver = window.MutationObserver;
+            const observers = [];
+            class MockMutationObserver {
+                constructor(callback) {
+                    this.callback = callback;
+                    observers.push(this);
+                }
+                observe(target, options) {
+                    this.target = target;
+                    this.options = options;
+                }
+                disconnect() {}
+            }
+            window.MutationObserver = MockMutationObserver;
+
+            const panelId = 'region-panel-shadow';
+            const viewHost = document.createElement('div');
+            let shadowRoot = null;
+            const bokehView = { shadow_el: null };
+            window.Bokeh = { index: { [panelId]: bokehView } };
+
+            const panelDiv = {
+                id: panelId,
+                _text: '',
+                get text() {
+                    return this._text;
+                },
+                set text(value) {
+                    this._text = value;
+                    if (shadowRoot) {
+                        shadowRoot.innerHTML = value;
+                    }
+                }
+            };
+
+            window.NoiseSurveyApp.registry.models.regionPanelDiv = panelDiv;
+
+            const regionState = {
+                byId: {
+                    1: {
+                        id: 1,
+                        positionId: 'P1',
+                        start: 0,
+                        end: 1000,
+                        note: '',
+                        metrics: {
+                            laeq: 40,
+                            lafmax: 45,
+                            la90: null,
+                            la90Available: false,
+                            durationMs: 1000,
+                            dataResolution: 'log',
+                            spectrum: { bands: [], values: [] }
+                        }
+                    }
+                },
+                allIds: [1],
+                selectedId: 1,
+                counter: 2
+            };
+
+            try {
+                renderers.renderRegions({ markers: { regions: regionState } }, {});
+                vi.runAllTimers();
+
+                expect(observers.length).toBeGreaterThan(0);
+                expect(mockStoreDispatch).not.toHaveBeenCalled();
+
+                shadowRoot = viewHost;
+                bokehView.shadow_el = shadowRoot;
+                document.body.appendChild(viewHost);
+                shadowRoot.innerHTML = panelDiv.text;
+
+                const docObserver = observers.find(observer => {
+                    return observer.target === document.body || observer.target === document.documentElement;
+                });
+                expect(docObserver).toBeDefined();
+                docObserver.callback([], docObserver);
+
+                const entry = viewHost.querySelector('[data-region-entry="1"]');
+                expect(entry).not.toBeNull();
+
+                const regionList = viewHost.querySelector('.region-list');
+                expect(regionList).not.toBeNull();
+
+                const regionListObserver = observers.find(observer => observer.target === regionList);
+                expect(regionListObserver).toBeDefined();
+
+                entry.click();
+                expect(mockRegionSelect).toHaveBeenCalledWith(1);
+                expect(mockStoreDispatch).toHaveBeenCalledWith({ type: 'regions/select', payload: 1 });
+
+                const deleteButton = viewHost.querySelector('[data-region-delete="1"]');
+                expect(deleteButton).not.toBeNull();
+                deleteButton.dispatchEvent(new Event('click', { bubbles: true }));
+                expect(mockRegionRemove).toHaveBeenCalledWith(1);
+                expect(mockStoreDispatch).toHaveBeenCalledWith({ type: 'regions/remove', payload: 1 });
+
+                const noteField = viewHost.querySelector('[data-region-note="1"]');
+                expect(noteField).not.toBeNull();
+                noteField.value = 'Updated note';
+                noteField.dispatchEvent(new Event('input', { bubbles: true }));
+                vi.advanceTimersByTime(300);
+                expect(mockRegionSetNote).toHaveBeenCalledWith(1, 'Updated note');
+                expect(mockStoreDispatch).toHaveBeenLastCalledWith({ type: 'regions/setNote', payload: { id: 1, value: 'Updated note' } });
+            } finally {
+                window.MutationObserver = originalMutationObserver;
+                if (viewHost.parentNode) {
+                    viewHost.parentNode.removeChild(viewHost);
+                }
+            }
         });
     });
 
