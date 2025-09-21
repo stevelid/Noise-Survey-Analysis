@@ -144,13 +144,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             const seen = new Set();
+            let didMutate = false;
+
             regionList.forEach(region => {
                 if (!region || region.positionId !== this.positionId) return;
                 seen.add(region.id);
                 let annotation = this.regionAnnotations.get(region.id);
                 if (!annotation) {
-
-                    try{
+                    try {
                         const BoxAnnotation = Bokeh.Models.get("BoxAnnotation");
                         if (!BoxAnnotation) {
                             console.error("Could not retrieve BoxAnnotation model constructor from Bokeh.Models.");
@@ -159,36 +160,60 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
                         annotation = new BoxAnnotation({
                             left: region.start,
-                        right: region.end,
-                        fill_alpha: 0.1,
-                        fill_color: '#1e88e5',
-                        line_color: '#1e88e5',
-                        line_alpha: 0.6,
-                        line_width: 1,
-                        level: 'underlay',
-                        name: `region_${this.name}_${region.id}`
-                    });
-                    this.model.add_layout(annotation);
-                    this.regionAnnotations.set(region.id, annotation);
-                } catch (e) {
-                    console.error("Error creating or adding new BoxAnnotation:", e);
+                            right: region.end,
+                            fill_alpha: 0.1,
+                            fill_color: '#1e88e5',
+                            line_color: '#1e88e5',
+                            line_alpha: 0.6,
+                            line_width: 1,
+                            level: 'underlay',
+                            name: `region_${this.name}_${region.id}`
+                        });
+                        this.model.add_layout(annotation);
+                        this.regionAnnotations.set(region.id, annotation);
+                        didMutate = true;
+                    } catch (e) {
+                        console.error("Error creating or adding new BoxAnnotation:", e);
+                    }
                 }
-            } 
+
                 if (annotation) {
-                annotation.left = region.start;
-                annotation.right = region.end;
-                annotation.fill_alpha = region.id === selectedId ? 0.2 : 0.08;
-                annotation.line_width = region.id === selectedId ? 3 : 1;
-                annotation.visible = true;
-            }
+                    annotation.left = region.start;
+                    annotation.right = region.end;
+                    annotation.fill_alpha = region.id === selectedId ? 0.2 : 0.08;
+                    annotation.line_width = region.id === selectedId ? 3 : 1;
+                    annotation.visible = true;
+                }
             });
 
+            const idsToRemove = [];
             this.regionAnnotations.forEach((annotation, id) => {
                 if (!seen.has(id)) {
-                    this.model.remove_layout(annotation);
-                    this.regionAnnotations.delete(id);
+                    if (annotation) {
+                        annotation.visible = false;
+                        try {
+                            if (typeof this.model.remove_layout === 'function') {
+                                this.model.remove_layout(annotation);
+                            } else if (doc && typeof doc.remove_root === 'function') {
+                                doc.remove_root(annotation);
+                            }
+                        } catch (error) {
+                            console.error('Error removing BoxAnnotation:', error);
+                        }
+                    }
+                    idsToRemove.push(id);
+                    didMutate = true;
                 }
             });
+            idsToRemove.forEach(id => this.regionAnnotations.delete(id));
+
+            if (didMutate) {
+                if (typeof this.model?.request_render === 'function') {
+                    this.model.request_render();
+                } else if (this.model?.change?.emit) {
+                    this.model.change.emit();
+                }
+            }
         }
 
         update() {
