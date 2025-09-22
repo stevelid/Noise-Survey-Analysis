@@ -247,7 +247,7 @@ describe('rootReducer', () => {
             expect(state.regions.byId[1]).toMatchObject({ positionId: 'P1', start: 400, end: 800 });
             expect(state.regions.byId[2]).toMatchObject({ positionId: 'P2', start: 500, end: 900 });
             expect(state.regions.counter).toBe(3);
-            expect(state.regions.selectedId).toBe(1);
+            expect(state.regions.selectedId).toBe(2);
         });
 
         it('should clear regions when replace payload is empty', () => {

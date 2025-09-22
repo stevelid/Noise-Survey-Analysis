@@ -28,8 +28,6 @@ from bokeh.models import (
     ColorBar,
     Div,
     LinearColorMapper,
-    DataTable,
-    TableColumn,
     TextAreaInput,
     PanTool,
     BoxSelectTool,
@@ -52,34 +50,64 @@ class RegionPanelComponent:
 
     def __init__(self) -> None:
         panel_width = 320
-        self.source = ColumnDataSource(data={
-            'id': [],
-            'label': [],
-            'position': [],
-            'start': [],
-            'end': [],
-            'start_display': [],
-            'end_display': [],
-            'duration_display': [],
-        })
-        self.source.name = "region_panel_source"
 
-        columns = [
-            TableColumn(field='label', title='Region'),
-            TableColumn(field='position', title='Position'),
-            TableColumn(field='start_display', title='Start'),
-            TableColumn(field='end_display', title='End'),
-            TableColumn(field='duration_display', title='Duration'),
-        ]
-
-        self.table = DataTable(
-            source=self.source,
-            columns=columns,
-            height=200,
+        self.header = Div(
+            text="<h2 style='margin:0;'>Regions</h2>",
             width=panel_width,
-            index_position=None,
-            selectable=True,
-            name="region_table",
+            name="region_panel_header",
+        )
+
+        self.select = Select(
+            title="Select Region",
+            value="",
+            options=[],
+            width=panel_width,
+            name="region_panel_select",
+            disabled=True,
+        )
+
+        self.message_div = Div(
+            text="<p class='region-panel-empty'>No regions defined.</p>",
+            width=panel_width,
+            name="region_panel_message_div",
+        )
+
+        self.copy_button = Button(
+            label="Copy Summary",
+            width=int(panel_width / 2) - 6,
+            name="region_copy_button",
+            disabled=True,
+        )
+
+        self.delete_button = Button(
+            label="Delete Region",
+            width=int(panel_width / 2) - 6,
+            button_type="danger",
+            name="region_delete_button",
+            disabled=True,
+        )
+
+        self.add_area_button = Button(
+            label="Add Area",
+            width=int(panel_width / 2) - 6,
+            name="region_add_area_button",
+            disabled=True,
+        )
+
+        self.merge_select = Select(
+            title="Merge Selected With",
+            value="",
+            options=[],
+            width=panel_width,
+            name="region_merge_select",
+            disabled=True,
+        )
+
+        self.merge_button = Button(
+            label="Merge Regions",
+            width=int(panel_width / 2) - 6,
+            name="region_merge_button",
+            disabled=True,
         )
 
         self.note_input = TextAreaInput(
@@ -93,9 +121,10 @@ class RegionPanelComponent:
         )
 
         self.metrics_div = Div(
-            text="<p class='region-panel-empty'>No regions defined.</p>",
+            text="<p class='region-panel-empty'>Select a region to view metrics.</p>",
             width=panel_width,
             name="region_metrics_div",
+            visible=False,
             styles={
                 "font-size": "12px",
                 "border-top": "1px solid #ddd",
@@ -103,53 +132,42 @@ class RegionPanelComponent:
             },
         )
 
-        self.copy_button = Button(
-            label="Copy Summary",
-            width=int(panel_width / 2) - 4,
-            name="region_copy_button",
-            disabled=True,
-        )
-
-        self.delete_button = Button(
-            label="Delete Region",
-            width=int(panel_width / 2) - 4,
-            button_type="danger",
-            name="region_delete_button",
-            disabled=True,
-        )
-
-        self.spectrum_source = ColumnDataSource(data={'labels': [], 'values': []})
-        self.spectrum_source.name = "region_spectrum_source"
-
-        self.spectrum_figure = figure(
-            height=160,
+        self.spectrum_div = Div(
+            text="",
             width=panel_width,
-            title="Average Spectrum",
-            toolbar_location=None,
-            x_range=[],
-            y_range=(0, 100),
-            name="region_spectrum_figure",
+            name="region_spectrum_div",
+            visible=False,
         )
-        self.spectrum_figure.vbar(
-            x='labels',
-            top='values',
-            width=0.8,
-            source=self.spectrum_source,
-            line_color="#64b5f6",
-            fill_color="#64b5f6",
+
+        primary_actions = Row(
+            children=[self.copy_button, self.delete_button],
+            name="region_primary_actions",
+            sizing_mode="stretch_width",
         )
-        self.spectrum_figure.xaxis.major_label_orientation = 0.8
-        self.spectrum_figure.visible = False
 
-        controls_row = Row(children=[self.copy_button, self.delete_button])
-        controls_row.name = "region_controls_row"
+        secondary_actions = Row(
+            children=[self.add_area_button, self.merge_button],
+            name="region_secondary_actions",
+            sizing_mode="stretch_width",
+        )
 
-        self.container = column(
-            self.table,
-            controls_row,
+        self.detail_layout = column(
+            self.select,
+            primary_actions,
+            self.merge_select,
+            secondary_actions,
             self.note_input,
             self.metrics_div,
-            self.spectrum_figure,
+            self.spectrum_div,
+            name="region_panel_detail",
+            sizing_mode="stretch_width",
+            visible=False,
+        )
+
+        self.container = column(
+            self.header,
+            self.message_div,
+            self.detail_layout,
             name="region_panel_container",
             styles={
                 "border": "1px solid #ccc",
@@ -162,46 +180,23 @@ class RegionPanelComponent:
         self._attach_callbacks()
 
     def _attach_callbacks(self) -> None:
-        selection_callback = CustomJS(args={'source': self.source}, code="""
-            const renderer = window.NoiseSurveyApp?.services?.regionPanelRenderer;
-            if (renderer) {
-                renderer.lastSelectionEventTs = Date.now();
-            }
-            if (renderer?.suppressSelectionCallback) {
-                return;
-            }
-            const indices = cb_obj.indices || [];
-            if (!indices.length) {
-                const actions = window.NoiseSurveyApp?.actions;
-                const store = window.NoiseSurveyApp?.store;
-                if (actions?.regionClearSelection && typeof store?.dispatch === 'function') {
-                    store.dispatch(actions.regionClearSelection());
-                }
-                return;
-            }
-            const idx = indices[0];
-            const regionId = source.data.id?.[idx];
-            if (!Number.isFinite(regionId)) {
-                return;
-            }
+        select_callback = CustomJS(code="""
             const actions = window.NoiseSurveyApp?.actions;
             const store = window.NoiseSurveyApp?.store;
-            if (actions?.regionSelect && typeof store?.dispatch === 'function') {
-                store.dispatch(actions.regionSelect(regionId));
+            if (!actions || typeof store?.dispatch !== 'function') {
+                return;
+            }
+            const numericId = Number(cb_obj.value);
+            if (Number.isFinite(numericId) && actions.regionSelect) {
+                store.dispatch(actions.regionSelect(numericId));
+            } else if (actions.regionClearSelection) {
+                store.dispatch(actions.regionClearSelection());
             }
         """)
-        self.source.selected.js_on_change('indices', selection_callback)
+        self.select.js_on_change('value', select_callback)
 
-        note_callback = CustomJS(args={'source': self.source}, code="""
-            const renderer = window.NoiseSurveyApp?.services?.regionPanelRenderer;
-            if (renderer?.suppressNoteCallback) {
-                return;
-            }
-            const indices = source.selected.indices || [];
-            if (!indices.length) {
-                return;
-            }
-            const regionId = source.data.id?.[indices[0]];
+        note_callback = CustomJS(args={'select': self.select}, code="""
+            const regionId = Number(select.value);
             if (!Number.isFinite(regionId)) {
                 return;
             }
@@ -213,12 +208,8 @@ class RegionPanelComponent:
         """)
         self.note_input.js_on_change('value', note_callback)
 
-        delete_callback = CustomJS(args={'source': self.source}, code="""
-            const indices = source.selected.indices || [];
-            if (!indices.length) {
-                return;
-            }
-            const regionId = source.data.id?.[indices[0]];
+        delete_callback = CustomJS(args={'select': self.select}, code="""
+            const regionId = Number(select.value);
             if (!Number.isFinite(regionId)) {
                 return;
             }
@@ -230,22 +221,76 @@ class RegionPanelComponent:
         """)
         self.delete_button.js_on_event('button_click', delete_callback)
 
-        copy_callback = CustomJS(args={'source': self.source}, code="""
-            const renderer = window.NoiseSurveyApp?.services?.regionPanelRenderer;
-            if (!renderer?.handleCopyRegion) {
-                return;
-            }
-            const indices = source.selected.indices || [];
-            if (!indices.length) {
-                return;
-            }
-            const regionId = source.data.id?.[indices[0]];
+        copy_callback = CustomJS(args={'select': self.select}, code="""
+            const regionId = Number(select.value);
             if (!Number.isFinite(regionId)) {
                 return;
             }
-            renderer.handleCopyRegion(regionId);
+            const store = window.NoiseSurveyApp?.store;
+            const utils = window.NoiseSurveyApp?.features?.regions?.utils;
+            if (!utils?.formatRegionSummary || typeof store?.getState !== 'function') {
+                return;
+            }
+            const state = store.getState();
+            const region = state?.regions?.byId?.[regionId];
+            if (!region) {
+                return;
+            }
+            const text = utils.formatRegionSummary(region, region.metrics, region.positionId);
+            if (navigator?.clipboard?.writeText) {
+                navigator.clipboard.writeText(text).catch(err => {
+                    console.error('[Regions] Failed to copy summary:', err);
+                });
+            } else {
+                const temp = document.createElement('textarea');
+                temp.value = text;
+                temp.style.position = 'fixed';
+                temp.style.opacity = '0';
+                document.body.appendChild(temp);
+                temp.focus();
+                temp.select();
+                try {
+                    document.execCommand('copy');
+                } catch (err) {
+                    console.error('[Regions] execCommand copy failed:', err);
+                }
+                document.body.removeChild(temp);
+            }
         """)
         self.copy_button.js_on_event('button_click', copy_callback)
+
+        add_area_callback = CustomJS(args={'select': self.select}, code="""
+            const regionId = Number(select.value);
+            if (!Number.isFinite(regionId)) {
+                return;
+            }
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            if (!actions?.regionSetAddAreaMode || typeof store?.dispatch !== 'function' || typeof store?.getState !== 'function') {
+                return;
+            }
+            const current = store.getState();
+            const currentTarget = current?.regions?.addAreaTargetId ?? null;
+            const nextTarget = currentTarget === regionId ? null : regionId;
+            store.dispatch(actions.regionSetAddAreaMode(nextTarget));
+        """)
+        self.add_area_button.js_on_event('button_click', add_area_callback)
+
+        merge_callback = CustomJS(args={'select': self.select, 'mergeSelect': self.merge_select}, code="""
+            const selectedId = Number(select.value);
+            const sourceId = Number(mergeSelect.value);
+            if (!Number.isFinite(selectedId) || !Number.isFinite(sourceId) || selectedId === sourceId) {
+                return;
+            }
+            const store = window.NoiseSurveyApp?.store;
+            const thunks = window.NoiseSurveyApp?.thunks;
+            const mergeThunk = thunks?.mergeRegionIntoSelectedIntent;
+            if (typeof mergeThunk !== 'function' || typeof store?.dispatch !== 'function') {
+                return;
+            }
+            store.dispatch(mergeThunk(sourceId));
+        """)
+        self.merge_button.js_on_event('button_click', merge_callback)
 
     def layout(self):
         return self.container

@@ -139,6 +139,9 @@ describe('NoiseSurveyApp.renderers', () => {
             detail: { visible: false },
             copyButton: { disabled: true },
             deleteButton: { disabled: true },
+            addAreaButton: { disabled: true, label: 'Add Area', button_type: 'default' },
+            mergeButton: { disabled: true },
+            mergeSelect: { options: [], value: '', disabled: true },
             noteInput: { value: '', disabled: true },
             metricsDiv: { text: '', visible: false },
             spectrumDiv: { text: '', visible: false },
@@ -150,6 +153,9 @@ describe('NoiseSurveyApp.renderers', () => {
             regionPanelDetail: regionPanelMocks.detail,
             regionPanelCopyButton: regionPanelMocks.copyButton,
             regionPanelDeleteButton: regionPanelMocks.deleteButton,
+            regionPanelAddAreaButton: regionPanelMocks.addAreaButton,
+            regionPanelMergeButton: regionPanelMocks.mergeButton,
+            regionPanelMergeSelect: regionPanelMocks.mergeSelect,
             regionPanelNoteInput: regionPanelMocks.noteInput,
             regionPanelMetricsDiv: regionPanelMocks.metricsDiv,
             regionPanelSpectrumDiv: regionPanelMocks.spectrumDiv,
@@ -271,6 +277,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMetricsDiv.text).toContain('65.5 dB');
             expect(models.regionPanelSelect.value).toBe('1');
             expect(models.regionPanelNoteInput.disabled).toBe(false);
+            expect(models.regionPanelMergeSelect.disabled).toBe(true);
 
             const updatedState = {
                 regions: {
@@ -330,6 +337,9 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelSelect.disabled).toBe(true);
             expect(models.regionPanelCopyButton.disabled).toBe(true);
             expect(models.regionPanelDeleteButton.disabled).toBe(true);
+            expect(models.regionPanelAddAreaButton.disabled).toBe(true);
+            expect(models.regionPanelMergeButton.disabled).toBe(true);
+            expect(models.regionPanelMergeSelect.disabled).toBe(true);
             expect(models.regionPanelNoteInput.disabled).toBe(true);
 
             const populatedState = {
@@ -364,8 +374,39 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelSelect.disabled).toBe(false);
             expect(models.regionPanelCopyButton.disabled).toBe(false);
             expect(models.regionPanelDeleteButton.disabled).toBe(false);
+            expect(models.regionPanelAddAreaButton.disabled).toBe(false);
+            expect(models.regionPanelMergeButton.disabled).toBe(true);
+            expect(models.regionPanelMergeSelect.disabled).toBe(true);
             expect(models.regionPanelNoteInput.disabled).toBe(false);
             expect(models.regionPanelNoteInput.value).toBe('hello');
+
+            const multiRegionState = {
+                regions: {
+                    byId: {
+                        5: populatedState.regions.byId[5],
+                        6: {
+                            id: 6,
+                            positionId: 'P9',
+                            start: 2000,
+                            end: 6000,
+                            note: '',
+                            metrics: null,
+                        }
+                    },
+                    allIds: [5, 6],
+                    selectedId: 5,
+                    counter: 7,
+                    addAreaTargetId: null,
+                }
+            };
+
+            renderers.renderRegions(multiRegionState, {});
+            expect(models.regionPanelMergeSelect.disabled).toBe(false);
+            expect(models.regionPanelMergeButton.disabled).toBe(false);
+            expect(models.regionPanelMergeSelect.options).toEqual([
+                ['6', expect.stringContaining('Region 6')]
+            ]);
+            expect(models.regionPanelMergeSelect.value).toBe('6');
         });
     });
 

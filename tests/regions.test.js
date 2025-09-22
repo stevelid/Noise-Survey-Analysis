@@ -1,5 +1,7 @@
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+import './loadCoreModules.js';
 
 // Load necessary modules from the app's namespace
 const {
@@ -52,7 +54,7 @@ describe('Region Management (Multi-Area)', () => {
             newState = regionsReducer(newState, action);
 
             const updatedRegion = newState.byId[regionId];
-            expect(updatedRegion.areas).toEqual([{ start: 50, end: 250 }]); // Should merge overlapping areas
+            expect(updatedRegion.areas).toEqual([{ start: 50, end: 150 }, { start: 180, end: 250 }]);
             expect(updatedRegion.start).toBe(50);
             expect(updatedRegion.end).toBe(250);
         });
@@ -78,7 +80,7 @@ describe('Region Management (Multi-Area)', () => {
     describe('Region Thunks', () => {
 
         it('createRegionIntent should add a new area to a target region', () => {
-            const dispatch = vitest.fn();
+            const dispatch = vi.fn();
             const getState = () => ({
                 regions: {
                     ...initialRegionsState,
@@ -100,7 +102,7 @@ describe('Region Management (Multi-Area)', () => {
         });
 
         it('mergeRegionIntoSelectedIntent should merge two regions', () => {
-            const dispatch = vitest.fn();
+            const dispatch = vi.fn();
             const getState = () => ({
                 regions: {
                     ...initialRegionsState,
