@@ -41,8 +41,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         </style>
     `;
 
-    const regionPanelObservers = new WeakMap();
-    const regionListObservers = new WeakMap();
+    const hostListenerRegistry = new WeakMap();
+    const noteDispatchers = new Map();
 
     function debounce(fn, delay = 200) {
         let timerId;
@@ -167,110 +167,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return `${REGION_PANEL_STYLE}<div class="region-panel-root"><div class="region-list">${listHtml}</div><div class="region-detail">${detailHtml}</div></div>`;
     }
 
-    function getPanelRoot(panelDiv) {
-        if (!panelDiv) return null;
-
-        const candidates = [];
-
-        if (panelDiv.el) {
-            candidates.push(panelDiv.el);
-        }
-
-        if (panelDiv.id) {
-            const view = window.Bokeh?.index?.[panelDiv.id];
-            if (view) {
-                if (view.shadow_el) {
-                    candidates.push(view.shadow_el);
-                }
-                if (view.el?.shadowRoot) {
-                    candidates.push(view.el.shadowRoot);
-                }
-                if (view.el) {
-                    candidates.push(view.el);
-                }
-            }
-            const hostById = document.getElementById(panelDiv.id);
-            if (hostById) {
-                candidates.push(hostById);
-            }
-        }
-
-        const directPanelRoot = document.querySelector('.region-panel-root');
-        if (directPanelRoot) {
-            candidates.push(directPanelRoot);
-            const rootNode = directPanelRoot.getRootNode?.();
-            if (rootNode && rootNode !== directPanelRoot) {
-                candidates.push(rootNode);
-            }
-        }
-
-        const directRegionList = document.querySelector('.region-list');
-        if (directRegionList) {
-            const panelRoot = directRegionList.closest?.('.region-panel-root');
-            if (panelRoot) {
-                candidates.push(panelRoot);
-            }
-            const rootNode = directRegionList.getRootNode?.();
-            if (rootNode && rootNode !== directRegionList) {
-                candidates.push(rootNode);
-            }
-        }
-
-        const potentialHosts = document.querySelectorAll?.('.bk-Column') || [];
-        potentialHosts.forEach(host => {
-            if (host?.shadowRoot) {
-                candidates.push(host.shadowRoot);
-            }
-            candidates.push(host);
-        });
-
-        const ShadowRootCtor = window.ShadowRoot;
-
-        for (const candidate of candidates) {
-            if (!candidate) continue;
-            if (typeof Node !== 'undefined' && candidate.nodeType === Node.DOCUMENT_NODE) {
-                continue;
-            }
-            if (ShadowRootCtor && candidate instanceof ShadowRootCtor) {
-                return candidate;
-            }
-            if (ShadowRootCtor && candidate.shadowRoot instanceof ShadowRootCtor) {
-                return candidate.shadowRoot;
-            }
-            if (typeof candidate.querySelector === 'function') {
-                const panelRoot = candidate.classList?.contains('region-panel-root')
-                    ? candidate
-                    : candidate.querySelector('.region-panel-root');
-                if (panelRoot) {
-                    return panelRoot;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    function observeRegionListMutations(root) {
-        if (!root || typeof root.querySelector !== 'function') {
-            return;
-        }
-        if (typeof window.MutationObserver !== 'function') {
-            return;
-        }
-
-        const regionList = root.querySelector('.region-list');
-        if (!regionList || regionListObservers.has(regionList)) {
-            return;
-        }
-
-        const observer = new window.MutationObserver(() => {
-            bindRegionPanelListeners(root);
-        });
-
-        regionListObservers.set(regionList, observer);
-        observer.observe(regionList, { childList: true, subtree: true });
-    }
-
     function handleCopyRegion(id) {
         const regionsModule = app.regions;
         if (!regionsModule?.formatRegionSummary) return;
@@ -294,105 +190,129 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         document.body.removeChild(temp);
     }
 
-    function bindRegionPanelListeners(root) {
-        if (!root || typeof root.querySelectorAll !== 'function') {
-            return;
+    function resolvePanelHost(panelDiv) {
+        if (!panelDiv) return null;
+
+        if (panelDiv.id) {
+            const view = window.Bokeh?.index?.[panelDiv.id];
+            if (view?.shadow_el) {
+                return view.shadow_el;
+            }
+            if (view?.el) {
+                return view.el;
+            }
+            const hostById = document.getElementById(panelDiv.id);
+            if (hostById) {
+                return hostById;
+            }
         }
-        root.querySelectorAll('[data-region-entry]').forEach(entry => {
-            if (entry.dataset.bound === 'true') return;
-            entry.dataset.bound = 'true';
-            entry.addEventListener('click', () => {
-                const id = Number(entry.getAttribute('data-region-entry'));
-                if (Number.isFinite(id)) {
-                    const actions = getActions();
-                    if (actions?.regionSelect && typeof app.store?.dispatch === 'function') {
-                        app.store.dispatch(actions.regionSelect(id));
-                    }
-                }
-            });
-        });
 
-        root.querySelectorAll('[data-region-delete]').forEach(button => {
-            if (button.dataset.bound === 'true') return;
-            button.dataset.bound = 'true';
-            button.addEventListener('click', event => {
-                event.stopPropagation();
-                const id = Number(button.getAttribute('data-region-delete'));
-                if (Number.isFinite(id)) {
-                    const actions = getActions();
-                    if (actions?.regionRemove && typeof app.store?.dispatch === 'function') {
-                        app.store.dispatch(actions.regionRemove(id));
-                    }
-                }
-            });
-        });
+        if (panelDiv.el) {
+            return panelDiv.el;
+        }
 
-        const noteField = root.querySelector('[data-region-note]');
-        if (noteField && noteField.dataset.bound !== 'true') {
-            noteField.dataset.bound = 'true';
-            const regionId = Number(noteField.getAttribute('data-region-note'));
-            const debounced = debounce(value => {
+        return null;
+    }
+
+    function getComposedPath(event) {
+        if (typeof event.composedPath === 'function') {
+            return event.composedPath();
+        }
+
+        const path = [];
+        let current = event.target;
+        while (current) {
+            path.push(current);
+            current = current.parentNode;
+        }
+        path.push(window);
+        return path;
+    }
+
+    function findInPath(event, predicate) {
+        const path = getComposedPath(event);
+        for (const node of path) {
+            if (predicate(node)) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    function getNoteDispatcher(regionId) {
+        if (!noteDispatchers.has(regionId)) {
+            noteDispatchers.set(regionId, debounce(value => {
                 if (Number.isFinite(regionId)) {
                     const actions = getActions();
                     if (actions?.regionSetNote && typeof app.store?.dispatch === 'function') {
                         app.store.dispatch(actions.regionSetNote(regionId, value));
                     }
                 }
-            }, 250);
-            noteField.addEventListener('input', event => {
-                debounced(event.target.value);
-            });
+            }, 250));
         }
-
-        const copyButton = root.querySelector('[data-region-copy]');
-        if (copyButton && copyButton.dataset.bound !== 'true') {
-            copyButton.dataset.bound = 'true';
-            copyButton.addEventListener('click', () => {
-                const id = Number(copyButton.getAttribute('data-region-copy'));
-                if (Number.isFinite(id)) {
-                    handleCopyRegion(id);
-                }
-            });
-        }
+        return noteDispatchers.get(regionId);
     }
 
-    function attachRegionPanelListeners(panelDiv) {
-        if (!panelDiv) return;
-
-        const root = getPanelRoot(panelDiv);
-        if (root) {
-            bindRegionPanelListeners(root);
-            observeRegionListMutations(root);
+    function ensureDelegatedListeners(panelDiv) {
+        const host = resolvePanelHost(panelDiv);
+        if (!host || hostListenerRegistry.has(host)) {
             return;
         }
 
-        if (typeof window.MutationObserver !== 'function') {
-            return;
-        }
-
-        if (regionPanelObservers.has(panelDiv)) {
-            return;
-        }
-
-        const observer = new window.MutationObserver(() => {
-            const resolvedRoot = getPanelRoot(panelDiv);
-            if (!resolvedRoot) {
+        const handleClick = event => {
+            const deleteNode = findInPath(event, node => node?.dataset?.regionDelete);
+            if (deleteNode) {
+                event.preventDefault();
+                const id = Number(deleteNode.dataset.regionDelete);
+                if (Number.isFinite(id)) {
+                    const actions = getActions();
+                    if (actions?.regionRemove && typeof app.store?.dispatch === 'function') {
+                        app.store.dispatch(actions.regionRemove(id));
+                    }
+                }
                 return;
             }
 
-            observer.disconnect();
-            regionPanelObservers.delete(panelDiv);
-            bindRegionPanelListeners(resolvedRoot);
-            observeRegionListMutations(resolvedRoot);
-        });
+            const copyNode = findInPath(event, node => node?.dataset?.regionCopy);
+            if (copyNode) {
+                event.preventDefault();
+                const id = Number(copyNode.dataset.regionCopy);
+                if (Number.isFinite(id)) {
+                    handleCopyRegion(id);
+                }
+                return;
+            }
 
-        const target = document.body || document.documentElement;
-        if (!target) {
-            return;
-        }
+            const entryNode = findInPath(event, node => node?.dataset?.regionEntry);
+            if (entryNode) {
+                const id = Number(entryNode.dataset.regionEntry);
+                if (Number.isFinite(id)) {
+                    const actions = getActions();
+                    if (actions?.regionSelect && typeof app.store?.dispatch === 'function') {
+                        app.store.dispatch(actions.regionSelect(id));
+                    }
+                }
+            }
+        };
 
-        regionPanelObservers.set(panelDiv, observer);
-        observer.observe(target, { childList: true, subtree: true });
+        const handleInput = event => {
+            const noteNode = findInPath(event, node => node?.dataset?.regionNote);
+            if (!noteNode) {
+                return;
+            }
+
+            const regionId = Number(noteNode.dataset.regionNote);
+            if (!Number.isFinite(regionId)) {
+                return;
+            }
+
+            const dispatcher = getNoteDispatcher(regionId);
+            dispatcher(typeof noteNode.value === 'string' ? noteNode.value : event.target?.value ?? '');
+        };
+
+        host.addEventListener('click', handleClick);
+        host.addEventListener('input', handleInput);
+        hostListenerRegistry.set(host, { handleClick, handleInput });
     }
 
     function renderRegionPanel(panelDiv, regionList, selectedId, state) {
@@ -400,10 +320,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const html = buildRegionPanelHtml(regionList, selectedId, state);
         if (panelDiv.text !== html) {
             panelDiv.text = html;
-            setTimeout(() => attachRegionPanelListeners(panelDiv), 0);
-        } else {
-            attachRegionPanelListeners(panelDiv);
         }
+        ensureDelegatedListeners(panelDiv);
     }
 
     app.services = app.services || {};
@@ -412,11 +330,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         buildRegionDetailHtml,
         buildRegionPanelHtml,
         buildSpectrumHtml,
-        bindRegionPanelListeners,
-        observeRegionListMutations,
-        attachRegionPanelListeners,
+        ensureDelegatedListeners,
+        resolvePanelHost,
         handleCopyRegion,
-        getPanelRoot,
         renderRegionPanel,
     };
 })(window.NoiseSurveyApp);
