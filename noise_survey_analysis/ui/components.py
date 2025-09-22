@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 def create_region_panel_div() -> Div:
     """Create the static container for the region analysis panel."""
-    return Div(
+    panel_div = Div(
         text="<div class='region-panel-empty'>No regions defined.</div>",
         width=320,
         height=500,
@@ -59,6 +59,15 @@ def create_region_panel_div() -> Div:
             "background-color": "#fafafa"
         }
     )
+
+    panel_div.js_on_change('text', CustomJS(code="""
+        const renderer = window.NoiseSurveyApp?.services?.regionPanelRenderer;
+        if (renderer && typeof renderer.ensureDelegatedListeners === 'function') {
+            renderer.ensureDelegatedListeners(cb_obj);
+        }
+    """))
+
+    return panel_div
 
 class TimeSeriesComponent:
     """
