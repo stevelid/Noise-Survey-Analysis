@@ -25,6 +25,7 @@ This tool provides a powerful, interactive dashboard for analyzing noise survey 
     *   The audio directory scanner now uses `soundfile` (libsndfile) to read durations, enabling support for common formats like WAV, FLAC, OGG, etc. WAV remains supported even without `soundfile`.
 *   **Keyboard Navigation:** Use arrow keys for fine-grained time-stepping.
 *   **Static HTML Export:** Generate a single, self-contained HTML file of the dashboard for easy sharing and reporting (audio playback is disabled in static mode).
+*   **Flexible Region Management:** Build multi-segment regions, merge related selections, and append new segments with the dedicated Add Area mode while metrics update automatically for the combined duration.
 
 ## Getting Started
 

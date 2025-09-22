@@ -147,7 +147,10 @@ describe('NoiseSurveyApp.classes', () => {
 
     chart.syncRegions([{ id: 1, positionId: 'P1', start: 10, end: 20 }], 1);
     expect(chartModel.add_layout).toHaveBeenCalledTimes(1);
-    const annotation = chart.regionAnnotations.get(1);
+    const annotations = chart.regionAnnotations.get(1);
+    expect(Array.isArray(annotations)).toBe(true);
+    expect(annotations).toHaveLength(1);
+    const annotation = annotations[0];
     expect(annotation).toBeDefined();
     expect(annotation.visible).toBe(true);
     expect(annotation.line_width).toBe(3);

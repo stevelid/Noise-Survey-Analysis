@@ -218,9 +218,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function updateButtons(models, hasSelection, selectedRegion, state) {
-        const { copyButton, deleteButton, addAreaButton, mergeButton } = models;
+        const { copyButton, deleteButton, addAreaButton, mergeButton, mergeSelect } = models;
         const addAreaTargetId = state?.regions?.addAreaTargetId ?? null;
         const hasOtherRegions = state?.regions?.allIds.length > 1;
+        const mergeOptionsAvailable = Array.isArray(mergeSelect?.options) && mergeSelect.options.length > 0;
 
         if (copyButton) copyButton.disabled = !hasSelection;
         if (deleteButton) deleteButton.disabled = !hasSelection;
@@ -233,8 +234,41 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
         if (mergeButton) {
-            mergeButton.disabled = !(hasSelection && hasOtherRegions);
+            mergeButton.disabled = !(hasSelection && hasOtherRegions && mergeOptionsAvailable);
         }
+        if (mergeSelect) {
+            mergeSelect.disabled = !(hasSelection && hasOtherRegions && mergeOptionsAvailable);
+        }
+    }
+
+    function updateMergeSelect(mergeSelect, regionList, selectedId, state) {
+        if (!mergeSelect) {
+            return { selectedSourceId: null };
+        }
+
+        const options = regionList
+            .filter(region => region.id !== selectedId)
+            .map(region => [String(region.id), buildRegionLabel(region, state)]);
+
+        if (!ensureArrayEquals(mergeSelect.options || [], options)) {
+            mergeSelect.options = options;
+        }
+
+        if (!options.length) {
+            if (mergeSelect.value !== '') {
+                mergeSelect.value = '';
+            }
+            mergeSelect.disabled = true;
+            return { selectedSourceId: null };
+        }
+
+        const optionValues = options.map(option => option[0]);
+        const nextValue = optionValues.includes(mergeSelect.value) ? mergeSelect.value : options[0][0];
+        if (mergeSelect.value !== nextValue) {
+            mergeSelect.value = nextValue;
+        }
+
+        return { selectedSourceId: Number(mergeSelect.value) || null };
     }
 
     function updateNoteInput(noteInput, region) {
@@ -272,9 +306,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function renderRegionPanel(panelModels, regionList, selectedId, state) {
         if (!panelModels) return;
 
-        const { select, messageDiv, detail, noteInput, metricsDiv, spectrumDiv } = panelModels;
+        const { select, messageDiv, detail, noteInput, metricsDiv, spectrumDiv, mergeSelect } = panelModels;
 
         const { selectedRegion } = updateSelect(select, regionList, selectedId, state);
+        updateMergeSelect(mergeSelect, regionList, selectedId, state);
         const hasRegions = regionList.length > 0;
         const hasSelection = Boolean(selectedRegion);
 
