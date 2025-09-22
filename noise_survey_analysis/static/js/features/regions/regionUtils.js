@@ -25,7 +25,46 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const EPSILON = 1e-12;
 
-    function calcLAeq(values) {
+    function getRegionAreas(region) {
+        if (!region) return [];
+        if (Array.isArray(region.areas) && region.areas.length) {
+            return region.areas;
+        }
+        if (Number.isFinite(region.start) && Number.isFinite(region.end)) {
+            return [{ start: region.start, end: region.end }];
+        }
+        return [];
+    }
+
+    function sumAreaDurations(areas) {
+        if (!Array.isArray(areas) || !areas.length) return 0;
+        return areas.reduce((total, area) => {
+            const start = Number(area?.start);
+            const end = Number(area?.end);
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
+                return total;
+            }
+            return total + (end - start);
+        }, 0);
+    }
+
+    function sliceTimeSeriesForAreas(timestamps, values, areas) {
+        if (!Array.isArray(areas) || !areas.length) return [];
+        const aggregated = [];
+        areas.forEach(area => {
+            const start = Number(area?.start);
+            const end = Number(area?.end);
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
+                return;
+            }
+            const slice = sliceTimeSeries(timestamps, values, start, end);
+            if (slice.length) {
+                aggregated.push(...slice);
+            }
+        });
+        return aggregated;
+    }
+function calcLAeq(values) {
         const finiteValues = toFiniteArray(values);
         if (!finiteValues.length) return null;
 
@@ -119,39 +158,52 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return { startIdx, endIdx };
     }
 
-    function computeSpectrumAverage(preparedData, start, end) {
+    function computeSpectrumAverage(preparedData, areas) {
         if (!preparedData || !preparedData.levels_flat_transposed) {
             return { labels: [], values: [] };
         }
-        const min = Math.min(start, end);
-        const max = Math.max(start, end);
+        const validAreas = Array.isArray(areas) && areas.length ? areas : [];
+        if (!validAreas.length) {
+            return { labels: preparedData.frequency_labels || [], values: [] };
+        }
         const times = preparedData.times_ms;
-        if (!times || !times.length) {
-            return { labels: preparedData.frequency_labels || [], values: [] };
-        }
-        const bounds = clampRangeIndices(times, min, max);
-        if (!bounds) {
-            return { labels: preparedData.frequency_labels || [], values: [] };
-        }
-
+        const levels = preparedData.levels_flat_transposed;
         const nFreqs = preparedData.n_freqs;
         const nTimes = preparedData.n_times;
-        const levels = preparedData.levels_flat_transposed;
-        if (!Number.isFinite(nFreqs) || !Number.isFinite(nTimes) || !levels) {
+        if (!Array.isArray(times) || !levels || !Number.isFinite(nFreqs) || !Number.isFinite(nTimes)) {
             return { labels: preparedData.frequency_labels || [], values: [] };
         }
 
-        const values = new Array(nFreqs);
-        for (let freqIdx = 0; freqIdx < nFreqs; freqIdx++) {
-            const bandValues = [];
-            for (let timeIdx = bounds.startIdx; timeIdx <= bounds.endIdx; timeIdx++) {
-                const value = Number(levels[freqIdx * nTimes + timeIdx]);
-                if (Number.isFinite(value)) {
-                    bandValues.push(value);
+        const energySums = new Array(nFreqs).fill(0);
+        const counts = new Array(nFreqs).fill(0);
+
+        validAreas.forEach(area => {
+            const start = Number(area?.start);
+            const end = Number(area?.end);
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
+                return;
+            }
+            const range = clampRangeIndices(times, start, end);
+            if (!range) {
+                return;
+            }
+            for (let freqIndex = 0; freqIndex < nFreqs; freqIndex++) {
+                for (let timeIndex = range.startIdx; range && timeIndex <= range.endIdx; timeIndex++) {
+                    const value = levels[freqIndex * nTimes + timeIndex];
+                    if (!Number.isFinite(value)) continue;
+                    energySums[freqIndex] += Math.pow(10, value / 10);
+                    counts[freqIndex] += 1;
                 }
             }
-            values[freqIdx] = bandValues.length ? calcLAeq(bandValues) : null;
-        }
+        });
+
+        const values = energySums.map((sum, idx) => {
+            if (!counts[idx] || sum <= EPSILON) {
+                return null;
+            }
+            return 10 * Math.log10(sum / counts[idx]);
+        });
+
         return {
             labels: preparedData.frequency_labels || [],
             values
@@ -160,12 +212,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function chooseDataset(region, sources) {
         if (!sources) return null;
-        const min = Math.min(region.start, region.end);
-        const max = Math.max(region.start, region.end);
+        const areas = getRegionAreas(region);
+        if (!areas.length) return null;
 
         const logData = sources.log?.data;
         if (logData?.Datetime && logData.LAeq) {
-            const laeqLog = sliceTimeSeries(logData.Datetime, logData.LAeq, min, max);
+            const laeqLog = sliceTimeSeriesForAreas(logData.Datetime, logData.LAeq, areas);
             if (laeqLog.length) {
                 return {
                     dataset: 'log',
@@ -177,7 +229,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const overviewData = sources.overview?.data;
         if (overviewData?.Datetime && overviewData.LAeq) {
-            const laeqOverview = sliceTimeSeries(overviewData.Datetime, overviewData.LAeq, min, max);
+            const laeqOverview = sliceTimeSeriesForAreas(overviewData.Datetime, overviewData.LAeq, areas);
             if (laeqOverview.length) {
                 return {
                     dataset: 'overview',
@@ -191,9 +243,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function computeRegionMetrics(region, state, dataCache, models) {
+        const areas = getRegionAreas(region);
+        const durationMs = sumAreaDurations(areas);
         const sources = models?.timeSeriesSources?.[region.positionId];
         const selection = chooseDataset(region, sources);
-        const durationMs = Math.max(0, region.end - region.start);
 
         if (!selection) {
             return {
@@ -212,7 +265,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         let lafmaxValues = selection.laeqValues;
         const lafmaxField = selection.data?.LAFmax;
         if (lafmaxField) {
-            const extracted = sliceTimeSeries(selection.data.Datetime, lafmaxField, region.start, region.end);
+            const extracted = sliceTimeSeriesForAreas(selection.data.Datetime, lafmaxField, areas);
             if (extracted.length) {
                 lafmaxValues = extracted;
             }
@@ -230,7 +283,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             spectralSource = prepared?.overview?.prepared_params?.[selectedParam];
         }
 
-        const spectrum = computeSpectrumAverage(spectralSource, region.start, region.end);
+        const spectrum = computeSpectrumAverage(spectralSource, areas);
 
         return {
             laeq,
@@ -284,14 +337,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function exportRegions(state) {
         const regionsState = state?.regions;
         if (!regionsState) return '[]';
-        const exportPayload = regionsState.allIds.map(id => regionsState.byId[id]).filter(Boolean).map(region => ({
-            id: region.id,
-            positionId: region.positionId,
-            start: region.start,
-            end: region.end,
-            note: region.note || '',
-            metrics: region.metrics || null
-        }));
+        const exportPayload = regionsState.allIds
+            .map(id => regionsState.byId[id])
+            .filter(Boolean)
+            .map(region => ({
+                id: region.id,
+                positionId: region.positionId,
+                areas: getRegionAreas(region).map(area => ({ start: area.start, end: area.end })),
+                start: region.start,
+                end: region.end,
+                note: region.note || '',
+                metrics: region.metrics || null
+            }));
         return JSON.stringify(exportPayload, null, 2);
     }
 
@@ -301,14 +358,25 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (!Array.isArray(parsed)) {
                 throw new Error('Imported data must be an array.');
             }
-            return parsed.map(item => ({
-                id: Number.isFinite(item?.id) ? item.id : undefined,
-                positionId: item?.positionId,
-                start: item?.start,
-                end: item?.end,
-                note: typeof item?.note === 'string' ? item.note : '',
-                metrics: item?.metrics || null
-            })).filter(region => Number.isFinite(region.start) && Number.isFinite(region.end) && region.positionId);
+            return parsed.map(item => {
+                const positionId = item?.positionId;
+                const rawAreas = Array.isArray(item?.areas) && item.areas.length
+                    ? item.areas
+                    : [{ start: item?.start, end: item?.end }];
+                const areas = rawAreas
+                    .map(area => ({ start: Number(area?.start), end: Number(area?.end) }))
+                    .filter(area => Number.isFinite(area.start) && Number.isFinite(area.end) && area.start !== area.end);
+                if (!positionId || !areas.length) {
+                    return null;
+                }
+                return {
+                    id: Number.isFinite(item?.id) ? item.id : undefined,
+                    positionId,
+                    areas,
+                    note: typeof item?.note === 'string' ? item.note : '',
+                    metrics: item?.metrics || null
+                };
+            }).filter(Boolean);
         } catch (error) {
             console.error('[Regions] Failed to import regions:', error);
             return [];
@@ -327,21 +395,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function formatTimeRange(start, end) {
+        if (!Number.isFinite(start) || !Number.isFinite(end)) return 'N/A';
         const startDate = new Date(Math.min(start, end));
         const endDate = new Date(Math.max(start, end));
         const format = date => date.toISOString().split('T')[1].replace('Z', '');
-        return `${format(startDate)}–${format(endDate)}`;
+        return `${format(startDate)}-${format(endDate)}`;
+    }
+
+    function formatAreaList(areas) {
+        if (!Array.isArray(areas) || !areas.length) return 'N/A';
+        return areas.map(area => formatTimeRange(area.start, area.end)).join(' + ');
     }
 
     function formatRegionSummary(region, metrics, positionLabel) {
-        const timeRange = formatTimeRange(region.start, region.end);
+        const areas = getRegionAreas(region);
+        const timeDescription = formatAreaList(areas);
         const duration = formatDuration(metrics?.durationMs);
         const laeq = metrics?.laeq !== null && metrics?.laeq !== undefined ? metrics.laeq.toFixed(1) : 'N/A';
         const la90 = metrics?.la90Available && metrics?.la90 !== null ? metrics.la90.toFixed(1) : 'N/A';
         const lafmax = metrics?.lafmax !== null && metrics?.lafmax !== undefined ? metrics.lafmax.toFixed(1) : 'N/A';
-        return `Region ${region.id}, ${positionLabel}, ${timeRange}, ${duration}, LAeq ${laeq} dB, LAF90 ${la90}, LAFmax ${lafmax} dB`;
+        return `Region ${region.id}, ${positionLabel}, ${timeDescription}, ${duration}, LAeq ${laeq} dB, LAF90 ${la90}, LAFmax ${lafmax} dB`;
     }
-
     function triggerDownload(filename, text) {
         const blob = new Blob([text], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -413,3 +487,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.calcMetrics = metrics;
     app.regions = utils;
 })(window.NoiseSurveyApp);
+
+
+

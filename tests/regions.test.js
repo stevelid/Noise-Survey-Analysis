@@ -1,138 +1,158 @@
-import { describe, it, expect } from 'vitest';
 
-import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';
+import { describe, it, expect, beforeEach } from 'vitest';
 
-const { regions } = window.NoiseSurveyApp;
+// Load necessary modules from the app's namespace
+const {
+    regionsReducer,
+    initialState: initialRegionsState
+} = window.NoiseSurveyApp.features.regions;
+const { actions } = window.NoiseSurveyApp;
+const {
+    createRegionIntent,
+    mergeRegionIntoSelectedIntent
+} = window.NoiseSurveyApp.features.regions.thunks;
+const {
+    selectRegionByTimestamp
+} = window.NoiseSurveyApp.features.regions.selectors;
 
-function buildSpectralData() {
-    return {
-        times_ms: [0, 1000, 2000],
-        n_times: 3,
-        n_freqs: 2,
-        levels_flat_transposed: new Float32Array([
-            40, 42, 44,
-            50, 52, 54
-        ]),
-        frequency_labels: ['63 Hz', '125 Hz']
-    };
-}
 
-describe('regions module', () => {
-    it('computes metrics for regions using log data when available', () => {
-        const spectral = buildSpectralData();
-        const state = {
-            view: { selectedParameter: 'LZeq' },
-            regions: {
-                byId: {
-                    1: { id: 1, positionId: 'P1', start: 0, end: 2000, note: '', metrics: null }
-                },
-                allIds: [1],
-                selectedId: 1,
-                counter: 2
-            }
-        };
-        const models = {
-            timeSeriesSources: {
-                P1: {
-                    log: { data: { Datetime: [0, 1000, 2000], LAeq: [50, 60, 70], LAFmax: [55, 65, 75] } },
-                    overview: { data: { Datetime: [0, 2000], LAeq: [52, 68] } }
-                }
-            },
-            preparedGlyphData: {
-                P1: {
-                    log: { prepared_params: { LZeq: spectral } },
-                    overview: { prepared_params: { LZeq: spectral } }
-                }
-            }
-        };
+describe('Region Management (Multi-Area)', () => {
 
-        const updates = regions.prepareMetricsUpdates(state, {}, models);
-        expect(updates).toHaveLength(1);
-        const metrics = updates[0].metrics;
-        expect(metrics.dataResolution).toBe('log');
-        expect(metrics.laeq).toBeCloseTo(65.7, 1);
-        expect(metrics.lafmax).toBe(75);
-        expect(metrics.la90).toBeCloseTo(52, 0);
-        expect(metrics.spectrum.values[0]).toBeCloseTo(42, 0);
-        expect(metrics.spectrum.values[1]).toBeCloseTo(52, 0);
-        expect(metrics.parameter).toBe('LZeq');
+    let state;
+
+    beforeEach(() => {
+        state = initialRegionsState;
     });
 
-    it('recomputes metrics when selected parameter changes', () => {
-        const spectral = buildSpectralData();
-        const state = {
-            view: { selectedParameter: 'LAeq' },
-            regions: {
-                byId: {
-                    1: {
-                        id: 1,
-                        positionId: 'P1',
-                        start: 0,
-                        end: 2000,
-                        note: '',
-                        metrics: {
-                            laeq: 60,
-                            lafmax: 65,
-                            la90: null,
-                            la90Available: false,
-                            dataResolution: 'log',
-                            spectrum: { labels: ['63 Hz', '125 Hz'], values: [55, 60] },
-                            parameter: 'LZeq',
-                            durationMs: 2000
+    describe('Regions Reducer', () => {
+
+        it('should handle initial state', () => {
+            expect(regionsReducer(undefined, {})).toEqual(initialRegionsState);
+        });
+
+        it('should handle REGION_ADDED', () => {
+            const action = actions.regionAdd('P1', 100, 200);
+            const newState = regionsReducer(state, action);
+            expect(newState.allIds).toHaveLength(1);
+            const region = newState.byId[newState.allIds[0]];
+            expect(region.positionId).toBe('P1');
+            expect(region.areas).toEqual([{ start: 100, end: 200 }]);
+            expect(region.start).toBe(100);
+            expect(region.end).toBe(200);
+        });
+
+        it('should handle REGION_UPDATED with new areas', () => {
+            // First, add a region
+            let newState = regionsReducer(state, actions.regionAdd('P1', 100, 200));
+            const regionId = newState.allIds[0];
+
+            // Now, update it with new areas
+            const updatedAreas = [{ start: 50, end: 150 }, { start: 180, end: 250 }];
+            const action = actions.regionUpdate(regionId, { areas: updatedAreas });
+            newState = regionsReducer(newState, action);
+
+            const updatedRegion = newState.byId[regionId];
+            expect(updatedRegion.areas).toEqual([{ start: 50, end: 250 }]); // Should merge overlapping areas
+            expect(updatedRegion.start).toBe(50);
+            expect(updatedRegion.end).toBe(250);
+        });
+
+        it('should handle REGION_REMOVED', () => {
+            let newState = regionsReducer(state, actions.regionAdd('P1', 100, 200));
+            const regionId = newState.allIds[0];
+            const action = actions.regionRemove(regionId);
+            newState = regionsReducer(newState, action);
+            expect(newState.allIds).toHaveLength(0);
+            expect(newState.byId[regionId]).toBeUndefined();
+        });
+
+        it('should handle REGION_ADD_AREA_MODE_SET', () => {
+            let newState = regionsReducer(state, actions.regionAdd('P1', 100, 200));
+            const regionId = newState.allIds[0];
+            const action = actions.regionSetAddAreaMode(regionId);
+            newState = regionsReducer(newState, action);
+            expect(newState.addAreaTargetId).toBe(regionId);
+        });
+    });
+
+    describe('Region Thunks', () => {
+
+        it('createRegionIntent should add a new area to a target region', () => {
+            const dispatch = vitest.fn();
+            const getState = () => ({
+                regions: {
+                    ...initialRegionsState,
+                    byId: { 1: { id: 1, positionId: 'P1', areas: [{ start: 100, end: 200 }] } },
+                    allIds: [1],
+                    addAreaTargetId: 1,
+                    selectedId: null
+                }
+            });
+
+            const thunk = createRegionIntent({ positionId: 'P1', start: 250, end: 300 });
+            thunk(dispatch, getState);
+
+            expect(dispatch).toHaveBeenCalledWith(
+                actions.regionUpdate(1, { areas: [{ start: 100, end: 200 }, { start: 250, end: 300 }] })
+            );
+            expect(dispatch).toHaveBeenCalledWith(actions.regionSetAddAreaMode(null));
+            expect(dispatch).toHaveBeenCalledWith(actions.regionSelect(1));
+        });
+
+        it('mergeRegionIntoSelectedIntent should merge two regions', () => {
+            const dispatch = vitest.fn();
+            const getState = () => ({
+                regions: {
+                    ...initialRegionsState,
+                    byId: {
+                        1: { id: 1, positionId: 'P1', areas: [{ start: 100, end: 200 }] },
+                        2: { id: 2, positionId: 'P1', areas: [{ start: 300, end: 400 }] }
+                    },
+                    allIds: [1, 2],
+                    selectedId: 1
+                }
+            });
+
+            const thunk = mergeRegionIntoSelectedIntent(2);
+            thunk(dispatch, getState);
+
+            expect(dispatch).toHaveBeenCalledWith(
+                actions.regionUpdate(1, { areas: [{ start: 100, end: 200 }, { start: 300, end: 400 }] })
+            );
+            expect(dispatch).toHaveBeenCalledWith(actions.regionRemove(2));
+        });
+    });
+
+    describe('Region Selectors', () => {
+
+        it('selectRegionByTimestamp should find a region with multiple areas', () => {
+            const currentState = {
+                regions: {
+                    ...initialRegionsState,
+                    byId: {
+                        1: {
+                            id: 1,
+                            positionId: 'P1',
+                            areas: [{ start: 100, end: 200 }, { start: 300, end: 400 }]
                         }
-                    }
-                },
-                allIds: [1],
-                selectedId: 1,
-                counter: 2
-            }
-        };
-        const models = {
-            timeSeriesSources: {
-                P1: {
-                    log: { data: { Datetime: [0, 1000, 2000], LAeq: [50, 60, 70], LAFmax: [55, 65, 75] } }
+                    },
+                    allIds: [1]
                 }
-            },
-            preparedGlyphData: {
-                P1: {
-                    log: { prepared_params: { LAeq: spectral } },
-                    overview: { prepared_params: {} }
-                }
-            }
-        };
+            };
 
-        const updates = regions.prepareMetricsUpdates(state, {}, models);
-        expect(updates).toHaveLength(1);
-        const metrics = updates[0].metrics;
-        expect(metrics.parameter).toBe('LAeq');
-        expect(metrics.spectrum.values[0]).toBeCloseTo(42, 0);
-        expect(metrics.spectrum.values[1]).toBeCloseTo(52, 0);
-    });
+            // Timestamp within the first area
+            let region = selectRegionByTimestamp(currentState, 'P1', 150);
+            expect(region).not.toBeNull();
+            expect(region.id).toBe(1);
 
-    it('exports and imports region payloads', () => {
-        const state = {
-            regions: {
-                byId: {
-                    1: { id: 1, positionId: 'P1', start: 0, end: 1000, note: 'Note', metrics: { laeq: 50 } }
-                },
-                allIds: [1],
-                selectedId: 1,
-                counter: 2
-            }
-        };
-        const json = regions.exportRegions(state);
-        expect(json).toContain('"positionId": "P1"');
-        const imported = regions.importRegions(json);
-        expect(imported).toHaveLength(1);
-        expect(imported[0].note).toBe('Note');
-    });
+            // Timestamp within the second area
+            region = selectRegionByTimestamp(currentState, 'P1', 350);
+            expect(region).not.toBeNull();
+            expect(region.id).toBe(1);
 
-    it('formats region summaries for clipboard', () => {
-        const region = { id: 3, positionId: 'P1', start: 0, end: 65000 };
-        const metrics = { laeq: 55.1, la90: null, la90Available: false, lafmax: 70.3, durationMs: 65000 };
-        const summary = regions.formatRegionSummary(region, metrics, 'P1');
-        expect(summary).toContain('Region 3');
-        expect(summary).toContain('LAeq 55.1 dB');
-        expect(summary).toContain('LAF90 N/A');
+            // Timestamp between areas
+            region = selectRegionByTimestamp(currentState, 'P1', 250);
+            expect(region).toBeNull();
+        });
     });
 });

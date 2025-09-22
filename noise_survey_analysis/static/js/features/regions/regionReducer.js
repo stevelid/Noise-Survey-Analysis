@@ -1,7 +1,7 @@
 // noise_survey_analysis/static/js/features/regions/regionReducer.js
 
 /**
- * @fileoverview Reducer for region entities.
+ * @fileoverview Reducer for region entities supporting multi-area regions.
  */
 
 window.NoiseSurveyApp = window.NoiseSurveyApp || {};
@@ -14,7 +14,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         byId: {},
         allIds: [],
         selectedId: null,
-        counter: 1
+        counter: 1,
+        addAreaTargetId: null
     };
 
     function normalizeRegionBounds(start, end) {
@@ -29,25 +30,101 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return { start: normalizedStart, end: normalizedEnd };
     }
 
+    function normalizeArea(areaOrStart, maybeEnd) {
+        if (areaOrStart == null) {
+            return null;
+        }
+        if (typeof areaOrStart === 'object') {
+            return normalizeRegionBounds(areaOrStart.start, areaOrStart.end);
+        }
+        return normalizeRegionBounds(areaOrStart, maybeEnd);
+    }
+
+    function cloneAreas(areas) {
+        if (!Array.isArray(areas)) {
+            return [];
+        }
+        return areas.map(area => ({ start: area.start, end: area.end }));
+    }
+
+    function normalizeAreaList(list) {
+        const normalized = [];
+        if (Array.isArray(list)) {
+            list.forEach(item => {
+                const area = normalizeArea(item);
+                if (area) {
+                    normalized.push(area);
+                }
+            });
+        }
+        if (!normalized.length) {
+            return [];
+        }
+        normalized.sort((a, b) => {
+            if (a.start === b.start) {
+                return a.end - b.end;
+            }
+            return a.start - b.start;
+        });
+        const merged = [Object.assign({}, normalized[0])];
+        for (let i = 1; i < normalized.length; i++) {
+            const current = normalized[i];
+            const last = merged[merged.length - 1];
+            if (current.start <= last.end) {
+                if (current.end > last.end) {
+                    last.end = current.end;
+                }
+            } else {
+                merged.push(Object.assign({}, current));
+            }
+        }
+        return merged;
+    }
+
+    function summarizeAreas(areas) {
+        if (!Array.isArray(areas) || !areas.length) {
+            return { start: null, end: null };
+        }
+        return {
+            start: areas[0].start,
+            end: areas[areas.length - 1].end
+        };
+    }
+
+    function ensureRegionAreas(region) {
+        if (Array.isArray(region.areas) && region.areas.length) {
+            const normalized = normalizeAreaList(region.areas);
+            if (normalized.length) {
+                return normalized;
+            }
+        }
+        const fallback = normalizeRegionBounds(region.start, region.end);
+        return fallback ? [fallback] : [];
+    }
+
     function addSingleRegion(state, payload) {
         const { positionId, start, end } = payload || {};
         if (!positionId) {
             return state;
         }
-        const bounds = normalizeRegionBounds(start, end);
-        if (!bounds) {
+        const area = normalizeRegionBounds(start, end);
+        if (!area) {
             return state;
         }
         const id = state.counter;
+        const areas = [area];
+        const summary = summarizeAreas(areas);
         const newRegion = {
             id,
             positionId,
-            start: bounds.start,
-            end: bounds.end,
+            areas,
+            start: summary.start,
+            end: summary.end,
             note: '',
             metrics: null
         };
         return {
+            ...state,
             byId: { ...state.byId, [id]: newRegion },
             allIds: [...state.allIds, id],
             selectedId: id,
@@ -60,19 +137,66 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!existing) {
             return state;
         }
-        let updated = { ...existing, ...changes };
-        if (Object.prototype.hasOwnProperty.call(changes, 'start') || Object.prototype.hasOwnProperty.call(changes, 'end')) {
-            const candidateBounds = normalizeRegionBounds(
-                Object.prototype.hasOwnProperty.call(changes, 'start') ? changes.start : existing.start,
-                Object.prototype.hasOwnProperty.call(changes, 'end') ? changes.end : existing.end
-            );
-            if (!candidateBounds) {
+
+        const baseAreas = ensureRegionAreas(existing);
+        let nextAreas = cloneAreas(baseAreas);
+        let areasMutated = false;
+
+        if (Object.prototype.hasOwnProperty.call(changes, 'areas')) {
+            const normalized = normalizeAreaList(changes.areas);
+            if (!normalized.length) {
                 return state;
             }
-            updated.start = candidateBounds.start;
-            updated.end = candidateBounds.end;
-            updated.metrics = null;
+            nextAreas = normalized;
+            areasMutated = true;
         }
+
+        if (Object.prototype.hasOwnProperty.call(changes, 'start')) {
+            const newStart = Number(changes.start);
+            if (!Number.isFinite(newStart)) {
+                return state;
+            }
+            const first = nextAreas[0];
+            if (!first || newStart >= first.end) {
+                return state;
+            }
+            nextAreas = normalizeAreaList([{ start: newStart, end: first.end }, ...nextAreas.slice(1)]);
+            areasMutated = true;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(changes, 'end')) {
+            const newEnd = Number(changes.end);
+            if (!Number.isFinite(newEnd)) {
+                return state;
+            }
+            const lastIndex = nextAreas.length - 1;
+            const last = nextAreas[lastIndex];
+            if (!last || newEnd <= last.start) {
+                return state;
+            }
+            nextAreas = normalizeAreaList([...nextAreas.slice(0, lastIndex), { start: last.start, end: newEnd }]);
+            areasMutated = true;
+        }
+
+        const summary = summarizeAreas(nextAreas);
+        const updated = {
+            ...existing,
+            ...changes,
+            areas: nextAreas,
+            start: summary.start,
+            end: summary.end
+        };
+
+        if (areasMutated) {
+            updated.metrics = null;
+        } else if (Object.prototype.hasOwnProperty.call(changes, 'metrics')) {
+            updated.metrics = changes.metrics || null;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(changes, 'note')) {
+            updated.note = typeof changes.note === 'string' ? changes.note : '';
+        }
+
         return {
             ...state,
             byId: { ...state.byId, [id]: updated }
@@ -80,18 +204,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function removeRegion(state, id) {
-        if (!id || !state.byId[id]) {
+        if (!Number.isFinite(id) || !state.byId[id]) {
             return state;
         }
         const newById = { ...state.byId };
         delete newById[id];
         const newAllIds = state.allIds.filter(regionId => regionId !== id);
         const newSelectedId = state.selectedId === id ? null : state.selectedId;
+        const newAddAreaTargetId = state.addAreaTargetId === id ? null : state.addAreaTargetId;
         return {
             ...state,
             byId: newById,
             allIds: newAllIds,
-            selectedId: newSelectedId
+            selectedId: newSelectedId,
+            addAreaTargetId: newAddAreaTargetId
         };
     }
 
@@ -102,15 +228,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const newById = { ...state.byId };
         const newAllIds = [...state.allIds];
         let nextCounter = state.counter;
-        let createdAny = false;
-        let fallbackSelectedId = null;
+        let selectedId = state.selectedId;
 
         regions.forEach(region => {
             if (!region) return;
-            const bounds = normalizeRegionBounds(region.start, region.end);
-            if (!bounds) return;
             const positionId = region.positionId;
             if (!positionId) return;
+            const areas = normalizeAreaList(region.areas && region.areas.length ? region.areas : [region]);
+            if (!areas.length) return;
 
             let candidateId = Number.isFinite(region.id) ? region.id : null;
             if (candidateId === null || Object.prototype.hasOwnProperty.call(newById, candidateId)) {
@@ -119,79 +244,67 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     candidateId += 1;
                 }
             }
-
             nextCounter = Math.max(nextCounter, candidateId + 1);
 
+            const summary = summarizeAreas(areas);
             newById[candidateId] = {
                 id: candidateId,
                 positionId,
-                start: bounds.start,
-                end: bounds.end,
+                areas,
+                start: summary.start,
+                end: summary.end,
                 note: typeof region.note === 'string' ? region.note : '',
                 metrics: region.metrics || null
             };
-
-            if (!newAllIds.includes(candidateId)) {
-                newAllIds.push(candidateId);
-            }
-
-            if (fallbackSelectedId === null) {
-                fallbackSelectedId = candidateId;
-            }
-
-            createdAny = true;
+            newAllIds.push(candidateId);
+            selectedId = candidateId;
         });
 
-        if (!createdAny) {
-            return state;
-        }
-
-        const nextSelectedId = state.byId[state.selectedId]
-            ? state.selectedId
-            : (fallbackSelectedId !== null ? fallbackSelectedId : (newAllIds[0] ?? null));
-
         return {
+            ...state,
             byId: newById,
             allIds: newAllIds,
-            selectedId: nextSelectedId,
-            counter: Math.max(nextCounter, 1)
+            selectedId,
+            counter: Math.max(nextCounter, state.counter)
         };
     }
 
-    function replaceRegions(state, regions) {
-        const incoming = Array.isArray(regions) ? regions : [];
-        if (!incoming.length) {
+    function replaceRegions(state, incoming) {
+        if (!Array.isArray(incoming)) {
             return {
                 byId: {},
                 allIds: [],
                 selectedId: null,
-                counter: 1
+                counter: 1,
+                addAreaTargetId: null
             };
         }
 
         const byId = {};
         const allIds = [];
         let maxId = 0;
-        let nextGeneratedId = state.counter;
 
         incoming.forEach(region => {
             if (!region) return;
-            const bounds = normalizeRegionBounds(region.start, region.end);
-            if (!bounds) return;
             const positionId = region.positionId;
             if (!positionId) return;
-
-            let candidateId = Number.isFinite(region.id) ? region.id : nextGeneratedId++;
-            while (Object.prototype.hasOwnProperty.call(byId, candidateId)) {
-                candidateId = nextGeneratedId++;
+            const areas = normalizeAreaList(region.areas && region.areas.length ? region.areas : [region]);
+            if (!areas.length) return;
+            let candidateId = Number.isFinite(region.id) ? region.id : undefined;
+            if (candidateId === undefined || Object.prototype.hasOwnProperty.call(byId, candidateId)) {
+                candidateId = ++maxId;
+                while (Object.prototype.hasOwnProperty.call(byId, candidateId)) {
+                    candidateId = ++maxId;
+                }
             }
             maxId = Math.max(maxId, candidateId);
-
+            const summary = summarizeAreas(areas);
             byId[candidateId] = {
                 id: candidateId,
                 positionId,
-                start: bounds.start,
-                end: bounds.end,
+                areas,
+                start: summary.start,
+                end: summary.end,
                 note: typeof region.note === 'string' ? region.note : '',
                 metrics: region.metrics || null
             };
@@ -204,7 +317,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             byId,
             allIds,
             selectedId,
-            counter: Math.max(maxId + 1, state.counter, 1)
+            counter: Math.max(maxId + 1, state.counter, 1),
+            addAreaTargetId: null
         };
     }
 
@@ -218,7 +332,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             case actionTypes.REGION_UPDATED: {
                 const { id, changes } = action.payload || {};
-                if (!id || !changes) {
+                if (!Number.isFinite(id) || !changes) {
                     return state;
                 }
                 return updateRegion(state, id, changes);
@@ -229,7 +343,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             case actionTypes.REGION_SELECTED: {
                 const { id } = action.payload || {};
-                const nextSelected = id && state.byId[id] ? id : null;
+                const nextSelected = Number.isFinite(id) && state.byId[id] ? id : null;
                 if (state.selectedId === nextSelected) {
                     return state;
                 }
@@ -250,36 +364,34 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             case actionTypes.REGION_NOTE_SET: {
                 const { id, note } = action.payload || {};
-                const region = state.byId[id];
-                if (!region || region.note === note) {
+                if (!Number.isFinite(id)) {
                     return state;
                 }
-                return {
-                    ...state,
-                    byId: {
-                        ...state.byId,
-                        [id]: { ...region, note: typeof note === 'string' ? note : '' }
-                    }
-                };
+                return updateRegion(state, id, { note });
             }
 
             case actionTypes.REGION_METRICS_SET: {
                 const { id, metrics } = action.payload || {};
-                const region = state.byId[id];
-                if (!region) {
+                if (!Number.isFinite(id)) {
                     return state;
                 }
-                return {
-                    ...state,
-                    byId: {
-                        ...state.byId,
-                        [id]: { ...region, metrics: metrics || null }
-                    }
-                };
+                return updateRegion(state, id, { metrics });
             }
 
             case actionTypes.REGIONS_REPLACED:
                 return replaceRegions(state, action.payload?.regions);
+
+            case actionTypes.REGION_ADD_AREA_MODE_SET: {
+                const { regionId } = action.payload || {};
+                const normalizedId = Number.isFinite(regionId) && state.byId[regionId] ? regionId : null;
+                if (state.addAreaTargetId === normalizedId) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    addAreaTargetId: normalizedId
+                };
+            }
 
             default:
                 return state;

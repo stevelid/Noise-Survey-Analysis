@@ -140,7 +140,7 @@ class DashBuilder:
         self.shared_components['comparison_frequency'] = ComparisonFrequencyBarComponent()
         self.shared_components['summary_table'] = SummaryTableComponent(all_positions, ['LAeq', 'LAFmax', 'LAF90'])
 
-        region_panel_component = RegionPanelComponent()
+        region_panel_div = RegionPanelComponent()
         export_button = Button(label="Export Regions", width=150, name="region_export_button")
         export_button.js_on_event('button_click', CustomJS(code="""
             if (window.NoiseSurveyApp?.regions?.handleExport) {
@@ -158,7 +158,7 @@ class DashBuilder:
             }
         """))
 
-        self.shared_components['region_panel'] = region_panel_component
+        self.shared_components['region_panel'] = region_panel_div
         self.shared_components['region_export_button'] = export_button
         self.shared_components['region_import_button'] = import_button
 
@@ -297,12 +297,10 @@ class DashBuilder:
         )
 
         region_panel_layout = column(
-            region_panel_component.container,
             self.shared_components['region_export_button'],
             self.shared_components['region_import_button'],
+            self.shared_components['region_panel'].layout(),
             name="region_panel_layout",
-            sizing_mode="stretch_width",
-            spacing=8,
         )
         self.shared_components['region_panel_layout'] = region_panel_layout
 
@@ -461,15 +459,7 @@ class DashBuilder:
             'comparisonFrequencyFigure': self.shared_components['comparison_frequency'].figure,
             'comparisonFrequencyTable': self.shared_components['comparison_frequency'].table_div,
             'comparisonFrequencyPalette': self.shared_components['comparison_frequency'].palette,
-            'regionPanelContainer': self.shared_components['region_panel'].container,
-            'regionPanelSelect': self.shared_components['region_panel'].region_select,
-            'regionPanelDeleteButton': self.shared_components['region_panel'].delete_button,
-            'regionPanelCopyButton': self.shared_components['region_panel'].copy_button,
-            'regionPanelNoteInput': self.shared_components['region_panel'].note_input,
-            'regionPanelMessageDiv': self.shared_components['region_panel'].message_div,
-            'regionPanelDetail': self.shared_components['region_panel'].detail_container,
-            'regionPanelMetricsDiv': self.shared_components['region_panel'].metrics_div,
-            'regionPanelSpectrumDiv': self.shared_components['region_panel'].spectrum_div,
+            'regionPanelDiv': self.shared_components['region_panel'].container,
             'regionExportButton': self.shared_components['region_export_button'],
             'regionImportButton': self.shared_components['region_import_button'],
         }
@@ -525,3 +515,5 @@ class DashBuilder:
         
         logger.warning(f"DashBuilder: No plottable data found for {position_data.name}. Defaulting to 'overview'.")
         return 'overview'
+
+

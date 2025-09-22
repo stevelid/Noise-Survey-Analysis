@@ -143,53 +143,100 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            const BoxAnnotation = Bokeh.Models.get("BoxAnnotation");
+            if (!BoxAnnotation) {
+                console.error("Could not retrieve BoxAnnotation model constructor from Bokeh.Models.");
+                return;
+            }
+
             const seen = new Set();
             let didMutate = false;
 
             regionList.forEach(region => {
                 if (!region || region.positionId !== this.positionId) return;
-                seen.add(region.id);
-                let annotation = this.regionAnnotations.get(region.id);
-                if (!annotation) {
-                    try {
-                        const BoxAnnotation = Bokeh.Models.get("BoxAnnotation");
-                        if (!BoxAnnotation) {
-                            console.error("Could not retrieve BoxAnnotation model constructor from Bokeh.Models.");
-                            return;
-                        }
+                const areas = Array.isArray(region.areas) && region.areas.length
+                    ? region.areas
+                    : (Number.isFinite(region.start) && Number.isFinite(region.end)
+                        ? [{ start: region.start, end: region.end }]
+                        : []);
+                if (!areas.length) return;
 
+                seen.add(region.id);
+
+                let annotations = this.regionAnnotations.get(region.id);
+                if (!Array.isArray(annotations)) {
+                    if (annotations) {
+                        try {
+                            if (typeof this.model.remove_layout === 'function') {
+                                this.model.remove_layout(annotations);
+                            } else if (doc && typeof doc.remove_root === 'function') {
+                                doc.remove_root(annotations);
+                            }
+                        } catch (error) {
+                            console.error('Error removing legacy region annotation:', error);
+                        }
+                    }
+                    annotations = [];
+                    this.regionAnnotations.set(region.id, annotations);
+                }
+
+                areas.forEach((area, index) => {
+                    const start = Number(area?.start);
+                    const end = Number(area?.end);
+                    if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
+                        return;
+                    }
+                    let annotation = annotations[index];
+                    if (!annotation) {
                         annotation = new BoxAnnotation({
-                            left: region.start,
-                            right: region.end,
+                            left: start,
+                            right: end,
                             fill_alpha: 0.1,
                             fill_color: '#1e88e5',
                             line_color: '#1e88e5',
                             line_alpha: 0.6,
                             line_width: 1,
                             level: 'underlay',
-                            name: `region_${this.name}_${region.id}`
+                            name: `region_${this.name}_${region.id}_${index}`
                         });
+                        annotations[index] = annotation;
                         this.model.add_layout(annotation);
-                        this.regionAnnotations.set(region.id, annotation);
                         didMutate = true;
-                    } catch (e) {
-                        console.error("Error creating or adding new BoxAnnotation:", e);
                     }
-                }
-
-                if (annotation) {
-                    annotation.left = region.start;
-                    annotation.right = region.end;
+                    annotation.left = start;
+                    annotation.right = end;
                     annotation.fill_alpha = region.id === selectedId ? 0.2 : 0.08;
                     annotation.line_width = region.id === selectedId ? 3 : 1;
                     annotation.visible = true;
+                });
+
+                if (annotations.length > areas.length) {
+                    const extras = annotations.splice(areas.length);
+                    extras.forEach(annotation => {
+                        if (!annotation) return;
+                        annotation.visible = false;
+                        try {
+                            if (typeof this.model.remove_layout === 'function') {
+                                this.model.remove_layout(annotation);
+                            } else if (doc && typeof doc.remove_root === 'function') {
+                                doc.remove_root(annotation);
+                            }
+                        } catch (error) {
+                            console.error('Error removing surplus region annotation:', error);
+                        }
+                    });
+                    if (extras.length) {
+                        didMutate = true;
+                    }
                 }
             });
 
             const idsToRemove = [];
-            this.regionAnnotations.forEach((annotation, id) => {
+            this.regionAnnotations.forEach((annotations, id) => {
                 if (!seen.has(id)) {
-                    if (annotation) {
+                    const list = Array.isArray(annotations) ? annotations : [annotations];
+                    list.forEach(annotation => {
+                        if (!annotation) return;
                         annotation.visible = false;
                         try {
                             if (typeof this.model.remove_layout === 'function') {
@@ -200,7 +247,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         } catch (error) {
                             console.error('Error removing BoxAnnotation:', error);
                         }
-                    }
+                    });
                     idsToRemove.push(id);
                     didMutate = true;
                 }
@@ -413,5 +460,3 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         PositionController: PositionController
     };
 })(window.NoiseSurveyApp);
-
-

@@ -1,7 +1,7 @@
 // noise_survey_analysis/static/js/services/regions/regionPanelRenderer.js
 
 /**
- * @fileoverview Region panel rendering helpers extracted from services/renderers.js.
+ * @fileoverview Region panel rendering helpers.
  * These functions update the dedicated Bokeh widgets that compose the region
  * management sidebar. The module remains presentation-only and communicates with
  * the rest of the application through the global NoiseSurveyApp namespace.
@@ -24,6 +24,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             .region-spectrum .bar { width: 6px; background: #64b5f6; transition: opacity 0.2s; }
             .region-spectrum .bar:hover { opacity: 0.7; }
             .region-spectrum .bar-empty { background: #cfd8dc; }
+            .region-segments { margin: 8px 0; padding-left: 18px; font-size: 12px; }
+            .region-segments li { margin-bottom: 2px; }
         </style>
     `;
 
@@ -36,11 +38,39 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
     }
+    
+    function getRegionAreas(region) {
+        if (!region) return [];
+        if (Array.isArray(region.areas) && region.areas.length) {
+            return region.areas;
+        }
+        if (Number.isFinite(region.start) && Number.isFinite(region.end)) {
+            return [{ start: region.start, end: region.end }];
+        }
+        return [];
+    }
+
+    function sumAreaDurations(areas) {
+        if (!Array.isArray(areas) || !areas.length) return 0;
+        return areas.reduce((total, area) => {
+            const start = Number(area?.start);
+            const end = Number(area?.end);
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
+                return total;
+            }
+            return total + (end - start);
+        }, 0);
+    }
 
     function formatTime(timestamp) {
         if (!Number.isFinite(timestamp)) return 'N/A';
         const date = new Date(timestamp);
         return date.toLocaleTimeString([], { hour12: false });
+    }
+    
+    function formatSegmentRange(area) {
+        if (!area) return 'N/A';
+        return `${formatTime(area.start)} – ${formatTime(area.end)}`;
     }
 
     function formatDuration(ms) {
@@ -95,27 +125,30 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return `${PANEL_STYLE}<p class="region-panel-placeholder">Select a region to view metrics.</p>`;
         }
         const metrics = region.metrics || {};
+        const areas = getRegionAreas(region);
+        
         const laeq = Number.isFinite(metrics.laeq) ? `${metrics.laeq.toFixed(1)} dB` : 'N/A';
         const lafmax = Number.isFinite(metrics.lafmax) ? `${metrics.lafmax.toFixed(1)} dB` : 'N/A';
         const la90 = metrics.la90Available && Number.isFinite(metrics.la90)
             ? `${metrics.la90.toFixed(1)} dB`
             : 'N/A';
         const la90Class = metrics.la90Available && Number.isFinite(metrics.la90) ? '' : 'metric-disabled';
-        const duration = formatDuration(metrics.durationMs);
-        const startLabel = formatTime(region.start);
-        const endLabel = formatTime(region.end);
-        const dataSourceLabel = metrics.dataResolution === 'log'
-            ? 'Log data'
-            : metrics.dataResolution === 'overview'
-                ? 'Overview data'
-                : 'No data';
-        const header = buildRegionLabel(region);
+
+        const totalDuration = formatDuration(metrics.durationMs ?? sumAreaDurations(areas));
+        const dataSourceLabel = metrics.dataResolution === 'log' ? 'Log data'
+            : metrics.dataResolution === 'overview' ? 'Overview data' : 'No data';
+        
+        const segmentItems = areas.map((area, idx) => {
+            const spanMs = Math.max(0, Number(area?.end) - Number(area?.start));
+            return `<li>Segment ${idx + 1}: ${formatSegmentRange(area)} (${formatDuration(spanMs)})</li>`;
+        }).join('');
+        const segmentListHtml = segmentItems ? `<ul class="region-segments">${segmentItems}</ul>` : '';
 
         return `
             ${PANEL_STYLE}
-            <div class="region-detail__header">${header}</div>
             <div class="region-metrics">
-                <div class="region-detail__meta">Range: ${startLabel} – ${endLabel} · Duration: ${duration} · Source: ${dataSourceLabel}</div>
+                <div class="region-detail__meta">Segments: ${areas.length} &bull; Total Duration: ${totalDuration} &bull; Source: ${dataSourceLabel}</div>
+                ${segmentListHtml}
                 <table>
                     <tr><th>Metric</th><th>Value</th></tr>
                     <tr><td>LAeq</td><td>${laeq}</td></tr>
@@ -126,9 +159,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         `;
     }
 
-    function buildRegionLabel(region) {
-        const label = region?.positionId ? escapeHtml(String(region.positionId)) : '';
-        return `Region ${region.id}${label ? ` – ${label}` : ''}`;
+    function buildRegionLabel(region, state) {
+        const addAreaTargetId = state?.regions?.addAreaTargetId ?? null;
+        const positionLabel = region?.positionId ? escapeHtml(String(region.positionId)) : '';
+        const areaCount = getRegionAreas(region).length;
+        const areaLabel = areaCount > 1 ? ` (${areaCount} areas)` : '';
+        const addingLabel = region.id === addAreaTargetId ? ' (Adding area...)' : '';
+        return `Region ${region.id} – ${positionLabel}${areaLabel}${addingLabel}`;
     }
 
     function ensureArrayEquals(a, b) {
@@ -147,12 +184,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return true;
     }
 
-    function updateSelect(select, regionList, selectedId) {
+    function updateSelect(select, regionList, selectedId, state) {
         if (!select) {
             return { selectedRegion: null, selectedValue: '' };
         }
 
-        const options = regionList.map(region => [String(region.id), buildRegionLabel(region)]);
+        const options = regionList.map(region => [String(region.id), buildRegionLabel(region, state)]);
         if (!ensureArrayEquals(select.options || [], options)) {
             select.options = options;
         }
@@ -169,9 +206,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function updateMessage(messageDiv, detailLayout, hasRegions) {
-        if (!messageDiv || !detailLayout) {
-            return;
-        }
+        if (!messageDiv || !detailLayout) return;
         messageDiv.visible = !hasRegions;
         detailLayout.visible = hasRegions;
         if (!hasRegions) {
@@ -182,12 +217,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
-    function updateButtons(copyButton, deleteButton, hasSelection) {
-        if (copyButton) {
-            copyButton.disabled = !hasSelection;
+    function updateButtons(models, hasSelection, selectedRegion, state) {
+        const { copyButton, deleteButton, addAreaButton, mergeButton } = models;
+        const addAreaTargetId = state?.regions?.addAreaTargetId ?? null;
+        const hasOtherRegions = state?.regions?.allIds.length > 1;
+
+        if (copyButton) copyButton.disabled = !hasSelection;
+        if (deleteButton) deleteButton.disabled = !hasSelection;
+        if (addAreaButton) {
+            addAreaButton.disabled = !hasSelection;
+            if (selectedRegion) {
+                const isActive = addAreaTargetId === selectedRegion.id;
+                addAreaButton.label = isActive ? 'Cancel Add Area' : 'Add Area';
+                addAreaButton.button_type = isActive ? 'warning' : 'default';
+            }
         }
-        if (deleteButton) {
-            deleteButton.disabled = !hasSelection;
+        if (mergeButton) {
+            mergeButton.disabled = !(hasSelection && hasOtherRegions);
         }
     }
 
@@ -195,9 +241,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!noteInput) return;
         if (!region) {
             noteInput.disabled = true;
-            if (noteInput.value !== '') {
-                noteInput.value = '';
-            }
+            if (noteInput.value !== '') noteInput.value = '';
             return;
         }
         noteInput.disabled = false;
@@ -228,55 +272,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function renderRegionPanel(panelModels, regionList, selectedId, state) {
         if (!panelModels) return;
 
-        const {
-            select,
-            messageDiv,
-            detail,
-            copyButton,
-            deleteButton,
-            noteInput,
-            metricsDiv,
-            spectrumDiv,
-        } = panelModels;
+        const { select, messageDiv, detail, noteInput, metricsDiv, spectrumDiv } = panelModels;
 
-        const { selectedRegion } = updateSelect(select, regionList, selectedId);
+        const { selectedRegion } = updateSelect(select, regionList, selectedId, state);
         const hasRegions = regionList.length > 0;
         const hasSelection = Boolean(selectedRegion);
 
         updateMessage(messageDiv, detail, hasRegions);
-        updateButtons(copyButton, deleteButton, hasSelection);
+        updateButtons(panelModels, hasSelection, selectedRegion, state);
         updateNoteInput(noteInput, selectedRegion);
         updateDetailWidgets({ metricsDiv, spectrumDiv }, selectedRegion);
     }
-
-    function handleCopyRegion(id) {
-        const regionsModule = app.regions;
-        if (!regionsModule?.formatRegionSummary) return;
-        const state = app.store?.getState ? app.store.getState() : null;
-        const region = state?.regions?.byId?.[id];
-        if (!region) return;
-        const text = regionsModule.formatRegionSummary(region, region.metrics, region.positionId || '');
-        if (navigator?.clipboard?.writeText) {
-            navigator.clipboard.writeText(text).catch(error => console.error('Clipboard write failed:', error));
-            return;
-        }
-        const temp = document.createElement('textarea');
-        temp.value = text;
-        document.body.appendChild(temp);
-        temp.select();
-        try {
-            document.execCommand('copy');
-        } catch (error) {
-            console.error('Fallback clipboard copy failed:', error);
-        }
-        document.body.removeChild(temp);
-    }
-
+    
     app.services = app.services || {};
     app.services.regionPanelRenderer = {
-        formatDuration,
-        buildSpectrumHtml,
         renderRegionPanel,
-        handleCopyRegion,
     };
 })(window.NoiseSurveyApp);

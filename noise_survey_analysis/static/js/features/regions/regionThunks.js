@@ -11,6 +11,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const { actions } = app;
     const MIN_REGION_WIDTH_MS = 1;
 
+    function getRegionAreas(region) {
+        if (!region) return [];
+        if (Array.isArray(region.areas) && region.areas.length) {
+            return region.areas;
+        }
+        if (Number.isFinite(region.start) && Number.isFinite(region.end)) {
+            return [{ start: region.start, end: region.end }];
+        }
+        return [];
+    }
+
     const viewSelectors = app.features?.view?.selectors || {};
     const regionSelectors = app.features?.regions?.selectors || {};
 
@@ -110,13 +121,61 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function createRegionIntent(payload) {
-        return function (dispatch) {
+        return function (dispatch, getState) {
             if (!actions) return;
             const { positionId, start, end } = payload || {};
             if (!positionId || !Number.isFinite(start) || !Number.isFinite(end)) return;
             if (Math.abs(end - start) < MIN_REGION_WIDTH_MS) return;
 
+            const state = typeof getState === 'function' ? getState() : null;
+            const regionsState = state?.regions;
+            const targetId = regionsState?.addAreaTargetId;
+            const targetRegion = Number.isFinite(targetId) ? regionsState?.byId?.[targetId] : null;
+
+            if (targetRegion && targetRegion.positionId === positionId) {
+                const existingAreas = getRegionAreas(targetRegion);
+                const nextAreas = [...existingAreas, { start, end }];
+                dispatch(actions.regionUpdate(targetRegion.id, { areas: nextAreas }));
+                dispatch(actions.regionSetAddAreaMode(null));
+                if (regionsState?.selectedId !== targetRegion.id) {
+                    dispatch(actions.regionSelect(targetRegion.id));
+                }
+                return;
+            }
+
             dispatch(actions.regionAdd(positionId, start, end));
+            if (regionsState?.addAreaTargetId != null) {
+                dispatch(actions.regionSetAddAreaMode(null));
+            }
+        };
+    }
+
+
+    function mergeRegionIntoSelectedIntent(sourceId) {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') return;
+            const state = getState();
+            const regionsState = state?.regions;
+            const targetId = regionsState?.selectedId;
+            const sourceNumericId = Number(sourceId);
+            if (!Number.isFinite(targetId) || !Number.isFinite(sourceNumericId) || targetId === sourceNumericId) {
+                return;
+            }
+            const targetRegion = regionsState?.byId?.[targetId];
+            const sourceRegion = regionsState?.byId?.[sourceNumericId];
+            if (!targetRegion || !sourceRegion) {
+                return;
+            }
+            if (targetRegion.positionId !== sourceRegion.positionId) {
+                console.warn('[Regions] Cannot merge regions from different positions.');
+                return;
+            }
+            const combinedAreas = [...getRegionAreas(targetRegion), ...getRegionAreas(sourceRegion)];
+            dispatch(actions.regionUpdate(targetId, { areas: combinedAreas }));
+            dispatch(actions.regionRemove(sourceNumericId));
+            if (regionsState?.addAreaTargetId === sourceNumericId) {
+                dispatch(actions.regionSetAddAreaMode(null));
+            }
         };
     }
 
@@ -178,6 +237,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateComparisonSliceIntent,
         createRegionsFromComparisonIntent,
         createRegionIntent,
+        mergeRegionIntoSelectedIntent,
         resizeSelectedRegionIntent
     };
 })(window.NoiseSurveyApp);
+
+
+
+

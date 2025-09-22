@@ -8,8 +8,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
+    const EMPTY_STATE = { byId: {}, allIds: [], selectedId: null, counter: 1, addAreaTargetId: null };
+
     function selectRegionsState(state) {
-        return state?.regions || { byId: {}, allIds: [], selectedId: null, counter: 1 };
+        return state?.regions || EMPTY_STATE;
     }
 
     function selectRegionById(state, id) {
@@ -33,6 +35,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return selectAllRegions(state).filter(region => region.positionId === positionId);
     }
 
+    function getRegionAreas(region) {
+        if (!region) {
+            return [];
+        }
+        if (Array.isArray(region.areas) && region.areas.length) {
+            return region.areas;
+        }
+        if (Number.isFinite(region.start) && Number.isFinite(region.end)) {
+            return [{ start: region.start, end: region.end }];
+        }
+        return [];
+    }
+
     function selectRegionByTimestamp(state, positionId, timestamp) {
         if (!Number.isFinite(timestamp) || !positionId) {
             return null;
@@ -42,11 +57,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         for (let i = allIds.length - 1; i >= 0; i--) {
             const region = byId[allIds[i]];
             if (!region || region.positionId !== positionId) continue;
-            if (timestamp >= region.start && timestamp <= region.end) {
-                return region;
+            const areas = getRegionAreas(region);
+            for (let j = 0; j < areas.length; j++) {
+                const area = areas[j];
+                if (timestamp >= area.start && timestamp <= area.end) {
+                    return region;
+                }
             }
         }
         return null;
+    }
+
+    function selectAddAreaTargetId(state) {
+        return selectRegionsState(state).addAreaTargetId || null;
     }
 
     app.features = app.features || {};
@@ -57,6 +80,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         selectAllRegions,
         selectSelectedRegion,
         selectRegionsByPosition,
-        selectRegionByTimestamp
+        selectRegionByTimestamp,
+        selectAddAreaTargetId
     };
 })(window.NoiseSurveyApp);
