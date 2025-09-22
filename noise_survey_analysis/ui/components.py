@@ -282,13 +282,22 @@ class RegionPanelComponent:
             if (!Number.isFinite(selectedId) || !Number.isFinite(sourceId) || selectedId === sourceId) {
                 return;
             }
+            const actions = window.NoiseSurveyApp?.actions;
             const store = window.NoiseSurveyApp?.store;
             const thunks = window.NoiseSurveyApp?.thunks;
             const mergeThunk = thunks?.mergeRegionIntoSelectedIntent;
-            if (typeof mergeThunk !== 'function' || typeof store?.dispatch !== 'function') {
+            const dispatch = typeof store?.dispatch === 'function' ? store.dispatch.bind(store) : null;
+            if (typeof mergeThunk !== 'function' || !dispatch) {
                 return;
             }
-            store.dispatch(mergeThunk(sourceId));
+            const getState = typeof store.getState === 'function' ? store.getState.bind(store) : null;
+            if (getState && actions?.regionSelect) {
+                const currentSelectedId = getState()?.regions?.selectedId ?? null;
+                if (currentSelectedId !== selectedId) {
+                    dispatch(actions.regionSelect(selectedId));
+                }
+            }
+            dispatch(mergeThunk(sourceId));
         """)
         self.merge_button.js_on_event('button_click', merge_callback)
 
