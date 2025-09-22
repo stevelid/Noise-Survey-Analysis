@@ -2,7 +2,7 @@ import logging
 from bokeh.plotting import curdoc
 from bokeh.layouts import column, row, LayoutDOM # Ensure column is imported
 from bokeh.models import Div, ColumnDataSource, CustomJS, Button # Import for assertions and error messages
-from bokeh.models.widgets import Panel, Tabs
+from bokeh.models import Panel, Tabs
 import pandas as pd
 import numpy as np  # Import numpy for array operations
 import os
