@@ -36,6 +36,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         </style>
     `;
 
+    const DEFAULT_REGION_COLOR = '#1e88e5';
+
+    function normalizeColor(color) {
+        if (typeof color === 'string') {
+            const trimmed = color.trim();
+            if (trimmed) {
+                return trimmed;
+            }
+        }
+        return DEFAULT_REGION_COLOR;
+    }
+
     function escapeHtml(value) {
         if (typeof value !== 'string') return '';
         return value
@@ -254,6 +266,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         select.disabled = options.length === 0;
         const region = regionList.find(entry => String(entry.id) === select.value) || null;
+        const desiredColor = normalizeColor(region?.color);
+        const existingStyles = select.styles || {};
+        if (existingStyles.color !== desiredColor) {
+            select.styles = { ...existingStyles, color: desiredColor };
+        }
         return { selectedRegion: region, selectedValue: select.value };
     }
 
@@ -349,6 +366,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
+    function updateColorPicker(colorPicker, region) {
+        if (!colorPicker) return;
+        if (!region) {
+            colorPicker.disabled = true;
+            const fallback = DEFAULT_REGION_COLOR;
+            if (colorPicker.color !== fallback) {
+                colorPicker.color = fallback;
+            }
+            return;
+        }
+        colorPicker.disabled = false;
+        const color = normalizeColor(region.color);
+        if (colorPicker.color !== color) {
+            colorPicker.color = color;
+        }
+    }
+
     function updateDetailWidgets(panelModels, region) {
         const { metricsDiv, spectrumDiv, frequencyTableDiv, frequencyCopyButton } = panelModels;
         const metricsHtml = buildMetricsHtml(region);
@@ -382,7 +416,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function renderRegionPanel(panelModels, regionList, selectedId, state) {
         if (!panelModels) return;
 
-        const { select, messageDiv, detail, noteInput, metricsDiv, spectrumDiv, mergeSelect, frequencyTableDiv, frequencyCopyButton } = panelModels;
+        const { select, messageDiv, detail, noteInput, metricsDiv, spectrumDiv, mergeSelect, colorPicker, frequencyTableDiv, frequencyCopyButton } = panelModels;
+
         const regionsState = state?.regions || {};
         const isMergeModeActive = !!regionsState.isMergeModeActive;
 
@@ -394,6 +429,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateMessage(messageDiv, detail, hasRegions);
         updateButtons(panelModels, hasSelection, selectedRegion, state, isMergeModeActive);
         updateNoteInput(noteInput, selectedRegion);
+
+        updateColorPicker(colorPicker, selectedRegion);
         updateDetailWidgets({ metricsDiv, spectrumDiv, frequencyTableDiv, frequencyCopyButton }, selectedRegion);
     }
     

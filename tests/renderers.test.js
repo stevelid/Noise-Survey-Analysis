@@ -27,6 +27,7 @@ describe('NoiseSurveyApp.renderers', () => {
     let mockRegionSelect;
     let mockRegionRemove;
     let mockRegionSetNote;
+    let mockRegionSetColor;
 
     beforeEach(() => {
         vi.useFakeTimers(); // Use fake timers for debounce testing
@@ -50,6 +51,7 @@ describe('NoiseSurveyApp.renderers', () => {
         mockRegionSelect = vi.fn(id => ({ type: 'regions/select', payload: id }));
         mockRegionRemove = vi.fn(id => ({ type: 'regions/remove', payload: id }));
         mockRegionSetNote = vi.fn((id, value) => ({ type: 'regions/setNote', payload: { id, value } }));
+        mockRegionSetColor = vi.fn((id, color) => ({ type: 'regions/setColor', payload: { id, color } }));
 
         Object.assign(window.NoiseSurveyApp, {
             state: {
@@ -62,7 +64,8 @@ describe('NoiseSurveyApp.renderers', () => {
             actions: {
                 regionSelect: mockRegionSelect,
                 regionRemove: mockRegionRemove,
-                regionSetNote: mockRegionSetNote
+                regionSetNote: mockRegionSetNote,
+                regionSetColor: mockRegionSetColor
             },
             registry: {
                 controllers: {
@@ -143,6 +146,7 @@ describe('NoiseSurveyApp.renderers', () => {
             mergeButton: { disabled: true },
             mergeSelect: { options: [], value: '', disabled: true },
             noteInput: { value: '', disabled: true },
+            colorPicker: { color: '#1e88e5', disabled: true },
             metricsDiv: { text: '', visible: false },
             frequencyCopyButton: { disabled: true, visible: false },
             frequencyTableDiv: { text: '', visible: false },
@@ -159,6 +163,7 @@ describe('NoiseSurveyApp.renderers', () => {
             regionPanelMergeButton: regionPanelMocks.mergeButton,
             regionPanelMergeSelect: regionPanelMocks.mergeSelect,
             regionPanelNoteInput: regionPanelMocks.noteInput,
+            regionPanelColorPicker: regionPanelMocks.colorPicker,
             regionPanelMetricsDiv: regionPanelMocks.metricsDiv,
             regionPanelFrequencyCopyButton: regionPanelMocks.frequencyCopyButton,
             regionPanelFrequencyTableDiv: regionPanelMocks.frequencyTableDiv,
@@ -257,6 +262,7 @@ describe('NoiseSurveyApp.renderers', () => {
                             start: 0,
                             end: 60000,
                             note: '',
+                            color: '#ff5722',
                             metrics: {
                                 laeq: 50.12,
                                 lafmax: 65.5,
@@ -286,6 +292,8 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelSelect.value).toBe('1');
             expect(models.regionPanelNoteInput.disabled).toBe(false);
             expect(models.regionPanelMergeSelect.disabled).toBe(true);
+            expect(models.regionPanelColorPicker.disabled).toBe(false);
+            expect(models.regionPanelColorPicker.color).toBe('#ff5722');
 
             const updatedState = {
                 regions: {
@@ -296,6 +304,7 @@ describe('NoiseSurveyApp.renderers', () => {
                             start: 0,
                             end: 62000,
                             note: '',
+                            color: '#4caf50',
                             metrics: {
                                 laeq: 55.44,
                                 lafmax: 70.2,
@@ -319,6 +328,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMetricsDiv.text).toContain('45.3 dB');
             expect(models.regionPanelFrequencyTableDiv.text).toContain('45.0 dB');
             expect(models.regionPanelSpectrumDiv.text).toContain('63 Hz');
+            expect(models.regionPanelColorPicker.color).toBe('#4caf50');
 
             const lastCall = mockSyncRegions.mock.calls.at(-1);
             const syncedRegions = lastCall[0];
@@ -350,9 +360,13 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMergeButton.disabled).toBe(true);
             expect(models.regionPanelMergeSelect.disabled).toBe(true);
             expect(models.regionPanelNoteInput.disabled).toBe(true);
+
+            expect(models.regionPanelColorPicker.disabled).toBe(true);
+
             expect(models.regionPanelFrequencyCopyButton.disabled).toBe(true);
             expect(models.regionPanelFrequencyCopyButton.visible).toBe(false);
             expect(models.regionPanelFrequencyTableDiv.visible).toBe(false);
+
 
             const populatedState = {
                 regions: {
@@ -363,6 +377,7 @@ describe('NoiseSurveyApp.renderers', () => {
                             start: 1000,
                             end: 4000,
                             note: 'hello',
+                            color: '#2196f3',
                             metrics: {
                                 laeq: 52,
                                 lafmax: 60,
@@ -391,10 +406,15 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMergeSelect.disabled).toBe(true);
             expect(models.regionPanelNoteInput.disabled).toBe(false);
             expect(models.regionPanelNoteInput.value).toBe('hello');
+
+            expect(models.regionPanelColorPicker.disabled).toBe(false);
+            expect(models.regionPanelColorPicker.color).toBe('#2196f3');
+
             expect(models.regionPanelFrequencyCopyButton.disabled).toBe(true);
             expect(models.regionPanelFrequencyCopyButton.visible).toBe(true);
             expect(models.regionPanelFrequencyTableDiv.visible).toBe(true);
             expect(models.regionPanelFrequencyTableDiv.text).toContain('No frequency data available');
+
 
             const multiRegionState = {
                 regions: {
@@ -406,6 +426,7 @@ describe('NoiseSurveyApp.renderers', () => {
                             start: 2000,
                             end: 6000,
                             note: '',
+                            color: '#e91e63',
                             metrics: null,
                         }
                     },
