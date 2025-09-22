@@ -50,6 +50,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REGION_SELECTED: 'markers/regionSelected',
         REGION_SELECTION_CLEARED: 'markers/regionSelectionCleared',
         REGION_NOTE_SET: 'markers/regionNoteSet',
+        REGION_COLOR_SET: 'markers/regionColorSet',
         REGION_METRICS_SET: 'markers/regionMetricsSet',
         REGION_ADD_AREA_MODE_SET: 'markers/regionAddAreaModeSet',
         REGION_MERGE_MODE_SET: 'markers/regionMergeModeSet',
@@ -137,6 +138,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         regionClearSelection: () => ({ type: actionTypes.REGION_SELECTION_CLEARED }),
 
         regionSetNote: (id, note) => ({ type: actionTypes.REGION_NOTE_SET, payload: { id, note } }),
+
+        regionSetColor: (id, color) => ({ type: actionTypes.REGION_COLOR_SET, payload: { id, color } }),
 
         regionSetMetrics: (id, metrics) => ({ type: actionTypes.REGION_METRICS_SET, payload: { id, metrics } }),
 
