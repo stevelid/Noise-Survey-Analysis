@@ -15,7 +15,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         allIds: [],
         selectedId: null,
         counter: 1,
-        addAreaTargetId: null
+        addAreaTargetId: null,
+        isMergeModeActive: false
     };
 
     function normalizeRegionBounds(start, end) {
@@ -212,12 +213,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const newAllIds = state.allIds.filter(regionId => regionId !== id);
         const newSelectedId = state.selectedId === id ? null : state.selectedId;
         const newAddAreaTargetId = state.addAreaTargetId === id ? null : state.addAreaTargetId;
+        const shouldKeepMergeMode = state.isMergeModeActive
+            && newAllIds.length > 1
+            && Number.isFinite(newSelectedId)
+            && !!newById[newSelectedId];
         return {
             ...state,
             byId: newById,
             allIds: newAllIds,
             selectedId: newSelectedId,
-            addAreaTargetId: newAddAreaTargetId
+            addAreaTargetId: newAddAreaTargetId,
+            isMergeModeActive: shouldKeepMergeMode
         };
     }
 
@@ -276,7 +282,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 allIds: [],
                 selectedId: null,
                 counter: 1,
-                addAreaTargetId: null
+                addAreaTargetId: null,
+                isMergeModeActive: false
             };
         }
 
@@ -318,7 +325,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             allIds,
             selectedId,
             counter: Math.max(maxId + 1, state.counter, 1),
-            addAreaTargetId: null
+            addAreaTargetId: null,
+            isMergeModeActive: false
         };
     }
 
@@ -347,9 +355,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 if (state.selectedId === nextSelected) {
                     return state;
                 }
+                const shouldKeepMergeMode = nextSelected !== null
+                    && state.isMergeModeActive
+                    && state.allIds.length > 1;
                 return {
                     ...state,
-                    selectedId: nextSelected
+                    selectedId: nextSelected,
+                    isMergeModeActive: shouldKeepMergeMode
                 };
             }
 
@@ -359,7 +371,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
                 return {
                     ...state,
-                    selectedId: null
+                    selectedId: null,
+                    isMergeModeActive: false
                 };
 
             case actionTypes.REGION_NOTE_SET: {
@@ -390,6 +403,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return {
                     ...state,
                     addAreaTargetId: normalizedId
+                };
+            }
+
+            case actionTypes.REGION_MERGE_MODE_SET: {
+                const { isActive } = action.payload || {};
+                const requested = Boolean(isActive);
+                const canActivate = requested
+                    && state.allIds.length > 1
+                    && Number.isFinite(state.selectedId)
+                    && !!state.byId[state.selectedId];
+                const nextValue = requested && canActivate;
+                if (state.isMergeModeActive === nextValue) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    isMergeModeActive: nextValue
                 };
             }
 
