@@ -2,6 +2,7 @@ import logging
 from bokeh.plotting import curdoc
 from bokeh.layouts import column, row, LayoutDOM # Ensure column is imported
 from bokeh.models import Div, ColumnDataSource, CustomJS, Button # Import for assertions and error messages
+from bokeh.models.widgets import Panel, Tabs
 import pandas as pd
 import numpy as np  # Import numpy for array operations
 import os
@@ -308,15 +309,38 @@ class DashBuilder:
         comparison_panel_layout.visible = False
         self.shared_components['comparison_panel_layout'] = comparison_panel_layout
 
-        side_panel = column(
-            region_panel_layout,
-            comparison_panel_layout,
-            name="side_panel_container",
+        side_panel_tabs = Tabs(
+            tabs=[
+                Panel(child=region_panel_layout, title="Regions"),
+                Panel(child=comparison_panel_layout, title="Comparison"),
+            ],
+            name="side_panel_tabs",
         )
+
+        side_panel_tabs.js_on_change(
+            "active",
+            CustomJS(
+                args={
+                    "region_panel_layout": region_panel_layout,
+                    "comparison_panel_layout": comparison_panel_layout,
+                },
+                code="""
+                    const activeIndex = cb_obj.active ?? 0;
+                    region_panel_layout.visible = activeIndex === 0;
+                    comparison_panel_layout.visible = activeIndex === 1;
+                """,
+            ),
+        )
+
+        side_panel_tabs.visible = True
+        region_panel_layout.visible = True
+
+        self.shared_components['side_panel_tabs'] = side_panel_tabs
+        self.shared_components['controls'].configure_sidebar_toggle(side_panel_tabs)
 
         final_layout = row(
             main_layout,
-            side_panel,
+            side_panel_tabs,
             name="root_layout",
         )
 
@@ -449,6 +473,7 @@ class DashBuilder:
             'frequencyBarLayout': self.shared_components.get('freq_bar_layout'),
             'regionPanelLayout': self.shared_components.get('region_panel_layout'),
             'comparisonPanelLayout': self.shared_components.get('comparison_panel_layout'),
+            'sidePanelTabs': self.shared_components.get('side_panel_tabs'),
             'comparisonPositionSelector': self.shared_components['comparison_panel'].position_selector,
             'comparisonPositionIds': self.shared_components['comparison_panel'].position_ids,
             'comparisonFinishButton': self.shared_components['comparison_panel'].finish_button,
@@ -476,6 +501,7 @@ class DashBuilder:
             'regionPanelSpectrumDiv': self.shared_components['region_panel'].spectrum_div,
             'regionExportButton': self.shared_components['region_export_button'],
             'regionImportButton': self.shared_components['region_import_button'],
+            'sidebarToggle': getattr(self.shared_components['controls'], 'sidebar_toggle', None),
         }
 
         # Populate position-specific models
