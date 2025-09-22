@@ -5,6 +5,8 @@ This module contains all configuration settings used throughout the application.
 Previously, these settings were scattered across different files.
 """
 
+import logging
+
 REQUIRED_BROADBAND_METRICS = [
     'LAeq',
     'LAF90',
@@ -76,6 +78,11 @@ VISUALIZATION_SETTINGS = {
     'sync_ranges': True, # Whether to synchronize the x-ranges of the charts to be the same size (equal to shortest time range)
 }
 
+# General UI layout settings
+UI_LAYOUT_SETTINGS = {
+    'side_panel_width': 320,
+}
+
 # Processing settings
 PROCESSING_SETTINGS = {
     'default_resample': '1S',
@@ -135,11 +142,11 @@ DEFAULT_DATA_SOURCES = [
 CONFIG = {
     'chart_settings': CHART_SETTINGS,
     'visualization': VISUALIZATION_SETTINGS,
-    'processing': PROCESSING_SETTINGS
+    'processing': PROCESSING_SETTINGS,
+    'ui_layout': UI_LAYOUT_SETTINGS,
     # Avoid putting DEFAULT_DATA_SOURCES in here unless absolutely necessary
     # for old code. It's better managed separately.
 }
 
 # Add logger for config module if used elsewhere
-import logging
-logger = logging.getLogger(__name__) 
+logger = logging.getLogger(__name__)

@@ -38,19 +38,25 @@ from bokeh.palettes import Category10
 
 from matplotlib.figure import Figure
 
-from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETTINGS
+from noise_survey_analysis.core.config import (
+    CHART_SETTINGS,
+    VISUALIZATION_SETTINGS,
+    UI_LAYOUT_SETTINGS,
+)
 from noise_survey_analysis.core.data_manager import PositionData
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 
 
 logger = logging.getLogger(__name__)
 
+SIDE_PANEL_WIDTH = UI_LAYOUT_SETTINGS.get('side_panel_width', 320)
+
 
 class RegionPanelComponent:
     """Bokeh widget-based panel for managing regions."""
 
     def __init__(self) -> None:
-        panel_width = 320
+        panel_width = SIDE_PANEL_WIDTH
 
         self.header = Div(
             text="<h2 style='margin:0;'>Regions</h2>",
@@ -236,6 +242,7 @@ class RegionPanelComponent:
                 "padding": "8px",
                 "background-color": "#fafafa",
             },
+            width=panel_width,
         )
 
         # Wire JS callbacks for user-driven events
@@ -1037,7 +1044,6 @@ class ControlsComponent:
         self.hover_toggle = self.add_hover_toggle()
         self.clear_markers_button = self.add_clear_markers_button()
         self.param_select = self.add_parameter_selector(available_params)
-        self.start_comparison_button = self.add_start_comparison_button()
         self.sidebar_toggle = self.add_sidebar_toggle()
 
         logger.info("ControlsComponent initialized.")
@@ -1103,20 +1109,6 @@ class ControlsComponent:
                 console.error('window.NoiseSurveyApp.eventHandlers.handleParameterChange function not found!');
             }""")) #active for overview, inactive for log
         return select
-
-    def add_start_comparison_button(self):
-        button = Button(
-            label="Start Comparison",
-            button_type="primary",
-            width=160,
-            name="start_comparison_button"
-        )
-        button.js_on_event("button_click", CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleStartComparison) {
-                window.NoiseSurveyApp.eventHandlers.handleStartComparison();
-            } else {
-                console.error('NoiseSurveyApp.eventHandlers.handleStartComparison not defined!');
-            }"""))
-        return button
 
     def add_sidebar_toggle(self):
         toggle = Toggle(
@@ -1198,10 +1190,12 @@ class ControlsComponent:
         self.visibility_layout = Row(
             *position_columns,
             name="visibility_controls_row",
-            sizing_mode="scale_width",
+            sizing_mode="stretch_width",
             styles={
                 "flex-wrap": "wrap",
-                "gap": "8px"
+                "gap": "8px",
+                "justify-content": "flex-end",
+                "margin-left": "auto"
             }
         )
 
@@ -1211,26 +1205,38 @@ class ControlsComponent:
         if self.visibility_layout is None:
             self._build_visibility_layout()
 
-        # Main controls row (parameter select, view toggle, hover toggle, clear markers button, comparison button)
-        main_controls_row = Row(
+        controls_group = Row(
             self.param_select,
             self.view_toggle,
             self.hover_toggle,
             self.clear_markers_button,
-            self.start_comparison_button,
             self.sidebar_toggle,
+            sizing_mode="scale_width",
+            name="primary_controls_row",
+            styles={
+                "flex-wrap": "wrap",
+                "gap": "8px",
+                "align-items": "center"
+            }
+        )
+
+        # Main controls row combines primary controls with visibility toggles aligned to the right
+        main_controls_row = Row(
+            controls_group,
+            self.visibility_layout,
             sizing_mode="scale_width", # Or "stretch_width"
             name="main_controls_row",
             styles={
                 "flex-wrap": "wrap",
-                "gap": "8px"
+                "gap": "16px",
+                "justify-content": "space-between",
+                "align-items": "flex-start"
             }
         )
 
-        # Return a column containing the main controls stacked above the visibility controls
+        # Return a column wrapping the combined controls row to maintain sticky positioning and styling
         return column(
             main_controls_row,
-            self.visibility_layout,
             name="controls_component_layout",
             sizing_mode="scale_width",
             styles={
@@ -1588,6 +1594,8 @@ class ComparisonPanelComponent:
 
     def __init__(self, position_ids: Optional[List[str]] = None):
         self.position_ids: List[str] = list(position_ids or [])
+        panel_width = SIDE_PANEL_WIDTH
+        selector_width = max(panel_width - 20, 100)
 
         instructions_html = (
             "<div class='comparison-panel-instructions'>"
@@ -1597,14 +1605,14 @@ class ComparisonPanelComponent:
         )
         self.instructions_div = Div(
             text=instructions_html,
-            width=320,
+            width=panel_width,
             name="comparison_panel_instructions",
             styles={"margin-bottom": "8px"}
         )
 
         self.slice_info_div = Div(
             text="<div class='comparison-slice-info'><em>No time slice selected.</em></div>",
-            width=320,
+            width=panel_width,
             name="comparison_slice_info_div",
             styles={
                 "border": "1px solid #ccc",
@@ -1619,7 +1627,7 @@ class ComparisonPanelComponent:
         self.position_selector = CheckboxGroup(
             labels=labels,
             active=list(range(len(labels))),
-            width=300,
+            width=selector_width,
             name="comparison_position_selector"
         )
         self.position_selector.js_on_change(
@@ -1675,7 +1683,7 @@ class ComparisonPanelComponent:
         """
         self.metrics_table_div = Div(
             text=metrics_table_html,
-            width=320,
+            width=panel_width,
             height=220,
             name="comparison_metrics_div",
             styles={
@@ -1736,7 +1744,8 @@ class ComparisonPanelComponent:
             self.metrics_table_div,
             buttons_row,
             name="comparison_panel_layout",
-            sizing_mode="stretch_width"
+            sizing_mode="stretch_width",
+            width=panel_width,
         )
         self.container.visible = False
 
