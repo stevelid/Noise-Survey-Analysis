@@ -41,6 +41,7 @@ describe('Region Management (Multi-Area)', () => {
             expect(region.areas).toEqual([{ start: 100, end: 200 }]);
             expect(region.start).toBe(100);
             expect(region.end).toBe(200);
+            expect(region.color).toBe('#1e88e5');
         });
 
         it('should handle REGION_UPDATED with new areas', () => {
@@ -74,6 +75,13 @@ describe('Region Management (Multi-Area)', () => {
             const action = actions.regionSetAddAreaMode(regionId);
             newState = regionsReducer(newState, action);
             expect(newState.addAreaTargetId).toBe(regionId);
+        });
+
+        it('should handle REGION_COLOR_SET', () => {
+            let newState = regionsReducer(state, actions.regionAdd('P1', 100, 200));
+            const regionId = newState.allIds[0];
+            newState = regionsReducer(newState, actions.regionSetColor(regionId, '#ff00ff'));
+            expect(newState.byId[regionId].color).toBe('#ff00ff');
         });
     });
 

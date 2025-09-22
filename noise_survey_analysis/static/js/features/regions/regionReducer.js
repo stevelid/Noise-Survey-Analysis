@@ -10,6 +10,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const { actionTypes } = app;
 
+    const DEFAULT_REGION_COLOR = '#1e88e5';
+
     const initialRegionsState = {
         byId: {},
         allIds: [],
@@ -18,6 +20,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         addAreaTargetId: null,
         isMergeModeActive: false
     };
+
+    function normalizeColor(color, fallback = DEFAULT_REGION_COLOR) {
+        if (typeof color === 'string') {
+            const trimmed = color.trim();
+            if (trimmed) {
+                return trimmed;
+            }
+        }
+        return fallback;
+    }
 
     function normalizeRegionBounds(start, end) {
         if (!Number.isFinite(start) || !Number.isFinite(end)) {
@@ -122,7 +134,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             start: summary.start,
             end: summary.end,
             note: '',
-            metrics: null
+            metrics: null,
+            color: DEFAULT_REGION_COLOR
         };
         return {
             ...state,
@@ -142,6 +155,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const baseAreas = ensureRegionAreas(existing);
         let nextAreas = cloneAreas(baseAreas);
         let areasMutated = false;
+
+        const sanitizedChanges = { ...changes };
 
         if (Object.prototype.hasOwnProperty.call(changes, 'areas')) {
             const normalized = normalizeAreaList(changes.areas);
@@ -179,10 +194,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             areasMutated = true;
         }
 
+        if (Object.prototype.hasOwnProperty.call(changes, 'color')) {
+            sanitizedChanges.color = normalizeColor(changes.color, existing.color || DEFAULT_REGION_COLOR);
+        }
+
         const summary = summarizeAreas(nextAreas);
         const updated = {
             ...existing,
-            ...changes,
+            ...sanitizedChanges,
             areas: nextAreas,
             start: summary.start,
             end: summary.end
@@ -190,12 +209,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         if (areasMutated) {
             updated.metrics = null;
-        } else if (Object.prototype.hasOwnProperty.call(changes, 'metrics')) {
-            updated.metrics = changes.metrics || null;
+        } else if (Object.prototype.hasOwnProperty.call(sanitizedChanges, 'metrics')) {
+            updated.metrics = sanitizedChanges.metrics || null;
         }
 
-        if (Object.prototype.hasOwnProperty.call(changes, 'note')) {
-            updated.note = typeof changes.note === 'string' ? changes.note : '';
+        if (Object.prototype.hasOwnProperty.call(sanitizedChanges, 'note')) {
+            updated.note = typeof sanitizedChanges.note === 'string' ? sanitizedChanges.note : '';
+        }
+
+        if (!updated.color) {
+            updated.color = DEFAULT_REGION_COLOR;
         }
 
         return {
@@ -260,7 +283,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 start: summary.start,
                 end: summary.end,
                 note: typeof region.note === 'string' ? region.note : '',
-                metrics: region.metrics || null
+                metrics: region.metrics || null,
+                color: normalizeColor(region.color)
             };
             newAllIds.push(candidateId);
             selectedId = candidateId;
@@ -313,7 +337,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 start: summary.start,
                 end: summary.end,
                 note: typeof region.note === 'string' ? region.note : '',
-                metrics: region.metrics || null
+                metrics: region.metrics || null,
+                color: normalizeColor(region.color)
             };
             allIds.push(candidateId);
         });
@@ -389,6 +414,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     return state;
                 }
                 return updateRegion(state, id, { metrics });
+            }
+
+            case actionTypes.REGION_COLOR_SET: {
+                const { id, color } = action.payload || {};
+                if (!Number.isFinite(id)) {
+                    return state;
+                }
+                return updateRegion(state, id, { color });
             }
 
             case actionTypes.REGIONS_REPLACED:

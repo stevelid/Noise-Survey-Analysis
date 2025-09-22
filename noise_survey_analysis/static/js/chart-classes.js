@@ -11,6 +11,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
+    const DEFAULT_REGION_COLOR = '#1e88e5';
+
     function _updateBokehImageData(existingImageData, newData) {
         if (existingImageData.length !== newData.length) {
             console.error(`Mismatched image data lengths. Existing: ${existingImageData.length}, New: ${newData.length}. Cannot update.`);
@@ -180,6 +182,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     this.regionAnnotations.set(region.id, annotations);
                 }
 
+                const regionColor = typeof region.color === 'string' && region.color.trim()
+                    ? region.color.trim()
+                    : DEFAULT_REGION_COLOR;
+
                 areas.forEach((area, index) => {
                     const start = Number(area?.start);
                     const end = Number(area?.end);
@@ -192,8 +198,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             left: start,
                             right: end,
                             fill_alpha: 0.1,
-                            fill_color: '#1e88e5',
-                            line_color: '#1e88e5',
+                            fill_color: regionColor,
+                            line_color: regionColor,
                             line_alpha: 0.6,
                             line_width: 1,
                             level: 'underlay',
@@ -207,6 +213,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     annotation.right = end;
                     annotation.fill_alpha = region.id === selectedId ? 0.2 : 0.08;
                     annotation.line_width = region.id === selectedId ? 3 : 1;
+                    annotation.fill_color = regionColor;
+                    annotation.line_color = regionColor;
                     annotation.visible = true;
                 });
 

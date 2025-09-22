@@ -26,6 +26,7 @@ from bokeh.models import (
     Select,
     CheckboxGroup,
     ColorBar,
+    ColorPicker,
     Div,
     LinearColorMapper,
     TextAreaInput,
@@ -63,6 +64,14 @@ class RegionPanelComponent:
             options=[],
             width=panel_width,
             name="region_panel_select",
+            disabled=True,
+        )
+
+        self.color_picker = ColorPicker(
+            title="Region Colour",
+            color="#1e88e5",
+            width=panel_width,
+            name="region_color_picker",
             disabled=True,
         )
 
@@ -154,6 +163,7 @@ class RegionPanelComponent:
 
         self.detail_layout = column(
             self.select,
+            self.color_picker,
             primary_actions,
             self.merge_select,
             secondary_actions,
@@ -208,6 +218,20 @@ class RegionPanelComponent:
             }
         """)
         self.note_input.js_on_change('value', note_callback)
+
+        color_callback = CustomJS(args={'select': self.select}, code="""
+            const regionId = Number(select.value);
+            if (!Number.isFinite(regionId)) {
+                return;
+            }
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            const colorValue = typeof cb_obj.color === 'string' ? cb_obj.color : '';
+            if (actions?.regionSetColor && typeof store?.dispatch === 'function') {
+                store.dispatch(actions.regionSetColor(regionId, colorValue));
+            }
+        """)
+        self.color_picker.js_on_change('color', color_callback)
 
         delete_callback = CustomJS(args={'select': self.select}, code="""
             const regionId = Number(select.value);
