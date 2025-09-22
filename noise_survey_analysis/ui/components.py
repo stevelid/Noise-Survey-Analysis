@@ -121,6 +121,26 @@ class RegionPanelComponent:
             disabled=True,
         )
 
+        self.frequency_copy_button = Button(
+            label="Copy Spectrum Values",
+            width=panel_width,
+            name="region_frequency_copy_button",
+            disabled=True,
+            visible=False,
+        )
+
+        self.frequency_table_div = Div(
+            text="<p class='region-panel-empty'>No frequency data.</p>",
+            width=panel_width,
+            name="region_frequency_table_div",
+            visible=False,
+            styles={
+                "font-size": "12px",
+                "border-top": "1px solid #ddd",
+                "padding-top": "6px",
+            },
+        )
+
         self.metrics_div = Div(
             text="<p class='region-panel-empty'>Select a region to view metrics.</p>",
             width=panel_width,
@@ -159,6 +179,8 @@ class RegionPanelComponent:
             secondary_actions,
             self.note_input,
             self.metrics_div,
+            self.frequency_copy_button,
+            self.frequency_table_div,
             self.spectrum_div,
             name="region_panel_detail",
             sizing_mode="stretch_width",
@@ -259,6 +281,45 @@ class RegionPanelComponent:
             }
         """)
         self.copy_button.js_on_event('button_click', copy_callback)
+
+        spectrum_copy_callback = CustomJS(args={'select': self.select}, code="""
+            const regionId = Number(select.value);
+            if (!Number.isFinite(regionId)) {
+                return;
+            }
+            const store = window.NoiseSurveyApp?.store;
+            const utils = window.NoiseSurveyApp?.features?.regions?.utils;
+            if (!utils?.formatSpectrumClipboardText || typeof store?.getState !== 'function') {
+                return;
+            }
+            const state = store.getState();
+            const region = state?.regions?.byId?.[regionId];
+            const spectrum = region?.metrics?.spectrum;
+            const text = utils.formatSpectrumClipboardText(spectrum);
+            if (!text) {
+                return;
+            }
+            if (navigator?.clipboard?.writeText) {
+                navigator.clipboard.writeText(text).catch(err => {
+                    console.error('[Regions] Failed to copy spectrum values:', err);
+                });
+                return;
+            }
+            const temp = document.createElement('textarea');
+            temp.value = text;
+            temp.style.position = 'fixed';
+            temp.style.opacity = '0';
+            document.body.appendChild(temp);
+            temp.focus();
+            temp.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {
+                console.error('[Regions] execCommand copy failed:', err);
+            }
+            document.body.removeChild(temp);
+        """)
+        self.frequency_copy_button.js_on_event('button_click', spectrum_copy_callback)
 
         add_area_callback = CustomJS(args={'select': self.select}, code="""
             const regionId = Number(select.value);
