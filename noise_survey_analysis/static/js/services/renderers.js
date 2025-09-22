@@ -488,6 +488,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 colorPicker: models?.regionPanelColorPicker,
                 noteInput: models?.regionPanelNoteInput,
                 metricsDiv: models?.regionPanelMetricsDiv,
+                frequencyCopyButton: models?.regionPanelFrequencyCopyButton,
+                frequencyTableDiv: models?.regionPanelFrequencyTableDiv,
                 spectrumDiv: models?.regionPanelSpectrumDiv,
             };
             regionPanelRenderer.renderRegionPanel(panelModels, regionList, regionsState.selectedId, state);

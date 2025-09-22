@@ -471,6 +471,8 @@ class DashBuilder:
             'regionPanelColorPicker': self.shared_components['region_panel'].color_picker,
             'regionPanelNoteInput': self.shared_components['region_panel'].note_input,
             'regionPanelMetricsDiv': self.shared_components['region_panel'].metrics_div,
+            'regionPanelFrequencyCopyButton': self.shared_components['region_panel'].frequency_copy_button,
+            'regionPanelFrequencyTableDiv': self.shared_components['region_panel'].frequency_table_div,
             'regionPanelSpectrumDiv': self.shared_components['region_panel'].spectrum_div,
             'regionExportButton': self.shared_components['region_export_button'],
             'regionImportButton': self.shared_components['region_import_button'],

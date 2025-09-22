@@ -148,6 +148,8 @@ describe('NoiseSurveyApp.renderers', () => {
             noteInput: { value: '', disabled: true },
             colorPicker: { color: '#1e88e5', disabled: true },
             metricsDiv: { text: '', visible: false },
+            frequencyCopyButton: { disabled: true, visible: false },
+            frequencyTableDiv: { text: '', visible: false },
             spectrumDiv: { text: '', visible: false },
         };
 
@@ -163,6 +165,8 @@ describe('NoiseSurveyApp.renderers', () => {
             regionPanelNoteInput: regionPanelMocks.noteInput,
             regionPanelColorPicker: regionPanelMocks.colorPicker,
             regionPanelMetricsDiv: regionPanelMocks.metricsDiv,
+            regionPanelFrequencyCopyButton: regionPanelMocks.frequencyCopyButton,
+            regionPanelFrequencyTableDiv: regionPanelMocks.frequencyTableDiv,
             regionPanelSpectrumDiv: regionPanelMocks.spectrumDiv,
         });
     });
@@ -281,6 +285,10 @@ describe('NoiseSurveyApp.renderers', () => {
             const models = window.NoiseSurveyApp.registry.models;
             expect(models.regionPanelMetricsDiv.text).toContain('50.1 dB');
             expect(models.regionPanelMetricsDiv.text).toContain('65.5 dB');
+            expect(models.regionPanelFrequencyTableDiv.text).toContain('63 Hz');
+            expect(models.regionPanelFrequencyTableDiv.text).toContain('40.0 dB');
+            expect(models.regionPanelFrequencyCopyButton.disabled).toBe(false);
+            expect(models.regionPanelFrequencyCopyButton.visible).toBe(true);
             expect(models.regionPanelSelect.value).toBe('1');
             expect(models.regionPanelNoteInput.disabled).toBe(false);
             expect(models.regionPanelMergeSelect.disabled).toBe(true);
@@ -318,6 +326,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMetricsDiv.text).toContain('55.4 dB');
             expect(models.regionPanelMetricsDiv.text).toContain('70.2 dB');
             expect(models.regionPanelMetricsDiv.text).toContain('45.3 dB');
+            expect(models.regionPanelFrequencyTableDiv.text).toContain('45.0 dB');
             expect(models.regionPanelSpectrumDiv.text).toContain('63 Hz');
             expect(models.regionPanelColorPicker.color).toBe('#4caf50');
 
@@ -351,7 +360,13 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMergeButton.disabled).toBe(true);
             expect(models.regionPanelMergeSelect.disabled).toBe(true);
             expect(models.regionPanelNoteInput.disabled).toBe(true);
+
             expect(models.regionPanelColorPicker.disabled).toBe(true);
+
+            expect(models.regionPanelFrequencyCopyButton.disabled).toBe(true);
+            expect(models.regionPanelFrequencyCopyButton.visible).toBe(false);
+            expect(models.regionPanelFrequencyTableDiv.visible).toBe(false);
+
 
             const populatedState = {
                 regions: {
@@ -391,8 +406,15 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMergeSelect.disabled).toBe(true);
             expect(models.regionPanelNoteInput.disabled).toBe(false);
             expect(models.regionPanelNoteInput.value).toBe('hello');
+
             expect(models.regionPanelColorPicker.disabled).toBe(false);
             expect(models.regionPanelColorPicker.color).toBe('#2196f3');
+
+            expect(models.regionPanelFrequencyCopyButton.disabled).toBe(true);
+            expect(models.regionPanelFrequencyCopyButton.visible).toBe(true);
+            expect(models.regionPanelFrequencyTableDiv.visible).toBe(true);
+            expect(models.regionPanelFrequencyTableDiv.text).toContain('No frequency data available');
+
 
             const multiRegionState = {
                 regions: {

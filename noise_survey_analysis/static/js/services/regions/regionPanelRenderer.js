@@ -20,6 +20,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             .region-detail__header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 4px; }
             .region-detail__meta { color: #555; font-size: 11px; margin-bottom: 6px; }
             .metric-disabled { color: #999; }
+            .region-frequency { font-family: 'Segoe UI', sans-serif; font-size: 12px; margin-top: 8px; }
+            .region-frequency__header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 4px; }
+            .region-frequency__source { font-size: 11px; color: #555; }
+            .region-frequency__table { width: 100%; border-collapse: collapse; }
+            .region-frequency__table th, .region-frequency__table td { text-align: left; padding: 4px; border-bottom: 1px solid #eee; }
+            .region-frequency__value { font-variant-numeric: tabular-nums; transition: background-color 0.2s ease; }
+            .region-frequency__value--empty { color: #999; background: #eceff1; }
             .region-spectrum { display: flex; align-items: flex-end; gap: 2px; margin-top: 8px; min-height: 60px; border: 1px solid #eee; padding: 4px; }
             .region-spectrum .bar { width: 6px; background: #64b5f6; transition: opacity 0.2s; }
             .region-spectrum .bar:hover { opacity: 0.7; }
@@ -127,9 +134,54 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return `<div class="bar bar-empty" title="${escapeHtml(String(label))}: N/A"></div>`;
             }
             const height = Math.max(4, ((value - minVal) / range) * 100);
-            return `<div class="bar" style="height:${height}%;" title="${escapeHtml(String(label))}: ${value.toFixed(1)} dB"></div>`;
+            const normalized = Math.min(Math.max((value - minVal) / range, 0), 1);
+            const color = getHeatColor(normalized);
+            return `<div class="bar" style="height:${height}%; background:${color};" title="${escapeHtml(String(label))}: ${value.toFixed(1)} dB"></div>`;
         }).join('');
         return `${PANEL_STYLE}<div class="region-spectrum">${bars}</div>`;
+    }
+
+    function getHeatColor(normalized) {
+        const clamped = Math.min(Math.max(normalized, 0), 1);
+        const hue = 210 - clamped * 160;
+        const saturation = 75;
+        const lightness = 65 - clamped * 20;
+        return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+    }
+
+    function getSpectrumSourceLabel(source) {
+        if (source === 'log') return 'Log data';
+        if (source === 'overview') return 'Overview data';
+        return 'No spectral data';
+    }
+
+    function hasSpectrumValues(spectrum) {
+        const { values } = normaliseSpectrum(spectrum);
+        return values.some(value => Number.isFinite(value));
+    }
+
+    function buildFrequencyTableHtml(metrics) {
+        const spectrum = metrics?.spectrum || {};
+        const { labels, values } = normaliseSpectrum(spectrum);
+        const finiteValues = values.filter(value => Number.isFinite(value));
+        const sourceLabel = getSpectrumSourceLabel(spectrum?.source);
+        if (!labels.length || !finiteValues.length) {
+            return `${PANEL_STYLE}<div class="region-frequency"><div class="region-frequency__header"><span>Frequency Bands</span><span class="region-frequency__source">${escapeHtml(sourceLabel)}</span></div><p class='region-panel-placeholder'>No frequency data available.</p></div>`;
+        }
+        const minVal = Math.min(...finiteValues);
+        const maxVal = Math.max(...finiteValues);
+        const range = Math.max(maxVal - minVal, 1);
+        const rows = labels.map((label, index) => {
+            const value = values[index];
+            const safeLabel = escapeHtml(String(label));
+            if (!Number.isFinite(value)) {
+                return `<tr><td>${safeLabel}</td><td class="region-frequency__value region-frequency__value--empty">N/A</td></tr>`;
+            }
+            const normalized = Math.min(Math.max((value - minVal) / range, 0), 1);
+            const color = getHeatColor(normalized);
+            return `<tr><td>${safeLabel}</td><td class="region-frequency__value" style="background:${color};">${value.toFixed(1)} dB</td></tr>`;
+        }).join('');
+        return `${PANEL_STYLE}<div class="region-frequency"><div class="region-frequency__header"><span>Frequency Bands</span><span class="region-frequency__source">${escapeHtml(sourceLabel)}</span></div><table class="region-frequency__table"><tr><th>Band</th><th>LAeq</th></tr>${rows}</table></div>`;
     }
 
     function buildMetricsHtml(region) {
@@ -332,7 +384,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function updateDetailWidgets(panelModels, region) {
-        const { metricsDiv, spectrumDiv } = panelModels;
+        const { metricsDiv, spectrumDiv, frequencyTableDiv, frequencyCopyButton } = panelModels;
         const metricsHtml = buildMetricsHtml(region);
         if (metricsDiv && metricsDiv.text !== metricsHtml) {
             metricsDiv.text = metricsHtml;
@@ -347,12 +399,25 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (metricsDiv) {
             metricsDiv.visible = !!region;
         }
+        if (frequencyTableDiv) {
+            const frequencyHtml = buildFrequencyTableHtml(region?.metrics);
+            frequencyTableDiv.visible = !!region;
+            if (frequencyTableDiv.text !== frequencyHtml) {
+                frequencyTableDiv.text = frequencyHtml;
+            }
+        }
+        if (frequencyCopyButton) {
+            const hasValues = !!region && hasSpectrumValues(region?.metrics?.spectrum);
+            frequencyCopyButton.visible = !!region;
+            frequencyCopyButton.disabled = !hasValues;
+        }
     }
 
     function renderRegionPanel(panelModels, regionList, selectedId, state) {
         if (!panelModels) return;
 
-        const { select, messageDiv, detail, noteInput, metricsDiv, spectrumDiv, mergeSelect, colorPicker } = panelModels;
+        const { select, messageDiv, detail, noteInput, metricsDiv, spectrumDiv, mergeSelect, colorPicker, frequencyTableDiv, frequencyCopyButton } = panelModels;
+
         const regionsState = state?.regions || {};
         const isMergeModeActive = !!regionsState.isMergeModeActive;
 
@@ -364,8 +429,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateMessage(messageDiv, detail, hasRegions);
         updateButtons(panelModels, hasSelection, selectedRegion, state, isMergeModeActive);
         updateNoteInput(noteInput, selectedRegion);
+
         updateColorPicker(colorPicker, selectedRegion);
-        updateDetailWidgets({ metricsDiv, spectrumDiv }, selectedRegion);
+        updateDetailWidgets({ metricsDiv, spectrumDiv, frequencyTableDiv, frequencyCopyButton }, selectedRegion);
     }
     
     app.services = app.services || {};
