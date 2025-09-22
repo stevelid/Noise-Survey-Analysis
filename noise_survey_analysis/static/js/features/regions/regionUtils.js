@@ -275,15 +275,21 @@ function calcLAeq(values) {
 
         const selectedParam = state?.view?.selectedParameter;
         const prepared = models?.preparedGlyphData?.[region.positionId];
-        let spectralSource = null;
-        if (selection.dataset === 'log') {
-            spectralSource = prepared?.log?.prepared_params?.[selectedParam];
-        }
-        if (!spectralSource) {
-            spectralSource = prepared?.overview?.prepared_params?.[selectedParam];
-        }
+        const logSpectral = prepared?.log?.prepared_params?.[selectedParam];
+        const overviewSpectral = prepared?.overview?.prepared_params?.[selectedParam];
 
-        const spectrum = computeSpectrumAverage(spectralSource, areas);
+        let spectrumSource = null;
+        let spectrum = { labels: [], values: [] };
+        if (logSpectral) {
+            spectrumSource = 'log';
+            spectrum = computeSpectrumAverage(logSpectral, areas);
+        } else if (overviewSpectral) {
+            spectrumSource = 'overview';
+            spectrum = computeSpectrumAverage(overviewSpectral, areas);
+        }
+        if (spectrum && typeof spectrum === 'object') {
+            spectrum.source = spectrumSource;
+        }
 
         return {
             laeq,
@@ -407,6 +413,38 @@ function calcLAeq(values) {
         return areas.map(area => formatTimeRange(area.start, area.end)).join(' + ');
     }
 
+    function normaliseSpectrumForClipboard(spectrum) {
+        if (!spectrum || typeof spectrum !== 'object') {
+            return { labels: [], values: [] };
+        }
+        const labels = Array.isArray(spectrum.labels)
+            ? spectrum.labels
+            : Array.isArray(spectrum.bands)
+                ? spectrum.bands
+                : [];
+        const values = Array.isArray(spectrum.values)
+            ? spectrum.values
+            : Array.isArray(spectrum.band_values)
+                ? spectrum.band_values
+                : [];
+        return { labels, values };
+    }
+
+    function formatSpectrumClipboardText(spectrum) {
+        const { labels, values } = normaliseSpectrumForClipboard(spectrum);
+        if (!labels.length || !values.length) {
+            return '';
+        }
+        const rows = ['Band\tLAeq (dB)'];
+        for (let i = 0; i < labels.length; i++) {
+            const label = labels[i];
+            const value = Number(values[i]);
+            const formattedValue = Number.isFinite(value) ? value.toFixed(1) : 'N/A';
+            rows.push(`${label}\t${formattedValue}`);
+        }
+        return rows.join('\n');
+    }
+
     function formatRegionSummary(region, metrics, positionLabel) {
         const areas = getRegionAreas(region);
         const timeDescription = formatAreaList(areas);
@@ -475,6 +513,7 @@ function calcLAeq(values) {
         exportRegions,
         importRegions,
         formatRegionSummary,
+        formatSpectrumClipboardText,
         handleExport,
         handleImport
     };
