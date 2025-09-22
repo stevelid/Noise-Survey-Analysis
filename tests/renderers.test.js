@@ -35,7 +35,7 @@ describe('NoiseSurveyApp.renderers', () => {
         vi.clearAllMocks();
         mockDispatchAction = vi.fn();
         mockStoreDispatch = vi.fn();
-        mockGetState = vi.fn(() => ({ regions: { byId: {}, allIds: [], selectedId: null, counter: 1 } }));
+        mockGetState = vi.fn(() => ({ regions: { byId: {}, allIds: [], selectedId: null, counter: 1, panelVisible: true, overlaysVisible: true } }));
 
         mockUpdateAllCharts = vi.fn();
         mockSetVisible = vi.fn();
@@ -151,6 +151,9 @@ describe('NoiseSurveyApp.renderers', () => {
             frequencyCopyButton: { disabled: true, visible: false },
             frequencyTableDiv: { text: '', visible: false },
             spectrumDiv: { text: '', visible: false },
+            visibilityToggle: { label: 'Regions', active: true, button_type: 'primary' },
+            autoDayButton: { disabled: false, button_type: 'default', visible: true },
+            autoNightButton: { disabled: false, button_type: 'default', visible: true },
         };
 
         Object.assign(window.NoiseSurveyApp.registry.models, {
@@ -168,8 +171,92 @@ describe('NoiseSurveyApp.renderers', () => {
             regionPanelFrequencyCopyButton: regionPanelMocks.frequencyCopyButton,
             regionPanelFrequencyTableDiv: regionPanelMocks.frequencyTableDiv,
             regionPanelSpectrumDiv: regionPanelMocks.spectrumDiv,
+            regionVisibilityToggle: regionPanelMocks.visibilityToggle,
+            regionAutoDayButton: regionPanelMocks.autoDayButton,
+            regionAutoNightButton: regionPanelMocks.autoNightButton,
         });
+
     });
+
+        it('respects panel visibility toggles and updates labels', () => {
+            const models = window.NoiseSurveyApp.registry.models;
+            mockSyncRegions.mockClear();
+
+            const hiddenState = {
+                view: { availablePositions: ['P1'] },
+                regions: {
+                    byId: {
+                        1: {
+                            id: 1,
+                            positionId: 'P1',
+                            start: 0,
+                            end: 3000,
+                            note: '',
+                            color: '#607d8b',
+                            metrics: null,
+                        }
+                    },
+                    allIds: [1],
+                    selectedId: 1,
+                    counter: 2,
+                    panelVisible: false,
+                    overlaysVisible: false,
+                }
+            };
+
+            renderers.renderRegions(hiddenState, {});
+
+            expect(models.regionPanelDetail.visible).toBe(false);
+            expect(models.regionPanelMessageDiv.visible).toBe(false);
+            expect(models.regionVisibilityToggle.active).toBe(false);
+            expect(models.regionVisibilityToggle.label).toBe('Regions (1)');
+            expect(models.regionVisibilityToggle.button_type).toBe('default');
+            expect(models.regionAutoDayButton.visible).toBe(false);
+            expect(models.regionAutoNightButton.visible).toBe(false);
+
+            const hiddenCall = mockSyncRegions.mock.calls.at(-1);
+            expect(hiddenCall[0]).toEqual([]);
+            expect(hiddenCall[1]).toBeNull();
+
+            mockSyncRegions.mockClear();
+
+            const visibleState = {
+                view: { availablePositions: ['P1'] },
+                regions: {
+                    byId: {
+                        1: hiddenState.regions.byId[1],
+                        2: {
+                            id: 2,
+                            positionId: 'P1',
+                            start: 4000,
+                            end: 8000,
+                            note: '',
+                            color: '#c2185b',
+                            metrics: null,
+                        }
+                    },
+                    allIds: [1, 2],
+                    selectedId: 2,
+                    counter: 3,
+                    panelVisible: true,
+                    overlaysVisible: true,
+                }
+            };
+
+            renderers.renderRegions(visibleState, {});
+
+            expect(models.regionPanelDetail.visible).toBe(true);
+            expect(models.regionVisibilityToggle.active).toBe(true);
+            expect(models.regionVisibilityToggle.label).toBe('Regions (2)');
+            expect(models.regionVisibilityToggle.button_type).toBe('primary');
+            expect(models.regionAutoDayButton.visible).toBe(true);
+            expect(models.regionAutoNightButton.visible).toBe(true);
+
+            const visibleCall = mockSyncRegions.mock.calls.at(-1);
+            expect(Array.isArray(visibleCall[0])).toBe(true);
+            expect(visibleCall[0].length).toBe(2);
+            expect(visibleCall[1]).toBe(2);
+        });
 
     afterEach(() => {
         vi.useRealTimers(); // Restore real timers
@@ -254,6 +341,7 @@ describe('NoiseSurveyApp.renderers', () => {
     describe('renderRegions', () => {
         it('should refresh region metrics in the side panel for the selected region', () => {
             const stateWithMetrics = {
+                view: { availablePositions: ['P1'] },
                 regions: {
                     byId: {
                         1: {
@@ -276,7 +364,9 @@ describe('NoiseSurveyApp.renderers', () => {
                     },
                     allIds: [1],
                     selectedId: 1,
-                    counter: 2
+                    counter: 2,
+                    panelVisible: true,
+                    overlaysVisible: true
                 }
             };
 
@@ -296,6 +386,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelColorPicker.color).toBe('#ff5722');
 
             const updatedState = {
+                view: { availablePositions: ['P1'] },
                 regions: {
                     byId: {
                         1: {
@@ -318,7 +409,9 @@ describe('NoiseSurveyApp.renderers', () => {
                     },
                     allIds: [1],
                     selectedId: 1,
-                    counter: 2
+                    counter: 2,
+                    panelVisible: true,
+                    overlaysVisible: true
                 }
             };
 
@@ -342,11 +435,14 @@ describe('NoiseSurveyApp.renderers', () => {
             const models = window.NoiseSurveyApp.registry.models;
 
             const emptyState = {
+                view: { availablePositions: [] },
                 regions: {
                     byId: {},
                     allIds: [],
                     selectedId: null,
                     counter: 0,
+                    panelVisible: true,
+                    overlaysVisible: true,
                 }
             };
 
@@ -366,9 +462,12 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelFrequencyCopyButton.disabled).toBe(true);
             expect(models.regionPanelFrequencyCopyButton.visible).toBe(false);
             expect(models.regionPanelFrequencyTableDiv.visible).toBe(false);
+            expect(models.regionAutoDayButton.disabled).toBe(true);
+            expect(models.regionAutoNightButton.disabled).toBe(true);
 
 
             const populatedState = {
+                view: { availablePositions: ['P9'] },
                 regions: {
                     byId: {
                         5: {
@@ -392,6 +491,8 @@ describe('NoiseSurveyApp.renderers', () => {
                     allIds: [5],
                     selectedId: 5,
                     counter: 6,
+                    panelVisible: true,
+                    overlaysVisible: true,
                 }
             };
 
@@ -414,9 +515,12 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelFrequencyCopyButton.visible).toBe(true);
             expect(models.regionPanelFrequencyTableDiv.visible).toBe(true);
             expect(models.regionPanelFrequencyTableDiv.text).toContain('No frequency data available');
+            expect(models.regionAutoDayButton.disabled).toBe(false);
+            expect(models.regionAutoNightButton.disabled).toBe(false);
 
 
             const multiRegionState = {
+                view: { availablePositions: ['P9'] },
                 regions: {
                     byId: {
                         5: populatedState.regions.byId[5],
@@ -434,6 +538,8 @@ describe('NoiseSurveyApp.renderers', () => {
                     selectedId: 5,
                     counter: 7,
                     addAreaTargetId: null,
+                    panelVisible: true,
+                    overlaysVisible: true,
                 }
             };
 

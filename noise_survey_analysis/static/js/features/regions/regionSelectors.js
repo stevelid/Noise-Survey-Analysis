@@ -8,7 +8,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
-    const EMPTY_STATE = { byId: {}, allIds: [], selectedId: null, counter: 1, addAreaTargetId: null };
+    const EMPTY_STATE = {
+        byId: {},
+        allIds: [],
+        selectedId: null,
+        counter: 1,
+        addAreaTargetId: null,
+        panelVisible: true,
+        overlaysVisible: true
+    };
 
     function selectRegionsState(state) {
         return state?.regions || EMPTY_STATE;

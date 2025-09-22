@@ -55,6 +55,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REGION_ADD_AREA_MODE_SET: 'markers/regionAddAreaModeSet',
         REGION_MERGE_MODE_SET: 'markers/regionMergeModeSet',
         REGIONS_REPLACED: 'markers/regionsReplaced',
+        REGION_VISIBILITY_SET: 'regions/visibilitySet',
 
         // Audio
         AUDIO_STATUS_UPDATE: 'AUDIO_STATUS_UPDATE',
@@ -144,6 +145,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         regionSetMetrics: (id, metrics) => ({ type: actionTypes.REGION_METRICS_SET, payload: { id, metrics } }),
 
         regionReplaceAll: (regions) => ({ type: actionTypes.REGIONS_REPLACED, payload: { regions } }),
+
+        regionVisibilitySet: (config) => ({
+            type: actionTypes.REGION_VISIBILITY_SET,
+            payload: {
+                showPanel: typeof config?.showPanel === 'boolean' ? config.showPanel : undefined,
+                showOverlays: typeof config?.showOverlays === 'boolean' ? config.showOverlays : undefined,
+            }
+        }),
 
         regionSetAddAreaMode: (regionId) => ({
             type: actionTypes.REGION_ADD_AREA_MODE_SET,

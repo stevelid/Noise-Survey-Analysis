@@ -9,7 +9,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     const { actions } = app;
+    app.registry = app.registry || {};
+    const registry = app.registry;
     const MIN_REGION_WIDTH_MS = 1;
+    const HOUR_MS = 60 * 60 * 1000;
+    const DAY_MS = 24 * HOUR_MS;
+    const DAYTIME_START_HOUR = 7;
+    const DAYTIME_END_HOUR = 23;
 
     function getRegionAreas(region) {
         if (!region) return [];
@@ -24,6 +30,96 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const viewSelectors = app.features?.view?.selectors || {};
     const regionSelectors = app.features?.regions?.selectors || {};
+
+    function collectTimestampsFromSource(source) {
+        const data = source?.data;
+        if (!data || !data.Datetime) {
+            return [];
+        }
+        const raw = data.Datetime;
+        const timestamps = [];
+        for (let index = 0; index < raw.length; index++) {
+            const value = Number(raw[index]);
+            if (Number.isFinite(value)) {
+                timestamps.push(value);
+            }
+        }
+        return timestamps;
+    }
+
+    function collectPositionTimestamps(positionId) {
+        if (!positionId) {
+            return [];
+        }
+        const sources = registry.models?.timeSeriesSources?.[positionId];
+        if (!sources) {
+            return [];
+        }
+        const overviewTimes = collectTimestampsFromSource(sources.overview);
+        const logTimes = collectTimestampsFromSource(sources.log);
+        if (!overviewTimes.length && !logTimes.length) {
+            return [];
+        }
+        const combined = [...overviewTimes, ...logTimes];
+        combined.sort((a, b) => a - b);
+        const deduped = [];
+        let previous = null;
+        combined.forEach(timestamp => {
+            if (timestamp !== previous) {
+                deduped.push(timestamp);
+                previous = timestamp;
+            }
+        });
+        return deduped;
+    }
+
+    function clampInterval(start, end, min, max) {
+        if (!Number.isFinite(start) || !Number.isFinite(end)) {
+            return null;
+        }
+        const clampedStart = Math.max(start, min);
+        const clampedEnd = Math.min(end, max);
+        if (clampedStart >= clampedEnd) {
+            return null;
+        }
+        return { start: clampedStart, end: clampedEnd };
+    }
+
+    function buildDailyIntervals(timestamps, mode) {
+        if (!Array.isArray(timestamps) || !timestamps.length) {
+            return [];
+        }
+        const minTimestamp = timestamps[0];
+        const maxTimestamp = timestamps[timestamps.length - 1];
+        if (!Number.isFinite(minTimestamp) || !Number.isFinite(maxTimestamp)) {
+            return [];
+        }
+
+        const startDate = new Date(minTimestamp);
+        startDate.setHours(0, 0, 0, 0);
+        const endDate = new Date(maxTimestamp);
+        endDate.setHours(0, 0, 0, 0);
+
+        const intervals = [];
+        for (let day = startDate.getTime(); day <= endDate.getTime(); day += DAY_MS) {
+            if (mode === 'nighttime') {
+                const rawStart = day + DAYTIME_END_HOUR * HOUR_MS;
+                const rawEnd = day + DAY_MS + DAYTIME_START_HOUR * HOUR_MS;
+                const interval = clampInterval(rawStart, rawEnd, minTimestamp, maxTimestamp);
+                if (interval) {
+                    intervals.push(interval);
+                }
+            } else {
+                const rawStart = day + DAYTIME_START_HOUR * HOUR_MS;
+                const rawEnd = day + DAYTIME_END_HOUR * HOUR_MS;
+                const interval = clampInterval(rawStart, rawEnd, minTimestamp, maxTimestamp);
+                if (interval) {
+                    intervals.push(interval);
+                }
+            }
+        }
+        return intervals;
+    }
 
     function enterComparisonModeIntent() {
         return function (dispatch) {
@@ -158,6 +254,52 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
 
+    function createAutoRegionsIntent(payload) {
+        return function (dispatch, getState) {
+            if (!actions || typeof dispatch !== 'function') {
+                return;
+            }
+            const mode = payload?.mode === 'nighttime' ? 'nighttime' : 'daytime';
+            const state = typeof getState === 'function' ? getState() : null;
+            const availablePositions = Array.isArray(state?.view?.availablePositions)
+                ? state.view.availablePositions
+                : [];
+            const fallbackPositions = registry.models?.timeSeriesSources
+                ? Object.keys(registry.models.timeSeriesSources)
+                : [];
+            const positions = availablePositions.length ? availablePositions : fallbackPositions;
+            if (!positions.length) {
+                return;
+            }
+
+            const generated = [];
+            positions.forEach(positionId => {
+                if (!positionId) {
+                    return;
+                }
+                const timestamps = collectPositionTimestamps(positionId);
+                if (!timestamps.length) {
+                    return;
+                }
+                const intervals = buildDailyIntervals(timestamps, mode);
+                intervals.forEach(interval => {
+                    generated.push({
+                        positionId,
+                        start: interval.start,
+                        end: interval.end
+                    });
+                });
+            });
+
+            if (!generated.length) {
+                return;
+            }
+
+            dispatch(actions.regionsAdded(generated));
+        };
+    }
+
+
     function mergeRegionIntoSelectedIntent(sourceId) {
         return function (dispatch, getState) {
             if (!actions || typeof getState !== 'function') return;
@@ -202,7 +344,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const region = regionsState.byId[selectedId];
             if (!region) return;
 
-            if (!modifiers.ctrl && !modifiers.alt) {
+            if (!modifiers.ctrl && !modifiers.alt && !modifiers.shift) {
                 return;
             }
 
@@ -214,7 +356,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const viewportMin = Number.isFinite(viewport.min) ? viewport.min : -Infinity;
             const viewportMax = Number.isFinite(viewport.max) ? viewport.max : Infinity;
 
-            if (modifiers.alt) { //todo: move key modifiers to config
+            const shouldAdjustEnd = Boolean(modifiers.shift);
+            if (shouldAdjustEnd) { //todo: move key modifiers to config
                 const rawEnd = region.end + delta;
                 const minEnd = region.start + MIN_REGION_WIDTH_MS;
                 const clampedEnd = Math.min(Math.max(minEnd, rawEnd), viewportMax);
@@ -224,7 +367,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            if (modifiers.ctrl) { //todo: move key modifiers to config
+            if (modifiers.ctrl || modifiers.alt) { //todo: move key modifiers to config
                 const rawStart = region.start + delta;
                 const maxStart = region.end - MIN_REGION_WIDTH_MS;
                 const clampedStart = Math.max(Math.min(maxStart, rawStart), viewportMin);
@@ -244,6 +387,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateComparisonSliceIntent,
         createRegionsFromComparisonIntent,
         createRegionIntent,
+        createAutoRegionsIntent,
         mergeRegionIntoSelectedIntent,
         resizeSelectedRegionIntent
     };

@@ -18,7 +18,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         selectedId: null,
         counter: 1,
         addAreaTargetId: null,
-        isMergeModeActive: false
+        isMergeModeActive: false,
+        panelVisible: true,
+        overlaysVisible: true
     };
 
     function normalizeColor(color, fallback = DEFAULT_REGION_COLOR) {
@@ -307,7 +309,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 selectedId: null,
                 counter: 1,
                 addAreaTargetId: null,
-                isMergeModeActive: false
+                isMergeModeActive: false,
+                panelVisible: state.panelVisible,
+                overlaysVisible: state.overlaysVisible
             };
         }
 
@@ -351,7 +355,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             selectedId,
             counter: Math.max(maxId + 1, state.counter, 1),
             addAreaTargetId: null,
-            isMergeModeActive: false
+            isMergeModeActive: false,
+            panelVisible: state.panelVisible,
+            overlaysVisible: state.overlaysVisible
         };
     }
 
@@ -422,6 +428,25 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     return state;
                 }
                 return updateRegion(state, id, { color });
+            }
+
+            case actionTypes.REGION_VISIBILITY_SET: {
+                const rawPanelVisible = action.payload?.showPanel;
+                const rawOverlaysVisible = action.payload?.showOverlays;
+                const nextPanelVisible = typeof rawPanelVisible === 'boolean'
+                    ? rawPanelVisible
+                    : state.panelVisible;
+                const nextOverlaysVisible = typeof rawOverlaysVisible === 'boolean'
+                    ? rawOverlaysVisible
+                    : state.overlaysVisible;
+                if (nextPanelVisible === state.panelVisible && nextOverlaysVisible === state.overlaysVisible) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    panelVisible: nextPanelVisible,
+                    overlaysVisible: nextOverlaysVisible
+                };
             }
 
             case actionTypes.REGIONS_REPLACED:
