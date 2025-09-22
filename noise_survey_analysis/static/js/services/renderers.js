@@ -35,6 +35,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return parts.join('');
     }
 
+    function formatDateTime(timestamp) {
+        if (!Number.isFinite(timestamp)) {
+            return 'N/A';
+        }
+        const date = new Date(timestamp);
+        return date.toLocaleString([], {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+    }
+
     const COMPARISON_METRICS_STYLE = `
         <style>
             .comparison-metrics-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -147,7 +163,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         `;
     }
 
-    const COMPARISON_SLICE_COLOR = '#2e7d32';
+    const COMPARISON_SLICE_COLOR = '#d32f2f';
     const COMPARISON_SLICE_FILL_ALPHA = 0.12;
     const COMPARISON_SLICE_LINE_ALPHA = 0.9;
 
@@ -853,6 +869,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const hasSlice = Number.isFinite(comparisonState.start) && Number.isFinite(comparisonState.end);
         if (models.comparisonMakeRegionsButton) {
             models.comparisonMakeRegionsButton.disabled = !(isComparisonActive && hasSlice);
+        }
+
+        const sliceInfoDiv = models.comparisonSliceInfoDiv;
+        if (sliceInfoDiv) {
+            sliceInfoDiv.visible = isComparisonActive;
+            let infoHtml;
+            if (!isComparisonActive || !hasSlice) {
+                infoHtml = "<div class='comparison-slice-info'><em>Select a time slice to view details.</em></div>";
+            } else {
+                const startText = escapeHtml(formatDateTime(comparisonState.start));
+                const endText = escapeHtml(formatDateTime(comparisonState.end));
+                infoHtml = "<div class=\"comparison-slice-info\"><strong>Selected Slice</strong><div>Start: "
+                    + `${startText}</div><div>End: ${endText}</div></div>`;
+            }
+            if (sliceInfoDiv.text !== infoHtml) {
+                sliceInfoDiv.text = infoHtml;
+            }
         }
 
         const selector = models.comparisonPositionSelector;

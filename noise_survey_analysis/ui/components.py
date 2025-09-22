@@ -1485,6 +1485,19 @@ class ComparisonPanelComponent:
             styles={"margin-bottom": "8px"}
         )
 
+        self.slice_info_div = Div(
+            text="<div class='comparison-slice-info'><em>No time slice selected.</em></div>",
+            width=320,
+            name="comparison_slice_info_div",
+            styles={
+                "border": "1px solid #ccc",
+                "padding": "8px",
+                "background-color": "#fafafa",
+                "font-size": "12px",
+                "margin-bottom": "8px"
+            }
+        )
+
         labels = [str(position_id) for position_id in self.position_ids]
         self.position_selector = CheckboxGroup(
             labels=labels,
@@ -1602,6 +1615,7 @@ class ComparisonPanelComponent:
         self.container = Column(
             self.instructions_div,
             self.position_selector,
+            self.slice_info_div,
             self.metrics_table_div,
             buttons_row,
             name="comparison_panel_layout",

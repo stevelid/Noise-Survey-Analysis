@@ -128,25 +128,32 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (Math.abs(end - start) < MIN_REGION_WIDTH_MS) return;
 
             const state = typeof getState === 'function' ? getState() : null;
+            const viewState = viewSelectors.selectViewState
+                ? viewSelectors.selectViewState(state)
+                : state?.view;
+            if (viewState?.mode === 'comparison') {
+                return;
+            }
             const regionsState = state?.regions;
-            const targetId = regionsState?.addAreaTargetId;
-            const targetRegion = Number.isFinite(targetId) ? regionsState?.byId?.[targetId] : null;
+            const rawTargetId = regionsState?.addAreaTargetId;
+            const targetId = Number.isFinite(rawTargetId) ? rawTargetId : null;
+            const targetRegion = targetId !== null ? regionsState?.byId?.[targetId] : null;
 
             if (targetRegion && targetRegion.positionId === positionId) {
                 const existingAreas = getRegionAreas(targetRegion);
                 const nextAreas = [...existingAreas, { start, end }];
                 dispatch(actions.regionUpdate(targetRegion.id, { areas: nextAreas }));
-                dispatch(actions.regionSetAddAreaMode(null));
                 if (regionsState?.selectedId !== targetRegion.id) {
                     dispatch(actions.regionSelect(targetRegion.id));
                 }
                 return;
             }
 
-            dispatch(actions.regionAdd(positionId, start, end));
-            if (regionsState?.addAreaTargetId != null) {
+            if (targetId !== null && actions.regionSetAddAreaMode) {
                 dispatch(actions.regionSetAddAreaMode(null));
             }
+
+            dispatch(actions.regionAdd(positionId, start, end));
         };
     }
 

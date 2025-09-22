@@ -453,6 +453,7 @@ class DashBuilder:
             'comparisonPositionIds': self.shared_components['comparison_panel'].position_ids,
             'comparisonFinishButton': self.shared_components['comparison_panel'].finish_button,
             'comparisonMakeRegionsButton': self.shared_components['comparison_panel'].make_regions_button,
+            'comparisonSliceInfoDiv': self.shared_components['comparison_panel'].slice_info_div,
             'comparisonMetricsDiv': self.shared_components['comparison_panel'].metrics_table_div,
             'comparisonFrequencyLayout': self.shared_components.get('comparison_frequency_layout'),
             'comparisonFrequencySource': self.shared_components['comparison_frequency'].source,

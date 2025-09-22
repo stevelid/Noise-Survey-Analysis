@@ -81,15 +81,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }, 0);
     }
 
-    function formatTime(timestamp) {
+    function formatDateTime(timestamp) {
         if (!Number.isFinite(timestamp)) return 'N/A';
         const date = new Date(timestamp);
-        return date.toLocaleTimeString([], { hour12: false });
+        return date.toLocaleString([], {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
     }
-    
+
     function formatSegmentRange(area) {
         if (!area) return 'N/A';
-        return `${formatTime(area.start)} – ${formatTime(area.end)}`;
+        return `${formatDateTime(area.start)} – ${formatDateTime(area.end)}`;
     }
 
     function formatDuration(ms) {
@@ -248,6 +256,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return true;
     }
 
+    function shallowEqualObjects(a, b) {
+        const left = a || {};
+        const right = b || {};
+        const leftKeys = Object.keys(left);
+        const rightKeys = Object.keys(right);
+        if (leftKeys.length !== rightKeys.length) {
+            return false;
+        }
+        for (let i = 0; i < leftKeys.length; i++) {
+            const key = leftKeys[i];
+            if (left[key] !== right[key]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     function updateSelect(select, regionList, selectedId, state) {
         if (!select) {
             return { selectedRegion: null, selectedValue: '' };
@@ -266,10 +291,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         select.disabled = options.length === 0;
         const region = regionList.find(entry => String(entry.id) === select.value) || null;
-        const desiredColor = normalizeColor(region?.color);
         const existingStyles = select.styles || {};
-        if (existingStyles.color !== desiredColor) {
-            select.styles = { ...existingStyles, color: desiredColor };
+        const sanitizedStyles = { ...existingStyles };
+        if (Object.prototype.hasOwnProperty.call(sanitizedStyles, 'color')) {
+            delete sanitizedStyles.color;
+        }
+        if (!shallowEqualObjects(existingStyles, sanitizedStyles)) {
+            select.styles = sanitizedStyles;
         }
         return { selectedRegion: region, selectedValue: select.value };
     }

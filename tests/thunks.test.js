@@ -55,6 +55,25 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.regions.counter).toBe(2);
     });
 
+    it('handleTapIntent removes only the targeted area on ctrl click when multiple areas exist', () => {
+        store.dispatch(actions.regionAdd('P1', 1000, 2000));
+        store.dispatch(actions.regionUpdate(1, { areas: [
+            { start: 1000, end: 2000 },
+            { start: 3000, end: 4000 }
+        ] }));
+
+        const thunk = thunks.handleTapIntent({
+            timestamp: 3500,
+            positionId: 'P1',
+            chartName: 'figure_P1_timeseries',
+            modifiers: { ctrl: true }
+        });
+        thunk(store.dispatch, store.getState);
+        const state = store.getState();
+        expect(state.regions.allIds).toHaveLength(1);
+        expect(state.regions.byId[1].areas).toEqual([{ start: 1000, end: 2000 }]);
+    });
+
     it('createRegionIntent adds region when bounds valid', () => {
         const thunk = thunks.createRegionIntent({
             positionId: 'P1',
@@ -66,6 +85,25 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.regions.allIds).toHaveLength(1);
         expect(state.regions.byId[1].start).toBe(1000);
         expect(state.regions.byId[1].end).toBe(2000);
+        expect(state.regions.selectedId).toBe(1);
+    });
+
+    it('createRegionIntent ignores creation requests during comparison mode', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 1000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(thunks.enterComparisonModeIntent());
+        const thunk = thunks.createRegionIntent({
+            positionId: 'P1',
+            start: 1000,
+            end: 2000
+        });
+        thunk(store.dispatch, store.getState);
+        const state = store.getState();
+        expect(state.regions.allIds).toHaveLength(0);
     });
 
     it('resizeSelectedRegionIntent nudges end when shift held', () => {
