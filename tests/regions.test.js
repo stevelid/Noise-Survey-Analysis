@@ -105,8 +105,8 @@ describe('Region Management (Multi-Area)', () => {
             expect(dispatch).toHaveBeenCalledWith(
                 actions.regionUpdate(1, { areas: [{ start: 100, end: 200 }, { start: 250, end: 300 }] })
             );
-            expect(dispatch).toHaveBeenCalledWith(actions.regionSetAddAreaMode(null));
             expect(dispatch).toHaveBeenCalledWith(actions.regionSelect(1));
+            expect(dispatch).not.toHaveBeenCalledWith(actions.regionSetAddAreaMode(null));
         });
 
         it('mergeRegionIntoSelectedIntent should merge two regions', () => {

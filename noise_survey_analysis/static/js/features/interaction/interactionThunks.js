@@ -38,7 +38,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             if (isCtrl && regionHit) {
-                dispatch(actions.regionRemove(regionHit.id));
+                const areas = Array.isArray(regionHit.areas) ? regionHit.areas : [];
+                const targetIndex = areas.findIndex(area => {
+                    if (!area) return false;
+                    const areaStart = Number(area.start);
+                    const areaEnd = Number(area.end);
+                    if (!Number.isFinite(areaStart) || !Number.isFinite(areaEnd)) {
+                        return false;
+                    }
+                    return timestamp >= areaStart && timestamp <= areaEnd;
+                });
+
+                if (areas.length <= 1 || targetIndex === -1) {
+                    dispatch(actions.regionRemove(regionHit.id));
+                } else {
+                    const nextAreas = areas.filter((_, index) => index !== targetIndex);
+                    dispatch(actions.regionUpdate(regionHit.id, { areas: nextAreas }));
+                }
                 return;
             }
 
