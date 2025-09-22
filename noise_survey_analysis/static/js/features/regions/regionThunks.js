@@ -195,7 +195,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const region = regionsState.byId[selectedId];
             if (!region) return;
 
-            if (!modifiers.shift && !modifiers.alt) {
+            if (!modifiers.ctrl && !modifiers.alt) {
                 return;
             }
 
@@ -207,7 +207,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const viewportMin = Number.isFinite(viewport.min) ? viewport.min : -Infinity;
             const viewportMax = Number.isFinite(viewport.max) ? viewport.max : Infinity;
 
-            if (modifiers.shift) {
+            if (modifiers.alt) { //todo: move key modifiers to config
                 const rawEnd = region.end + delta;
                 const minEnd = region.start + MIN_REGION_WIDTH_MS;
                 const clampedEnd = Math.min(Math.max(minEnd, rawEnd), viewportMax);
@@ -217,7 +217,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            if (modifiers.alt) {
+            if (modifiers.ctrl) { //todo: move key modifiers to config
                 const rawStart = region.start + delta;
                 const maxStart = region.end - MIN_REGION_WIDTH_MS;
                 const clampedStart = Math.max(Math.min(maxStart, rawStart), viewportMin);

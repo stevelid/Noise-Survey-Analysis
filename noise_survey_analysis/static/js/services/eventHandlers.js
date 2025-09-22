@@ -306,7 +306,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return;
         }
 
-        if (e.shiftKey || e.altKey) {
+        if (e.ctrlKey || e.altKey) { //todo: move key modifiers to config and provide user help tips
             e.preventDefault();
             const thunkCreator = app.thunks && app.thunks.resizeSelectedRegionIntent;
             const dispatch = app.store && app.store.dispatch;
@@ -323,7 +323,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 key: e.key,
                 modifiers: {
                     shift: Boolean(e.shiftKey),
-                    alt: Boolean(e.altKey)
+                    alt: Boolean(e.altKey),
+                    ctrl: Boolean(e.ctrlKey)
                 }
             }));
             return;
