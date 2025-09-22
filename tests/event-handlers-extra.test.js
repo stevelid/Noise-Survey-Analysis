@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Load modules in order
-import '../noise_survey_analysis/static/js/actions.js';
-import '../noise_survey_analysis/static/js/thunks.js';
-import '../noise_survey_analysis/static/js/event-handlers.js';
+import './loadCoreModules.js';
+import '../noise_survey_analysis/static/js/services/eventHandlers.js';
 
 describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
   let dispatchAction;

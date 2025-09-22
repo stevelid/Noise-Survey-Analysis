@@ -6,10 +6,7 @@ import { describe, it, expect } from 'vitest';
 describe('NoiseSurveyApp.init (store creation)', () => {
   it('should create a global store when createStore, actions, and rootReducer are loaded in order', async () => {
     // Load Store first (no side-effects needing actions)
-    await import('../noise_survey_analysis/static/js/store.js');
-    // Ensure actionTypes are defined before reducers evaluate
-    await import('../noise_survey_analysis/static/js/actions.js');
-    await import('../noise_survey_analysis/static/js/reducers.js');
+    await import('./loadCoreModules.js');
     // Now create the store via init.js (which depends on createStore + rootReducer)
     await import('../noise_survey_analysis/static/js/init.js');
 

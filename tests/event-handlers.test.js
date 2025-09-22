@@ -1,11 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Import source files for side effects to enable coverage tracking.
-import '../noise_survey_analysis/static/js/store.js';
-import '../noise_survey_analysis/static/js/actions.js';
-import '../noise_survey_analysis/static/js/reducers.js';
-import '../noise_survey_analysis/static/js/thunks.js';
-import '../noise_survey_analysis/static/js/event-handlers.js';
+import './loadCoreModules.js';
+import '../noise_survey_analysis/static/js/services/eventHandlers.js';
 
 // Now we can safely destructure from the global object.
 const { createStore, actions, rootReducer, eventHandlers } = window.NoiseSurveyApp;

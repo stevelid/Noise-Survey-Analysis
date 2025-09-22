@@ -1,4 +1,4 @@
-// noise_survey_analysis/static/js/event-handlers.js
+// noise_survey_analysis/static/js/services/eventHandlers.js
 
 /**
  * @fileoverview Contains all event handler functions for the Noise Survey application.
@@ -42,7 +42,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // --- Event Handlers ---
 
     function handleTap(cb_obj) {
-        const chartName = cb_obj?.origin?.name;
+        const chartName = cb_obj?.origin?.name || cb_obj?.model?.name;
         if (!chartName || chartName === 'frequency_bar') return;
         const positionId = _getChartPositionByName(chartName);
         if (!positionId) return;
@@ -60,16 +60,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return;
         }
 
+        const modifiers = {
+            ctrl: Boolean(cb_obj?.modifiers?.ctrl)
+        };
+        if (cb_obj?.modifiers?.shift) {
+            modifiers.shift = true;
+        }
+
         dispatch(thunkCreator({
             timestamp,
             positionId,
             chartName,
-            modifiers: cb_obj?.modifiers || {}
+            modifiers
         }));
     }
 
     function handleRegionBoxSelect(cb_obj) {
-        const chartName = cb_obj?.origin?.name;
+        const chartName = cb_obj?.origin?.name || cb_obj?.model?.name;
         if (!chartName || chartName === 'frequency_bar') return;
 
         const geometry = cb_obj?.geometry;

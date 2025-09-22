@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import '../noise_survey_analysis/static/js/calcMetrics.js';
+import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';
 import '../noise_survey_analysis/static/js/comparison-metrics.js';
 
 const { comparisonMetrics, calcMetrics } = window.NoiseSurveyApp;

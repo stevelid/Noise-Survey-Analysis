@@ -24,7 +24,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             reInitializeStore: reInitializeStore
         };
     } else {
-        console.error('[Init]', 'createStore or rootReducer is not available. Ensure Store.js and reducers.js are loaded before init.js');
+        console.error('[Init]', 'createStore or rootReducer is not available. Ensure store.js and core/rootReducer.js are loaded before init.js');
     }
 
 })(window.NoiseSurveyApp);

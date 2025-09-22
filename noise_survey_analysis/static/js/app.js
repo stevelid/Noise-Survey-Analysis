@@ -111,7 +111,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didViewToggleChange = state.view.globalViewType !== previousState.view.globalViewType;
         const didVisibilityChange = state.view.chartVisibility !== previousState.view.chartVisibility;
         const didMarkersChange = state.markers.timestamps !== previousState.markers.timestamps;
-        const didRegionsChange = state.markers.regions !== previousState.markers.regions;
+        const didRegionsChange = state.regions !== previousState.regions;
         const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
 
         const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange;
@@ -119,11 +119,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         // --- B. ORCHESTRATE DATA PROCESSING & RENDERING ---
         if (isHeavyUpdate) {
             // 1. Process heavy data (time series, spectrograms)
-            app.data_processors.updateActiveData(state.view, dataCache, app.registry.models);
+            if (app.data_processors?.updateActiveData) {
+                app.data_processors.updateActiveData(state.view, dataCache, app.registry.models);
+            }
 
-            // 2. Calculate new step size based on new data 
-            const newStepSize = app.data_processors.calculateStepSize(state, dataCache);
-            if (newStepSize !== state.interaction.keyboard.stepSizeMs) {
+            // 2. Calculate new step size based on new data
+            const newStepSize = app.data_processors?.calculateStepSize
+                ? app.data_processors.calculateStepSize(state, dataCache)
+                : undefined;
+            if (Number.isFinite(newStepSize) && newStepSize !== state.interaction.keyboard.stepSizeMs) {
                 app.store.dispatch(app.actions.stepSizeCalculated(newStepSize));
             }
 
@@ -161,7 +165,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             app.renderers.renderComparisonMode(state);
         }
 
-        if (isInitialLoad || didActiveDragToolChange) {
+        if ((isInitialLoad || didActiveDragToolChange) && typeof app.renderers.renderActiveTool === 'function') {
             app.renderers.renderActiveTool(state, models);
         }
 

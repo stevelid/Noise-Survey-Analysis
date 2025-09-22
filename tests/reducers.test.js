@@ -4,8 +4,7 @@ import { describe, it, expect } from 'vitest';
 
 // Import source files for side effects to enable coverage tracking.
 // This populates the global window.NoiseSurveyApp object.
-import '../noise_survey_analysis/static/js/actions.js';
-import '../noise_survey_analysis/static/js/reducers.js';
+import './loadCoreModules.js';
 
 // Now we can safely destructure from the global object.
 const { rootReducer, initialState, actions } = window.NoiseSurveyApp;
@@ -188,17 +187,17 @@ describe('rootReducer', () => {
     describe('Region Actions', () => {
         it('should add a region and select it', () => {
             const state = rootReducer(initialState, actions.regionAdd('P1', 2000, 1000));
-            const region = state.markers.regions.byId[1];
+            const region = state.regions.byId[1];
             expect(region.start).toBe(1000);
             expect(region.end).toBe(2000);
-            expect(state.markers.regions.selectedId).toBe(1);
+            expect(state.regions.selectedId).toBe(1);
         });
 
         it('should update region bounds and reset metrics', () => {
             let state = rootReducer(initialState, actions.regionAdd('P1', 1000, 2000));
             state = rootReducer(state, actions.regionSetMetrics(1, { laeq: 50 }));
             state = rootReducer(state, actions.regionUpdate(1, { end: 4000 }));
-            const region = state.markers.regions.byId[1];
+            const region = state.regions.byId[1];
             expect(region.end).toBe(4000);
             expect(region.metrics).toBeNull();
         });
@@ -206,26 +205,26 @@ describe('rootReducer', () => {
         it('should remove a region and clear selection', () => {
             let state = rootReducer(initialState, actions.regionAdd('P1', 1000, 2000));
             state = rootReducer(state, actions.regionRemove(1));
-            expect(state.markers.regions.allIds).toHaveLength(0);
-            expect(state.markers.regions.selectedId).toBeNull();
-            expect(state.markers.regions.counter).toBe(2);
+            expect(state.regions.allIds).toHaveLength(0);
+            expect(state.regions.selectedId).toBeNull();
+            expect(state.regions.counter).toBe(2);
         });
 
         it('should continue incrementing counters after removals', () => {
             let state = rootReducer(initialState, actions.regionAdd('P1', 1000, 2000));
             state = rootReducer(state, actions.regionAdd('P1', 3000, 4000));
-            expect(state.markers.regions.counter).toBe(3);
+            expect(state.regions.counter).toBe(3);
             state = rootReducer(state, actions.regionRemove(2));
-            expect(state.markers.regions.counter).toBe(3);
+            expect(state.regions.counter).toBe(3);
             state = rootReducer(state, actions.regionAdd('P1', 5000, 6000));
-            expect(state.markers.regions.byId[3]).toBeTruthy();
-            expect(state.markers.regions.counter).toBe(4);
+            expect(state.regions.byId[3]).toBeTruthy();
+            expect(state.regions.counter).toBe(4);
         });
 
         it('should set notes without affecting other fields', () => {
             let state = rootReducer(initialState, actions.regionAdd('P1', 1000, 2000));
             state = rootReducer(state, actions.regionSetNote(1, 'Important observation'));
-            expect(state.markers.regions.byId[1].note).toBe('Important observation');
+            expect(state.regions.byId[1].note).toBe('Important observation');
         });
 
         it('should replace all regions from payload', () => {
@@ -234,8 +233,8 @@ describe('rootReducer', () => {
                 { positionId: 'P2', start: 300, end: 500 }
             ];
             const state = rootReducer(initialState, actions.regionReplaceAll(regions));
-            expect(state.markers.regions.allIds).toHaveLength(2);
-            expect(state.markers.regions.byId[7].note).toBe('A');
+            expect(state.regions.allIds).toHaveLength(2);
+            expect(state.regions.byId[7].note).toBe('A');
         });
 
         it('should add multiple regions in a single batch', () => {
@@ -244,17 +243,17 @@ describe('rootReducer', () => {
                 { positionId: 'P2', start: 500, end: 900 }
             ];
             const state = rootReducer(initialState, actions.regionsAdded(batch));
-            expect(state.markers.regions.allIds).toEqual([1, 2]);
-            expect(state.markers.regions.byId[1]).toMatchObject({ positionId: 'P1', start: 400, end: 800 });
-            expect(state.markers.regions.byId[2]).toMatchObject({ positionId: 'P2', start: 500, end: 900 });
-            expect(state.markers.regions.counter).toBe(3);
-            expect(state.markers.regions.selectedId).toBe(1);
+            expect(state.regions.allIds).toEqual([1, 2]);
+            expect(state.regions.byId[1]).toMatchObject({ positionId: 'P1', start: 400, end: 800 });
+            expect(state.regions.byId[2]).toMatchObject({ positionId: 'P2', start: 500, end: 900 });
+            expect(state.regions.counter).toBe(3);
+            expect(state.regions.selectedId).toBe(1);
         });
 
         it('should clear regions when replace payload is empty', () => {
             let state = rootReducer(initialState, actions.regionAdd('P1', 100, 200));
             state = rootReducer(state, actions.regionReplaceAll([]));
-            expect(state.markers.regions.allIds).toEqual([]);
+            expect(state.regions.allIds).toEqual([]);
         });
     });
 

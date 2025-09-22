@@ -1,15 +1,106 @@
-// noise_survey_analysis/static/js/regions.js
+// noise_survey_analysis/static/js/features/regions/regionUtils.js
 
 /**
- * @fileoverview Helper functions for region management, including metric
- * calculations, import/export utilities, and clipboard formatting.
+ * @fileoverview Region utilities including metric calculations and import/export helpers.
  */
 
 window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
-    const calcMetrics = app.calcMetrics || {};
+    function toFiniteArray(values) {
+        if (!values) return [];
+        if (Array.isArray(values) || ArrayBuffer.isView(values)) {
+            const result = [];
+            for (let i = 0; i < values.length; i++) {
+                const value = Number(values[i]);
+                if (Number.isFinite(value)) {
+                    result.push(value);
+                }
+            }
+            return result;
+        }
+        return [];
+    }
+
+    const EPSILON = 1e-12;
+
+    function calcLAeq(values) {
+        const finiteValues = toFiniteArray(values);
+        if (!finiteValues.length) return null;
+
+        let energySum = 0;
+        for (let i = 0; i < finiteValues.length; i++) {
+            energySum += Math.pow(10, finiteValues[i] / 10);
+        }
+
+        if (energySum <= EPSILON) return null;
+        const meanEnergy = energySum / finiteValues.length;
+        return 10 * Math.log10(meanEnergy);
+    }
+
+    function calcLAMax(values) {
+        const finiteValues = toFiniteArray(values);
+        if (!finiteValues.length) return null;
+        let maxValue = -Infinity;
+        for (let i = 0; i < finiteValues.length; i++) {
+            if (finiteValues[i] > maxValue) {
+                maxValue = finiteValues[i];
+            }
+        }
+        return Number.isFinite(maxValue) ? maxValue : null;
+    }
+
+    function calcLA90(values) {
+        const finiteValues = toFiniteArray(values);
+        if (!finiteValues.length) return null;
+
+        const sorted = finiteValues.slice().sort((a, b) => a - b);
+        if (!sorted.length) return null;
+
+        const position = 0.1 * (sorted.length - 1);
+        const lowerIndex = Math.floor(position);
+        const upperIndex = Math.ceil(position);
+
+        if (lowerIndex === upperIndex) {
+            return sorted[lowerIndex];
+        }
+
+        const lower = sorted[lowerIndex];
+        const upper = sorted[upperIndex];
+        const weight = position - lowerIndex;
+        return lower + weight * (upper - lower);
+    }
+
+    function sliceTimeSeries(timestamps, values, startMs, endMs) {
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return [];
+        if (!timestamps || !values) return [];
+        const min = Math.min(startMs, endMs);
+        const max = Math.max(startMs, endMs);
+        const length = Math.min(timestamps.length, values.length);
+        const result = [];
+        for (let i = 0; i < length; i++) {
+            const time = Number(timestamps[i]);
+            if (!Number.isFinite(time)) continue;
+            if (time >= min && time <= max) {
+                const value = Number(values[i]);
+                if (Number.isFinite(value)) {
+                    result.push(value);
+                }
+            }
+        }
+        return result;
+    }
+
+    function calcAverageSpectrum(spectralMatrix) {
+        if (!Array.isArray(spectralMatrix) || !spectralMatrix.length) return [];
+        const result = new Array(spectralMatrix.length).fill(null);
+        for (let bandIndex = 0; bandIndex < spectralMatrix.length; bandIndex++) {
+            const bandValues = toFiniteArray(spectralMatrix[bandIndex]);
+            result[bandIndex] = bandValues.length ? calcLAeq(bandValues) : null;
+        }
+        return result;
+    }
 
     function clampRangeIndices(times, min, max) {
         if (!Array.isArray(times) && !ArrayBuffer.isView(times)) return null;
@@ -59,7 +150,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     bandValues.push(value);
                 }
             }
-            values[freqIdx] = bandValues.length ? calcMetrics.calcLAeq(bandValues) : null;
+            values[freqIdx] = bandValues.length ? calcLAeq(bandValues) : null;
         }
         return {
             labels: preparedData.frequency_labels || [],
@@ -74,7 +165,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const logData = sources.log?.data;
         if (logData?.Datetime && logData.LAeq) {
-            const laeqLog = calcMetrics.sliceTimeSeries(logData.Datetime, logData.LAeq, min, max);
+            const laeqLog = sliceTimeSeries(logData.Datetime, logData.LAeq, min, max);
             if (laeqLog.length) {
                 return {
                     dataset: 'log',
@@ -86,7 +177,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const overviewData = sources.overview?.data;
         if (overviewData?.Datetime && overviewData.LAeq) {
-            const laeqOverview = calcMetrics.sliceTimeSeries(overviewData.Datetime, overviewData.LAeq, min, max);
+            const laeqOverview = sliceTimeSeries(overviewData.Datetime, overviewData.LAeq, min, max);
             if (laeqOverview.length) {
                 return {
                     dataset: 'overview',
@@ -117,17 +208,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             };
         }
 
-        const laeq = calcMetrics.calcLAeq(selection.laeqValues);
+        const laeq = calcLAeq(selection.laeqValues);
         let lafmaxValues = selection.laeqValues;
         const lafmaxField = selection.data?.LAFmax;
         if (lafmaxField) {
-            const extracted = calcMetrics.sliceTimeSeries(selection.data.Datetime, lafmaxField, region.start, region.end);
+            const extracted = sliceTimeSeries(selection.data.Datetime, lafmaxField, region.start, region.end);
             if (extracted.length) {
                 lafmaxValues = extracted;
             }
         }
-        const lafmax = calcMetrics.calcLAMax(lafmaxValues);
-        const la90 = selection.dataset === 'log' ? calcMetrics.calcLA90(selection.laeqValues) : null;
+        const lafmax = calcLAMax(lafmaxValues);
+        const la90 = selection.dataset === 'log' ? calcLA90(selection.laeqValues) : null;
 
         const selectedParam = state?.view?.selectedParameter;
         const prepared = models?.preparedGlyphData?.[region.positionId];
@@ -169,7 +260,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function prepareMetricsUpdates(state, dataCache, models) {
-        const regionsState = state?.markers?.regions;
+        const regionsState = state?.regions;
         if (!regionsState) return [];
         const updates = [];
         const selectedParam = state?.view?.selectedParameter || null;
@@ -191,7 +282,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function exportRegions(state) {
-        const regionsState = state?.markers?.regions;
+        const regionsState = state?.regions;
         if (!regionsState) return '[]';
         const exportPayload = regionsState.allIds.map(id => regionsState.byId[id]).filter(Boolean).map(region => ({
             id: region.id,
@@ -296,7 +387,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         fileInput.click();
     }
 
-    app.regions = {
+    const metrics = {
+        calcLAeq,
+        calcLAMax,
+        calcLA90,
+        calcAverageSpectrum,
+        sliceTimeSeries
+    };
+
+    const utils = {
         computeRegionMetrics,
         prepareMetricsUpdates,
         exportRegions,
@@ -305,4 +404,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleExport,
         handleImport
     };
+
+    app.features = app.features || {};
+    app.features.regions = app.features.regions || {};
+    app.features.regions.utils = utils;
+    app.features.regions.metrics = metrics;
+
+    app.calcMetrics = metrics;
+    app.regions = utils;
 })(window.NoiseSurveyApp);

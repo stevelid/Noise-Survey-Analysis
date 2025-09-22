@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import '../noise_survey_analysis/static/js/calcMetrics.js';
+import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';
 
 const { calcMetrics } = window.NoiseSurveyApp;
 
