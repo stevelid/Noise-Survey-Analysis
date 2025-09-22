@@ -35,19 +35,19 @@ CHART_SETTINGS = {
 
     # Defines the frequency range for the detailed data table.
     'freq_table_freq_range_hz': [20, 10000],
-    'low_freq_height': 360,      
-    'low_freq_width': 1600,      
-    'high_freq_height': 360,     
-    'high_freq_width': 1600,      
-    'spectrogram_height': 360,   
-    'spectrogram_width': 1600,    
+    'low_freq_height': 360,
+    'low_freq_width': None,
+    'high_freq_height': 360,
+    'high_freq_width': None,
+    'spectrogram_height': 360,
+    'spectrogram_width': None,
     'sync_charts': True,
     'tools': 'xzoom_in,xzoom_out,xpan,reset,xwheel_zoom,xbox_select',  # X-axis only tools
     'active_scroll': 'xwheel_zoom',
     'line_width': 1,
     'colormap': 'Turbo256',
     'active_drag': 'xpan',
-    'range_selector_width': 1600,
+    'range_selector_width': None,
     'range_selector_height': 150,
     'y_range': (0, 100),
     'auto_y_range': False,
@@ -57,7 +57,7 @@ CHART_SETTINGS = {
     'timeseries_y_range': [20, 100],
     'frequency_log_scale': False,
     'frequency_bar_height': 360,
-    'frequency_bar_width': 1600,
+    'frequency_bar_width': None,
     'default_spectral_param': 'LZeq',  # Default parameter to show for spectrograms
 }
 

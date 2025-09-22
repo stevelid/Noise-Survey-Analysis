@@ -513,7 +513,6 @@ class TimeSeriesComponent:
         
         fig_kwargs = {
             "height": self.chart_settings['low_freq_height'],
-            "width": self.chart_settings['low_freq_width'],
             "title": title,
             "x_axis_type": "datetime",
             "x_axis_label": "Time",
@@ -521,7 +520,8 @@ class TimeSeriesComponent:
             "tools": tools,
             "active_drag": pan_tool,
             "active_scroll": "xwheel_zoom",
-            "name": f"figure_{self.name_id}"
+            "name": f"figure_{self.name_id}",
+            "sizing_mode": "stretch_width",
         }
 
         # Set y-range if specified in config
@@ -652,7 +652,11 @@ class TimeSeriesComponent:
         """
         Returns the Bokeh layout object for this component.
         """
-        return column(self.figure, name=f"{self.name_id}_component") #in a column for consistency with spectrogram
+        return column(
+            self.figure,
+            name=f"{self.name_id}_component",
+            sizing_mode="stretch_width"
+        ) #in a column for consistency with spectrogram
 
 
 class SpectrogramComponent:
@@ -691,11 +695,12 @@ class SpectrogramComponent:
         self.source: ColumnDataSource = ColumnDataSource(data=dict()) # Holds the [transposed_matrix]
         self.source.name = "source_" + self.name_id
         self.figure: Figure = self._create_empty_figure() # Create a blank figure initially
-        self.hover_div: Div = Div(text="<i>Hover over spectrogram for details</i>", 
+        self.hover_div: Div = Div(text="<i>Hover over spectrogram for details</i>",
                                   name=f"{self.position_name}_spectrogram_hover_div",
-                                  width=self.chart_settings['spectrogram_width'], height=40,
+                                  height=40,
                                   styles={'font-size': '9pt', 'font-weight': 'bold', 'padding-left': '10px', 'text-align': 'center'},
-                                  visible=False)
+                                  visible=False,
+                                  sizing_mode="stretch_width")
         self.image_glyph = None # Store the image glyph renderer
         self.update_plot(position_glyph_data, self._current_display_mode, self._current_param)
 
@@ -723,11 +728,11 @@ class SpectrogramComponent:
             x_axis_type="datetime",
             y_axis_type="linear",
             height=self.chart_settings['spectrogram_height'],
-            width=self.chart_settings['spectrogram_width'], # Use width for initial sizing
             tools=[pan_tool, box_select_tool, "xzoom_in", "xzoom_out", "reset", "xwheel_zoom"],
             active_drag=pan_tool,
             active_scroll=self.chart_settings['active_scroll'],
-            name=f"figure_{self.name_id}"
+            name=f"figure_{self.name_id}",
+            sizing_mode="stretch_width"
         )
         p.xaxis.formatter = CustomJSTickFormatter(args={"fig": p}, code="""
             const d = new Date(tick);
@@ -949,7 +954,12 @@ class SpectrogramComponent:
     def layout(self):
         """Returns the Bokeh layout object for this component."""
         # The figure might be initially hidden if no data, visibility managed by update_plot
-        return column(self.figure, self.hover_div, name=f"{self.name_id}_component")
+        return column(
+            self.figure,
+            self.hover_div,
+            name=f"{self.name_id}_component",
+            sizing_mode="stretch_width"
+        )
 
 
 class ControlsComponent:
@@ -1234,14 +1244,14 @@ class RangeSelectorComponent:
         select_figure = figure(
             title="Drag handles to select time range",
             height=self.settings['range_selector_height'],
-            width=self.settings['range_selector_width'],
             x_axis_type="datetime",
-            x_range=x_range_obj, # Use the robustly created Range1d   
+            x_range=x_range_obj, # Use the robustly created Range1d
             y_axis_type=None,
-            tools="", 
+            tools="",
             toolbar_location=None,
             background_fill_color = "#efefef",
-            name=self.name_id
+            name=self.name_id,
+            sizing_mode="stretch_width"
         )
 
         # Metrics plotting also needs to be robust to empty source
@@ -1286,7 +1296,11 @@ class RangeSelectorComponent:
         """
         Returns the Bokeh layout object (the figure itself) for this component.
         """
-        return column(self.figure, name=f"{self.name_id}_component") #in a column for consistency with spectrogram
+        return column(
+            self.figure,
+            name=f"{self.name_id}_component",
+            sizing_mode="stretch_width"
+        ) #in a column for consistency with spectrogram
 
 class FrequencyBarComponent:
     """
@@ -1321,7 +1335,10 @@ class FrequencyBarComponent:
         self.x_range: FactorRange = FactorRange(factors=initial_data['frequency_labels'])
         
         # Add a Div component to hold the HTML table for copying data
-        self.table_div = Div(name="frequency_table_div", width=self.settings.get('frequency_bar_width', 800))
+        self.table_div = Div(
+            name="frequency_table_div",
+            sizing_mode="stretch_width"
+        )
         
         self.figure: Figure = self._create_figure()
         
@@ -1336,12 +1353,12 @@ class FrequencyBarComponent:
         p = figure(
             title="Frequency Slice",
             height=self.settings['high_freq_height'],
-            width=self.settings['frequency_bar_width'], # Initial width, sizing_mode handles final
             x_range=self.x_range, # Use the FactorRange instance
             x_axis_label='Frequency Band', # Suffix (Hz) implied by labels
             y_axis_label='Level (dB)',
             tools="pan,wheel_zoom,box_zoom,reset,save", # Standard tools
-            name="frequency_bar_chart" # For identification
+            name="frequency_bar_chart", # For identification
+            sizing_mode="stretch_width"
         )
 
         # Add vertical bars
@@ -1406,7 +1423,11 @@ class FrequencyBarComponent:
         """
         Returns the Bokeh layout object for this component, including both the chart and table div.
         """
-        return column(self.figure, self.table_div)
+        return column(
+            self.figure,
+            self.table_div,
+            sizing_mode="stretch_width"
+        )
 
     def _update_table(self, levels: List[float], labels: List[str]):
         """
@@ -1617,7 +1638,8 @@ class ComparisonFrequencyBarComponent:
     """Multi-series frequency comparison chart."""
 
     def __init__(self, width: Optional[int] = None):
-        chart_width = width or CHART_SETTINGS.get('frequency_bar_width', 800)
+        configured_width = CHART_SETTINGS.get('frequency_bar_width', None)
+        chart_width = width if width is not None else configured_width
         initial_data = {
             'x': [],
             'level': [],
@@ -1630,17 +1652,25 @@ class ComparisonFrequencyBarComponent:
         self.figure = self._create_figure(chart_width)
         self.table_div = Div(
             text=self._empty_table_html(),
-            width=chart_width,
             name="comparison_frequency_table",
             styles={
                 "border": "1px solid #ccc",
                 "padding": "12px",
                 "background-color": "#fafafa",
                 "margin-top": "8px"
-            }
+            },
+            sizing_mode="stretch_width"
         )
 
-        self.container = column(self.figure, self.table_div, name="comparison_frequency_layout")
+        if chart_width is not None:
+            self.table_div.width = chart_width
+
+        self.container = column(
+            self.figure,
+            self.table_div,
+            name="comparison_frequency_layout",
+            sizing_mode="stretch_width"
+        )
         self.container.visible = False
 
     def _empty_table_html(self) -> str:
@@ -1662,17 +1692,22 @@ class ComparisonFrequencyBarComponent:
             </table>
         """
 
-    def _create_figure(self, chart_width: int):
-        p = figure(
+    def _create_figure(self, chart_width: Optional[int]):
+        figure_kwargs = dict(
             title="Comparison Spectrum",
             height=CHART_SETTINGS.get('high_freq_height', 300),
-            width=chart_width,
             x_range=self.x_range,
             x_axis_label='Frequency Band',
             y_axis_label='Level (dB)',
             tools="pan,wheel_zoom,box_zoom,reset,save",
-            name="comparison_frequency_chart"
+            name="comparison_frequency_chart",
+            sizing_mode="stretch_width"
         )
+
+        if chart_width is not None:
+            figure_kwargs["width"] = chart_width
+
+        p = figure(**figure_kwargs)
 
         p.vbar(
             x='x',
@@ -1872,7 +1907,7 @@ class SummaryTableComponent:
         self.summary_div = Div(
             text = initial_html,
             name = "summary_table_div",
-            width=self.settings.get('low_freq_width', 1200) # Match the width of the charts
+            sizing_mode="stretch_width"
         )
 
         logger.info(f"SummaryTableComponent initialized with {len(parameters)} parameters, compact={compact}.")
