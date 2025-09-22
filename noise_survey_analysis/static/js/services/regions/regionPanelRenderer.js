@@ -2,55 +2,30 @@
 
 /**
  * @fileoverview Region panel rendering helpers extracted from services/renderers.js.
- * These functions focus on building DOM markup and wiring listeners for the region
- * management sidebar. They remain presentation-only and interact with the rest of the
- * application through the global NoiseSurveyApp namespace.
+ * These functions update the dedicated Bokeh widgets that compose the region
+ * management sidebar. The module remains presentation-only and communicates with
+ * the rest of the application through the global NoiseSurveyApp namespace.
  */
 
 window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
-    function getActions() {
-        return app.actions || {};
-    }
-
-    const REGION_PANEL_STYLE = `
+    const PANEL_STYLE = `
         <style>
-            .region-panel-root { font-family: 'Segoe UI', sans-serif; font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
-            .region-list { display: flex; flex-direction: column; gap: 4px; }
-            .region-entry { border: 1px solid #ddd; border-radius: 4px; padding: 6px; cursor: pointer; background: #fff; transition: background 0.2s; }
-            .region-entry:hover { background: #f5f5f5; }
-            .region-entry.selected { border-color: #64b5f6; background: #e3f2fd; }
-            .region-entry__header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
-            .region-entry__meta { color: #555; font-size: 11px; margin-top: 2px; }
-            .region-entry button { background: transparent; border: none; color: #c62828; cursor: pointer; font-size: 11px; }
-            .region-detail { border-top: 1px solid #ddd; padding-top: 8px; }
-            .region-detail textarea { width: 100%; min-height: 80px; padding: 6px; font-family: 'Segoe UI', sans-serif; font-size: 12px; box-sizing: border-box; }
+            .region-panel-placeholder { font-style: italic; color: #666; margin: 0; }
+            .region-metrics { font-family: 'Segoe UI', sans-serif; font-size: 12px; }
             .region-metrics table { width: 100%; border-collapse: collapse; margin-top: 6px; }
             .region-metrics th, .region-metrics td { text-align: left; padding: 4px; border-bottom: 1px solid #eee; }
-            .region-metrics .metric-disabled { color: #999; }
+            .region-detail__header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 4px; }
+            .region-detail__meta { color: #555; font-size: 11px; margin-bottom: 6px; }
+            .metric-disabled { color: #999; }
             .region-spectrum { display: flex; align-items: flex-end; gap: 2px; margin-top: 8px; min-height: 60px; border: 1px solid #eee; padding: 4px; }
             .region-spectrum .bar { width: 6px; background: #64b5f6; transition: opacity 0.2s; }
             .region-spectrum .bar:hover { opacity: 0.7; }
             .region-spectrum .bar-empty { background: #cfd8dc; }
-            .region-panel-empty { color: #666; font-style: italic; }
-            .region-detail__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-            .region-detail__header span { font-weight: 600; }
-            .region-detail button { padding: 4px 6px; font-size: 11px; cursor: pointer; }
         </style>
     `;
-
-    const hostListenerRegistry = new WeakMap();
-    const noteDispatchers = new Map();
-
-    function debounce(fn, delay = 200) {
-        let timerId;
-        return function (...args) {
-            clearTimeout(timerId);
-            timerId = setTimeout(() => fn.apply(this, args), delay);
-        };
-    }
 
     function escapeHtml(value) {
         if (typeof value !== 'string') return '';
@@ -79,92 +54,199 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return parts.join('');
     }
 
-    function buildRegionListHtml(regionList, selectedId) {
-        if (!Array.isArray(regionList) || !regionList.length) {
-            return `<div class="region-panel-empty">No regions defined.</div>`;
+    function normaliseSpectrum(spectrum) {
+        if (!spectrum || typeof spectrum !== 'object') {
+            return { labels: [], values: [] };
         }
-        return regionList.map(region => {
-            const isSelected = region.id === selectedId;
-            const range = `${formatTime(region.start)} – ${formatTime(region.end)}`;
-            const duration = formatDuration(Math.max(0, region.end - region.start));
-            return `
-                <div class="region-entry${isSelected ? ' selected' : ''}" data-region-entry="${region.id}">
-                    <div class="region-entry__header">
-                        <span>Region ${region.id} – ${escapeHtml(region.positionId || '')}</span>
-                        <button type="button" data-region-delete="${region.id}">Delete</button>
-                    </div>
-                    <div class="region-entry__meta">${range} (${duration})</div>
-                </div>
-            `;
-        }).join('');
+        const labels = Array.isArray(spectrum.labels)
+            ? spectrum.labels
+            : Array.isArray(spectrum.bands)
+                ? spectrum.bands
+                : [];
+        const values = Array.isArray(spectrum.values) ? spectrum.values : [];
+        return { labels, values };
     }
 
     function buildSpectrumHtml(spectrum) {
-        if (!spectrum || !Array.isArray(spectrum.labels) || !Array.isArray(spectrum.values) || !spectrum.values.length) {
-            return `<div class="region-spectrum region-spectrum--empty">No spectrum data.</div>`;
+        const { labels, values } = normaliseSpectrum(spectrum);
+        if (!labels.length || !values.length) {
+            return `${PANEL_STYLE}<p class="region-panel-placeholder">No spectrum data.</p>`;
         }
-        const numericValues = spectrum.values.filter(value => Number.isFinite(value));
+        const numericValues = values.filter(value => Number.isFinite(value));
         if (!numericValues.length) {
-            return `<div class="region-spectrum region-spectrum--empty">No spectrum data.</div>`;
+            return `${PANEL_STYLE}<p class="region-panel-placeholder">No spectrum data.</p>`;
         }
         const minVal = Math.min(...numericValues);
         const maxVal = Math.max(...numericValues);
         const range = Math.max(maxVal - minVal, 1);
-        const bars = spectrum.labels.map((label, index) => {
-            const value = spectrum.values[index];
+        const bars = labels.map((label, index) => {
+            const value = values[index];
             if (!Number.isFinite(value)) {
-                return `<div class="bar bar-empty" title="${escapeHtml(label)}: N/A"></div>`;
+                return `<div class="bar bar-empty" title="${escapeHtml(String(label))}: N/A"></div>`;
             }
             const height = Math.max(4, ((value - minVal) / range) * 100);
-            return `<div class="bar" style="height:${height}%;" title="${escapeHtml(label)}: ${value.toFixed(1)} dB"></div>`;
+            return `<div class="bar" style="height:${height}%;" title="${escapeHtml(String(label))}: ${value.toFixed(1)} dB"></div>`;
         }).join('');
-        return `<div class="region-spectrum">${bars}</div>`;
+        return `${PANEL_STYLE}<div class="region-spectrum">${bars}</div>`;
     }
 
-    function buildRegionDetailHtml(region, state) {
+    function buildMetricsHtml(region) {
         if (!region) {
-            return `<div class="region-detail-empty">Select a region to view details.</div>`;
+            return `${PANEL_STYLE}<p class="region-panel-placeholder">Select a region to view metrics.</p>`;
         }
         const metrics = region.metrics || {};
-        const laeq = Number.isFinite(metrics.laeq) ? metrics.laeq.toFixed(1) : 'N/A';
-        const lafmax = Number.isFinite(metrics.lafmax) ? metrics.lafmax.toFixed(1) : 'N/A';
-        const la90Value = metrics.la90Available && Number.isFinite(metrics.la90) ? metrics.la90.toFixed(1) : 'N/A';
+        const laeq = Number.isFinite(metrics.laeq) ? `${metrics.laeq.toFixed(1)} dB` : 'N/A';
+        const lafmax = Number.isFinite(metrics.lafmax) ? `${metrics.lafmax.toFixed(1)} dB` : 'N/A';
+        const la90 = metrics.la90Available && Number.isFinite(metrics.la90)
+            ? `${metrics.la90.toFixed(1)} dB`
+            : 'N/A';
         const la90Class = metrics.la90Available && Number.isFinite(metrics.la90) ? '' : 'metric-disabled';
         const duration = formatDuration(metrics.durationMs);
-        const dataSourceLabel = metrics.dataResolution === 'log' ? 'Log data'
-            : (metrics.dataResolution === 'overview' ? 'Overview data' : 'No data');
-        const note = escapeHtml(region.note || '');
-        const copyId = region.id;
-        const spectrumHtml = buildSpectrumHtml(metrics.spectrum);
+        const startLabel = formatTime(region.start);
+        const endLabel = formatTime(region.end);
+        const dataSourceLabel = metrics.dataResolution === 'log'
+            ? 'Log data'
+            : metrics.dataResolution === 'overview'
+                ? 'Overview data'
+                : 'No data';
+        const header = buildRegionLabel(region);
 
         return `
-            <div class="region-detail__header">
-                <span>Region ${region.id} – ${escapeHtml(region.positionId || '')}</span>
-                <button type="button" data-region-copy="${copyId}">Copy line</button>
-            </div>
-            <div class="region-detail__meta">Duration: ${duration} · Source: ${dataSourceLabel}</div>
-            <label>Notes</label>
-            <textarea data-region-note="${region.id}" placeholder="Add notes...">${note}</textarea>
+            ${PANEL_STYLE}
+            <div class="region-detail__header">${header}</div>
             <div class="region-metrics">
+                <div class="region-detail__meta">Range: ${startLabel} – ${endLabel} · Duration: ${duration} · Source: ${dataSourceLabel}</div>
                 <table>
                     <tr><th>Metric</th><th>Value</th></tr>
-                    <tr><td>LAeq</td><td>${laeq} dB</td></tr>
-                    <tr><td>LAFmax</td><td>${lafmax} dB</td></tr>
-                    <tr><td class="${la90Class}">LAF90</td><td class="${la90Class}">${la90Value === 'N/A' ? 'N/A' : la90Value + ' dB'}</td></tr>
+                    <tr><td>LAeq</td><td>${laeq}</td></tr>
+                    <tr><td>LAFmax</td><td>${lafmax}</td></tr>
+                    <tr><td class="${la90Class}">LA90</td><td class="${la90Class}">${la90}</td></tr>
                 </table>
             </div>
-            <div class="region-spectrum__title">Average Spectrum</div>
-            ${spectrumHtml}
         `;
     }
 
-    function buildRegionPanelHtml(regionList, selectedId, state) {
-        const listHtml = buildRegionListHtml(regionList, selectedId);
-        const selectedRegion = Array.isArray(regionList)
-            ? regionList.find(region => region.id === selectedId) || regionList[0] || null
-            : null;
-        const detailHtml = buildRegionDetailHtml(selectedRegion, state);
-        return `${REGION_PANEL_STYLE}<div class="region-panel-root"><div class="region-list">${listHtml}</div><div class="region-detail">${detailHtml}</div></div>`;
+    function buildRegionLabel(region) {
+        const label = region?.positionId ? escapeHtml(String(region.positionId)) : '';
+        return `Region ${region.id}${label ? ` – ${label}` : ''}`;
+    }
+
+    function ensureArrayEquals(a, b) {
+        if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+            return false;
+        }
+        for (let i = 0; i < a.length; i++) {
+            const left = a[i];
+            const right = b[i];
+            if (Array.isArray(left) && Array.isArray(right)) {
+                if (!ensureArrayEquals(left, right)) return false;
+            } else if (left !== right) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function updateSelect(select, regionList, selectedId) {
+        if (!select) {
+            return { selectedRegion: null, selectedValue: '' };
+        }
+
+        const options = regionList.map(region => [String(region.id), buildRegionLabel(region)]);
+        if (!ensureArrayEquals(select.options || [], options)) {
+            select.options = options;
+        }
+
+        const stringSelectedId = Number.isFinite(selectedId) ? String(selectedId) : '';
+        const newValue = stringSelectedId || (options[0]?.[0] ?? '');
+        if (select.value !== newValue) {
+            select.value = newValue;
+        }
+
+        select.disabled = options.length === 0;
+        const region = regionList.find(entry => String(entry.id) === select.value) || null;
+        return { selectedRegion: region, selectedValue: select.value };
+    }
+
+    function updateMessage(messageDiv, detailLayout, hasRegions) {
+        if (!messageDiv || !detailLayout) {
+            return;
+        }
+        messageDiv.visible = !hasRegions;
+        detailLayout.visible = hasRegions;
+        if (!hasRegions) {
+            const text = `${PANEL_STYLE}<div class='region-panel-empty'>No regions defined.</div>`;
+            if (messageDiv.text !== text) {
+                messageDiv.text = text;
+            }
+        }
+    }
+
+    function updateButtons(copyButton, deleteButton, hasSelection) {
+        if (copyButton) {
+            copyButton.disabled = !hasSelection;
+        }
+        if (deleteButton) {
+            deleteButton.disabled = !hasSelection;
+        }
+    }
+
+    function updateNoteInput(noteInput, region) {
+        if (!noteInput) return;
+        if (!region) {
+            noteInput.disabled = true;
+            if (noteInput.value !== '') {
+                noteInput.value = '';
+            }
+            return;
+        }
+        noteInput.disabled = false;
+        const note = typeof region.note === 'string' ? region.note : '';
+        if (noteInput.value !== note) {
+            noteInput.value = note;
+        }
+    }
+
+    function updateDetailWidgets(panelModels, region) {
+        const { metricsDiv, spectrumDiv } = panelModels;
+        const metricsHtml = buildMetricsHtml(region);
+        if (metricsDiv && metricsDiv.text !== metricsHtml) {
+            metricsDiv.text = metricsHtml;
+        }
+        const spectrumHtml = buildSpectrumHtml(region?.metrics?.spectrum);
+        if (spectrumDiv) {
+            spectrumDiv.visible = !!region;
+            if (spectrumDiv.text !== spectrumHtml) {
+                spectrumDiv.text = spectrumHtml;
+            }
+        }
+        if (metricsDiv) {
+            metricsDiv.visible = !!region;
+        }
+    }
+
+    function renderRegionPanel(panelModels, regionList, selectedId, state) {
+        if (!panelModels) return;
+
+        const {
+            select,
+            messageDiv,
+            detail,
+            copyButton,
+            deleteButton,
+            noteInput,
+            metricsDiv,
+            spectrumDiv,
+        } = panelModels;
+
+        const { selectedRegion } = updateSelect(select, regionList, selectedId);
+        const hasRegions = regionList.length > 0;
+        const hasSelection = Boolean(selectedRegion);
+
+        updateMessage(messageDiv, detail, hasRegions);
+        updateButtons(copyButton, deleteButton, hasSelection);
+        updateNoteInput(noteInput, selectedRegion);
+        updateDetailWidgets({ metricsDiv, spectrumDiv }, selectedRegion);
     }
 
     function handleCopyRegion(id) {
@@ -190,149 +272,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         document.body.removeChild(temp);
     }
 
-    function resolvePanelHost(panelDiv) {
-        if (!panelDiv) return null;
-
-        if (panelDiv.id) {
-            const view = window.Bokeh?.index?.[panelDiv.id];
-            if (view?.shadow_el) {
-                return view.shadow_el;
-            }
-            if (view?.el) {
-                return view.el;
-            }
-            const hostById = document.getElementById(panelDiv.id);
-            if (hostById) {
-                return hostById;
-            }
-        }
-
-        if (panelDiv.el) {
-            return panelDiv.el;
-        }
-
-        return null;
-    }
-
-    function getComposedPath(event) {
-        if (typeof event.composedPath === 'function') {
-            return event.composedPath();
-        }
-
-        const path = [];
-        let current = event.target;
-        while (current) {
-            path.push(current);
-            current = current.parentNode;
-        }
-        path.push(window);
-        return path;
-    }
-
-    function findInPath(event, predicate) {
-        const path = getComposedPath(event);
-        for (const node of path) {
-            if (predicate(node)) {
-                return node;
-            }
-        }
-        return null;
-    }
-
-    function getNoteDispatcher(regionId) {
-        if (!noteDispatchers.has(regionId)) {
-            noteDispatchers.set(regionId, debounce(value => {
-                if (Number.isFinite(regionId)) {
-                    const actions = getActions();
-                    if (actions?.regionSetNote && typeof app.store?.dispatch === 'function') {
-                        app.store.dispatch(actions.regionSetNote(regionId, value));
-                    }
-                }
-            }, 250));
-        }
-        return noteDispatchers.get(regionId);
-    }
-
-    function ensureDelegatedListeners(panelDiv) {
-        const host = resolvePanelHost(panelDiv);
-        if (!host || hostListenerRegistry.has(host)) {
-            return;
-        }
-
-        const handleClick = event => {
-            const deleteNode = findInPath(event, node => node?.dataset?.regionDelete);
-            if (deleteNode) {
-                event.preventDefault();
-                const id = Number(deleteNode.dataset.regionDelete);
-                if (Number.isFinite(id)) {
-                    const actions = getActions();
-                    if (actions?.regionRemove && typeof app.store?.dispatch === 'function') {
-                        app.store.dispatch(actions.regionRemove(id));
-                    }
-                }
-                return;
-            }
-
-            const copyNode = findInPath(event, node => node?.dataset?.regionCopy);
-            if (copyNode) {
-                event.preventDefault();
-                const id = Number(copyNode.dataset.regionCopy);
-                if (Number.isFinite(id)) {
-                    handleCopyRegion(id);
-                }
-                return;
-            }
-
-            const entryNode = findInPath(event, node => node?.dataset?.regionEntry);
-            if (entryNode) {
-                const id = Number(entryNode.dataset.regionEntry);
-                if (Number.isFinite(id)) {
-                    const actions = getActions();
-                    if (actions?.regionSelect && typeof app.store?.dispatch === 'function') {
-                        app.store.dispatch(actions.regionSelect(id));
-                    }
-                }
-            }
-        };
-
-        const handleInput = event => {
-            const noteNode = findInPath(event, node => node?.dataset?.regionNote);
-            if (!noteNode) {
-                return;
-            }
-
-            const regionId = Number(noteNode.dataset.regionNote);
-            if (!Number.isFinite(regionId)) {
-                return;
-            }
-
-            const dispatcher = getNoteDispatcher(regionId);
-            dispatcher(typeof noteNode.value === 'string' ? noteNode.value : event.target?.value ?? '');
-        };
-
-        host.addEventListener('click', handleClick);
-        host.addEventListener('input', handleInput);
-        hostListenerRegistry.set(host, { handleClick, handleInput });
-    }
-
-    function renderRegionPanel(panelDiv, regionList, selectedId, state) {
-        if (!panelDiv) return;
-        const html = buildRegionPanelHtml(regionList, selectedId, state);
-        if (panelDiv.text !== html) {
-            panelDiv.text = html;
-        }
-        ensureDelegatedListeners(panelDiv);
-    }
-
     app.services = app.services || {};
     app.services.regionPanelRenderer = {
-        buildRegionListHtml,
-        buildRegionDetailHtml,
-        buildRegionPanelHtml,
+        formatDuration,
         buildSpectrumHtml,
-        ensureDelegatedListeners,
-        resolvePanelHost,
-        handleCopyRegion,
         renderRegionPanel,
+        handleCopyRegion,
     };
 })(window.NoiseSurveyApp);

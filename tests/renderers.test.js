@@ -132,20 +132,28 @@ describe('NoiseSurveyApp.renderers', () => {
         panelElement = document.createElement('div');
         panelElement.id = 'region-panel';
         document.body.appendChild(panelElement);
-        window.NoiseSurveyApp.registry.models.regionPanelDiv = {
-            id: 'region-panel',
-            _text: '',
-            get text() {
-                return this._text;
-            },
-            set text(value) {
-                this._text = value;
-                const el = document.getElementById(this.id);
-                if (el) {
-                    el.innerHTML = value;
-                }
-            }
+
+        const regionPanelMocks = {
+            select: { options: [], value: '', disabled: true },
+            messageDiv: { text: '', visible: true },
+            detail: { visible: false },
+            copyButton: { disabled: true },
+            deleteButton: { disabled: true },
+            noteInput: { value: '', disabled: true },
+            metricsDiv: { text: '', visible: false },
+            spectrumDiv: { text: '', visible: false },
         };
+
+        Object.assign(window.NoiseSurveyApp.registry.models, {
+            regionPanelSelect: regionPanelMocks.select,
+            regionPanelMessageDiv: regionPanelMocks.messageDiv,
+            regionPanelDetail: regionPanelMocks.detail,
+            regionPanelCopyButton: regionPanelMocks.copyButton,
+            regionPanelDeleteButton: regionPanelMocks.deleteButton,
+            regionPanelNoteInput: regionPanelMocks.noteInput,
+            regionPanelMetricsDiv: regionPanelMocks.metricsDiv,
+            regionPanelSpectrumDiv: regionPanelMocks.spectrumDiv,
+        });
     });
 
     afterEach(() => {
@@ -258,9 +266,11 @@ describe('NoiseSurveyApp.renderers', () => {
 
             renderers.renderRegions(stateWithMetrics, {});
 
-            let panelHtml = document.getElementById('region-panel').innerHTML;
-            expect(panelHtml).toContain('50.1 dB');
-            expect(panelHtml).toContain('65.5 dB');
+            const models = window.NoiseSurveyApp.registry.models;
+            expect(models.regionPanelMetricsDiv.text).toContain('50.1 dB');
+            expect(models.regionPanelMetricsDiv.text).toContain('65.5 dB');
+            expect(models.regionPanelSelect.value).toBe('1');
+            expect(models.regionPanelNoteInput.disabled).toBe(false);
 
             const updatedState = {
                 regions: {
@@ -289,11 +299,10 @@ describe('NoiseSurveyApp.renderers', () => {
             };
 
             renderers.renderRegions(updatedState, {});
-
-            panelHtml = document.getElementById('region-panel').innerHTML;
-            expect(panelHtml).toContain('55.4 dB');
-            expect(panelHtml).toContain('70.2 dB');
-            expect(panelHtml).toContain('45.3 dB');
+            expect(models.regionPanelMetricsDiv.text).toContain('55.4 dB');
+            expect(models.regionPanelMetricsDiv.text).toContain('70.2 dB');
+            expect(models.regionPanelMetricsDiv.text).toContain('45.3 dB');
+            expect(models.regionPanelSpectrumDiv.text).toContain('63 Hz');
 
             const lastCall = mockSyncRegions.mock.calls.at(-1);
             const syncedRegions = lastCall[0];
@@ -302,81 +311,61 @@ describe('NoiseSurveyApp.renderers', () => {
         });
     });
 
-    describe('region panel listeners', () => {
-        it('attaches delegated listeners to the panel host and routes interactions', () => {
-            const panelId = 'region-panel-shadow';
-            const viewHost = document.createElement('div');
+    describe('region panel widgets', () => {
+        it('toggles widget visibility and disabled states based on region availability', () => {
+            const models = window.NoiseSurveyApp.registry.models;
 
-            window.Bokeh = { index: { [panelId]: { shadow_el: viewHost } } };
-
-            const panelDiv = {
-                id: panelId,
-                _text: '',
-                get text() {
-                    return this._text;
-                },
-                set text(value) {
-                    this._text = value;
-                    viewHost.innerHTML = value;
+            const emptyState = {
+                regions: {
+                    byId: {},
+                    allIds: [],
+                    selectedId: null,
+                    counter: 0,
                 }
             };
 
-            document.body.appendChild(viewHost);
-            window.NoiseSurveyApp.registry.models.regionPanelDiv = panelDiv;
+            renderers.renderRegions(emptyState, {});
+            expect(models.regionPanelMessageDiv.visible).toBe(true);
+            expect(models.regionPanelDetail.visible).toBe(false);
+            expect(models.regionPanelSelect.disabled).toBe(true);
+            expect(models.regionPanelCopyButton.disabled).toBe(true);
+            expect(models.regionPanelDeleteButton.disabled).toBe(true);
+            expect(models.regionPanelNoteInput.disabled).toBe(true);
 
-            const regionState = {
-                byId: {
-                    1: {
-                        id: 1,
-                        positionId: 'P1',
-                        start: 0,
-                        end: 1000,
-                        note: '',
-                        metrics: {
-                            laeq: 40,
-                            lafmax: 45,
-                            la90: null,
-                            la90Available: false,
-                            durationMs: 1000,
-                            dataResolution: 'log',
-                            spectrum: { bands: [], values: [] }
+            const populatedState = {
+                regions: {
+                    byId: {
+                        5: {
+                            id: 5,
+                            positionId: 'P9',
+                            start: 1000,
+                            end: 4000,
+                            note: 'hello',
+                            metrics: {
+                                laeq: 52,
+                                lafmax: 60,
+                                la90: null,
+                                la90Available: false,
+                                durationMs: 3000,
+                                dataResolution: 'overview',
+                                spectrum: { labels: [], values: [] },
+                            }
                         }
-                    }
-                },
-                allIds: [1],
-                selectedId: 1,
-                counter: 2
+                    },
+                    allIds: [5],
+                    selectedId: 5,
+                    counter: 6,
+                }
             };
 
-            try {
-                renderers.renderRegions({ regions: regionState }, {});
-                vi.runAllTimers();
-
-                const entry = viewHost.querySelector('[data-region-entry="1"]');
-                expect(entry).not.toBeNull();
-                entry.dispatchEvent(new Event('click', { bubbles: true, composed: true }));
-                expect(mockRegionSelect).toHaveBeenCalledWith(1);
-                expect(mockStoreDispatch).toHaveBeenCalledWith({ type: 'regions/select', payload: 1 });
-
-                const deleteButton = viewHost.querySelector('[data-region-delete="1"]');
-                expect(deleteButton).not.toBeNull();
-                deleteButton.dispatchEvent(new Event('click', { bubbles: true, composed: true }));
-                expect(mockRegionRemove).toHaveBeenCalledWith(1);
-                expect(mockStoreDispatch).toHaveBeenCalledWith({ type: 'regions/remove', payload: 1 });
-
-                const noteField = viewHost.querySelector('[data-region-note="1"]');
-                expect(noteField).not.toBeNull();
-                noteField.value = 'Updated note';
-                noteField.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-                vi.advanceTimersByTime(300);
-                expect(mockRegionSetNote).toHaveBeenCalledWith(1, 'Updated note');
-                expect(mockStoreDispatch).toHaveBeenLastCalledWith({ type: 'regions/setNote', payload: { id: 1, value: 'Updated note' } });
-            } finally {
-                if (viewHost.parentNode) {
-                    viewHost.parentNode.removeChild(viewHost);
-                }
-                delete window.Bokeh;
-            }
+            renderers.renderRegions(populatedState, {});
+            expect(models.regionPanelMessageDiv.visible).toBe(false);
+            expect(models.regionPanelDetail.visible).toBe(true);
+            expect(models.regionPanelSelect.disabled).toBe(false);
+            expect(models.regionPanelCopyButton.disabled).toBe(false);
+            expect(models.regionPanelDeleteButton.disabled).toBe(false);
+            expect(models.regionPanelNoteInput.disabled).toBe(false);
+            expect(models.regionPanelNoteInput.value).toBe('hello');
         });
     });
 
