@@ -863,9 +863,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             models.comparisonFrequencyLayout.visible = isComparisonActive;
         }
 
-        if (models.startComparisonButton) {
-            models.startComparisonButton.disabled = isComparisonActive;
-        }
         if (models.comparisonFinishButton) {
             models.comparisonFinishButton.disabled = !isComparisonActive;
         }

@@ -34,10 +34,15 @@ from noise_survey_analysis.ui.components import (
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
 from noise_survey_analysis.core.data_manager import DataManager, PositionData # Ensure PositionData is imported
-from noise_survey_analysis.core.config import CHART_SETTINGS # Ensure CHART_SETTINGS is imported
+from noise_survey_analysis.core.config import (
+    CHART_SETTINGS,  # Ensure CHART_SETTINGS is imported
+    UI_LAYOUT_SETTINGS,
+)
 from noise_survey_analysis.js.loader import load_js_file
 
 logger = logging.getLogger(__name__)
+
+SIDE_PANEL_WIDTH = UI_LAYOUT_SETTINGS.get('side_panel_width', 320)
 
 def load_js_file(file_name):
     """Loads a JavaScript file from the static/js directory."""
@@ -302,6 +307,7 @@ class DashBuilder:
             self.shared_components['region_import_button'],
             self.shared_components['region_panel'].layout(),
             name="region_panel_layout",
+            width=SIDE_PANEL_WIDTH,
         )
         self.shared_components['region_panel_layout'] = region_panel_layout
 
@@ -315,6 +321,7 @@ class DashBuilder:
                 Panel(child=comparison_panel_layout, title="Comparison"),
             ],
             name="side_panel_tabs",
+            width=SIDE_PANEL_WIDTH + 32,
         )
 
         side_panel_tabs.js_on_change(
@@ -328,6 +335,18 @@ class DashBuilder:
                     const activeIndex = cb_obj.active ?? 0;
                     region_panel_layout.visible = activeIndex === 0;
                     comparison_panel_layout.visible = activeIndex === 1;
+                    const handlers = window.NoiseSurveyApp?.eventHandlers;
+                    const store = window.NoiseSurveyApp?.store;
+                    const currentMode = typeof store?.getState === 'function'
+                        ? store.getState()?.view?.mode
+                        : undefined;
+                    if (activeIndex === 1) {
+                        if (currentMode !== 'comparison' && typeof handlers?.handleStartComparison === 'function') {
+                            handlers.handleStartComparison();
+                        }
+                    } else if (currentMode === 'comparison' && typeof handlers?.handleFinishComparison === 'function') {
+                        handlers.handleFinishComparison();
+                    }
                 """,
             ),
         )
@@ -469,7 +488,6 @@ class DashBuilder:
             #'audio_status_source': self.audio_status_source,
             'audio_controls': {},
             'components': {},
-            'startComparisonButton': self.shared_components['controls'].start_comparison_button,
             'frequencyBarLayout': self.shared_components.get('freq_bar_layout'),
             'regionPanelLayout': self.shared_components.get('region_panel_layout'),
             'comparisonPanelLayout': self.shared_components.get('comparison_panel_layout'),
