@@ -406,7 +406,8 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMergeSelect.options).toEqual([
                 ['6', expect.stringContaining('Region 6')]
             ]);
-            expect(models.regionPanelMergeSelect.value).toBe('6');
+            expect(models.regionPanelMergeSelect.visible).toBe(false);
+            expect(models.regionPanelMergeSelect.value).toBe('');
         });
     });
 

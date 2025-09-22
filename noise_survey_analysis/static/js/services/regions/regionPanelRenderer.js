@@ -217,7 +217,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
-    function updateButtons(models, hasSelection, selectedRegion, state) {
+    function updateButtons(models, hasSelection, selectedRegion, state, isMergeModeActive) {
         const { copyButton, deleteButton, addAreaButton, mergeButton, mergeSelect } = models;
         const addAreaTargetId = state?.regions?.addAreaTargetId ?? null;
         const hasOtherRegions = state?.regions?.allIds.length > 1;
@@ -234,14 +234,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
         if (mergeButton) {
-            mergeButton.disabled = !(hasSelection && hasOtherRegions && mergeOptionsAvailable);
+            const canStartMerge = hasSelection && hasOtherRegions;
+            const canConfirmMerge = hasSelection && hasOtherRegions && mergeOptionsAvailable;
+            mergeButton.disabled = isMergeModeActive ? !canConfirmMerge : !canStartMerge;
+            const desiredLabel = isMergeModeActive ? 'Confirm Merge' : 'Merge Regions';
+            if (mergeButton.label !== desiredLabel) {
+                mergeButton.label = desiredLabel;
+            }
+            const desiredType = isMergeModeActive ? 'primary' : 'default';
+            if (mergeButton.button_type !== desiredType) {
+                mergeButton.button_type = desiredType;
+            }
         }
         if (mergeSelect) {
+            const shouldShow = isMergeModeActive && hasSelection && hasOtherRegions;
+            mergeSelect.visible = shouldShow;
             mergeSelect.disabled = !(hasSelection && hasOtherRegions && mergeOptionsAvailable);
         }
     }
 
-    function updateMergeSelect(mergeSelect, regionList, selectedId, state) {
+    function updateMergeSelect(mergeSelect, regionList, selectedId, state, isMergeModeActive) {
         if (!mergeSelect) {
             return { selectedSourceId: null };
         }
@@ -254,7 +266,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             mergeSelect.options = options;
         }
 
-        if (!options.length) {
+        if (!options.length || !isMergeModeActive) {
             if (mergeSelect.value !== '') {
                 mergeSelect.value = '';
             }
@@ -307,14 +319,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!panelModels) return;
 
         const { select, messageDiv, detail, noteInput, metricsDiv, spectrumDiv, mergeSelect } = panelModels;
+        const regionsState = state?.regions || {};
+        const isMergeModeActive = !!regionsState.isMergeModeActive;
 
         const { selectedRegion } = updateSelect(select, regionList, selectedId, state);
-        updateMergeSelect(mergeSelect, regionList, selectedId, state);
+        updateMergeSelect(mergeSelect, regionList, selectedId, state, isMergeModeActive);
         const hasRegions = regionList.length > 0;
         const hasSelection = Boolean(selectedRegion);
 
         updateMessage(messageDiv, detail, hasRegions);
-        updateButtons(panelModels, hasSelection, selectedRegion, state);
+        updateButtons(panelModels, hasSelection, selectedRegion, state, isMergeModeActive);
         updateNoteInput(noteInput, selectedRegion);
         updateDetailWidgets({ metricsDiv, spectrumDiv }, selectedRegion);
     }

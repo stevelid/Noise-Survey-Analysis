@@ -101,6 +101,7 @@ class RegionPanelComponent:
             width=panel_width,
             name="region_merge_select",
             disabled=True,
+            visible=False,
         )
 
         self.merge_button = Button(
@@ -277,27 +278,62 @@ class RegionPanelComponent:
         self.add_area_button.js_on_event('button_click', add_area_callback)
 
         merge_callback = CustomJS(args={'select': self.select, 'mergeSelect': self.merge_select}, code="""
-            const selectedId = Number(select.value);
-            const sourceId = Number(mergeSelect.value);
-            if (!Number.isFinite(selectedId) || !Number.isFinite(sourceId) || selectedId === sourceId) {
-                return;
-            }
             const actions = window.NoiseSurveyApp?.actions;
             const store = window.NoiseSurveyApp?.store;
-            const thunks = window.NoiseSurveyApp?.thunks;
-            const mergeThunk = thunks?.mergeRegionIntoSelectedIntent;
-            const dispatch = typeof store?.dispatch === 'function' ? store.dispatch.bind(store) : null;
-            if (typeof mergeThunk !== 'function' || !dispatch) {
+            if (!actions || typeof store?.dispatch !== 'function' || typeof store?.getState !== 'function') {
                 return;
             }
-            const getState = typeof store.getState === 'function' ? store.getState.bind(store) : null;
-            if (getState && actions?.regionSelect) {
-                const currentSelectedId = getState()?.regions?.selectedId ?? null;
+            const dispatch = store.dispatch.bind(store);
+            const getState = store.getState.bind(store);
+
+            const state = getState();
+            const regionsState = state?.regions || {};
+            const isMergeModeActive = !!regionsState.isMergeModeActive;
+
+            const selectedId = Number(select.value);
+            if (!Number.isFinite(selectedId)) {
+                if (isMergeModeActive && typeof actions.regionSetMergeMode === 'function') {
+                    dispatch(actions.regionSetMergeMode(false));
+                }
+                return;
+            }
+
+            const hasOtherRegions = Array.isArray(regionsState.allIds) && regionsState.allIds.length > 1;
+            if (!hasOtherRegions) {
+                if (isMergeModeActive && typeof actions.regionSetMergeMode === 'function') {
+                    dispatch(actions.regionSetMergeMode(false));
+                }
+                return;
+            }
+
+            if (!isMergeModeActive) {
+                if (typeof actions.regionSetMergeMode === 'function') {
+                    dispatch(actions.regionSetMergeMode(true));
+                }
+                return;
+            }
+
+            const sourceId = Number(mergeSelect.value);
+            if (!Number.isFinite(sourceId) || sourceId === selectedId) {
+                return;
+            }
+
+            if (typeof actions.regionSelect === 'function') {
+                const currentSelectedId = regionsState.selectedId ?? null;
                 if (currentSelectedId !== selectedId) {
                     dispatch(actions.regionSelect(selectedId));
                 }
             }
-            dispatch(mergeThunk(sourceId));
+
+            const thunks = window.NoiseSurveyApp?.thunks;
+            const mergeThunk = thunks?.mergeRegionIntoSelectedIntent;
+            if (typeof mergeThunk === 'function') {
+                dispatch(mergeThunk(sourceId));
+            }
+
+            if (typeof actions.regionSetMergeMode === 'function') {
+                dispatch(actions.regionSetMergeMode(false));
+            }
         """)
         self.merge_button.js_on_event('button_click', merge_callback)
 
