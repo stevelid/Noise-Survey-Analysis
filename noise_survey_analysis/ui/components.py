@@ -1134,7 +1134,13 @@ class ControlsComponent:
             name="controls_component_layout",
             sizing_mode="scale_width",
             styles={
-                "gap": "12px"
+                "gap": "12px",
+                "position": "sticky",
+                "top": "0px",
+                "background": "#ffffff",
+                "padding": "12px 16px",
+                "box-shadow": "0 2px 6px rgba(0, 0, 0, 0.08)",
+                "z-index": "10"
             }
         )
 
