@@ -147,6 +147,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         `;
     }
 
+    const COMPARISON_SLICE_COLOR = '#2e7d32';
+    const COMPARISON_SLICE_FILL_ALPHA = 0.12;
+    const COMPARISON_SLICE_LINE_ALPHA = 0.9;
+
     function ensureComparisonSliceSpans(chart) {
         if (!chart || !chart.model) return null;
         if (chart._comparisonSliceSpans) {
@@ -160,8 +164,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const startSpan = doc.add_model(doc.create_model('Span', {
                 location: 0,
                 dimension: 'height',
-                line_color: '#d81b60',
+                line_color: COMPARISON_SLICE_COLOR,
                 line_width: 2,
+                line_alpha: COMPARISON_SLICE_LINE_ALPHA,
                 level: 'overlay',
                 visible: false,
                 name: `comparison_slice_start_${chart.name}`
@@ -169,8 +174,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const endSpan = doc.add_model(doc.create_model('Span', {
                 location: 0,
                 dimension: 'height',
-                line_color: '#1e88e5',
+                line_color: COMPARISON_SLICE_COLOR,
                 line_width: 2,
+                line_alpha: COMPARISON_SLICE_LINE_ALPHA,
                 level: 'overlay',
                 visible: false,
                 name: `comparison_slice_end_${chart.name}`
@@ -185,17 +191,61 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
+    function ensureComparisonSliceBox(chart) {
+        if (!chart || !chart.model) return null;
+        if (chart._comparisonSliceBox) {
+            return chart._comparisonSliceBox;
+        }
+        const doc = window.Bokeh?.documents?.[0];
+        if (!doc || typeof doc.create_model !== 'function' || typeof doc.add_model !== 'function') {
+            return null;
+        }
+        try {
+            const box = doc.add_model(doc.create_model('BoxAnnotation', {
+                left: 0,
+                right: 0,
+                top: null,
+                bottom: null,
+                fill_alpha: COMPARISON_SLICE_FILL_ALPHA,
+                fill_color: COMPARISON_SLICE_COLOR,
+                line_color: COMPARISON_SLICE_COLOR,
+                line_alpha: COMPARISON_SLICE_LINE_ALPHA,
+                line_width: 2,
+                level: 'overlay',
+                visible: false,
+                name: `comparison_slice_box_${chart.name}`
+            }));
+            chart.model.add_layout(box);
+            chart._comparisonSliceBox = box;
+            return box;
+        } catch (error) {
+            console.error('[Renderers] Failed to initialize comparison slice box:', error);
+            return null;
+        }
+    }
+
     function setComparisonSliceVisibility(chart, isVisible, start, end) {
         const spans = ensureComparisonSliceSpans(chart);
-        if (!spans) return;
+        const box = ensureComparisonSliceBox(chart);
+        if (!spans && !box) return;
         if (isVisible && Number.isFinite(start) && Number.isFinite(end)) {
             spans.start.location = start;
             spans.end.location = end;
             spans.start.visible = true;
             spans.end.visible = true;
+            if (box) {
+                box.left = start;
+                box.right = end;
+                box.visible = true;
+            }
         } else {
-            spans.start.visible = false;
-            spans.end.visible = false;
+            if (spans) {
+                spans.start.visible = false;
+                spans.end.visible = false;
+            }
+            if (box) {
+                box.visible = false;
+            }
         }
     }
 
@@ -625,6 +675,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         });
     }
 
+    function mapComparisonMetricValue(paramLabel, metricsRow) {
+        if (!metricsRow) return null;
+        const normalized = typeof paramLabel === 'string'
+            ? paramLabel.replace(/\s+/g, '').toUpperCase()
+            : '';
+        switch (normalized) {
+            case 'LAEQ':
+            case 'LZEQ':
+                return metricsRow.laeq;
+            case 'LAFMAX':
+            case 'LAMAX':
+                return metricsRow.lafmax;
+            case 'LAF90':
+            case 'LA90':
+                return metricsRow.la90;
+            default:
+                return null;
+        }
+    }
+
     function renderSummaryTable(state, dataCache) {
         const { models } = app.registry;
         if (!models) return;
@@ -636,6 +706,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         const { isActive, timestamp } = state.interaction.tap;
+        const viewState = state?.view || {};
+        const comparisonState = viewState.comparison || {};
+        const isComparisonMode = viewState.mode === 'comparison' && comparisonState.isActive;
+        const hasComparisonSlice = isComparisonMode
+            && Number.isFinite(comparisonState.start)
+            && Number.isFinite(comparisonState.end)
+            && comparisonState.start !== comparisonState.end;
+        const includedPositions = Array.isArray(comparisonState.includedPositions)
+            ? comparisonState.includedPositions
+            : [];
 
         const initialDoc = new DOMParser().parseFromString(tableDiv.text, 'text/html');
         const headerCells = initialDoc.querySelectorAll("thead th:not(.position-header)");
@@ -643,7 +723,61 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         let tableBodyHtml = '';
 
-        if (!isActive || !timestamp) {
+        if (isComparisonMode) {
+            if (!hasComparisonSlice || !includedPositions.length) {
+                tableBodyHtml = `<tr><td class='placeholder' colspan='${parameters.length + 1}'>Select a comparison region to populate this table.</td></tr>`;
+            } else {
+                const processor = app.comparisonMetrics?.processComparisonSliceMetrics;
+                if (typeof processor === 'function') {
+                    const metricsResult = processor({
+                        start: comparisonState.start,
+                        end: comparisonState.end,
+                        positionIds: includedPositions,
+                        timeSeriesSources: models.timeSeriesSources,
+                        preparedGlyphData: models.preparedGlyphData,
+                        selectedParameter: viewState.selectedParameter
+                    }) || {};
+                    const metricsRows = Array.isArray(metricsResult.metricsRows) ? metricsResult.metricsRows : [];
+                    if (metricsRows.length) {
+                        const startTs = Number(metricsResult.start);
+                        const endTs = Number(metricsResult.end);
+                        const durationMs = Number.isFinite(metricsRows[0]?.durationMs)
+                            ? metricsRows[0].durationMs
+                            : (Number.isFinite(startTs) && Number.isFinite(endTs) ? Math.max(0, endTs - startTs) : null);
+                        const parts = [];
+                        if (Number.isFinite(startTs) && Number.isFinite(endTs)) {
+                            const startStr = new Date(startTs).toLocaleString();
+                            const endStr = new Date(endTs).toLocaleString();
+                            parts.push(`Region: ${startStr} – ${endStr}`);
+                        }
+                        if (Number.isFinite(durationMs)) {
+                            parts.push(`Duration: ${formatDuration(durationMs)}`);
+                        }
+                        if (parts.length) {
+                            tableBodyHtml += `<tr><td class='timestamp-info' colspan='${parameters.length + 1}'>${parts.join(' | ')}</td></tr>`;
+                        }
+
+                        metricsRows.forEach(row => {
+                            const positionLabel = escapeHtml(String(row.positionId || '—'));
+                            let rowHtml = `<tr><td class="position-header">${positionLabel}</td>`;
+                            parameters.forEach(param => {
+                                const metricValue = mapComparisonMetricValue(param, row);
+                                const formattedValue = Number.isFinite(metricValue)
+                                    ? metricValue.toFixed(1)
+                                    : 'N/A';
+                                rowHtml += `<td>${formattedValue}</td>`;
+                            });
+                            rowHtml += `</tr>`;
+                            tableBodyHtml += rowHtml;
+                        });
+                    } else {
+                        tableBodyHtml = `<tr><td class='placeholder' colspan='${parameters.length + 1}'>No data available for the selected comparison region.</td></tr>`;
+                    }
+                } else {
+                    tableBodyHtml = `<tr><td class='placeholder' colspan='${parameters.length + 1}'>Comparison metrics are unavailable.</td></tr>`;
+                }
+            }
+        } else if (!isActive || !timestamp) {
             tableBodyHtml = `<tr><td class='placeholder' colspan='${parameters.length + 1}'>Tap on a time series chart to populate this table.</td></tr>`;
         } else {
             // Add timestamp info row
