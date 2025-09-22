@@ -159,25 +159,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, chunk_time_length);
 
                         // Apply paint-on-canvas frequency slicing for spectrogram
-                        finalGlyphData = _applySpectrogramFreqSlicing(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataCache, models);
+                        finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataCache, models);
 
                     } else {
                         // Log view active, but too zoomed out
                         finalDataToUse = overviewData;
                         displayReason = ' - Zoom in for Log Data';
-                        finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataCache, models) : null;
+                        const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
+                        finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
                     }
                 } else {
                     // Log view active, but no log data exists
                     finalDataToUse = overviewData;
                     displayReason = ' (No Log Data Available)';
-                    finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataCache, models) : null;
+                    const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
+                    finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
                 }
             } else {
                 // Overview view is explicitly active
                 finalDataToUse = overviewData;
                 displayReason = ' (Overview)';
-                finalGlyphData = finalDataToUse ? _applySpectrogramFreqSlicing(finalDataToUse, finalDataToUse.initial_glyph_data.image[0], 0, position, dataCache, models) : null;
+                const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
+                finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
             }
 
             // --- Final state update ---
@@ -196,6 +199,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
         catch (error) {
             console.error(" [data-processors.js - updateActiveSpectralData()]", error);
+        }
+    }
+
+    function tryApplySpectrogramSlice(finalDataToUse, imageData, chunkStartTimeIdx, position, dataCache, models) {
+        if (!finalDataToUse || !imageData) {
+            return null;
+        }
+        try {
+            return _applySpectrogramFreqSlicing(finalDataToUse, imageData, chunkStartTimeIdx, position, dataCache, models);
+        }
+        catch (error) {
+            console.error(" [data-processors.js - tryApplySpectrogramSlice()]", error);
+            return null;
         }
     }
 

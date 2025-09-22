@@ -165,7 +165,7 @@
     regionOverlayLayer.innerHTML = '';
     regionList.innerHTML = '';
 
-    const { byId, allIds, selectedId } = state.markers.regions;
+    const { byId, allIds, selectedId } = state.regions;
     const positions = allIds
       .map((id) => byId[id])
       .filter((region) => region && region.positionId === 'P1');
@@ -221,7 +221,7 @@
   }
 
   function renderSelectedRegion(state) {
-    const selectedId = state.markers.regions.selectedId;
+    const selectedId = state.regions.selectedId;
     if (selectedId) {
       selectedRegionSummary.textContent = `Selected region: Region ${selectedId}`;
     } else {

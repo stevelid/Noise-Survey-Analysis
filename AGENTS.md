@@ -12,23 +12,23 @@ This handbook combines all project guidance to help contributors (especially LLM
 ## 2. Architectural Layers & Responsibilities
 All new features must place logic in the correct layer. The flow is: event handler → thunk → actions → reducer → selectors/renderers.
 
-### Event Handlers (`event-handlers.js`) — “Dumb Routers”
+### Event Handlers (`services/eventHandlers.js`) — “Dumb Routers”
 - Translate raw UI events into a single, high-level intent (thunk).
 - Must be as thin as possible and may normalize events (e.g., `preventDefault`, extracting keys, coercing timestamps) or contain simple, state-free logic (e.g., `if (event.shiftKey)`).
 - Must not read application state, branch on business rules, or contain business logic.
 - Must dispatch a thunk for any complex logic.
 
-### Thunks (`thunks.js`) — “Smart Controllers”
+### Thunks (`features/*/*Thunks.js`, aggregated via `thunks.js`) — “Smart Controllers”
 - Primary home of business logic and orchestration of complex actions.
 - Required for asynchronous logic or logic that reads multiple state slices.
 - May perform lightweight reads from `getState()` directly for single values; when coordinating multiple slices or deriving data (e.g., finding a region for a timestamp), use selectors to keep logic reusable and testable.
 - Must dispatch simple, semantic actions to reducers. No DOM reads/writes, no chart API calls, and no heavy number crunching here.
 
-### Actions & Action Creators (`actions.js`) — “Vocabulary”
+### Actions & Action Creators (`core/actions.js`) — “Vocabulary”
 - Actions are plain JavaScript objects with a `type` property describing discrete events.
 - Action creators are pure functions returning action objects.
 
-### Reducers (`reducers.js`, `features/.../reducer.js`) — “Pure Accountants”
+### Reducers (`core/rootReducer.js`, `features/.../reducer.js`) — “Pure Accountants”
 - Pure `(state, action) => newState` functions with no side effects (no API calls, no nested dispatches).
 - Perform immutable updates only (spread syntax, non-mutating helpers) and depend solely on their state slice plus the action payload.
 - Contain no derived computation beyond simple field changes.
@@ -38,7 +38,7 @@ All new features must place logic in the correct layer. The flow is: event handl
 - Must be pure functions that take the full state; thunks and renderers use selectors instead of reaching into the state tree directly.
 - Use selectors when data must be derived from multiple state objects.
 
-### Renderers (`renderers.js`) — “Dumb Painters”
+### Renderers (`services/renderers.js`) — “Dumb Painters”
 - Synchronize Bokeh models with the current state by reading data via selectors and updating the UI.
 - Must remain dumb: no business logic, no dispatching actions.
 
@@ -57,7 +57,7 @@ Follow consistent naming to make intent obvious:
 ### UI State (`app.store`)
 - **Purpose:** Single, immutable source of truth for UI configuration and interaction status.
 - **Contents:** Lightweight, serializable data (e.g., viewport/zoom, selected parameters such as `LZeq`, UI toggles, user interaction status, audio playback state).
-- **Management:** Redux-style pattern handled by `store.js`, `actions.js`, and `reducers.js`.
+- **Management:** Redux-style pattern handled by `store.js`, `core/actions.js`, and `core/rootReducer.js` plus feature reducers.
 - **Key Principle:** State objects are immutable—never mutate them directly; actions produce new state objects for predictability and easy debugging.
 
 ### Data Cache (`dataCache`)
@@ -105,8 +105,8 @@ Follow consistent naming to make intent obvious:
 1. **User Action:** User holds Ctrl and clicks a region.
 2. **Event Handler (`handleTap`):** Normalizes tap event, packages context `{ timestamp, positionId, modifiers: { ctrl: true } }`, and dispatches `handleTapIntent(payload)`.
 3. **Thunk (`handleTapIntent`):** Uses selectors (e.g., `selectRegionByTimestamp(state, ...)`) to find the region, checks `modifiers.ctrl`, and dispatches `regionRemoved({ id: region.id })`.
-4. **Reducer (`markersReducer`):** Handles `{ type: 'markers/regionRemoved', ... }`, performs a pure immutable update to remove the region from `state.markers`, and returns the new slice.
-5. **Orchestrator (`onStateChange`):** Detects changes to `state.markers.regions` and invokes `renderers.renderRegions(newState)`.
+4. **Reducer (`regionsReducer`):** Handles `{ type: 'markers/regionRemoved', ... }`, performs a pure immutable update to remove the region from `state.regions`, and returns the new slice.
+5. **Orchestrator (`onStateChange`):** Detects changes to `state.regions` and invokes `renderers.renderRegions(newState)`.
 6. **Renderer (`renderRegions`):** Reads the updated region list via a selector, removes the corresponding `BoxAnnotation`, and updates the side panel UI.
 
 By following this handbook, contributors maintain a clean, scalable, and predictable codebase that respects the project’s performance constraints and architectural conventions.

@@ -329,23 +329,35 @@ class DashBuilder:
         # This order is critical for dependencies to be met before they are used.
         js_files_order = [
                 # 1. State Management Core (in dependency order)
-                'actions.js',
-                'reducers.js',        # Defines rootReducer, needed by store
+                'core/actions.js',
+                'features/view/viewReducer.js',
+                'features/view/viewSelectors.js',
+                'features/interaction/interactionReducer.js',
+                'features/markers/markersReducer.js',
+                'features/markers/markersSelectors.js',
+                'features/regions/regionReducer.js',
+                'features/regions/regionSelectors.js',
+                'features/regions/regionUtils.js',
+                'features/regions/regionThunks.js',
+                'features/interaction/interactionThunks.js',
+                'features/audio/audioReducer.js',
+                'features/audio/audioThunks.js',
+                'core/rootReducer.js',
                 'store.js',           # Creates the store, needs rootReducer
                 'init.js',            # Creates app.init and reInitializeStore, needs store
 
                 # 2. Core setup and utilities
                 'utils.js',
-                'calcMetrics.js',
-                'regions.js',
+                'comparison-metrics.js',
                 'thunks.js',
 
                 # 3. Application modules
                 'chart-classes.js',   # Defines Chart classes, needed by registry
                 'registry.js',        # Defines the model/controller registry
                 'data-processors.js', # (No hard dependencies on others)
-                'renderers.js',       # (No hard dependencies on others)
-                'event-handlers.js',  # Depends on actions and store
+                'services/regions/regionPanelRenderer.js',
+                'services/renderers.js',
+                'services/eventHandlers.js',
 
                 # 4. Main application entry point (loads last)
                 'app.js'              # Wires everything together, attaches app.init.initialize

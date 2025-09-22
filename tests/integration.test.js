@@ -1,12 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 // Load the full application stack to test integration
-import '../noise_survey_analysis/static/js/store.js';
-import '../noise_survey_analysis/static/js/actions.js';
-import '../noise_survey_analysis/static/js/reducers.js';
+import './loadCoreModules.js';
 import '../noise_survey_analysis/static/js/init.js';
-import '../noise_survey_analysis/static/js/thunks.js';
-import '../noise_survey_analysis/static/js/event-handlers.js';
+import '../noise_survey_analysis/static/js/services/eventHandlers.js';
 
 describe('Application Integration Tests', () => {
   let store;

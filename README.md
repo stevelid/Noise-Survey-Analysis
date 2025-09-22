@@ -137,11 +137,35 @@ Here is an example of the `v1.2` format:
 │   │   └── loader.py
 │   ├── static/js/            # Client-side JavaScript for interactivity
 │   │   ├── app.js            # Main JS entry point
+│   │   ├── core/             # Redux-style primitives (actions, root reducer)
+│   │   │   ├── actions.js
+│   │   │   └── rootReducer.js
+│   │   ├── features/         # Feature-specific reducers, thunks, selectors, utils
+│   │   │   ├── audio/
+│   │   │   │   ├── audioReducer.js
+│   │   │   │   └── audioThunks.js
+│   │   │   ├── interaction/
+│   │   │   │   ├── interactionReducer.js
+│   │   │   │   └── interactionThunks.js
+│   │   │   ├── markers/
+│   │   │   │   ├── markersReducer.js
+│   │   │   │   └── markersSelectors.js
+│   │   │   ├── regions/
+│   │   │   │   ├── regionReducer.js
+│   │   │   │   ├── regionSelectors.js
+│   │   │   │   ├── regionThunks.js
+│   │   │   │   └── regionUtils.js
+│   │   │   └── view/
+│   │   │       ├── viewReducer.js
+│   │   │       └── viewSelectors.js
+│   │   ├── services/         # App-wide services and handlers
+│   │   │   ├── eventHandlers.js
+│   │   │   └── renderers.js
 │   │   ├── chart-classes.js  # OO classes for charts
 │   │   ├── data-processors.js# JS data processing (slicing, filtering)
-│   │   ├── event-handlers.js # Functions that respond to Bokeh events
-│   │   ├── renderers.js      # Functions that update the UI
-│   │   ├── state-management.js # Central JS state store and dispatcher
+│   │   ├── registry.js       # Registry wiring between models/controllers
+│   │   ├── store.js          # Redux-like store implementation
+│   │   ├── thunks.js         # Aggregated thunks facade
 │   │   └── utils.js          # JS utility functions
 │   ├── ui/                   # UI Widget and Component creation
 │   │   ├── __init__.py
@@ -175,12 +199,13 @@ The application follows a clear, structured data flow:
 
 ### JavaScript State Management
 
-The front-end interactivity is managed by a self-contained JavaScript application architecture (in static/js/). It follows a modern state management pattern similar to Redux:
+The front-end interactivity is managed by a self-contained JavaScript application architecture (in `static/js/`). It follows a modern state management pattern similar to Redux:
 
-*   **state-management.js:** Holds the single source of truth for the UI state. The dispatchAction function is the only way to modify the state.
-*   **event-handlers.js:** Listens for Bokeh UI events (e.g., tap, zoom), translates them into semantic actions (e.g., { type: 'TAP', payload: ... }), and dispatches them.
-*   **data-processors.js:** When the state changes, these functions compute the derived data needed for the charts (e.g., slicing the correct chunk of spectrogram data).
-*   **renderers.js:** These functions take the new state and derived data and update the Bokeh models to change what the user sees on screen.
+*   **core/actions.js** defines the global action vocabulary and creators. `store.js` uses **core/rootReducer.js** to combine the feature reducers into the application state tree.
+*   **features/** contains isolated slices for each domain (view, interaction, markers, regions, audio). Each feature provides its own reducer, selectors, and thunks so business logic stays modular.
+*   **services/eventHandlers.js** listens for Bokeh UI events (e.g., tap, zoom), translates them into semantic thunks, and dispatches them.
+*   **data-processors.js** computes derived data (e.g., slicing spectrogram buffers) whenever state changes.
+*   **services/renderers.js** consumes the latest state plus derived data to update the visible Bokeh models.
 
 This pattern keeps the code organized, predictable, and easier to debug and extend.
 

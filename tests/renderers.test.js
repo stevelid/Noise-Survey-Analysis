@@ -2,9 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Import source files for side effects to enable coverage tracking.
 import '../noise_survey_analysis/static/js/chart-classes.js';
-import '../noise_survey_analysis/static/js/calcMetrics.js';
+import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';
 import '../noise_survey_analysis/static/js/comparison-metrics.js';
-import '../noise_survey_analysis/static/js/renderers.js';
+import '../noise_survey_analysis/static/js/services/regions/regionPanelRenderer.js';
+import '../noise_survey_analysis/static/js/services/renderers.js';
 
 describe('NoiseSurveyApp.renderers', () => {
     let renderers;
@@ -33,7 +34,7 @@ describe('NoiseSurveyApp.renderers', () => {
         vi.clearAllMocks();
         mockDispatchAction = vi.fn();
         mockStoreDispatch = vi.fn();
-        mockGetState = vi.fn(() => ({ markers: { regions: { byId: {} } } }));
+        mockGetState = vi.fn(() => ({ regions: { byId: {}, allIds: [], selectedId: null, counter: 1 } }));
 
         mockUpdateAllCharts = vi.fn();
         mockSetVisible = vi.fn();
@@ -230,30 +231,28 @@ describe('NoiseSurveyApp.renderers', () => {
     describe('renderRegions', () => {
         it('should refresh region metrics in the side panel for the selected region', () => {
             const stateWithMetrics = {
-                markers: {
-                    regions: {
-                        byId: {
-                            1: {
-                                id: 1,
-                                positionId: 'P1',
-                                start: 0,
-                                end: 60000,
-                                note: '',
-                                metrics: {
-                                    laeq: 50.12,
-                                    lafmax: 65.5,
-                                    la90: null,
-                                    la90Available: false,
-                                    durationMs: 60000,
-                                    dataResolution: 'log',
-                                    spectrum: { bands: ['63 Hz'], values: [40] }
-                                }
+                regions: {
+                    byId: {
+                        1: {
+                            id: 1,
+                            positionId: 'P1',
+                            start: 0,
+                            end: 60000,
+                            note: '',
+                            metrics: {
+                                laeq: 50.12,
+                                lafmax: 65.5,
+                                la90: null,
+                                la90Available: false,
+                                durationMs: 60000,
+                                dataResolution: 'log',
+                                spectrum: { bands: ['63 Hz'], values: [40] }
                             }
-                        },
-                        allIds: [1],
-                        selectedId: 1,
-                        counter: 2
-                    }
+                        }
+                    },
+                    allIds: [1],
+                    selectedId: 1,
+                    counter: 2
                 }
             };
 
@@ -264,30 +263,28 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(panelHtml).toContain('65.5 dB');
 
             const updatedState = {
-                markers: {
-                    regions: {
-                        byId: {
-                            1: {
-                                id: 1,
-                                positionId: 'P1',
-                                start: 0,
-                                end: 62000,
-                                note: '',
-                                metrics: {
-                                    laeq: 55.44,
-                                    lafmax: 70.2,
-                                    la90: 45.3,
-                                    la90Available: true,
-                                    durationMs: 62000,
-                                    dataResolution: 'log',
-                                    spectrum: { bands: ['63 Hz'], values: [45] }
-                                }
+                regions: {
+                    byId: {
+                        1: {
+                            id: 1,
+                            positionId: 'P1',
+                            start: 0,
+                            end: 62000,
+                            note: '',
+                            metrics: {
+                                laeq: 55.44,
+                                lafmax: 70.2,
+                                la90: 45.3,
+                                la90Available: true,
+                                durationMs: 62000,
+                                dataResolution: 'log',
+                                spectrum: { bands: ['63 Hz'], values: [45] }
                             }
-                        },
-                        allIds: [1],
-                        selectedId: 1,
-                        counter: 2
-                    }
+                        }
+                    },
+                    allIds: [1],
+                    selectedId: 1,
+                    counter: 2
                 }
             };
 
@@ -373,7 +370,7 @@ describe('NoiseSurveyApp.renderers', () => {
             };
 
             try {
-                renderers.renderRegions({ markers: { regions: regionState } }, {});
+                renderers.renderRegions({ regions: regionState }, {});
                 vi.runAllTimers();
 
                 expect(observers.length).toBeGreaterThan(0);

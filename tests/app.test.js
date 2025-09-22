@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Ensure correct load order: Store -> actions -> reducers -> init
-import '../noise_survey_analysis/static/js/store.js';
-import '../noise_survey_analysis/static/js/actions.js';
-import '../noise_survey_analysis/static/js/reducers.js';
+// Ensure correct load order: state core modules followed by init
+import './loadCoreModules.js';
 import '../noise_survey_analysis/static/js/init.js';
 
 // We'll stub dependencies that app.js orchestrates

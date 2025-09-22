@@ -1,4 +1,4 @@
-// noise_survey_analysis/static/actions.js
+// noise_survey_analysis/static/js/core/actions.js
 
 /**
  * @fileoverview Defines action type constants and action creator functions.

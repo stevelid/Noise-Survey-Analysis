@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import '../noise_survey_analysis/static/js/calcMetrics.js';
-import '../noise_survey_analysis/static/js/regions.js';
+import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';
 
 const { regions } = window.NoiseSurveyApp;
 
@@ -23,15 +22,13 @@ describe('regions module', () => {
         const spectral = buildSpectralData();
         const state = {
             view: { selectedParameter: 'LZeq' },
-            markers: {
-                regions: {
-                    byId: {
-                        1: { id: 1, positionId: 'P1', start: 0, end: 2000, note: '', metrics: null }
-                    },
-                    allIds: [1],
-                    selectedId: 1,
-                    counter: 2
-                }
+            regions: {
+                byId: {
+                    1: { id: 1, positionId: 'P1', start: 0, end: 2000, note: '', metrics: null }
+                },
+                allIds: [1],
+                selectedId: 1,
+                counter: 2
             }
         };
         const models = {
@@ -65,31 +62,29 @@ describe('regions module', () => {
         const spectral = buildSpectralData();
         const state = {
             view: { selectedParameter: 'LAeq' },
-            markers: {
-                regions: {
-                    byId: {
-                        1: {
-                            id: 1,
-                            positionId: 'P1',
-                            start: 0,
-                            end: 2000,
-                            note: '',
-                            metrics: {
-                                laeq: 60,
-                                lafmax: 65,
-                                la90: null,
-                                la90Available: false,
-                                dataResolution: 'log',
-                                spectrum: { labels: ['63 Hz', '125 Hz'], values: [55, 60] },
-                                parameter: 'LZeq',
-                                durationMs: 2000
-                            }
+            regions: {
+                byId: {
+                    1: {
+                        id: 1,
+                        positionId: 'P1',
+                        start: 0,
+                        end: 2000,
+                        note: '',
+                        metrics: {
+                            laeq: 60,
+                            lafmax: 65,
+                            la90: null,
+                            la90Available: false,
+                            dataResolution: 'log',
+                            spectrum: { labels: ['63 Hz', '125 Hz'], values: [55, 60] },
+                            parameter: 'LZeq',
+                            durationMs: 2000
                         }
-                    },
-                    allIds: [1],
-                    selectedId: 1,
-                    counter: 2
-                }
+                    }
+                },
+                allIds: [1],
+                selectedId: 1,
+                counter: 2
             }
         };
         const models = {
@@ -116,15 +111,13 @@ describe('regions module', () => {
 
     it('exports and imports region payloads', () => {
         const state = {
-            markers: {
-                regions: {
-                    byId: {
-                        1: { id: 1, positionId: 'P1', start: 0, end: 1000, note: 'Note', metrics: { laeq: 50 } }
-                    },
-                    allIds: [1],
-                    selectedId: 1,
-                    counter: 2
-                }
+            regions: {
+                byId: {
+                    1: { id: 1, positionId: 'P1', start: 0, end: 1000, note: 'Note', metrics: { laeq: 50 } }
+                },
+                allIds: [1],
+                selectedId: 1,
+                counter: 2
             }
         };
         const json = regions.exportRegions(state);
