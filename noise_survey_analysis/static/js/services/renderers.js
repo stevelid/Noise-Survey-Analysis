@@ -426,7 +426,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const regionPanelRenderer = app.services?.regionPanelRenderer;
         if (regionPanelRenderer && typeof regionPanelRenderer.renderRegionPanel === 'function') {
-            regionPanelRenderer.renderRegionPanel(models?.regionPanelDiv, regionList, regionsState.selectedId, state);
+            const panelModels = {
+                select: models?.regionPanelSelect,
+                messageDiv: models?.regionPanelMessageDiv,
+                detail: models?.regionPanelDetail,
+                copyButton: models?.regionPanelCopyButton,
+                deleteButton: models?.regionPanelDeleteButton,
+                noteInput: models?.regionPanelNoteInput,
+                metricsDiv: models?.regionPanelMetricsDiv,
+                spectrumDiv: models?.regionPanelSpectrumDiv,
+            };
+            regionPanelRenderer.renderRegionPanel(panelModels, regionList, regionsState.selectedId, state);
         }
     }
 

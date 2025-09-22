@@ -27,6 +27,7 @@ from bokeh.models import (
     CheckboxGroup,
     ColorBar,
     Div,
+    TextAreaInput,
     LinearColorMapper,
     PanTool,
     BoxSelectTool,
@@ -44,30 +45,146 @@ from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 logger = logging.getLogger(__name__)
 
 
-def create_region_panel_div() -> Div:
-    """Create the static container for the region analysis panel."""
-    panel_div = Div(
-        text="<div class='region-panel-empty'>No regions defined.</div>",
-        width=320,
-        height=500,
-        name="region_panel_div",
-        css_classes=["region-panel-container"], # Use a list of strings
-        styles={
-            "border": "1px solid #ccc",
-            "padding": "8px",
-            "overflow-y": "auto",
-            "background-color": "#fafafa"
-        }
-    )
+class RegionPanelComponent:
+    """Collection of Bokeh widgets used for the region management sidebar."""
 
-    panel_div.js_on_change('text', CustomJS(code="""
-        const renderer = window.NoiseSurveyApp?.services?.regionPanelRenderer;
-        if (renderer && typeof renderer.ensureDelegatedListeners === 'function') {
-            renderer.ensureDelegatedListeners(cb_obj);
-        }
-    """))
+    def __init__(self):
+        self.region_select = Select(
+            title="Regions",
+            options=[],
+            value="",
+            width=300,
+            name="region_panel_select",
+        )
+        self.region_select.disabled = True
 
-    return panel_div
+        self.copy_button = Button(
+            label="Copy Summary",
+            width=140,
+            name="region_panel_copy_button",
+        )
+        self.copy_button.disabled = True
+
+        self.delete_button = Button(
+            label="Delete Region",
+            width=140,
+            button_type="warning",
+            name="region_panel_delete_button",
+        )
+        self.delete_button.disabled = True
+
+        self.note_input = TextAreaInput(
+            title="Notes",
+            value="",
+            rows=5,
+            width=300,
+            name="region_panel_note_input",
+        )
+        self.note_input.disabled = True
+
+        self.message_div = Div(
+            text="<div class='region-panel-empty'>No regions defined.</div>",
+            width=300,
+            name="region_panel_message",
+        )
+
+        self.metrics_div = Div(
+            text="<p class='region-panel-placeholder'>Select a region to view metrics.</p>",
+            width=300,
+            name="region_panel_metrics",
+            visible=False,
+        )
+
+        self.spectrum_div = Div(
+            text="<p class='region-panel-placeholder'>Spectrum data will appear here.</p>",
+            width=300,
+            name="region_panel_spectrum",
+            visible=False,
+        )
+
+        self.detail_container = column(
+            self.metrics_div,
+            self.spectrum_div,
+            sizing_mode="stretch_width",
+            name="region_panel_detail",
+            visible=False,
+        )
+
+        button_row = Row(
+            self.copy_button,
+            self.delete_button,
+            sizing_mode="stretch_width",
+            name="region_panel_button_row",
+        )
+
+        self.container = column(
+            self.region_select,
+            button_row,
+            self.note_input,
+            self.message_div,
+            self.detail_container,
+            width=320,
+            sizing_mode="stretch_width",
+            name="region_panel_container",
+            css_classes=["region-panel-container"],
+        )
+
+        self._attach_callbacks()
+
+    def _attach_callbacks(self) -> None:
+        select = self.region_select
+
+        select.js_on_change("value", CustomJS(code="""
+            const selectedId = Number(cb_obj.value);
+            const actions = window.NoiseSurveyApp?.actions;
+            const dispatch = window.NoiseSurveyApp?.store?.dispatch;
+            if (!Number.isFinite(selectedId) || !actions?.regionSelect || typeof dispatch !== 'function') {
+                return;
+            }
+            dispatch(actions.regionSelect(selectedId));
+        """))
+
+        self.delete_button.js_on_event('button_click', CustomJS(args=dict(select=select), code="""
+            const selectedId = Number(select.value);
+            const actions = window.NoiseSurveyApp?.actions;
+            const dispatch = window.NoiseSurveyApp?.store?.dispatch;
+            if (!Number.isFinite(selectedId) || !actions?.regionRemove || typeof dispatch !== 'function') {
+                return;
+            }
+            dispatch(actions.regionRemove(selectedId));
+        """))
+
+        self.copy_button.js_on_event('button_click', CustomJS(args=dict(select=select), code="""
+            const selectedId = Number(select.value);
+            const renderer = window.NoiseSurveyApp?.services?.regionPanelRenderer;
+            if (!Number.isFinite(selectedId) || !renderer || typeof renderer.handleCopyRegion !== 'function') {
+                return;
+            }
+            renderer.handleCopyRegion(selectedId);
+        """))
+
+        self.note_input.js_on_change('value', CustomJS(args=dict(select=select), code="""
+            const selectedId = Number(select.value);
+            const actions = window.NoiseSurveyApp?.actions;
+            const dispatch = window.NoiseSurveyApp?.store?.dispatch;
+            if (!Number.isFinite(selectedId) || !actions?.regionSetNote || typeof dispatch !== 'function') {
+                return;
+            }
+            dispatch(actions.regionSetNote(selectedId, cb_obj.value ?? ''));
+        """))
+
+    def export_models(self) -> Dict[str, Any]:
+        return {
+            'container': self.container,
+            'select': self.region_select,
+            'delete_button': self.delete_button,
+            'copy_button': self.copy_button,
+            'note_input': self.note_input,
+            'message_div': self.message_div,
+            'detail': self.detail_container,
+            'metrics_div': self.metrics_div,
+            'spectrum_div': self.spectrum_div,
+        }
 
 class TimeSeriesComponent:
     """
