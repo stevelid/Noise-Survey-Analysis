@@ -853,6 +853,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (models.comparisonPanelLayout) {
             models.comparisonPanelLayout.visible = isComparisonActive;
         }
+        if (models.sidePanelTabs) {
+            models.sidePanelTabs.active = isComparisonActive ? 1 : 0;
+        }
         if (models.frequencyBarLayout) {
             models.frequencyBarLayout.visible = !isComparisonActive;
         }

@@ -976,6 +976,7 @@ class ControlsComponent:
         self.clear_markers_button = self.add_clear_markers_button()
         self.param_select = self.add_parameter_selector(available_params)
         self.start_comparison_button = self.add_start_comparison_button()
+        self.sidebar_toggle = self.add_sidebar_toggle()
 
         logger.info("ControlsComponent initialized.")
 
@@ -1055,6 +1056,32 @@ class ControlsComponent:
             }"""))
         return button
 
+    def add_sidebar_toggle(self):
+        toggle = Toggle(
+            label="Sidebar Visible",
+            button_type="default",
+            width=140,
+            name="sidebar_visibility_toggle",
+            active=True,
+        )
+        return toggle
+
+    def configure_sidebar_toggle(self, sidebar_tabs):
+        if not sidebar_tabs or not self.sidebar_toggle:
+            return
+
+        sidebar_tabs.visible = self.sidebar_toggle.active
+
+        self.sidebar_toggle.js_on_change(
+            "active",
+            CustomJS(
+                args={"sidebar_tabs": sidebar_tabs},
+                code="""
+                    sidebar_tabs.visible = cb_obj.active;
+                """,
+            ),
+        )
+
     def add_visibility_checkbox(self, chart_name: str, chart_label: str, initial_state: bool = True):
         """
         Adds a visibility checkbox for a specific chart.
@@ -1129,6 +1156,7 @@ class ControlsComponent:
             self.hover_toggle,
             self.clear_markers_button,
             self.start_comparison_button,
+            self.sidebar_toggle,
             sizing_mode="scale_width", # Or "stretch_width"
             name="main_controls_row",
             styles={
