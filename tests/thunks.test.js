@@ -222,6 +222,78 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.regions.byId[2].positionId).toBe('P2');
     });
 
+    it('createAutoRegionsIntent builds daytime regions for each day', () => {
+        const dayTimes = [
+            Date.UTC(2024, 0, 1, 6, 0, 0),
+            Date.UTC(2024, 0, 1, 8, 0, 0),
+            Date.UTC(2024, 0, 1, 22, 0, 0),
+            Date.UTC(2024, 0, 1, 23, 30, 0),
+            Date.UTC(2024, 0, 2, 6, 30, 0),
+            Date.UTC(2024, 0, 2, 12, 0, 0)
+        ];
+
+        window.NoiseSurveyApp.registry.models = window.NoiseSurveyApp.registry.models || {};
+        const originalSources = window.NoiseSurveyApp.registry.models.timeSeriesSources;
+        window.NoiseSurveyApp.registry.models.timeSeriesSources = {
+            P1: {
+                overview: { data: { Datetime: dayTimes } },
+                log: { data: { Datetime: [] } },
+            }
+        };
+
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1'],
+            selectedParameter: 'LZeq',
+            viewport: { min: dayTimes[0], max: dayTimes[dayTimes.length - 1] },
+            chartVisibility: {}
+        }));
+
+        const thunk = thunks.createAutoRegionsIntent({ mode: 'daytime' });
+        thunk(store.dispatch, store.getState);
+
+        const state = store.getState();
+        expect(state.regions.allIds.length).toBe(2);
+        const firstRegion = state.regions.byId[state.regions.allIds[0]];
+        const secondRegion = state.regions.byId[state.regions.allIds[1]];
+        expect(new Date(firstRegion.start).getUTCHours()).toBe(7);
+        expect(new Date(firstRegion.end).getUTCHours()).toBe(23);
+        expect(new Date(secondRegion.start).getUTCHours()).toBe(7);
+        expect(new Date(secondRegion.end).getUTCHours()).toBe(12);
+
+        window.NoiseSurveyApp.registry.models.timeSeriesSources = originalSources;
+    });
+
+    it('createAutoRegionsIntent builds nighttime regions spanning midnight', () => {
+        const times = [
+            Date.UTC(2024, 0, 1, 20, 0, 0),
+            Date.UTC(2024, 0, 1, 23, 30, 0),
+            Date.UTC(2024, 0, 2, 3, 0, 0),
+            Date.UTC(2024, 0, 2, 6, 30, 0),
+            Date.UTC(2024, 0, 2, 10, 0, 0)
+        ];
+
+        const previousSources = window.NoiseSurveyApp.registry.models.timeSeriesSources;
+        window.NoiseSurveyApp.registry.models.timeSeriesSources = {
+            P1: {
+                overview: { data: { Datetime: times } },
+                log: { data: { Datetime: [] } },
+            }
+        };
+
+        store.dispatch(actions.regionReplaceAll([]));
+
+        const thunk = thunks.createAutoRegionsIntent({ mode: 'nighttime' });
+        thunk(store.dispatch, store.getState);
+
+        const state = store.getState();
+        expect(state.regions.allIds.length).toBe(1);
+        const region = state.regions.byId[state.regions.allIds[0]];
+        expect(new Date(region.start).getUTCHours()).toBe(23);
+        expect(new Date(region.end).getUTCHours()).toBe(7);
+
+        window.NoiseSurveyApp.registry.models.timeSeriesSources = previousSources;
+    });
+
     describe('audio control intents', () => {
         it('togglePlayPauseIntent ignores redundant play requests', () => {
             store.dispatch(actions.audioPlayPauseToggle('P1', true));

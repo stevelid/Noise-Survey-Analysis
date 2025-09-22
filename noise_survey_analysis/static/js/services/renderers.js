@@ -481,11 +481,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const regionsState = state?.regions;
         if (!regionsState) return;
         const regionList = regionsState.allIds.map(id => regionsState.byId[id]).filter(Boolean);
+        const panelVisible = regionsState.panelVisible !== false;
+        const overlaysVisible = regionsState.overlaysVisible !== false;
+        const regionsForCharts = overlaysVisible ? regionList : [];
 
         if (controllers?.chartsByName) {
             controllers.chartsByName.forEach(chart => {
                 if (typeof chart.syncRegions === 'function') {
-                    chart.syncRegions(regionList, regionsState.selectedId);
+                    const selectedId = overlaysVisible ? regionsState.selectedId : null;
+                    chart.syncRegions(regionsForCharts, selectedId);
                 }
             });
         }
@@ -507,8 +511,29 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 frequencyCopyButton: models?.regionPanelFrequencyCopyButton,
                 frequencyTableDiv: models?.regionPanelFrequencyTableDiv,
                 spectrumDiv: models?.regionPanelSpectrumDiv,
+                visibilityToggle: models?.regionVisibilityToggle,
+                autoDayButton: models?.regionAutoDayButton,
+                autoNightButton: models?.regionAutoNightButton,
             };
-            regionPanelRenderer.renderRegionPanel(panelModels, regionList, regionsState.selectedId, state);
+            const availablePositions = Array.isArray(state?.view?.availablePositions)
+                ? state.view.availablePositions
+                : [];
+            const fallbackPositions = models?.timeSeriesSources
+                ? Object.keys(models.timeSeriesSources)
+                : [];
+            const positionCount = availablePositions.length ? availablePositions.length : fallbackPositions.length;
+
+            regionPanelRenderer.renderRegionPanel(
+                panelModels,
+                regionList,
+                regionsState.selectedId,
+                state,
+                {
+                    panelVisible,
+                    overlaysVisible,
+                    positionCount
+                }
+            );
         }
     }
 

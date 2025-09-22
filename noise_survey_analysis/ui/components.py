@@ -58,6 +58,34 @@ class RegionPanelComponent:
             name="region_panel_header",
         )
 
+        self.visibility_toggle = Toggle(
+            label="Regions",
+            width=panel_width,
+            name="region_visibility_toggle",
+            active=True,
+            button_type="primary",
+        )
+
+        self.auto_day_button = Button(
+            label="Auto Daytime",
+            width=int(panel_width / 2) - 6,
+            name="region_auto_day_button",
+            button_type="default",
+        )
+
+        self.auto_night_button = Button(
+            label="Auto Nighttime",
+            width=int(panel_width / 2) - 6,
+            name="region_auto_night_button",
+            button_type="default",
+        )
+
+        self.auto_buttons = Row(
+            children=[self.auto_day_button, self.auto_night_button],
+            name="region_auto_buttons",
+            sizing_mode="stretch_width",
+        )
+
         self.select = Select(
             title="Select Region",
             value="",
@@ -198,7 +226,8 @@ class RegionPanelComponent:
         )
 
         self.container = column(
-            self.header,
+            self.visibility_toggle,
+            self.auto_buttons,
             self.message_div,
             self.detail_layout,
             name="region_panel_container",
@@ -421,6 +450,39 @@ class RegionPanelComponent:
             }
         """)
         self.merge_button.js_on_event('button_click', merge_callback)
+
+        visibility_callback = CustomJS(code="""
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            if (!actions?.regionVisibilitySet || typeof store?.dispatch !== 'function') {
+                return;
+            }
+            const isVisible = !!cb_obj.active;
+            store.dispatch(actions.regionVisibilitySet({ showPanel: isVisible, showOverlays: isVisible }));
+        """)
+        self.visibility_toggle.js_on_change('active', visibility_callback)
+
+        auto_day_callback = CustomJS(code="""
+            const thunks = window.NoiseSurveyApp?.thunks;
+            const store = window.NoiseSurveyApp?.store;
+            const createAutoRegions = thunks?.createAutoRegionsIntent;
+            if (typeof createAutoRegions !== 'function' || typeof store?.dispatch !== 'function') {
+                return;
+            }
+            store.dispatch(createAutoRegions({ mode: 'daytime' }));
+        """)
+        self.auto_day_button.js_on_event('button_click', auto_day_callback)
+
+        auto_night_callback = CustomJS(code="""
+            const thunks = window.NoiseSurveyApp?.thunks;
+            const store = window.NoiseSurveyApp?.store;
+            const createAutoRegions = thunks?.createAutoRegionsIntent;
+            if (typeof createAutoRegions !== 'function' || typeof store?.dispatch !== 'function') {
+                return;
+            }
+            store.dispatch(createAutoRegions({ mode: 'nighttime' }));
+        """)
+        self.auto_night_button.js_on_event('button_click', auto_night_callback)
 
     def layout(self):
         return self.container

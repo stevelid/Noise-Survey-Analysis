@@ -132,8 +132,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.markerModels.forEach(marker => marker.visible = true);
 
             const hasChanges = timestampsToAdd.length > 0 || markersToRemove.length > 0;
-            if (hasChanges && this.source) {
-                this.render();
+            if (hasChanges) {
+                if (this.source) {
+                    this.render();
+                }
+                if (this.model && typeof this.model.request_render === 'function') {
+                    this.model.request_render();
+                }
             }
         }
 
