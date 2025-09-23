@@ -27,8 +27,11 @@ from bokeh.models import (
     CheckboxGroup,
     ColorBar,
     ColorPicker,
+    DataTable,
     Div,
+    HTMLTemplateFormatter,
     LinearColorMapper,
+    TableColumn,
     TextAreaInput,
     PanTool,
     BoxSelectTool,
@@ -92,14 +95,123 @@ class RegionPanelComponent:
             sizing_mode="stretch_width",
         )
 
-        self.select = Select(
-            title="Select Region",
-            value="",
-            options=[],
-            width=panel_width,
-            name="region_panel_select",
-            disabled=True,
+        self.region_source = ColumnDataSource(
+            data={
+                "id": [],
+                "title": [],
+                "subtitle": [],
+                "color": [],
+            },
+            name="region_panel_source",
         )
+
+        region_card_template = """
+            <div class=\"region-card\">
+                <div class=\"region-card__accent\" style=\"background:<%= color %>;\"></div>
+                <div class=\"region-card__body\">
+                    <div class=\"region-card__title\"><%= title %></div>
+                    <div class=\"region-card__subtitle\"><%= subtitle %></div>
+                </div>
+            </div>
+        """
+
+        self.region_table = DataTable(
+            source=self.region_source,
+            columns=[
+                TableColumn(
+                    field="title",
+                    title="",
+                    formatter=HTMLTemplateFormatter(template=region_card_template),
+                )
+            ],
+            width=panel_width,
+            height=240,
+            index_position=None,
+            header_row_height=0,
+            row_height=64,
+            name="region_panel_table",
+            selectable="single",
+            editable=False,
+            reorderable=False,
+            fit_columns=True,
+            autosize_mode="fit_columns",
+            sizing_mode="stretch_width",
+            css_classes=["region-panel-table"],
+        )
+        self.region_table.stylesheets = [
+            """
+            .region-panel-table .bk-data-table {
+                border: none;
+                background: transparent;
+                font-family: 'Segoe UI', sans-serif;
+            }
+            .region-panel-table .slick-viewport {
+                background: transparent;
+            }
+            .region-panel-table .slick-row {
+                border: none !important;
+                margin: 6px 4px;
+                border-radius: 12px;
+                background: rgba(255, 255, 255, 0.85);
+                box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+                transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+            }
+            .region-panel-table .slick-row:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 6px 12px rgba(15, 23, 42, 0.12);
+                background: rgba(30, 136, 229, 0.12);
+            }
+            .region-panel-table .slick-row.active, .region-panel-table .slick-row.selected {
+                background: #1e88e5 !important;
+                box-shadow: 0 8px 16px rgba(30, 136, 229, 0.25);
+            }
+            .region-panel-table .slick-row .slick-cell {
+                border: none !important;
+                background: transparent !important;
+                color: #1f2937;
+                font-size: 13px;
+            }
+            .region-panel-table .slick-row.selected .slick-cell {
+                color: #ffffff;
+            }
+            .region-panel-table .bk-cell-index {
+                display: none;
+            }
+            .region-card {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 8px 12px;
+            }
+            .region-card__accent {
+                width: 10px;
+                height: 40px;
+                border-radius: 6px;
+                background: #1e88e5;
+                flex-shrink: 0;
+            }
+            .region-card__body {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .region-card__title {
+                font-weight: 600;
+                font-size: 13px;
+                letter-spacing: 0.01em;
+            }
+            .region-panel-table .slick-row.selected .region-card__title {
+                color: #ffffff;
+            }
+            .region-card__subtitle {
+                font-size: 11px;
+                color: rgba(31, 41, 55, 0.7);
+            }
+            .region-panel-table .slick-row.selected .region-card__subtitle {
+                color: rgba(255, 255, 255, 0.85);
+            }
+        """
+        ]
 
         self.color_picker = ColorPicker(
             title="Region Colour",
@@ -216,7 +328,7 @@ class RegionPanelComponent:
         )
 
         self.detail_layout = column(
-            self.select,
+            self.region_table,
             self.color_picker,
             primary_actions,
             self.merge_select,
@@ -238,9 +350,11 @@ class RegionPanelComponent:
             self.detail_layout,
             name="region_panel_container",
             styles={
-                "border": "1px solid #ccc",
-                "padding": "8px",
-                "background-color": "#fafafa",
+                "border": "1px solid rgba(148, 163, 184, 0.25)",
+                "padding": "12px",
+                "background-color": "#ffffff",
+                "border-radius": "16px",
+                "box-shadow": "0 8px 20px rgba(15, 23, 42, 0.08)",
             },
             width=panel_width,
         )
@@ -249,23 +363,42 @@ class RegionPanelComponent:
         self._attach_callbacks()
 
     def _attach_callbacks(self) -> None:
-        select_callback = CustomJS(code="""
+        selection_callback = CustomJS(args={'source': self.region_source, 'table': self.region_table}, code="""
+            if (!source || !table) {
+                return;
+            }
             const actions = window.NoiseSurveyApp?.actions;
             const store = window.NoiseSurveyApp?.store;
             if (!actions || typeof store?.dispatch !== 'function') {
                 return;
             }
-            const numericId = Number(cb_obj.value);
-            if (Number.isFinite(numericId) && actions.regionSelect) {
-                store.dispatch(actions.regionSelect(numericId));
-            } else if (actions.regionClearSelection) {
-                store.dispatch(actions.regionClearSelection());
+            if (table.__suppressSelectionDispatch) {
+                return;
+            }
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                if (typeof actions.regionClearSelection === 'function') {
+                    store.dispatch(actions.regionClearSelection());
+                }
+                return;
+            }
+            const data = source.data || {};
+            const ids = Array.isArray(data.id) ? data.id : [];
+            const candidate = Number(ids[indices[0]]);
+            if (Number.isFinite(candidate) && typeof actions.regionSelect === 'function') {
+                store.dispatch(actions.regionSelect(candidate));
             }
         """)
-        self.select.js_on_change('value', select_callback)
+        self.region_source.selected.js_on_change('indices', selection_callback)
 
-        note_callback = CustomJS(args={'select': self.select}, code="""
-            const regionId = Number(select.value);
+        note_callback = CustomJS(args={'source': self.region_source}, code="""
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                return;
+            }
+            const data = source.data || {};
+            const ids = Array.isArray(data.id) ? data.id : [];
+            const regionId = Number(ids[indices[0]]);
             if (!Number.isFinite(regionId)) {
                 return;
             }
@@ -277,8 +410,14 @@ class RegionPanelComponent:
         """)
         self.note_input.js_on_change('value', note_callback)
 
-        color_callback = CustomJS(args={'select': self.select}, code="""
-            const regionId = Number(select.value);
+        color_callback = CustomJS(args={'source': self.region_source}, code="""
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                return;
+            }
+            const data = source.data || {};
+            const ids = Array.isArray(data.id) ? data.id : [];
+            const regionId = Number(ids[indices[0]]);
             if (!Number.isFinite(regionId)) {
                 return;
             }
@@ -291,8 +430,14 @@ class RegionPanelComponent:
         """)
         self.color_picker.js_on_change('color', color_callback)
 
-        delete_callback = CustomJS(args={'select': self.select}, code="""
-            const regionId = Number(select.value);
+        delete_callback = CustomJS(args={'source': self.region_source}, code="""
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                return;
+            }
+            const data = source.data || {};
+            const ids = Array.isArray(data.id) ? data.id : [];
+            const regionId = Number(ids[indices[0]]);
             if (!Number.isFinite(regionId)) {
                 return;
             }
@@ -304,8 +449,14 @@ class RegionPanelComponent:
         """)
         self.delete_button.js_on_event('button_click', delete_callback)
 
-        copy_callback = CustomJS(args={'select': self.select}, code="""
-            const regionId = Number(select.value);
+        copy_callback = CustomJS(args={'source': self.region_source}, code="""
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                return;
+            }
+            const data = source.data || {};
+            const ids = Array.isArray(data.id) ? data.id : [];
+            const regionId = Number(ids[indices[0]]);
             if (!Number.isFinite(regionId)) {
                 return;
             }
@@ -342,8 +493,14 @@ class RegionPanelComponent:
         """)
         self.copy_button.js_on_event('button_click', copy_callback)
 
-        spectrum_copy_callback = CustomJS(args={'select': self.select}, code="""
-            const regionId = Number(select.value);
+        spectrum_copy_callback = CustomJS(args={'source': self.region_source}, code="""
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                return;
+            }
+            const data = source.data || {};
+            const ids = Array.isArray(data.id) ? data.id : [];
+            const regionId = Number(ids[indices[0]]);
             if (!Number.isFinite(regionId)) {
                 return;
             }
@@ -381,8 +538,14 @@ class RegionPanelComponent:
         """)
         self.frequency_copy_button.js_on_event('button_click', spectrum_copy_callback)
 
-        add_area_callback = CustomJS(args={'select': self.select}, code="""
-            const regionId = Number(select.value);
+        add_area_callback = CustomJS(args={'source': self.region_source}, code="""
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                return;
+            }
+            const data = source.data || {};
+            const ids = Array.isArray(data.id) ? data.id : [];
+            const regionId = Number(ids[indices[0]]);
             if (!Number.isFinite(regionId)) {
                 return;
             }
@@ -398,7 +561,7 @@ class RegionPanelComponent:
         """)
         self.add_area_button.js_on_event('button_click', add_area_callback)
 
-        merge_callback = CustomJS(args={'select': self.select, 'mergeSelect': self.merge_select}, code="""
+        merge_callback = CustomJS(args={'source': self.region_source, 'mergeSelect': self.merge_select, 'table': self.region_table}, code="""
             const actions = window.NoiseSurveyApp?.actions;
             const store = window.NoiseSurveyApp?.store;
             if (!actions || typeof store?.dispatch !== 'function' || typeof store?.getState !== 'function') {
@@ -411,7 +574,16 @@ class RegionPanelComponent:
             const regionsState = state?.regions || {};
             const isMergeModeActive = !!regionsState.isMergeModeActive;
 
-            const selectedId = Number(select.value);
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                if (isMergeModeActive && typeof actions.regionSetMergeMode === 'function') {
+                    dispatch(actions.regionSetMergeMode(false));
+                }
+                return;
+            }
+            const data = source.data || {};
+            const ids = Array.isArray(data.id) ? data.id : [];
+            const selectedId = Number(ids[indices[0]]);
             if (!Number.isFinite(selectedId)) {
                 if (isMergeModeActive && typeof actions.regionSetMergeMode === 'function') {
                     dispatch(actions.regionSetMergeMode(false));

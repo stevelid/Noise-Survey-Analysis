@@ -137,7 +137,12 @@ describe('NoiseSurveyApp.renderers', () => {
         document.body.appendChild(panelElement);
 
         const regionPanelMocks = {
-            select: { options: [], value: '', disabled: true },
+            source: {
+                data: { id: [], title: [], subtitle: [], color: [] },
+                selected: { indices: [], change: { emit: vi.fn() } },
+                change: { emit: vi.fn() }
+            },
+            table: { disabled: true, visible: false },
             messageDiv: { text: '', visible: true },
             detail: { visible: false },
             copyButton: { disabled: true },
@@ -157,7 +162,8 @@ describe('NoiseSurveyApp.renderers', () => {
         };
 
         Object.assign(window.NoiseSurveyApp.registry.models, {
-            regionPanelSelect: regionPanelMocks.select,
+            regionPanelSource: regionPanelMocks.source,
+            regionPanelTable: regionPanelMocks.table,
             regionPanelMessageDiv: regionPanelMocks.messageDiv,
             regionPanelDetail: regionPanelMocks.detail,
             regionPanelCopyButton: regionPanelMocks.copyButton,
@@ -379,7 +385,9 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelFrequencyTableDiv.text).toContain('40.0 dB');
             expect(models.regionPanelFrequencyCopyButton.disabled).toBe(false);
             expect(models.regionPanelFrequencyCopyButton.visible).toBe(true);
-            expect(models.regionPanelSelect.value).toBe('1');
+            expect(models.regionPanelSource.data.id).toEqual([1]);
+            expect(models.regionPanelSource.selected.indices).toEqual([0]);
+            expect(models.regionPanelTable.disabled).toBe(false);
             expect(models.regionPanelNoteInput.disabled).toBe(false);
             expect(models.regionPanelMergeSelect.disabled).toBe(true);
             expect(models.regionPanelColorPicker.disabled).toBe(false);
@@ -449,7 +457,7 @@ describe('NoiseSurveyApp.renderers', () => {
             renderers.renderRegions(emptyState, {});
             expect(models.regionPanelMessageDiv.visible).toBe(true);
             expect(models.regionPanelDetail.visible).toBe(false);
-            expect(models.regionPanelSelect.disabled).toBe(true);
+            expect(models.regionPanelTable.disabled).toBe(true);
             expect(models.regionPanelCopyButton.disabled).toBe(true);
             expect(models.regionPanelDeleteButton.disabled).toBe(true);
             expect(models.regionPanelAddAreaButton.disabled).toBe(true);
@@ -499,7 +507,7 @@ describe('NoiseSurveyApp.renderers', () => {
             renderers.renderRegions(populatedState, {});
             expect(models.regionPanelMessageDiv.visible).toBe(false);
             expect(models.regionPanelDetail.visible).toBe(true);
-            expect(models.regionPanelSelect.disabled).toBe(false);
+            expect(models.regionPanelTable.disabled).toBe(false);
             expect(models.regionPanelCopyButton.disabled).toBe(false);
             expect(models.regionPanelDeleteButton.disabled).toBe(false);
             expect(models.regionPanelAddAreaButton.disabled).toBe(false);
