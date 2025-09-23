@@ -497,7 +497,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const regionPanelRenderer = app.services?.regionPanelRenderer;
         if (regionPanelRenderer && typeof regionPanelRenderer.renderRegionPanel === 'function') {
             const panelModels = {
-                select: models?.regionPanelSelect,
+                regionSource: models?.regionPanelSource,
+                regionTable: models?.regionPanelTable,
                 messageDiv: models?.regionPanelMessageDiv,
                 detail: models?.regionPanelDetail,
                 copyButton: models?.regionPanelCopyButton,

@@ -240,6 +240,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return `Region ${region.id} – ${positionLabel}${areaLabel}${addingLabel}`;
     }
 
+    function buildRegionSubtitle(region) {
+        if (!region) return '';
+        const position = region?.positionId ? `Position ${escapeHtml(String(region.positionId))}` : 'Position N/A';
+        const areas = getRegionAreas(region);
+        const segmentLabel = areas.length === 1 ? '1 segment' : `${areas.length} segments`;
+        const duration = formatDuration(sumAreaDurations(areas));
+        return `${position} • ${segmentLabel} • ${duration}`;
+    }
+
     function ensureArrayEquals(a, b) {
         if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
             return false;
@@ -273,33 +282,74 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return true;
     }
 
-    function updateSelect(select, regionList, selectedId, state) {
-        if (!select) {
-            return { selectedRegion: null, selectedValue: '' };
+    function updateRegionTable(regionSource, regionTable, regionList, selectedId, state) {
+        if (!regionSource) {
+            return { selectedRegion: null, resolvedSelectedId: null };
         }
 
-        const options = regionList.map(region => [String(region.id), buildRegionLabel(region, state)]);
-        if (!ensureArrayEquals(select.options || [], options)) {
-            select.options = options;
+        const nextData = {
+            id: regionList.map(region => region.id ?? null),
+            title: regionList.map(region => buildRegionLabel(region, state)),
+            subtitle: regionList.map(region => buildRegionSubtitle(region)),
+            color: regionList.map(region => normalizeColor(region.color)),
+        };
+
+        const currentData = regionSource.data || {};
+        const dataKeys = Object.keys(nextData);
+        let dataChanged = dataKeys.length !== Object.keys(currentData).length;
+        if (!dataChanged) {
+            dataChanged = dataKeys.some(key => !ensureArrayEquals(currentData[key] || [], nextData[key]));
         }
 
-        const stringSelectedId = Number.isFinite(selectedId) ? String(selectedId) : '';
-        const newValue = stringSelectedId || (options[0]?.[0] ?? '');
-        if (select.value !== newValue) {
-            select.value = newValue;
+        if (dataChanged) {
+            regionSource.data = nextData;
+            if (regionSource.change && typeof regionSource.change.emit === 'function') {
+                regionSource.change.emit();
+            }
         }
 
-        select.disabled = options.length === 0;
-        const region = regionList.find(entry => String(entry.id) === select.value) || null;
-        const existingStyles = select.styles || {};
-        const sanitizedStyles = { ...existingStyles };
-        if (Object.prototype.hasOwnProperty.call(sanitizedStyles, 'color')) {
-            delete sanitizedStyles.color;
+        const desiredIndex = (() => {
+            if (!regionList.length) return -1;
+            if (Number.isFinite(selectedId)) {
+                const explicitIndex = regionList.findIndex(entry => entry.id === selectedId);
+                if (explicitIndex >= 0) return explicitIndex;
+            }
+            return 0;
+        })();
+
+        const desiredSelection = desiredIndex >= 0 ? [desiredIndex] : [];
+        const selection = regionSource.selected;
+        if (selection) {
+            const currentSelection = Array.isArray(selection.indices) ? selection.indices : [];
+            if (!ensureArrayEquals(currentSelection, desiredSelection)) {
+                if (regionTable) {
+                    regionTable.__suppressSelectionDispatch = true;
+                }
+                selection.indices = desiredSelection;
+                if (selection.change && typeof selection.change.emit === 'function') {
+                    selection.change.emit();
+                }
+                if (regionTable) {
+                    const releaseGuard = () => { regionTable.__suppressSelectionDispatch = false; };
+                    if (typeof queueMicrotask === 'function') {
+                        queueMicrotask(releaseGuard);
+                    } else {
+                        Promise.resolve().then(releaseGuard);
+                    }
+                }
+            }
         }
-        if (!shallowEqualObjects(existingStyles, sanitizedStyles)) {
-            select.styles = sanitizedStyles;
+
+        if (regionTable) {
+            regionTable.disabled = regionList.length === 0;
+            regionTable.visible = regionList.length > 0;
         }
-        return { selectedRegion: region, selectedValue: select.value };
+
+        const selectedRegion = desiredIndex >= 0 ? regionList[desiredIndex] : null;
+        return {
+            selectedRegion,
+            resolvedSelectedId: selectedRegion ? selectedRegion.id : null,
+        };
     }
 
     function updateMessage(messageDiv, detailLayout, hasRegions, panelVisible) {
@@ -485,7 +535,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!panelModels) return;
 
         const {
-            select,
+            regionSource,
+            regionTable,
             messageDiv,
             detail,
             noteInput,
@@ -508,8 +559,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             ? visibilityState.positionCount > 0
             : true;
 
-        const { selectedRegion } = updateSelect(select, regionList, selectedId, state);
-        updateMergeSelect(mergeSelect, regionList, selectedId, state, isMergeModeActive);
+        const { selectedRegion, resolvedSelectedId } = updateRegionTable(regionSource, regionTable, regionList, selectedId, state);
+        updateMergeSelect(mergeSelect, regionList, resolvedSelectedId, state, isMergeModeActive);
         const hasRegions = regionList.length > 0;
         const hasSelection = Boolean(selectedRegion);
 
