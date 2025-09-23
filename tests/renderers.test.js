@@ -508,6 +508,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMessageDiv.visible).toBe(false);
             expect(models.regionPanelDetail.visible).toBe(true);
             expect(models.regionPanelTable.disabled).toBe(false);
+            expect(models.regionPanelSource.data.title[0]).toBe('hello');
             expect(models.regionPanelCopyButton.disabled).toBe(false);
             expect(models.regionPanelDeleteButton.disabled).toBe(false);
             expect(models.regionPanelAddAreaButton.disabled).toBe(false);
@@ -559,6 +560,38 @@ describe('NoiseSurveyApp.renderers', () => {
             ]);
             expect(models.regionPanelMergeSelect.visible).toBe(false);
             expect(models.regionPanelMergeSelect.value).toBe('');
+        });
+
+        it('uses note previews when building region labels', () => {
+            const models = window.NoiseSurveyApp.registry.models;
+            const longNote = '  This is a deliberately long note value that should be trimmed when displayed.  ';
+            const state = {
+                view: { availablePositions: ['A1'] },
+                regions: {
+                    byId: {
+                        7: {
+                            id: 7,
+                            positionId: 'A1',
+                            start: 0,
+                            end: 1000,
+                            note: longNote,
+                            color: '#123456',
+                            metrics: null,
+                        }
+                    },
+                    allIds: [7],
+                    selectedId: 7,
+                    counter: 8,
+                    panelVisible: true,
+                    overlaysVisible: true,
+                }
+            };
+
+            renderers.renderRegions(state, {});
+            const label = models.regionPanelSource.data.title[0];
+            const normalized = longNote.replace(/\s+/g, ' ').trim();
+            const expected = `${normalized.slice(0, 40).trimEnd()}…`;
+            expect(label).toBe(expected);
         });
     });
 

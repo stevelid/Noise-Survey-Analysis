@@ -10,6 +10,7 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
   let togglePlayPauseIntentSpy;
   let changePlaybackRateIntentSpy;
   let toggleVolumeBoostIntentSpy;
+  let createAutoRegionsIntentSpy;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -26,6 +27,7 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
     togglePlayPauseIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'togglePlayPauseIntent').mockImplementation(() => () => {});
     changePlaybackRateIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'changePlaybackRateIntent').mockImplementation(() => () => {});
     toggleVolumeBoostIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleVolumeBoostIntent').mockImplementation(() => () => {});
+    createAutoRegionsIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createAutoRegionsIntent').mockImplementation(() => () => {});
   });
 
   it('handleTap with ctrl modifier should dispatch removeMarker', () => {
@@ -101,6 +103,16 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
   it('clearAllMarkers should dispatch the corresponding action', () => {
     window.NoiseSurveyApp.eventHandlers.clearAllMarkers();
     expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.clearAllMarkers());
+  });
+
+  it('handleAutoRegions should normalise mode and dispatch the intent thunk', () => {
+    window.NoiseSurveyApp.eventHandlers.handleAutoRegions('nighttime');
+    expect(createAutoRegionsIntentSpy).toHaveBeenCalledWith({ mode: 'nighttime' });
+    expect(dispatchAction).toHaveBeenCalledWith(expect.any(Function));
+
+    window.NoiseSurveyApp.eventHandlers.handleAutoRegions('invalid');
+    expect(createAutoRegionsIntentSpy).toHaveBeenCalledWith({ mode: 'daytime' });
+    expect(dispatchAction).toHaveBeenCalledTimes(2);
   });
 
   it('handleViewToggle should dispatch action and update widget label', () => {

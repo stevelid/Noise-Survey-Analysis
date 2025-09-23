@@ -103,6 +103,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function onStateChange(isInitialLoad = false) {
         const state = app.store.getState();
         const { models, controllers } = app.registry;
+        const actionTypes = app.actionTypes || {};
+        const lastActionType = state.system?.lastAction?.type;
+        const shouldForceRegionRender = Boolean(lastActionType && (
+            lastActionType === actionTypes.REGION_VISIBILITY_SET ||
+            lastActionType === actionTypes.REGION_SELECTED ||
+            lastActionType === actionTypes.REGION_SELECTION_CLEARED ||
+            lastActionType === actionTypes.REGION_NOTE_SET ||
+            lastActionType === actionTypes.REGION_METRICS_SET ||
+            lastActionType === actionTypes.REGION_COLOR_SET ||
+            lastActionType === actionTypes.REGION_ADD_AREA_MODE_SET ||
+            lastActionType === actionTypes.REGION_MERGE_MODE_SET ||
+            lastActionType === actionTypes.REGIONS_REPLACED
+        ));
 
         // --- A. DETERMINE UPDATE TYPE (HEAVY vs. LIGHT) ---
         // These state changes require re-calculating the main chart data
@@ -150,7 +163,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             app.renderers.renderMarkers(state);
         }
 
-        if (isInitialLoad || didRegionsChange) {
+        if (isInitialLoad || didRegionsChange || shouldForceRegionRender) {
             app.renderers.renderRegions(state, dataCache);
         }
 
