@@ -143,6 +143,12 @@ describe('NoiseSurveyApp.renderers', () => {
                 change: { emit: vi.fn() }
             },
             table: { disabled: true, visible: false },
+            source: {
+                data: { id: [], title: [], subtitle: [], color: [] },
+                selected: { indices: [], change: { emit: vi.fn() } },
+                change: { emit: vi.fn() }
+            },
+            table: { disabled: true, visible: false },
             messageDiv: { text: '', visible: true },
             detail: { visible: false },
             copyButton: { disabled: true },

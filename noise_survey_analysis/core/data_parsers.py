@@ -1015,8 +1015,8 @@ class AudioFileParser(AbstractNoiseParser):
                                 'filename': item_name,
                                 'full_path': item_path,
                                 'size_mb': round(stats.st_size / (1024 * 1024), 2),
-                                'modified_time': pd.to_datetime(stats.st_mtime, unit='s', utc=True).round('S'),
-                                'Datetime': pd.to_datetime(stats.st_mtime, unit='s', utc=True).round('S'),
+                                'modified_time': pd.to_datetime(stats.st_mtime, unit='s', utc=True).round('s'),
+                                'Datetime': pd.to_datetime(stats.st_mtime, unit='s', utc=True).round('s'),
                                 'duration_sec': duration
                             })
             else:
