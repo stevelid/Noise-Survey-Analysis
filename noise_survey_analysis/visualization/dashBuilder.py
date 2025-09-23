@@ -355,7 +355,6 @@ class DashBuilder:
         self.shared_components['region_panel_layout'].visible = True
 
         self.shared_components['side_panel_tabs'] = side_panel_tabs
-        self.shared_components['controls'].configure_sidebar_toggle(side_panel_tabs)
 
         final_layout = row(
             main_layout,
@@ -524,7 +523,6 @@ class DashBuilder:
             'regionAutoNightButton': self.shared_components['region_panel'].auto_night_button,
             'regionExportButton': self.shared_components['region_export_button'],
             'regionImportButton': self.shared_components['region_import_button'],
-            'sidebarToggle': getattr(self.shared_components['controls'], 'sidebar_toggle', None),
         }
 
         # Populate position-specific models

@@ -37,6 +37,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     `;
 
     const DEFAULT_REGION_COLOR = '#1e88e5';
+    const NOTE_PREVIEW_MAX_LENGTH = 40;
 
     function normalizeColor(color) {
         if (typeof color === 'string') {
@@ -233,10 +234,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function buildRegionLabel(region, state) {
         const addAreaTargetId = state?.regions?.addAreaTargetId ?? null;
+        const rawNote = typeof region?.note === 'string' ? region.note : '';
+        const normalizedNote = rawNote.replace(/\s+/g, ' ').trim();
+        const hasNote = normalizedNote.length > 0;
+        const addingLabel = region?.id === addAreaTargetId ? ' (Adding area...)' : '';
+
+        if (hasNote) {
+            const truncated = normalizedNote.length > NOTE_PREVIEW_MAX_LENGTH
+                ? `${normalizedNote.slice(0, NOTE_PREVIEW_MAX_LENGTH).trimEnd()}…`
+                : normalizedNote;
+            return `${escapeHtml(truncated)}${addingLabel}`;
+        }
+
         const positionLabel = region?.positionId ? escapeHtml(String(region.positionId)) : '';
         const areaCount = getRegionAreas(region).length;
         const areaLabel = areaCount > 1 ? ` (${areaCount} areas)` : '';
-        const addingLabel = region.id === addAreaTargetId ? ' (Adding area...)' : '';
         return `Region ${region.id} – ${positionLabel}${areaLabel}${addingLabel}`;
     }
 

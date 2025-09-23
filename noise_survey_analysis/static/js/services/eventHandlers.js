@@ -182,6 +182,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.store.dispatch(actions.visibilityChange(chartName, isVisible));
     }
 
+    function handleAutoRegions(mode) {
+        const normalizedMode = mode === 'nighttime' ? 'nighttime' : 'daytime';
+        const thunkCreator = app.thunks && app.thunks.createAutoRegionsIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing createAutoRegionsIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+
+        dispatch(thunkCreator({ mode: normalizedMode }));
+    }
+
     function handleAudioStatusUpdate() {
         const status = app.registry.models.audio_status_source.data;
         app.store.dispatch(actions.audioStatusUpdate(status));
@@ -387,6 +403,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleVolumeBoostToggle: withErrorHandling(handleVolumeBoostToggle, 'handleVolumeBoostToggle'),
         handleKeyPress: withErrorHandling(handleKeyPress, 'handleKeyPress'),
         clearAllMarkers: withErrorHandling(clearAllMarkers, 'clearAllMarkers'),
+        handleAutoRegions: withErrorHandling(handleAutoRegions, 'handleAutoRegions'),
         handleStartComparison: withErrorHandling(handleStartComparison, 'handleStartComparison'),
         handleFinishComparison: withErrorHandling(handleFinishComparison, 'handleFinishComparison'),
         handleComparisonPositionsChange: withErrorHandling(handleComparisonPositionsChange, 'handleComparisonPositionsChange'),

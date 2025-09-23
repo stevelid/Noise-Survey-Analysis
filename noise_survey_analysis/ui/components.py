@@ -642,24 +642,22 @@ class RegionPanelComponent:
         self.visibility_toggle.js_on_change('active', visibility_callback)
 
         auto_day_callback = CustomJS(code="""
-            const thunks = window.NoiseSurveyApp?.thunks;
-            const store = window.NoiseSurveyApp?.store;
-            const createAutoRegions = thunks?.createAutoRegionsIntent;
-            if (typeof createAutoRegions !== 'function' || typeof store?.dispatch !== 'function') {
+            const handlers = window.NoiseSurveyApp?.eventHandlers;
+            if (typeof handlers?.handleAutoRegions !== 'function') {
+                console.error('NoiseSurveyApp.eventHandlers.handleAutoRegions not found.');
                 return;
             }
-            store.dispatch(createAutoRegions({ mode: 'daytime' }));
+            handlers.handleAutoRegions('daytime');
         """)
         self.auto_day_button.js_on_event('button_click', auto_day_callback)
 
         auto_night_callback = CustomJS(code="""
-            const thunks = window.NoiseSurveyApp?.thunks;
-            const store = window.NoiseSurveyApp?.store;
-            const createAutoRegions = thunks?.createAutoRegionsIntent;
-            if (typeof createAutoRegions !== 'function' || typeof store?.dispatch !== 'function') {
+            const handlers = window.NoiseSurveyApp?.eventHandlers;
+            if (typeof handlers?.handleAutoRegions !== 'function') {
+                console.error('NoiseSurveyApp.eventHandlers.handleAutoRegions not found.');
                 return;
             }
-            store.dispatch(createAutoRegions({ mode: 'nighttime' }));
+            handlers.handleAutoRegions('nighttime');
         """)
         self.auto_night_button.js_on_event('button_click', auto_night_callback)
 
@@ -1213,7 +1211,6 @@ class ControlsComponent:
         self.hover_toggle = self.add_hover_toggle()
         self.clear_markers_button = self.add_clear_markers_button()
         self.param_select = self.add_parameter_selector(available_params)
-        self.sidebar_toggle = self.add_sidebar_toggle()
 
         logger.info("ControlsComponent initialized.")
 
@@ -1278,32 +1275,6 @@ class ControlsComponent:
                 console.error('window.NoiseSurveyApp.eventHandlers.handleParameterChange function not found!');
             }""")) #active for overview, inactive for log
         return select
-
-    def add_sidebar_toggle(self):
-        toggle = Toggle(
-            label="Sidebar Visible",
-            button_type="default",
-            width=140,
-            name="sidebar_visibility_toggle",
-            active=True,
-        )
-        return toggle
-
-    def configure_sidebar_toggle(self, sidebar_tabs):
-        if not sidebar_tabs or not self.sidebar_toggle:
-            return
-
-        sidebar_tabs.visible = self.sidebar_toggle.active
-
-        self.sidebar_toggle.js_on_change(
-            "active",
-            CustomJS(
-                args={"sidebar_tabs": sidebar_tabs},
-                code="""
-                    sidebar_tabs.visible = cb_obj.active;
-                """,
-            ),
-        )
 
     def add_visibility_checkbox(self, chart_name: str, chart_label: str, initial_state: bool = True):
         """
@@ -1379,7 +1350,6 @@ class ControlsComponent:
             self.view_toggle,
             self.hover_toggle,
             self.clear_markers_button,
-            self.sidebar_toggle,
             sizing_mode="scale_width",
             name="primary_controls_row",
             styles={
