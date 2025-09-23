@@ -2,7 +2,7 @@ import logging
 from bokeh.plotting import curdoc
 from bokeh.layouts import column, row, LayoutDOM # Ensure column is imported
 from bokeh.models import Div, ColumnDataSource, CustomJS, Button # Import for assertions and error messages
-from bokeh.models import Panel, Tabs
+from bokeh.models import Panel, Tabs, TabPanel
 import pandas as pd
 import numpy as np  # Import numpy for array operations
 import os
@@ -317,8 +317,8 @@ class DashBuilder:
 
         side_panel_tabs = Tabs(
             tabs=[
-                Panel(child=region_panel_layout, title="Regions"),
-                Panel(child=comparison_panel_layout, title="Comparison"),
+                TabPanel(child=region_panel_layout, title="Regions"),
+                TabPanel(child=comparison_panel_layout, title="Comparison"),
             ],
             name="side_panel_tabs",
             width=SIDE_PANEL_WIDTH + 32,
@@ -328,8 +328,8 @@ class DashBuilder:
             "active",
             CustomJS(
                 args={
-                    "region_panel_layout": region_panel_layout,
-                    "comparison_panel_layout": comparison_panel_layout,
+                    "region_panel_layout": self.shared_components['region_panel_layout'],
+                    "comparison_panel_layout": self.shared_components['comparison_panel_layout'],
                 },
                 code="""
                     const activeIndex = cb_obj.active ?? 0;
@@ -352,7 +352,7 @@ class DashBuilder:
         )
 
         side_panel_tabs.visible = True
-        region_panel_layout.visible = True
+        self.shared_components['region_panel_layout'].visible = True
 
         self.shared_components['side_panel_tabs'] = side_panel_tabs
         self.shared_components['controls'].configure_sidebar_toggle(side_panel_tabs)
@@ -577,5 +577,3 @@ class DashBuilder:
         
         logger.warning(f"DashBuilder: No plottable data found for {position_data.name}. Defaulting to 'overview'.")
         return 'overview'
-
-

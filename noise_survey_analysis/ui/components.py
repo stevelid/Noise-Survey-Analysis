@@ -582,6 +582,7 @@ class TimeSeriesComponent:
         
         fig_kwargs = {
             "height": self.chart_settings['low_freq_height'],
+            "width": self.chart_settings['low_freq_width'],
             "title": title,
             "x_axis_type": "datetime",
             "x_axis_label": "Time",
@@ -590,7 +591,6 @@ class TimeSeriesComponent:
             "active_drag": pan_tool,
             "active_scroll": "xwheel_zoom",
             "name": f"figure_{self.name_id}",
-            "sizing_mode": "stretch_width",
         }
 
         # Set y-range if specified in config
@@ -723,8 +723,7 @@ class TimeSeriesComponent:
         """
         return column(
             self.figure,
-            name=f"{self.name_id}_component",
-            sizing_mode="stretch_width"
+            name=f"{self.name_id}_component"
         ) #in a column for consistency with spectrogram
 
 
@@ -766,10 +765,9 @@ class SpectrogramComponent:
         self.figure: Figure = self._create_empty_figure() # Create a blank figure initially
         self.hover_div: Div = Div(text="<i>Hover over spectrogram for details</i>",
                                   name=f"{self.position_name}_spectrogram_hover_div",
-                                  height=40,
+                                  width=self.chart_settings['spectrogram_width'], height=40,
                                   styles={'font-size': '9pt', 'font-weight': 'bold', 'padding-left': '10px', 'text-align': 'center'},
-                                  visible=False,
-                                  sizing_mode="stretch_width")
+                                  visible=False)
         self.image_glyph = None # Store the image glyph renderer
         self.update_plot(position_glyph_data, self._current_display_mode, self._current_param)
 
@@ -797,11 +795,11 @@ class SpectrogramComponent:
             x_axis_type="datetime",
             y_axis_type="linear",
             height=self.chart_settings['spectrogram_height'],
+            width=self.chart_settings['spectrogram_width'],
             tools=[pan_tool, box_select_tool, "xzoom_in", "xzoom_out", "reset", "xwheel_zoom"],
             active_drag=pan_tool,
             active_scroll=self.chart_settings['active_scroll'],
             name=f"figure_{self.name_id}",
-            sizing_mode="stretch_width"
         )
         p.xaxis.formatter = CustomJSTickFormatter(args={"fig": p}, code="""
             const d = new Date(tick);
@@ -1026,8 +1024,7 @@ class SpectrogramComponent:
         return column(
             self.figure,
             self.hover_div,
-            name=f"{self.name_id}_component",
-            sizing_mode="stretch_width"
+            name=f"{self.name_id}_component"
         )
 
 
@@ -1346,14 +1343,14 @@ class RangeSelectorComponent:
         select_figure = figure(
             title="Drag handles to select time range",
             height=self.settings['range_selector_height'],
+            width=self.settings['range_selector_width'],
             x_axis_type="datetime",
             x_range=x_range_obj, # Use the robustly created Range1d
             y_axis_type=None,
             tools="",
             toolbar_location=None,
             background_fill_color = "#efefef",
-            name=self.name_id,
-            sizing_mode="stretch_width"
+            name=self.name_id
         )
 
         # Metrics plotting also needs to be robust to empty source
@@ -1400,8 +1397,7 @@ class RangeSelectorComponent:
         """
         return column(
             self.figure,
-            name=f"{self.name_id}_component",
-            sizing_mode="stretch_width"
+            name=f"{self.name_id}_component"
         ) #in a column for consistency with spectrogram
 
 class FrequencyBarComponent:
@@ -1439,7 +1435,7 @@ class FrequencyBarComponent:
         # Add a Div component to hold the HTML table for copying data
         self.table_div = Div(
             name="frequency_table_div",
-            sizing_mode="stretch_width"
+            width=self.settings['frequency_bar_width']
         )
         
         self.figure: Figure = self._create_figure()
@@ -1455,12 +1451,12 @@ class FrequencyBarComponent:
         p = figure(
             title="Frequency Slice",
             height=self.settings['high_freq_height'],
+            width=self.settings['frequency_bar_width'], # Initial width, sizing_mode handles final
             x_range=self.x_range, # Use the FactorRange instance
             x_axis_label='Frequency Band', # Suffix (Hz) implied by labels
             y_axis_label='Level (dB)',
             tools="pan,wheel_zoom,box_zoom,reset,save", # Standard tools
-            name="frequency_bar_chart", # For identification
-            sizing_mode="stretch_width"
+            name="frequency_bar_chart" # For identification
         )
 
         # Add vertical bars
@@ -1527,8 +1523,7 @@ class FrequencyBarComponent:
         """
         return column(
             self.figure,
-            self.table_div,
-            sizing_mode="stretch_width"
+            self.table_div
         )
 
     def _update_table(self, levels: List[float], labels: List[str]):
@@ -1771,24 +1766,20 @@ class ComparisonFrequencyBarComponent:
         self.figure = self._create_figure(chart_width)
         self.table_div = Div(
             text=self._empty_table_html(),
+            width=chart_width,
             name="comparison_frequency_table",
             styles={
                 "border": "1px solid #ccc",
                 "padding": "12px",
                 "background-color": "#fafafa",
                 "margin-top": "8px"
-            },
-            sizing_mode="stretch_width"
+            }
         )
-
-        if chart_width is not None:
-            self.table_div.width = chart_width
 
         self.container = column(
             self.figure,
             self.table_div,
-            name="comparison_frequency_layout",
-            sizing_mode="stretch_width"
+            name="comparison_frequency_layout"
         )
         self.container.visible = False
 
@@ -1815,12 +1806,12 @@ class ComparisonFrequencyBarComponent:
         figure_kwargs = dict(
             title="Comparison Spectrum",
             height=CHART_SETTINGS.get('high_freq_height', 300),
+            width=chart_width,
             x_range=self.x_range,
             x_axis_label='Frequency Band',
             y_axis_label='Level (dB)',
             tools="pan,wheel_zoom,box_zoom,reset,save",
-            name="comparison_frequency_chart",
-            sizing_mode="stretch_width"
+            name="comparison_frequency_chart"
         )
 
         if chart_width is not None:
@@ -2026,7 +2017,7 @@ class SummaryTableComponent:
         self.summary_div = Div(
             text = initial_html,
             name = "summary_table_div",
-            sizing_mode="stretch_width"
+            width=self.settings.get('low_freq_width', 1200) # Match the width of the charts
         )
 
         logger.info(f"SummaryTableComponent initialized with {len(parameters)} parameters, compact={compact}.")
