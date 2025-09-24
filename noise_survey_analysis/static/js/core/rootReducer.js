@@ -52,6 +52,33 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function rootReducer(state, action) {
         const previousState = state ?? createInitialState();
 
+        if (action.type === actionTypes.STATE_REHYDRATED) {
+            const providedState = action?.payload?.state;
+            if (!providedState || typeof providedState !== 'object') {
+                console.error('[RootReducer] STATE_REHYDRATED dispatched without a valid state payload.');
+                return previousState;
+            }
+
+            const baseState = createInitialState();
+
+            const mergedState = {
+                view: providedState.view ? { ...baseState.view, ...providedState.view } : baseState.view,
+                interaction: providedState.interaction ? { ...baseState.interaction, ...providedState.interaction } : baseState.interaction,
+                markers: providedState.markers ? { ...baseState.markers, ...providedState.markers } : baseState.markers,
+                regions: providedState.regions ? { ...baseState.regions, ...providedState.regions } : baseState.regions,
+                audio: providedState.audio ? { ...baseState.audio, ...providedState.audio } : baseState.audio,
+                system: { ...baseState.system, ...(providedState.system || {}), initialized: true },
+            };
+
+            return {
+                ...mergedState,
+                system: {
+                    ...mergedState.system,
+                    lastAction: action,
+                },
+            };
+        }
+
         const nextView = typeof viewFeature.viewReducer === 'function'
             ? viewFeature.viewReducer(previousState.view, action)
             : previousState.view;

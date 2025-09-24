@@ -31,7 +31,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(leve
 logger = logging.getLogger(__name__)
 
 
-def create_app(doc, config_path=None):
+def create_app(doc, config_path=None, state_path=None):
     """
     This function is the entry point for the LIVE Bokeh server application.
     """
@@ -48,6 +48,43 @@ def create_app(doc, config_path=None):
     
     logger.info("--- New client session started. Creating live application instance. ---")
     
+    initial_saved_workspace_state = None
+    source_configs_from_state = None
+
+    if state_path:
+        if isinstance(state_path, (bytes, bytearray)):
+            try:
+                state_path = state_path.decode('utf-8')
+            except Exception:
+                state_path = str(state_path)
+
+        logger.info(f"Attempting to load workspace state file: {state_path}")
+        try:
+            with open(state_path, 'r', encoding='utf-8') as state_file:
+                workspace_payload = json.load(state_file)
+
+            if not isinstance(workspace_payload, dict):
+                raise ValueError("Workspace file must contain a JSON object")
+
+            state_payload = workspace_payload.get('appState')
+            if isinstance(state_payload, dict):
+                initial_saved_workspace_state = state_payload
+            else:
+                logger.warning("Workspace file missing 'appState'; state rehydration will be skipped.")
+
+            configs_payload = workspace_payload.get('sourceConfigs')
+            if isinstance(configs_payload, list) and configs_payload:
+                source_configs_from_state = configs_payload
+            else:
+                if configs_payload:
+                    logger.warning("Workspace file contains 'sourceConfigs' but it is not a non-empty list. Falling back to other sources.")
+                else:
+                    logger.warning("Workspace file does not include 'sourceConfigs'. Falling back to other sources.")
+        except FileNotFoundError:
+            logger.error(f"Workspace state file not found: {state_path}")
+        except Exception as exc:
+            logger.error(f"Failed to parse workspace state file '{state_path}': {exc}", exc_info=True)
+
     def on_data_sources_selected(source_configs):
         """Callback when data sources are selected from the selector."""
         logger.info("Data sources selected, building dashboard...")
@@ -77,6 +114,7 @@ def create_app(doc, config_path=None):
         
         # This function will run after the loading screen is displayed.
         def build_dashboard():
+            nonlocal initial_saved_workspace_state
             app_data = DataManager(source_configurations=source_configs)
             audio_handler = AudioPlaybackHandler(position_data=app_data.get_all_position_data())
             audio_control_source = ColumnDataSource(data={'command': [], 'position_id': [], 'value': []}, name='audio_control_source')
@@ -84,15 +122,24 @@ def create_app(doc, config_path=None):
             app_callbacks = AppCallbacks(doc, audio_handler, audio_control_source, audio_status_source)
             doc.clear() # Clear the loading message
             dash_builder = DashBuilder(audio_control_source, audio_status_source)
-            dash_builder.build_layout(doc, app_data, CHART_SETTINGS)
+            dash_builder.build_layout(
+                doc,
+                app_data,
+                CHART_SETTINGS,
+                source_configs=source_configs,
+                saved_workspace_state=initial_saved_workspace_state,
+            )
             doc.add_root(audio_control_source)
             doc.add_root(audio_status_source)
             app_callbacks.attach_callbacks()
             setattr(doc.session_context, '_app_callback_manager', app_callbacks)
+            initial_saved_workspace_state = None
 
         doc.add_next_tick_callback(build_dashboard)
     
-    if config_path:
+    if source_configs_from_state:
+        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs_from_state))
+    elif config_path:
         # Ensure config_path is a string (Bokeh passes bytes for --args)
         if isinstance(config_path, (bytes, bytearray)):
             try:
@@ -156,12 +203,8 @@ if doc.session_context:
     logger.info("Bokeh session context found. Setting up live application.")
     args = doc.session_context.request.arguments
     config_file_path = args.get('config', [None])[0]
-    if isinstance(config_file_path, (bytes, bytearray)):
-        try:
-            config_file_path = config_file_path.decode('utf-8')
-        except Exception:
-            config_file_path = str(config_file_path)
-    create_app(doc, config_path=config_file_path)
+    state_file_path = args.get('state', [None])[0]
+    create_app(doc, config_path=config_file_path, state_path=state_file_path)
 else:
     # No session context, so we're running as a standalone script.
     # This block will be executed when running `python main.py ...`

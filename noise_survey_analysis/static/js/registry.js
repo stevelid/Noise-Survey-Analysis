@@ -35,6 +35,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             models[key] = bokehModels[key];
         }
 
+        models.sourceConfigs = Array.isArray(bokehModels?.sourceConfigs)
+            ? bokehModels.sourceConfigs
+            : [];
+        models.savedWorkspaceState = bokehModels?.savedWorkspaceState || null;
+        if (bokehModels?.sessionMenu) {
+            models.sessionMenu = bokehModels.sessionMenu;
+        }
+
         //Robustly find essential models by name from the Bokeh document
         if (window.Bokeh && Bokeh.documents[0]) {
             const doc = Bokeh.documents[0];

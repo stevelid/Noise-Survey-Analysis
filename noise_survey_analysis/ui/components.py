@@ -24,6 +24,7 @@ from bokeh.models import (
     Toggle,
     Spinner,
     Button,
+    Dropdown,
     Select,
     CheckboxGroup,
     ColorBar,
@@ -1208,6 +1209,7 @@ class ControlsComponent:
         self.position_order: List[str] = []  # Track order of positions as checkboxes are added
         self.visibility_layout = None
         
+        self.session_menu = self.add_session_menu()
         self.view_toggle = self.add_view_type_selector()
         self.hover_toggle = self.add_hover_toggle()
         self.clear_markers_button = self.add_clear_markers_button()
@@ -1347,6 +1349,7 @@ class ControlsComponent:
             self._build_visibility_layout()
 
         controls_group = Row(
+            self.session_menu,
             self.param_select,
             self.view_toggle,
             self.hover_toggle,
@@ -2265,3 +2268,27 @@ class SummaryTableComponent:
     def layout(self):
         """Returns the Bokeh layout object for this component."""
         return self.summary_div
+    def add_session_menu(self):
+        dropdown = Dropdown(
+            label="Session Actions",
+            button_type="default",
+            width=170,
+            name="session_actions_dropdown",
+            menu=[
+                ("Save Workspace", "save"),
+                ("Load Workspace", "load"),
+                ("Export Regions", "export_regions"),
+                ("Import Regions", "import_regions"),
+            ],
+        )
+
+        dropdown.js_on_event("menu_item_click", CustomJS(code="""
+            const action = cb_obj?.item;
+            if (window.NoiseSurveyApp?.session?.handleMenuAction) {
+                window.NoiseSurveyApp.session.handleMenuAction(action);
+            } else {
+                console.error('[Session] Session manager is not available for action:', action);
+            }
+        """))
+
+        return dropdown

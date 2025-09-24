@@ -16,6 +16,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // Initialization
         INITIALIZE_STATE: 'INITIALIZE_STATE',
+        STATE_REHYDRATED: 'STATE_REHYDRATED',
 
         // Interaction
         TAP: 'TAP',
@@ -74,6 +75,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // These functions simply create and return the action object.
     const actions = {
         initializeState: (payload) => ({ type: actionTypes.INITIALIZE_STATE, payload }),
+        rehydrateState: (state) => ({ type: actionTypes.STATE_REHYDRATED, payload: { state } }),
 
         tap: (timestamp, position, sourceChartName) => ({ 
             type: actionTypes.TAP, 
