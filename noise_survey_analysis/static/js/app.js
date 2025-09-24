@@ -84,6 +84,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // Trigger the first data processing and render pass manually.
             onStateChange(true); // Pass a flag to indicate it's the initial load
 
+            if (app.session && typeof app.session.applyInitialWorkspaceState === 'function') {
+                try {
+                    app.session.applyInitialWorkspaceState();
+                } catch (error) {
+                    console.error('[App]', 'Failed to apply initial workspace state:', error);
+                }
+            }
+
             console.info('[App]', 'App initialized successfully.');
 
             return true;

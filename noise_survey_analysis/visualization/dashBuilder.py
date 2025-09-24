@@ -86,7 +86,9 @@ class DashBuilder:
         self.shared_components: Dict[str, Any] = {}
         self.prepared_glyph_data: Dict[str, Dict[str, Any]] = {}
 
-    def build_layout(self, doc, app_data: DataManager, chart_settings: dict):
+    def build_layout(self, doc, app_data: DataManager, chart_settings: dict,
+                     source_configs=None,
+                     saved_workspace_state=None):
         """
         The main public method that constructs the entire application layout.
         This is the primary entry point for this class.
@@ -102,6 +104,8 @@ class DashBuilder:
         prepared_glyph_data, available_params = self._prepare_glyph_data(app_data)
 
         self.prepared_glyph_data = prepared_glyph_data
+        self.source_configs = source_configs or []
+        self.saved_workspace_state = saved_workspace_state
         self._create_components(app_data, prepared_glyph_data, available_params, chart_settings)
         self._wire_up_interactions()
         self._assemble_and_add_layout(doc)
@@ -147,26 +151,8 @@ class DashBuilder:
         self.shared_components['summary_table'] = SummaryTableComponent(all_positions, ['LAeq', 'LAFmax', 'LAF90'])
 
         region_panel_div = RegionPanelComponent()
-        export_button = Button(label="Export Regions", width=150, name="region_export_button")
-        export_button.js_on_event('button_click', CustomJS(code="""
-            if (window.NoiseSurveyApp?.regions?.handleExport) {
-                window.NoiseSurveyApp.regions.handleExport();
-            } else {
-                console.error('Region export handler not available.');
-            }
-        """))
-        import_button = Button(label="Import Regions", width=150, name="region_import_button")
-        import_button.js_on_event('button_click', CustomJS(code="""
-            if (window.NoiseSurveyApp?.regions?.handleImport) {
-                window.NoiseSurveyApp.regions.handleImport();
-            } else {
-                console.error('Region import handler not available.');
-            }
-        """))
 
         self.shared_components['region_panel'] = region_panel_div
-        self.shared_components['region_export_button'] = export_button
-        self.shared_components['region_import_button'] = import_button
 
         first_position_processed = False
         # Create components for each position found in the data
@@ -303,8 +289,6 @@ class DashBuilder:
         )
 
         region_panel_layout = column(
-            self.shared_components['region_export_button'],
-            self.shared_components['region_import_button'],
             self.shared_components['region_panel'].layout(),
             name="region_panel_layout",
             width=SIDE_PANEL_WIDTH,
@@ -399,6 +383,7 @@ class DashBuilder:
                 'data-processors.js', # (No hard dependencies on others)
                 'services/regions/regionPanelRenderer.js',
                 'services/renderers.js',
+                'services/session/sessionManager.js',
                 'services/eventHandlers.js',
 
                 # 4. Main application entry point (loads last)
@@ -472,6 +457,8 @@ class DashBuilder:
                 'freq_bar_freq_range_hz': CHART_SETTINGS.get('freq_bar_freq_range_hz'),
                 'freq_table_freq_range_hz': CHART_SETTINGS.get('freq_table_freq_range_hz'),
             },
+            'sourceConfigs': getattr(self, 'source_configs', []),
+            'savedWorkspaceState': getattr(self, 'saved_workspace_state', None),
             'uiPositionElements': {},
             'clickLines': [],
             'hoverLines': [],
@@ -483,6 +470,7 @@ class DashBuilder:
             'freqTableDiv': self.shared_components['freq_bar'].table_div,  # Add the frequency table div for copy/paste functionality
             'summaryTableDiv': self.shared_components['summary_table'].summary_div,
             'paramSelect': self.shared_components['controls'].param_select,
+            'sessionMenu': self.shared_components['controls'].session_menu,
             #'audio_control_source': self.audio_control_source,
             #'audio_status_source': self.audio_status_source,
             'audio_controls': {},
@@ -521,8 +509,6 @@ class DashBuilder:
             'regionVisibilityToggle': self.shared_components['region_panel'].visibility_toggle,
             'regionAutoDayButton': self.shared_components['region_panel'].auto_day_button,
             'regionAutoNightButton': self.shared_components['region_panel'].auto_night_button,
-            'regionExportButton': self.shared_components['region_export_button'],
-            'regionImportButton': self.shared_components['region_import_button'],
         }
 
         # Populate position-specific models
