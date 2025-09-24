@@ -123,11 +123,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didParamChange = state.view.selectedParameter !== previousState.view.selectedParameter;
         const didViewToggleChange = state.view.globalViewType !== previousState.view.globalViewType;
         const didVisibilityChange = state.view.chartVisibility !== previousState.view.chartVisibility;
+        const didOffsetsChange = state.view.positionOffsets !== previousState.view.positionOffsets;
         const didMarkersChange = state.markers.timestamps !== previousState.markers.timestamps;
         const didRegionsChange = state.regions !== previousState.regions;
         const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
 
-        const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange;
+        const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange || didOffsetsChange;
 
         // --- B. ORCHESTRATE DATA PROCESSING & RENDERING ---
         if (isHeavyUpdate) {
@@ -229,11 +230,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            console.log(`[Side Effect] Sending 'play' command for ${position} @ ${new Date(timestamp).toLocaleTimeString()}`);
+            const offsetMs = Number(current?.view?.positionOffsets?.[position]) || 0;
+            const actualTimestamp = Math.round(timestamp - offsetMs);
+            if (!Number.isFinite(actualTimestamp)) {
+                console.warn('[Side Effect] Skipping play command due to invalid adjusted timestamp.', {
+                    position,
+                    timestamp,
+                    offsetMs
+                });
+                return;
+            }
+
+            console.log(`[Side Effect] Sending 'play' command for ${position} @ ${new Date(timestamp).toLocaleTimeString()} (actual ${new Date(actualTimestamp).toLocaleTimeString()})`);
             models.audio_control_source.data = {
                 command: ['play'],
                 position_id: [position],
-                value: [timestamp]
+                value: [actualTimestamp]
             };
             return; // This was the primary action, no other audio commands needed.
         }

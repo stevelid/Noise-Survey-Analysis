@@ -11,6 +11,7 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
   let changePlaybackRateIntentSpy;
   let toggleVolumeBoostIntentSpy;
   let createAutoRegionsIntentSpy;
+  let handleAudioStatusUpdateIntentSpy;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -28,6 +29,7 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
     changePlaybackRateIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'changePlaybackRateIntent').mockImplementation(() => () => {});
     toggleVolumeBoostIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleVolumeBoostIntent').mockImplementation(() => () => {});
     createAutoRegionsIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createAutoRegionsIntent').mockImplementation(() => () => {});
+    handleAudioStatusUpdateIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleAudioStatusUpdateIntent').mockImplementation(() => () => {});
   });
 
   it('handleTap with ctrl modifier should dispatch removeMarker', () => {
@@ -60,10 +62,11 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
     expect(dispatchAction).toHaveBeenCalledWith(expect.any(Function));
   });
 
-  it('handleAudioStatusUpdate should dispatch the status from the model', () => {
+  it('handleAudioStatusUpdate should dispatch the status intent from the model', () => {
     window.NoiseSurveyApp.eventHandlers.handleAudioStatusUpdate();
     const expectedStatus = { is_playing: true, position_id: 'P1' };
-    expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.audioStatusUpdate(expectedStatus));
+    expect(handleAudioStatusUpdateIntentSpy).toHaveBeenCalledWith(expectedStatus);
+    expect(dispatchAction).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('withErrorHandling should catch and log errors from wrapped functions', () => {

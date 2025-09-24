@@ -719,6 +719,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const isBoostActiveForThisPos = isThisPositionActive && volumeBoost;
                 controls.volumeBoostButton.active = isBoostActiveForThisPos;
                 controls.volumeBoostButton.button_type = isBoostActiveForThisPos ? 'warning' : 'light'; // 'warning' (orange) when active, 'light' (grey) otherwise
+
+                if (controls.offsetSpinner) {
+                    const rawOffsetMs = Number(state.view.positionOffsets?.[pos]);
+                    const offsetSeconds = Number.isFinite(rawOffsetMs) ? Math.round(rawOffsetMs / 100) / 10 : 0;
+                    if (typeof controls.offsetSpinner.value !== 'number'
+                        || Math.abs(controls.offsetSpinner.value - offsetSeconds) > 0.0001) {
+                        controls.offsetSpinner.value = offsetSeconds;
+                    }
+                }
             }
         });
     }

@@ -22,6 +22,7 @@ from bokeh.models import (
     CustomJS,
     Tap,
     Toggle,
+    Spinner,
     Button,
     Select,
     CheckboxGroup,
@@ -2164,10 +2165,33 @@ def create_audio_controls_for_position(position_id: str) -> dict:
     ))
 
     # Layout for the controls
+    offset_spinner = Spinner(
+        title="",
+        width=60,
+        low=-30,
+        high=30,
+        step=0.1,
+        value=0.0,
+        format="0.0",
+        name=f"offset_spinner_{position_id}"
+    )
+    offset_spinner.js_on_change('value', CustomJS(
+        args=dict(position_id=position_id, spinner=offset_spinner),
+        code="""
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handlePositionOffsetChange) {
+                const offset = typeof spinner.value === 'number' ? spinner.value : Number(spinner.value || 0);
+                window.NoiseSurveyApp.eventHandlers.handlePositionOffsetChange({ positionId: position_id, offsetSeconds: offset });
+            } else {
+                console.error('NoiseSurveyApp.eventHandlers.handlePositionOffsetChange function not found!');
+            }
+        """
+    ))
+
     controls_layout = Row(
-        play_toggle, 
-        playback_rate_button, 
+        play_toggle,
+        playback_rate_button,
         volume_boost_button,
+        offset_spinner,
         name=f"audio_controls_{position_id}"
     )
 
@@ -2176,6 +2200,7 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         "play_toggle": play_toggle,
         "playback_rate_button": playback_rate_button,
         "volume_boost_button": volume_boost_button,
+        "offset_spinner": offset_spinner,
         "layout": controls_layout
     }
 

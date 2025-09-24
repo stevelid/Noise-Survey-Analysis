@@ -42,6 +42,80 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    function togglePlaybackFromKeyboardIntent() {
+        return function (dispatch, getState) {
+            if (!actions || typeof dispatch !== 'function' || typeof getState !== 'function') return;
+
+            const state = getState();
+            const audioState = state?.audio;
+            const tapState = state?.interaction?.tap;
+
+            if (!audioState) {
+                return;
+            }
+
+            if (audioState.isPlaying && audioState.activePositionId) {
+                dispatch(togglePlayPauseIntent({
+                    positionId: audioState.activePositionId,
+                    isActive: false
+                }));
+                return;
+            }
+
+            if (!tapState?.isActive || !Number.isFinite(tapState.timestamp)) {
+                return;
+            }
+
+            const targetPosition = tapState.position || audioState.activePositionId;
+            if (!targetPosition) {
+                return;
+            }
+
+            dispatch(togglePlayPauseIntent({
+                positionId: targetPosition,
+                isActive: true
+            }));
+        };
+    }
+
+    function handleAudioStatusUpdateIntent(statusPayload) {
+        return function (dispatch, getState) {
+            if (!actions || typeof dispatch !== 'function') return;
+
+            const state = typeof getState === 'function' ? getState() : null;
+            const offsets = state?.view?.positionOffsets || {};
+
+            const nextStatus = {};
+            if (statusPayload && typeof statusPayload === 'object') {
+                Object.keys(statusPayload).forEach(key => {
+                    const value = statusPayload[key];
+                    nextStatus[key] = Array.isArray(value) ? value.slice() : value;
+                });
+            }
+
+            const activePositionId = Array.isArray(nextStatus.active_position_id)
+                ? nextStatus.active_position_id[0]
+                : null;
+            const offsetMs = Number(offsets?.[activePositionId]) || 0;
+
+            if (Array.isArray(nextStatus.current_time) && nextStatus.current_time.length) {
+                const raw = Number(nextStatus.current_time[0]);
+                if (Number.isFinite(raw)) {
+                    nextStatus.current_time[0] = raw + offsetMs;
+                }
+            }
+
+            if (Array.isArray(nextStatus.current_file_start_time) && nextStatus.current_file_start_time.length) {
+                const rawStart = Number(nextStatus.current_file_start_time[0]);
+                if (Number.isFinite(rawStart)) {
+                    nextStatus.current_file_start_time[0] = rawStart + offsetMs;
+                }
+            }
+
+            dispatch(actions.audioStatusUpdate(nextStatus));
+        };
+    }
+
     function changePlaybackRateIntent(payload) {
         return function (dispatch, getState) {
             if (!actions || typeof dispatch !== 'function' || typeof getState !== 'function') return;
@@ -94,6 +168,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.features.audio = app.features.audio || {};
     app.features.audio.thunks = {
         togglePlayPauseIntent,
+        togglePlaybackFromKeyboardIntent,
+        handleAudioStatusUpdateIntent,
         changePlaybackRateIntent,
         toggleVolumeBoostIntent
     };

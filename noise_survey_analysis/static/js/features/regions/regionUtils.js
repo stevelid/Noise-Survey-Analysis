@@ -493,7 +493,7 @@ function calcLAeq(values) {
             reader.onload = () => {
                 const regionsArray = importRegions(reader.result);
                 if (regionsArray.length) {
-                    app.store.dispatch(app.actions.regionReplaceAll(regionsArray));
+                    app.store.dispatch(app.actions.regionsAdded(regionsArray));
                 }
             };
             reader.readAsText(file);
