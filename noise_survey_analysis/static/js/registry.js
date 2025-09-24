@@ -55,7 +55,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     playToggle: bokehModels.audio_controls[posId].play_toggle,
                     playbackRateButton: bokehModels.audio_controls[posId].playback_rate_button,
                     volumeBoostButton: bokehModels.audio_controls[posId].volume_boost_button,
-                    offsetSpinner: bokehModels.audio_controls[posId].offset_spinner,
+                    chartOffsetSpinner: bokehModels.audio_controls[posId].chart_offset_spinner,
+                    audioOffsetSpinner: bokehModels.audio_controls[posId].audio_offset_spinner,
+                    effectiveOffsetDisplay: bokehModels.audio_controls[posId].effective_offset_display,
                     layout: bokehModels.audio_controls[posId].layout || null
                 };
             }

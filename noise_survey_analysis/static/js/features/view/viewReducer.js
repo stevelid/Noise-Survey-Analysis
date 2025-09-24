@@ -19,12 +19,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const initialViewState = {
         availablePositions: [],
-        globalViewType: 'log',
-        selectedParameter: 'LZeq',
-        viewport: { min: null, max: null },
-        positionOffsets: {},
+        positionChartOffsets: {},
+        positionAudioOffsets: {},
+        positionEffectiveOffsets: {},
         chartVisibility: {},
         displayDetails: {},
+        viewport: { min: null, max: null },
+        globalViewType: 'log',
+        selectedParameter: 'LZeq',
         hoverEnabled: true,
         mode: 'normal',
         comparison: { ...initialComparisonState }
@@ -34,14 +36,59 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return Array.isArray(availablePositions) ? [...availablePositions] : [];
     }
 
+    const MAX_OFFSET_MS = 3600000;
+
+    function clampOffsetMs(rawValue) {
+        if (!Number.isFinite(rawValue)) {
+            return 0;
+        }
+        const rounded = Math.round(rawValue);
+        return Math.max(-MAX_OFFSET_MS, Math.min(MAX_OFFSET_MS, rounded));
+    }
+
+    function normalizeOffsets(rawOffsets, positions) {
+        const normalized = {};
+        positions.forEach(pos => {
+            const raw = Number(rawOffsets?.[pos]);
+            normalized[pos] = clampOffsetMs(raw);
+        });
+        return normalized;
+    }
+
+    function computeEffectiveOffsets(chartOffsets, audioOffsets, positions) {
+        const effective = {};
+        positions.forEach(pos => {
+            const chart = Number(chartOffsets?.[pos]) || 0;
+            const audio = Number(audioOffsets?.[pos]) || 0;
+            effective[pos] = chart + audio;
+        });
+        return effective;
+    }
+
     function viewReducer(state = initialViewState, action) {
         switch (action.type) {
             case actionTypes.INITIALIZE_STATE: {
                 const availablePositions = ensureAvailablePositions(action.payload?.availablePositions);
-                const positionOffsets = availablePositions.reduce((acc, pos) => {
+                const fallbackOffsets = availablePositions.reduce((acc, pos) => {
                     acc[pos] = 0;
                     return acc;
                 }, {});
+
+                const initialChartOffsets = normalizeOffsets(
+                    action.payload?.positionChartOffsets ?? action.payload?.positionOffsets ?? fallbackOffsets,
+                    availablePositions
+                );
+
+                const initialAudioOffsets = normalizeOffsets(
+                    action.payload?.positionAudioOffsets ?? fallbackOffsets,
+                    availablePositions
+                );
+
+                const initialEffectiveOffsets = computeEffectiveOffsets(
+                    initialChartOffsets,
+                    initialAudioOffsets,
+                    availablePositions
+                );
 
                 return {
                     ...state,
@@ -49,7 +96,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     selectedParameter: action.payload?.selectedParameter ?? state.selectedParameter,
                     viewport: action.payload?.viewport ?? state.viewport,
                     chartVisibility: action.payload?.chartVisibility ?? state.chartVisibility,
-                    positionOffsets: action.payload?.positionOffsets ?? positionOffsets,
+                    positionChartOffsets: initialChartOffsets,
+                    positionAudioOffsets: initialAudioOffsets,
+                    positionEffectiveOffsets: initialEffectiveOffsets,
                     mode: 'normal',
                     comparison: {
                         ...initialComparisonState,
@@ -64,7 +113,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     viewport: action.payload
                 };
 
-            case actionTypes.POSITION_OFFSET_SET: {
+            case actionTypes.POSITION_CHART_OFFSET_SET: {
                 const positionId = typeof action.payload?.positionId === 'string'
                     ? action.payload.positionId
                     : null;
@@ -73,17 +122,53 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     return state;
                 }
 
-                const clampedOffset = Math.max(-3600000, Math.min(3600000, Math.round(rawOffset)));
-                const currentOffset = state.positionOffsets?.[positionId] ?? 0;
+                const clampedOffset = clampOffsetMs(rawOffset);
+                const currentOffset = state.positionChartOffsets?.[positionId] ?? 0;
                 if (currentOffset === clampedOffset) {
                     return state;
                 }
 
+                const nextChartOffsets = {
+                    ...state.positionChartOffsets,
+                    [positionId]: clampedOffset
+                };
+
                 return {
                     ...state,
-                    positionOffsets: {
-                        ...state.positionOffsets,
-                        [positionId]: clampedOffset
+                    positionChartOffsets: nextChartOffsets,
+                    positionEffectiveOffsets: {
+                        ...state.positionEffectiveOffsets,
+                        [positionId]: clampedOffset + (state.positionAudioOffsets?.[positionId] ?? 0)
+                    }
+                };
+            }
+
+            case actionTypes.POSITION_AUDIO_OFFSET_SET: {
+                const positionId = typeof action.payload?.positionId === 'string'
+                    ? action.payload.positionId
+                    : null;
+                const rawOffset = Number(action.payload?.offsetMs);
+                if (!positionId || !Number.isFinite(rawOffset)) {
+                    return state;
+                }
+
+                const clampedOffset = clampOffsetMs(rawOffset);
+                const currentOffset = state.positionAudioOffsets?.[positionId] ?? 0;
+                if (currentOffset === clampedOffset) {
+                    return state;
+                }
+
+                const nextAudioOffsets = {
+                    ...state.positionAudioOffsets,
+                    [positionId]: clampedOffset
+                };
+
+                return {
+                    ...state,
+                    positionAudioOffsets: nextAudioOffsets,
+                    positionEffectiveOffsets: {
+                        ...state.positionEffectiveOffsets,
+                        [positionId]: (state.positionChartOffsets?.[positionId] ?? 0) + clampedOffset
                     }
                 };
             }

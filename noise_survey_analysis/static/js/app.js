@@ -123,12 +123,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didParamChange = state.view.selectedParameter !== previousState.view.selectedParameter;
         const didViewToggleChange = state.view.globalViewType !== previousState.view.globalViewType;
         const didVisibilityChange = state.view.chartVisibility !== previousState.view.chartVisibility;
-        const didOffsetsChange = state.view.positionOffsets !== previousState.view.positionOffsets;
+        const didChartOffsetsChange = state.view.positionChartOffsets !== previousState.view.positionChartOffsets;
         const didMarkersChange = state.markers.timestamps !== previousState.markers.timestamps;
         const didRegionsChange = state.regions !== previousState.regions;
         const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
 
-        const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange || didOffsetsChange;
+        const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange || didChartOffsetsChange;
 
         // --- B. ORCHESTRATE DATA PROCESSING & RENDERING ---
         if (isHeavyUpdate) {
@@ -230,7 +230,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            const offsetMs = Number(current?.view?.positionOffsets?.[position]) || 0;
+            const offsetMs = Number(current?.view?.positionEffectiveOffsets?.[position]) || 0;
             const actualTimestamp = Math.round(timestamp - offsetMs);
             if (!Number.isFinite(actualTimestamp)) {
                 console.warn('[Side Effect] Skipping play command due to invalid adjusted timestamp.', {

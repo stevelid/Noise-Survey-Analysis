@@ -214,7 +214,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         dispatch(thunkCreator(status));
     }
 
-    function handlePositionOffsetChange(payload) {
+    function dispatchOffsetUpdate(actionCreator, payload) {
         const dispatch = app.store && app.store.dispatch;
         if (typeof dispatch !== 'function') {
             console.error('[EventHandler] Store is not available for dispatch.');
@@ -222,14 +222,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         const positionId = typeof payload?.positionId === 'string' ? payload.positionId : null;
-        if (!positionId) {
+        if (!positionId || typeof actionCreator !== 'function') {
             return;
         }
 
         const offsetSecondsRaw = Number(payload?.offsetSeconds);
         const offsetSeconds = Number.isFinite(offsetSecondsRaw) ? offsetSecondsRaw : 0;
 
-        dispatch(actions.positionOffsetSet(positionId, offsetSeconds * 1000));
+        dispatch(actionCreator(positionId, offsetSeconds * 1000));
+    }
+
+    function handlePositionChartOffsetChange(payload) {
+        dispatchOffsetUpdate(actions.positionChartOffsetSet, payload);
+    }
+
+    function handlePositionAudioOffsetChange(payload) {
+        dispatchOffsetUpdate(actions.positionAudioOffsetSet, payload);
     }
 
     function togglePlayPause(payload) {
@@ -444,7 +452,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleHoverToggle: withErrorHandling(handleHoverToggle, 'handleHoverToggle'),
         handleVisibilityChange: withErrorHandling(handleVisibilityChange, 'handleVisibilityChange'),
         handleAudioStatusUpdate: withErrorHandling(handleAudioStatusUpdate, 'handleAudioStatusUpdate'),
-        handlePositionOffsetChange: withErrorHandling(handlePositionOffsetChange, 'handlePositionOffsetChange'),
+        handlePositionChartOffsetChange: withErrorHandling(handlePositionChartOffsetChange, 'handlePositionChartOffsetChange'),
+        handlePositionAudioOffsetChange: withErrorHandling(handlePositionAudioOffsetChange, 'handlePositionAudioOffsetChange'),
         togglePlayPause: withErrorHandling(togglePlayPause, 'togglePlayPause'),
         handlePlaybackRateChange: withErrorHandling(handlePlaybackRateChange, 'handlePlaybackRateChange'),
         handleVolumeBoostToggle: withErrorHandling(handleVolumeBoostToggle, 'handleVolumeBoostToggle'),

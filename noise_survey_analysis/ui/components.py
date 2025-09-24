@@ -2127,33 +2127,64 @@ def create_audio_controls_for_position(position_id: str) -> dict:
     ))
 
     # Layout for the controls
-    offset_spinner = Spinner(
-        title="",
-        width=60,
-        low=-30,
-        high=30,
+    chart_offset_spinner = Spinner(
+        title="Chart",
+        width=70,
+        low=-3600,
+        high=3600,
         step=0.1,
         value=0.0,
         format="0.0",
-        name=f"offset_spinner_{position_id}"
+        name=f"chart_offset_spinner_{position_id}"
     )
-    offset_spinner.js_on_change('value', CustomJS(
-        args=dict(position_id=position_id, spinner=offset_spinner),
+    chart_offset_spinner.js_on_change('value', CustomJS(
+        args=dict(position_id=position_id, spinner=chart_offset_spinner),
         code="""
-            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handlePositionOffsetChange) {
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handlePositionChartOffsetChange) {
                 const offset = typeof spinner.value === 'number' ? spinner.value : Number(spinner.value || 0);
-                window.NoiseSurveyApp.eventHandlers.handlePositionOffsetChange({ positionId: position_id, offsetSeconds: offset });
+                window.NoiseSurveyApp.eventHandlers.handlePositionChartOffsetChange({ positionId: position_id, offsetSeconds: offset });
             } else {
-                console.error('NoiseSurveyApp.eventHandlers.handlePositionOffsetChange function not found!');
+                console.error('NoiseSurveyApp.eventHandlers.handlePositionChartOffsetChange function not found!');
             }
         """
     ))
+
+    audio_offset_spinner = Spinner(
+        title="Audio",
+        width=70,
+        low=-3600,
+        high=3600,
+        step=0.1,
+        value=0.0,
+        format="0.0",
+        name=f"audio_offset_spinner_{position_id}"
+    )
+    audio_offset_spinner.js_on_change('value', CustomJS(
+        args=dict(position_id=position_id, spinner=audio_offset_spinner),
+        code="""
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handlePositionAudioOffsetChange) {
+                const offset = typeof spinner.value === 'number' ? spinner.value : Number(spinner.value || 0);
+                window.NoiseSurveyApp.eventHandlers.handlePositionAudioOffsetChange({ positionId: position_id, offsetSeconds: offset });
+            } else {
+                console.error('NoiseSurveyApp.eventHandlers.handlePositionAudioOffsetChange function not found!');
+            }
+        """
+    ))
+
+    effective_offset_display = Div(
+        text="Effective: +0.00 s",
+        width=120,
+        name=f"effective_offset_display_{position_id}",
+        styles={"font-size": "0.9em", "margin": "4px 0 0 4px"}
+    )
 
     controls_layout = Row(
         play_toggle,
         playback_rate_button,
         volume_boost_button,
-        offset_spinner,
+        chart_offset_spinner,
+        audio_offset_spinner,
+        effective_offset_display,
         name=f"audio_controls_{position_id}"
     )
 
@@ -2162,7 +2193,9 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         "play_toggle": play_toggle,
         "playback_rate_button": playback_rate_button,
         "volume_boost_button": volume_boost_button,
-        "offset_spinner": offset_spinner,
+        "chart_offset_spinner": chart_offset_spinner,
+        "audio_offset_spinner": audio_offset_spinner,
+        "effective_offset_display": effective_offset_display,
         "layout": controls_layout
     }
 
