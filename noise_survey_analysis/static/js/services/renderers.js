@@ -720,12 +720,33 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 controls.volumeBoostButton.active = isBoostActiveForThisPos;
                 controls.volumeBoostButton.button_type = isBoostActiveForThisPos ? 'warning' : 'light'; // 'warning' (orange) when active, 'light' (grey) otherwise
 
-                if (controls.offsetSpinner) {
-                    const rawOffsetMs = Number(state.view.positionOffsets?.[pos]);
-                    const offsetSeconds = Number.isFinite(rawOffsetMs) ? Math.round(rawOffsetMs / 100) / 10 : 0;
-                    if (typeof controls.offsetSpinner.value !== 'number'
-                        || Math.abs(controls.offsetSpinner.value - offsetSeconds) > 0.0001) {
-                        controls.offsetSpinner.value = offsetSeconds;
+                const chartOffsetMs = Number(state.view.positionChartOffsets?.[pos]);
+                const audioOffsetMs = Number(state.view.positionAudioOffsets?.[pos]);
+                const effectiveOffsetMs = Number(state.view.positionEffectiveOffsets?.[pos]);
+
+                if (controls.chartOffsetSpinner) {
+                    const offsetSeconds = Number.isFinite(chartOffsetMs) ? Math.round(chartOffsetMs / 100) / 10 : 0;
+                    if (typeof controls.chartOffsetSpinner.value !== 'number'
+                        || Math.abs(controls.chartOffsetSpinner.value - offsetSeconds) > 0.0001) {
+                        controls.chartOffsetSpinner.value = offsetSeconds;
+                    }
+                }
+
+                if (controls.audioOffsetSpinner) {
+                    const offsetSeconds = Number.isFinite(audioOffsetMs) ? Math.round(audioOffsetMs / 100) / 10 : 0;
+                    if (typeof controls.audioOffsetSpinner.value !== 'number'
+                        || Math.abs(controls.audioOffsetSpinner.value - offsetSeconds) > 0.0001) {
+                        controls.audioOffsetSpinner.value = offsetSeconds;
+                    }
+                }
+
+                if (controls.effectiveOffsetDisplay) {
+                    const offsetSeconds = Number.isFinite(effectiveOffsetMs) ? effectiveOffsetMs / 1000 : 0;
+                    const formatted = offsetSeconds >= 0
+                        ? `Effective: +${offsetSeconds.toFixed(2)} s`
+                        : `Effective: ${offsetSeconds.toFixed(2)} s`;
+                    if (controls.effectiveOffsetDisplay.text !== formatted) {
+                        controls.effectiveOffsetDisplay.text = formatted;
                     }
                 }
             }

@@ -58,11 +58,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return data;
     }
 
-    function getPositionOffsetMs(viewState, position) {
+    function getChartOffsetMs(viewState, position) {
         if (!viewState || !position) {
             return 0;
         }
-        const raw = Number(viewState.positionOffsets?.[position]);
+        const raw = Number(viewState.positionChartOffsets?.[position]);
         return Number.isFinite(raw) ? raw : 0;
     }
 
@@ -104,7 +104,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             // Only process data for charts that are currently visible
             if (viewState.chartVisibility[tsChartName] || viewState.chartVisibility[specChartName]) {
-                const offsetMs = getPositionOffsetMs(viewState, position);
+                const offsetMs = getChartOffsetMs(viewState, position);
                 updateActiveLineChartData(position, viewState, dataCache, models, offsetMs);
                 updateActiveSpectralData(position, viewState, dataCache, models, offsetMs);
             }

@@ -170,10 +170,17 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         });
     });
 
-    describe('handlePositionOffsetChange', () => {
-        it('should dispatch a position offset update', () => {
-            eventHandlers.handlePositionOffsetChange({ positionId: 'P1', offsetSeconds: 1.25 });
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.positionOffsetSet('P1', 1250));
+    describe('handlePositionChartOffsetChange', () => {
+        it('should dispatch a chart offset update', () => {
+            eventHandlers.handlePositionChartOffsetChange({ positionId: 'P1', offsetSeconds: 1.25 });
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.positionChartOffsetSet('P1', 1250));
+        });
+    });
+
+    describe('handlePositionAudioOffsetChange', () => {
+        it('should dispatch an audio offset update', () => {
+            eventHandlers.handlePositionAudioOffsetChange({ positionId: 'P1', offsetSeconds: -0.75 });
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.positionAudioOffsetSet('P1', -750));
         });
     });
 

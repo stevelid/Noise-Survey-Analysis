@@ -71,9 +71,17 @@ describe('rootReducer', () => {
             expect(state.view.chartVisibility['line_P1']).toBe(false);
         });
 
-        it('should handle POSITION_OFFSET_SET action', () => {
-            const state = rootReducer(initialState, actions.positionOffsetSet('P1', 1500));
-            expect(state.view.positionOffsets.P1).toBe(1500);
+        it('should handle POSITION_CHART_OFFSET_SET action', () => {
+            const state = rootReducer(initialState, actions.positionChartOffsetSet('P1', 1500));
+            expect(state.view.positionChartOffsets.P1).toBe(1500);
+            expect(state.view.positionEffectiveOffsets.P1).toBe(1500);
+        });
+
+        it('should handle POSITION_AUDIO_OFFSET_SET action and update effective offset', () => {
+            const baseState = rootReducer(initialState, actions.positionChartOffsetSet('P1', 1200));
+            const state = rootReducer(baseState, actions.positionAudioOffsetSet('P1', -700));
+            expect(state.view.positionAudioOffsets.P1).toBe(-700);
+            expect(state.view.positionEffectiveOffsets.P1).toBe(500);
         });
     });
 

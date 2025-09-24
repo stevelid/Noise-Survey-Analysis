@@ -30,7 +30,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         VIEW_TOGGLE: 'view/VIEW_TOGGLE',
         VISIBILITY_CHANGE: 'VISIBILITY_CHANGE',
         HOVER_TOGGLE: 'HOVER_TOGGLE',
-        POSITION_OFFSET_SET: 'view/positionOffsetSet',
+        POSITION_CHART_OFFSET_SET: 'view/positionChartOffsetSet',
+        POSITION_AUDIO_OFFSET_SET: 'view/positionAudioOffsetSet',
         STEP_SIZE_CALCULATED: 'view/STEP_SIZE_CALCULATED',
 
         COMPARISON_MODE_ENTERED: 'view/comparisonModeEntered',
@@ -90,8 +91,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         
         viewportChange: (min, max) => ({ type: actionTypes.VIEWPORT_CHANGE, payload: { min, max } }),
 
-        positionOffsetSet: (positionId, offsetMs) => ({
-            type: actionTypes.POSITION_OFFSET_SET,
+        positionChartOffsetSet: (positionId, offsetMs) => ({
+            type: actionTypes.POSITION_CHART_OFFSET_SET,
+            payload: { positionId, offsetMs }
+        }),
+
+        positionAudioOffsetSet: (positionId, offsetMs) => ({
+            type: actionTypes.POSITION_AUDIO_OFFSET_SET,
             payload: { positionId, offsetMs }
         }),
 

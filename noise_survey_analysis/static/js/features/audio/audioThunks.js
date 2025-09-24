@@ -83,7 +83,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (!actions || typeof dispatch !== 'function') return;
 
             const state = typeof getState === 'function' ? getState() : null;
-            const offsets = state?.view?.positionOffsets || {};
+            const offsets = state?.view?.positionEffectiveOffsets || {};
 
             const nextStatus = {};
             if (statusPayload && typeof statusPayload === 'object') {
