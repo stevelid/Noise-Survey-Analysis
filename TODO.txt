@@ -1,0 +1,7 @@
+1. compare mode - allow comparison of events in a single chart or between different / multiple positions. 
+    If in the same chart, it will be two regions. 
+    Perhaps this will automatically copy the same region to the other charts if doing a vertical rather than horizontal comparison. UI is important here. 
+
+2. undo - redo functionality for states - needs to decide which state changes trigger a store point for the undo/redo functionality. 
+3. improve UI with drop down menus / clean audio control bars / drop down menu for each displayed chart for offset adjustment etc. 
+4. fix splayback speed and boost. maybe a single button for each of these for all positions (the boost state for current position will be remembered).
