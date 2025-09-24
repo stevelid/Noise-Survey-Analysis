@@ -199,8 +199,37 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function handleAudioStatusUpdate() {
-        const status = app.registry.models.audio_status_source.data;
-        app.store.dispatch(actions.audioStatusUpdate(status));
+        const status = app.registry.models.audio_status_source?.data;
+        const thunkCreator = app.thunks && app.thunks.handleAudioStatusUpdateIntent;
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing handleAudioStatusUpdateIntent thunk.');
+            return;
+        }
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+
+        dispatch(thunkCreator(status));
+    }
+
+    function handlePositionOffsetChange(payload) {
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+
+        const positionId = typeof payload?.positionId === 'string' ? payload.positionId : null;
+        if (!positionId) {
+            return;
+        }
+
+        const offsetSecondsRaw = Number(payload?.offsetSeconds);
+        const offsetSeconds = Number.isFinite(offsetSecondsRaw) ? offsetSecondsRaw : 0;
+
+        dispatch(actions.positionOffsetSet(positionId, offsetSeconds * 1000));
     }
 
     function togglePlayPause(payload) {
@@ -318,6 +347,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const targetTagName = e.target.tagName.toLowerCase();
         if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') return;
 
+        if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
+            e.preventDefault();
+            const thunkCreator = app.thunks && app.thunks.togglePlaybackFromKeyboardIntent;
+            const dispatch = app.store && app.store.dispatch;
+            if (typeof thunkCreator !== 'function') {
+                console.error('[EventHandler] Missing togglePlaybackFromKeyboardIntent thunk.');
+                return;
+            }
+            if (typeof dispatch !== 'function') {
+                console.error('[EventHandler] Store is not available for dispatch.');
+                return;
+            }
+
+            dispatch(thunkCreator());
+            return;
+        }
+
         if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
             return;
         }
@@ -398,6 +444,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleHoverToggle: withErrorHandling(handleHoverToggle, 'handleHoverToggle'),
         handleVisibilityChange: withErrorHandling(handleVisibilityChange, 'handleVisibilityChange'),
         handleAudioStatusUpdate: withErrorHandling(handleAudioStatusUpdate, 'handleAudioStatusUpdate'),
+        handlePositionOffsetChange: withErrorHandling(handlePositionOffsetChange, 'handlePositionOffsetChange'),
         togglePlayPause: withErrorHandling(togglePlayPause, 'togglePlayPause'),
         handlePlaybackRateChange: withErrorHandling(handlePlaybackRateChange, 'handlePlaybackRateChange'),
         handleVolumeBoostToggle: withErrorHandling(handleVolumeBoostToggle, 'handleVolumeBoostToggle'),

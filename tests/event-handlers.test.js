@@ -19,6 +19,8 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     let togglePlayPauseIntentSpy;
     let changePlaybackRateIntentSpy;
     let toggleVolumeBoostIntentSpy;
+    let handleAudioStatusUpdateIntentSpy;
+    let togglePlaybackFromKeyboardIntentSpy;
 
     beforeEach(() => {
         vi.useFakeTimers();
@@ -48,6 +50,8 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         togglePlayPauseIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'togglePlayPauseIntent').mockImplementation(() => () => {});
         changePlaybackRateIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'changePlaybackRateIntent').mockImplementation(() => () => {});
         toggleVolumeBoostIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleVolumeBoostIntent').mockImplementation(() => () => {});
+        handleAudioStatusUpdateIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleAudioStatusUpdateIntent').mockImplementation(() => () => {});
+        togglePlaybackFromKeyboardIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'togglePlaybackFromKeyboardIntent').mockImplementation(() => () => {});
     });
 
     afterEach(() => {
@@ -166,8 +170,15 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         });
     });
 
+    describe('handlePositionOffsetChange', () => {
+        it('should dispatch a position offset update', () => {
+            eventHandlers.handlePositionOffsetChange({ positionId: 'P1', offsetSeconds: 1.25 });
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.positionOffsetSet('P1', 1250));
+        });
+    });
+
     describe('handleAudioStatusUpdate', () => {
-        it('should dispatch an AUDIO_STATUS_UPDATE action', () => {
+        it('should dispatch the audio status update intent', () => {
             const mockStatus = {
                 is_playing: [true],
                 active_position_id: ['P1'],
@@ -177,7 +188,8 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             };
             window.NoiseSurveyApp.registry.models.audio_status_source.data = mockStatus;
             eventHandlers.handleAudioStatusUpdate();
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioStatusUpdate(mockStatus));
+            expect(handleAudioStatusUpdateIntentSpy).toHaveBeenCalledWith(mockStatus);
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
     });
 
@@ -218,6 +230,14 @@ describe('NoiseSurveyApp.eventHandlers', () => {
                 key: 'ArrowLeft',
                 modifiers: { ctrl: true }
             });
+        });
+
+        it('should toggle playback when spacebar is pressed', () => {
+            const event = { key: ' ', code: 'Space', preventDefault: vi.fn(), target: { tagName: 'div' } };
+            eventHandlers.handleKeyPress(event);
+            expect(event.preventDefault).toHaveBeenCalled();
+            expect(togglePlaybackFromKeyboardIntentSpy).toHaveBeenCalled();
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
     });
 });

@@ -22,6 +22,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         globalViewType: 'log',
         selectedParameter: 'LZeq',
         viewport: { min: null, max: null },
+        positionOffsets: {},
         chartVisibility: {},
         displayDetails: {},
         hoverEnabled: true,
@@ -37,12 +38,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         switch (action.type) {
             case actionTypes.INITIALIZE_STATE: {
                 const availablePositions = ensureAvailablePositions(action.payload?.availablePositions);
+                const positionOffsets = availablePositions.reduce((acc, pos) => {
+                    acc[pos] = 0;
+                    return acc;
+                }, {});
+
                 return {
                     ...state,
                     availablePositions,
                     selectedParameter: action.payload?.selectedParameter ?? state.selectedParameter,
                     viewport: action.payload?.viewport ?? state.viewport,
                     chartVisibility: action.payload?.chartVisibility ?? state.chartVisibility,
+                    positionOffsets: action.payload?.positionOffsets ?? positionOffsets,
                     mode: 'normal',
                     comparison: {
                         ...initialComparisonState,
@@ -56,6 +63,30 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     ...state,
                     viewport: action.payload
                 };
+
+            case actionTypes.POSITION_OFFSET_SET: {
+                const positionId = typeof action.payload?.positionId === 'string'
+                    ? action.payload.positionId
+                    : null;
+                const rawOffset = Number(action.payload?.offsetMs);
+                if (!positionId || !Number.isFinite(rawOffset)) {
+                    return state;
+                }
+
+                const clampedOffset = Math.max(-3600000, Math.min(3600000, Math.round(rawOffset)));
+                const currentOffset = state.positionOffsets?.[positionId] ?? 0;
+                if (currentOffset === clampedOffset) {
+                    return state;
+                }
+
+                return {
+                    ...state,
+                    positionOffsets: {
+                        ...state.positionOffsets,
+                        [positionId]: clampedOffset
+                    }
+                };
+            }
 
             case actionTypes.PARAM_CHANGE:
                 return {

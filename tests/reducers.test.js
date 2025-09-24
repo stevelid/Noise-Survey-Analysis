@@ -70,6 +70,11 @@ describe('rootReducer', () => {
             const state = rootReducer(initialState, actions.visibilityChange('line_P1', false));
             expect(state.view.chartVisibility['line_P1']).toBe(false);
         });
+
+        it('should handle POSITION_OFFSET_SET action', () => {
+            const state = rootReducer(initialState, actions.positionOffsetSet('P1', 1500));
+            expect(state.view.positionOffsets.P1).toBe(1500);
+        });
     });
 
     describe('Comparison Mode actions', () => {

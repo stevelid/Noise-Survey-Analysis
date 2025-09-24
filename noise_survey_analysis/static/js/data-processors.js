@@ -17,6 +17,72 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const _models = app.models;
 
+    function cloneDataColumns(source) {
+        if (!source || typeof source !== 'object') {
+            return {};
+        }
+        const clone = {};
+        for (const key in source) {
+            if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+            const column = source[key];
+            if (Array.isArray(column)) {
+                clone[key] = column.slice();
+            } else if (column && typeof column.slice === 'function') {
+                clone[key] = column.slice();
+            } else {
+                clone[key] = column;
+            }
+        }
+        return clone;
+    }
+
+    function createOffsetArray(source, offsetMs) {
+        if (!Number.isFinite(offsetMs) || !source || typeof source.length !== 'number') {
+            return Array.isArray(source) ? source.slice() : (source && typeof source.slice === 'function' ? source.slice() : []);
+        }
+        const length = source.length;
+        const adjusted = new Array(length);
+        for (let i = 0; i < length; i++) {
+            const value = Number(source[i]);
+            adjusted[i] = Number.isFinite(value) ? value + offsetMs : value;
+        }
+        return adjusted;
+    }
+
+    function applyDatetimeOffset(data, offsetMs) {
+        if (!data || !data.Datetime) {
+            return data;
+        }
+        const adjusted = createOffsetArray(data.Datetime, offsetMs);
+        data.Datetime = adjusted;
+        return data;
+    }
+
+    function getPositionOffsetMs(viewState, position) {
+        if (!viewState || !position) {
+            return 0;
+        }
+        const raw = Number(viewState.positionOffsets?.[position]);
+        return Number.isFinite(raw) ? raw : 0;
+    }
+
+    function applySpectrogramReplacementOffset(replacement, offsetMs) {
+        if (!replacement || typeof replacement !== 'object') {
+            return replacement;
+        }
+        const next = { ...replacement };
+        if (Array.isArray(replacement.x)) {
+            next.x = replacement.x.map(value => {
+                const numeric = Number(value);
+                return Number.isFinite(numeric) ? numeric + offsetMs : value;
+            });
+        }
+        if (Array.isArray(replacement.times_ms) || (replacement.times_ms && typeof replacement.times_ms.length === 'number')) {
+            next.times_ms = createOffsetArray(replacement.times_ms, offsetMs);
+        }
+        return next;
+    }
+
 
     /**
      * _updateActiveData()
@@ -38,8 +104,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             // Only process data for charts that are currently visible
             if (viewState.chartVisibility[tsChartName] || viewState.chartVisibility[specChartName]) {
-                updateActiveLineChartData(position, viewState, dataCache, models);
-                updateActiveSpectralData(position, viewState, dataCache, models);
+                const offsetMs = getPositionOffsetMs(viewState, position);
+                updateActiveLineChartData(position, viewState, dataCache, models, offsetMs);
+                updateActiveSpectralData(position, viewState, dataCache, models, offsetMs);
             }
         });
 
@@ -60,7 +127,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * @param {string} position - The position identifier for which the line chart data is updated.
      * @param {string} viewType - The type of view ('overview' or 'log') to determine data selection.
      */
-    function updateActiveLineChartData(position, viewState, dataCache, models) {
+    function updateActiveLineChartData(position, viewState, dataCache, models, positionOffsetMs = 0) {
         try {
             const viewType = viewState.globalViewType;
             const sourceData = models.timeSeriesSources[position];
@@ -70,16 +137,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             let displayDetails = { type: 'overview', reason: ' (Overview)' }; // Default reason
 
+            const viewportMin = Number(viewState.viewport?.min);
+            const viewportMax = Number(viewState.viewport?.max);
+            const effectiveMin = Number.isFinite(viewportMin) ? viewportMin - positionOffsetMs : viewportMin;
+            const effectiveMax = Number.isFinite(viewportMax) ? viewportMax - positionOffsetMs : viewportMax;
+
             if (viewType === 'log') {
                 if (hasLogData) {
-                    const { min, max } = viewState.viewport;
-                    const startIndex = logData.Datetime.findIndex(t => t >= min);
-                    const endIndex = logData.Datetime.findLastIndex(t => t <= max);
+                    const startIndex = logData.Datetime.findIndex(t => t >= effectiveMin);
+                    const endIndex = logData.Datetime.findLastIndex(t => t <= effectiveMax);
                     const pointsInView = (startIndex !== -1 && endIndex !== -1) ? endIndex - startIndex : 0;
 
                     if (pointsInView > MAX_LINE_POINTS_TO_RENDER) {
                         // Log view is active, but user is too zoomed out
-                        dataCache.activeLineData[position] = overviewData || {};
+                        const overviewClone = cloneDataColumns(overviewData || {});
+                        applyDatetimeOffset(overviewClone, positionOffsetMs);
+                        dataCache.activeLineData[position] = overviewClone;
                         displayDetails = { type: 'overview', reason: ' - Zoom in for Log Data' };
                     } else {
                         // Happy path: Show a chunk of log data
@@ -88,19 +161,31 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         const sliceEnd = Math.min(logData.Datetime.length, endIndex + buffer + 1);
                         const chunk = {};
                         for (const key in logData) {
-                            chunk[key] = logData[key].slice(sliceStart, sliceEnd);
+                            const column = logData[key];
+                            if (column && typeof column.slice === 'function') {
+                                chunk[key] = column.slice(sliceStart, sliceEnd);
+                            } else if (Array.isArray(column)) {
+                                chunk[key] = column.slice(sliceStart, sliceEnd);
+                            } else {
+                                chunk[key] = column;
+                            }
                         }
+                        applyDatetimeOffset(chunk, positionOffsetMs);
                         dataCache.activeLineData[position] = chunk;
                         displayDetails = { type: 'log', reason: ' (Log Data)' };
                     }
                 } else {
                     // Log view is active, but no log data exists for this position
-                    dataCache.activeLineData[position] = overviewData || {}; // Show overview as a fallback
+                    const overviewClone = cloneDataColumns(overviewData || {});
+                    applyDatetimeOffset(overviewClone, positionOffsetMs);
+                    dataCache.activeLineData[position] = overviewClone;
                     displayDetails = { type: 'overview', reason: ' (No Log Data Available)' };
                 }
             } else {
                 // Overview view is explicitly active
-                dataCache.activeLineData[position] = overviewData || {};
+                const overviewClone = cloneDataColumns(overviewData || {});
+                applyDatetimeOffset(overviewClone, positionOffsetMs);
+                dataCache.activeLineData[position] = overviewClone;
                 displayDetails = { type: 'overview', reason: ' (Overview)' };
             }
 
@@ -125,7 +210,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * @param {string} viewType - The type of view ('overview' or 'log') to determine data selection.
      * @param {string} parameter - The parameter to be displayed in the spectrogram.
      */
-    function updateActiveSpectralData(position, viewState, dataCache, models) {
+    function updateActiveSpectralData(position, viewState, dataCache, models, positionOffsetMs = 0) {
         try {
             const viewType = viewState.globalViewType;
             const parameter = viewState.selectedParameter;
@@ -135,6 +220,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const hasLogData = logData && logData.times_ms && logData.times_ms.length > 0;
 
             let finalDataToUse, finalGlyphData, displayReason;
+
+            const offsetMs = positionOffsetMs;
+            const viewportMin = Number(viewState.viewport?.min);
+            const viewportMax = Number(viewState.viewport?.max);
+            const effectiveMin = Number.isFinite(viewportMin) ? viewportMin - offsetMs : viewportMin;
+            const effectiveMax = Number.isFinite(viewportMax) ? viewportMax - offsetMs : viewportMax;
 
             if (viewType === 'log') {
                 if (hasLogData) {
@@ -146,8 +237,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         displayReason = ' (Log Data)'; // Explicitly label the log view
 
                         const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs } = finalDataToUse;
-                        const { min, max } = viewState.viewport;
-                        const targetChunkStartTimeStamp = (max + min) / 2 - (chunk_time_length * time_step / 2);
+                        let viewportCenter = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
+                            ? (effectiveMax + effectiveMin) / 2
+                            : times_ms[Math.max(0, Math.floor(n_times / 2))];
+                        if (!Number.isFinite(viewportCenter)) {
+                            viewportCenter = times_ms[Math.max(0, Math.floor(n_times / 2))];
+                        }
+                        const targetChunkStartTimeStamp = viewportCenter - (chunk_time_length * time_step / 2);
 
                         // A more robust way to find the index, defaulting to 0 if the view is before the data starts.
                         let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
@@ -185,10 +281,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             // --- Final state update ---
             if (finalGlyphData && finalDataToUse) {
-                dataCache.activeSpectralData[position] = { ...finalDataToUse, source_replacement: finalGlyphData };
+                const adjustedReplacement = applySpectrogramReplacementOffset(finalGlyphData, offsetMs);
+                const adjustedTimes = finalDataToUse.times_ms ? createOffsetArray(finalDataToUse.times_ms, offsetMs) : [];
+                dataCache.activeSpectralData[position] = {
+                    ...finalDataToUse,
+                    times_ms: adjustedTimes,
+                    source_replacement: adjustedReplacement
+                };
             } else {
                 // This case handles when overviewData was also null in one of the fallback paths.
-                dataCache.activeSpectralData[position] = { source_replacement: null, reason: 'No Data Available' };
+                dataCache.activeSpectralData[position] = { source_replacement: null, reason: 'No Data Available', times_ms: [] };
                 // If we ended up with no data, this reason overrides any previous one.
                 displayReason = ' (No Data Available)';
             }
