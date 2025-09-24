@@ -125,35 +125,6 @@ class RegionPanelComponent:
                     formatter=HTMLTemplateFormatter(template=region_card_template),
                 )
             ],
-        self.region_source = ColumnDataSource(
-            data={
-                "id": [],
-                "title": [],
-                "subtitle": [],
-                "color": [],
-            },
-            name="region_panel_source",
-        )
-
-        region_card_template = """
-            <div class=\"region-card\">
-                <div class=\"region-card__accent\" style=\"background:<%= color %>;\"></div>
-                <div class=\"region-card__body\">
-                    <div class=\"region-card__title\"><%= title %></div>
-                    <div class=\"region-card__subtitle\"><%= subtitle %></div>
-                </div>
-            </div>
-        """
-
-        self.region_table = DataTable(
-            source=self.region_source,
-            columns=[
-                TableColumn(
-                    field="title",
-                    title="",
-                    formatter=HTMLTemplateFormatter(template=region_card_template),
-                )
-            ],
             width=panel_width,
             height=240,
             index_position=None,
@@ -399,10 +370,7 @@ class RegionPanelComponent:
         self._attach_callbacks()
 
     def _attach_callbacks(self) -> None:
-        selectionion_callback = CustomJS(args={'source': self.region_source, 'table': self.region_table}, args={'source': self.region_source, 'table': self.region_table}, code="""
-            if (!source || !table) {
-                return;
-            }
+        selection_callback = CustomJS(args={'source': self.region_source, 'table': self.region_table}, code="""
             if (!source || !table) {
                 return;
             }
