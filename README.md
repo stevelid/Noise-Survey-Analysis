@@ -1,3 +1,7 @@
+# TL;DR
+bokeh serve noise_survey_analysis --show
+python -m noise_survey_analysis.main --generate-static /path/to/your/config.json
+
 # Noise Survey Analysis Tool
 
 An interactive Bokeh application for loading, analyzing, and visualizing noise survey data from various sound level meters.
