@@ -270,6 +270,46 @@ describe('App Orchestration Integration Tests', () => {
             expect(mockBokehModels.audio_control_source.data.value[0]).toBe(12000);
         });
 
+        it('key navigation while paused does not send a play command', () => {
+            const { eventHandlers, store, actions } = window.NoiseSurveyApp;
+
+            store.dispatch(actions.audioStatusUpdate({
+                is_playing: [false],
+                active_position_id: ['P1'],
+                playback_rate: [1.0],
+                volume_boost: [false],
+                current_time: [10000]
+            }));
+
+            eventHandlers.handleTap({ origin: { name: 'figure_P1_timeseries' }, x: 10000 });
+            store.dispatch(actions.stepSizeCalculated(2000));
+
+            mockBokehModels.audio_control_source.data = {};
+
+            const e = { key: 'ArrowRight', target: { tagName: 'DIV' }, preventDefault: () => { } };
+            eventHandlers.handleKeyPress(e);
+
+            expect(mockBokehModels.audio_control_source.data.command).toBeUndefined();
+            const tapState = store.getState().interaction.tap;
+            expect(tapState.timestamp).toBe(12000);
+            expect(tapState.position).toBe('P1');
+        });
+
+        it('tap while audio paused does not send a play command', () => {
+            const { eventHandlers, store, actions } = window.NoiseSurveyApp;
+
+            store.dispatch(actions.audioStatusUpdate({
+                is_playing: [false], active_position_id: ['P1'], playback_rate: [1.0], volume_boost: [false], current_time: [10000]
+            }));
+
+            eventHandlers.handleTap({ origin: { name: 'figure_P1_timeseries' }, x: 5000 });
+
+            expect(mockBokehModels.audio_control_source.data.command).toBeUndefined();
+            const tapState = store.getState().interaction.tap;
+            expect(tapState.timestamp).toBe(5000);
+            expect(tapState.position).toBe('P1');
+        });
+
         it('tap on another position while playing switches playback to that position (TDD pending)', () => {
             const { eventHandlers, store, actions, renderers } = window.NoiseSurveyApp;
             const models = window.NoiseSurveyApp.registry.models;

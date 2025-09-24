@@ -344,7 +344,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const region = regionsState.byId[selectedId];
             if (!region) return;
 
-            if (!modifiers.ctrl && !modifiers.alt && !modifiers.shift) {
+            const adjustStart = Boolean(modifiers.ctrl);
+            const adjustEnd = Boolean(modifiers.alt);
+            if (!adjustStart && !adjustEnd) {
                 return;
             }
 
@@ -356,24 +358,37 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const viewportMin = Number.isFinite(viewport.min) ? viewport.min : -Infinity;
             const viewportMax = Number.isFinite(viewport.max) ? viewport.max : Infinity;
 
-            const shouldAdjustEnd = Boolean(modifiers.shift);
-            if (shouldAdjustEnd) { //todo: move key modifiers to config
-                const rawEnd = region.end + delta;
-                const minEnd = region.start + MIN_REGION_WIDTH_MS;
-                const clampedEnd = Math.min(Math.max(minEnd, rawEnd), viewportMax);
-                if (clampedEnd !== region.end) {
-                    dispatch(actions.regionUpdate(region.id, { end: clampedEnd }));
-                }
-                return;
-            }
+            let nextStart = region.start;
+            let nextEnd = region.end;
 
-            if (modifiers.ctrl || modifiers.alt) { //todo: move key modifiers to config
+            if (adjustStart) { //todo: move key modifiers to config
                 const rawStart = region.start + delta;
                 const maxStart = region.end - MIN_REGION_WIDTH_MS;
                 const clampedStart = Math.max(Math.min(maxStart, rawStart), viewportMin);
                 if (clampedStart !== region.start) {
-                    dispatch(actions.regionUpdate(region.id, { start: clampedStart }));
+                    nextStart = clampedStart;
                 }
+            }
+
+            if (adjustEnd) { //todo: move key modifiers to config
+                const rawEnd = region.end + delta;
+                const minEnd = nextStart + MIN_REGION_WIDTH_MS;
+                const clampedEnd = Math.min(Math.max(minEnd, rawEnd), viewportMax);
+                if (clampedEnd !== region.end) {
+                    nextEnd = clampedEnd;
+                }
+            }
+
+            const changes = {};
+            if (nextStart !== region.start) {
+                changes.start = nextStart;
+            }
+            if (nextEnd !== region.end) {
+                changes.end = nextEnd;
+            }
+
+            if (Object.keys(changes).length) {
+                dispatch(actions.regionUpdate(region.id, changes));
             }
         };
     }

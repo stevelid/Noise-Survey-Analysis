@@ -205,21 +205,30 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!lastAction) return;
     
         // --- A. Handle User-Initiated Playback (Tap, KeyNav, or Play Button) ---
-        const wasUserInitiatedPlayback = (
-            lastAction.type === actionTypes.TAP || 
-            lastAction.type === actionTypes.KEY_NAV ||
-            (lastAction.type === actionTypes.AUDIO_PLAY_PAUSE_TOGGLE && lastAction.payload.isActive) // Play only
-        );
-    
-        if (wasUserInitiatedPlayback) {
+        const audioWasPlayingPreviously = Boolean(previous?.audio?.isPlaying);
+        const wasTapPlayback = lastAction.type === actionTypes.TAP && audioWasPlayingPreviously;
+        const wasKeyNavPlayback = lastAction.type === actionTypes.KEY_NAV && audioWasPlayingPreviously;
+        const wasPlayToggleRequest = lastAction.type === actionTypes.AUDIO_PLAY_PAUSE_TOGGLE && lastAction.payload.isActive;
+        const shouldSendPlayCommand = wasTapPlayback || wasKeyNavPlayback || wasPlayToggleRequest;
+
+        if (shouldSendPlayCommand) {
             // A tap, key nav, or "play" button press is an explicit intent to hear audio.
             // We always send a 'play' command.
-            const position = lastAction.type === actionTypes.AUDIO_PLAY_PAUSE_TOGGLE 
-                ? lastAction.payload.positionId 
-                : current.interaction.tap.position;
-    
-            const timestamp = current.interaction.tap.timestamp;
-    
+            const tapState = current?.interaction?.tap || {};
+            const position = wasPlayToggleRequest
+                ? lastAction.payload.positionId
+                : tapState.position || current.audio.activePositionId || previous?.audio?.activePositionId;
+
+            let timestamp = Number(tapState.timestamp);
+            if (!Number.isFinite(timestamp)) {
+                timestamp = Number(previous?.interaction?.tap?.timestamp);
+            }
+
+            if (!position || !Number.isFinite(timestamp)) {
+                console.warn('[Side Effect] Skipping play command due to missing context.', { position, timestamp });
+                return;
+            }
+
             console.log(`[Side Effect] Sending 'play' command for ${position} @ ${new Date(timestamp).toLocaleTimeString()}`);
             models.audio_control_source.data = {
                 command: ['play'],
@@ -261,21 +270,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 position_id: [current.audio.activePositionId],
                 value: [current.audio.volumeBoost]
             };
-        }
-        // --- C. Handle Play/Pause Toggle from UI Buttons ---
-        if (lastAction.type === actionTypes.AUDIO_PLAY_PAUSE_TOGGLE) {
-            const { positionId, isActive } = lastAction.payload;
-            const command = isActive ? 'play' : 'pause';
-            // Use the current tap timestamp as the starting point for playback
-            const timestamp = current.interaction.tap.timestamp;
-
-            console.log(`[Side Effect] Sending '${command}' command for ${positionId} @ ${new Date(timestamp).toLocaleTimeString()}`);
-            models.audio_control_source.data = {
-                command: [command],
-                position_id: [positionId],
-                value: [timestamp]
-            };
-            return;
         }
     }
 

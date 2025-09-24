@@ -322,7 +322,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return;
         }
 
-        if (e.ctrlKey || e.altKey || e.shiftKey) { //todo: move key modifiers to config and provide user help tips
+        if (e.ctrlKey || e.altKey) { //todo: move key modifiers to config and provide user help tips
             e.preventDefault();
             const thunkCreator = app.thunks && app.thunks.resizeSelectedRegionIntent;
             const dispatch = app.store && app.store.dispatch;
@@ -335,12 +335,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            const modifiers = {
-                shift: Boolean(e.shiftKey),
-                alt: Boolean(e.altKey)
-            };
+            const modifiers = {};
             if (e.ctrlKey) {
                 modifiers.ctrl = true;
+            }
+            if (e.altKey) {
+                modifiers.alt = true;
             }
 
             dispatch(thunkCreator({

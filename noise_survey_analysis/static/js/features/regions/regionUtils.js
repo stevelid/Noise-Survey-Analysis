@@ -353,7 +353,8 @@ function calcLAeq(values) {
                 start: region.start,
                 end: region.end,
                 note: region.note || '',
-                metrics: region.metrics || null
+                metrics: region.metrics || null,
+                color: typeof region.color === 'string' ? region.color : null
             }));
         return JSON.stringify(exportPayload, null, 2);
     }
@@ -380,7 +381,8 @@ function calcLAeq(values) {
                     positionId,
                     areas,
                     note: typeof item?.note === 'string' ? item.note : '',
-                    metrics: item?.metrics || null
+                    metrics: item?.metrics || null,
+                    color: typeof item?.color === 'string' ? item.color : undefined
                 };
             }).filter(Boolean);
         } catch (error) {
