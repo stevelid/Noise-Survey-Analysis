@@ -200,23 +200,23 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             expect(nudgeTapLineIntentSpy).toHaveBeenCalledWith({ key: 'ArrowLeft' });
         });
 
-        it('should nudge the right edge when shift+ArrowRight is pressed', () => {
-            const event = { key: 'ArrowRight', shiftKey: true, altKey: false, preventDefault: vi.fn(), target: { tagName: 'div' } };
+        it('should nudge the right edge when alt+ArrowRight is pressed', () => {
+            const event = { key: 'ArrowRight', altKey: true, ctrlKey: false, preventDefault: vi.fn(), target: { tagName: 'div' } };
             eventHandlers.handleKeyPress(event);
             expect(event.preventDefault).toHaveBeenCalled();
             expect(resizeSelectedRegionIntentSpy).toHaveBeenCalledWith({
                 key: 'ArrowRight',
-                modifiers: { shift: true, alt: false }
+                modifiers: { alt: true }
             });
         });
 
-        it('should nudge the left edge when alt+ArrowLeft is pressed', () => {
-            const event = { key: 'ArrowLeft', shiftKey: false, altKey: true, preventDefault: vi.fn(), target: { tagName: 'div' } };
+        it('should nudge the left edge when ctrl+ArrowLeft is pressed', () => {
+            const event = { key: 'ArrowLeft', ctrlKey: true, altKey: false, preventDefault: vi.fn(), target: { tagName: 'div' } };
             eventHandlers.handleKeyPress(event);
             expect(event.preventDefault).toHaveBeenCalled();
             expect(resizeSelectedRegionIntentSpy).toHaveBeenCalledWith({
                 key: 'ArrowLeft',
-                modifiers: { shift: false, alt: true }
+                modifiers: { ctrl: true }
             });
         });
     });

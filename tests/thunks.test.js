@@ -106,21 +106,21 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.regions.allIds).toHaveLength(0);
     });
 
-    it('resizeSelectedRegionIntent nudges end when shift held', () => {
+    it('resizeSelectedRegionIntent nudges end when alt held', () => {
         store.dispatch(actions.viewportChange(0, 10000));
         store.dispatch(actions.stepSizeCalculated(1000));
         store.dispatch(actions.regionAdd('P1', 1000, 5000));
-        const thunk = thunks.resizeSelectedRegionIntent({ key: 'ArrowRight', modifiers: { shift: true } });
+        const thunk = thunks.resizeSelectedRegionIntent({ key: 'ArrowRight', modifiers: { alt: true } });
         thunk(store.dispatch, store.getState);
         const state = store.getState();
         expect(state.regions.byId[1].end).toBe(6000);
     });
 
-    it('resizeSelectedRegionIntent nudges start when alt held', () => {
+    it('resizeSelectedRegionIntent nudges start when ctrl held', () => {
         store.dispatch(actions.viewportChange(0, 10000));
         store.dispatch(actions.stepSizeCalculated(1000));
         store.dispatch(actions.regionAdd('P1', 1000, 5000));
-        const thunk = thunks.resizeSelectedRegionIntent({ key: 'ArrowLeft', modifiers: { alt: true } });
+        const thunk = thunks.resizeSelectedRegionIntent({ key: 'ArrowLeft', modifiers: { ctrl: true } });
         thunk(store.dispatch, store.getState);
         const state = store.getState();
         expect(state.regions.byId[1].start).toBe(0);
