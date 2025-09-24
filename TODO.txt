@@ -5,3 +5,46 @@
 2. undo - redo functionality for states - needs to decide which state changes trigger a store point for the undo/redo functionality. 
 3. improve UI with drop down menus / clean audio control bars / drop down menu for each displayed chart for offset adjustment etc. 
 4. fix splayback speed and boost. maybe a single button for each of these for all positions (the boost state for current position will be remembered).
+
+# UI/UX Improvement Suggestions (Analysis)
+
+## 1. General UI/UX Polish
+- **Suggestion**: Introduce consistent spacing, a modern color palette, and improved typography.
+- **Difficulty**: Low
+- **Risk**: Low
+- **UI Benefit**: High
+- **Notes**: Foundational improvements that will make the entire application feel more professional and easier to scan. Mostly involves CSS changes.
+
+## 2. Top Control Bar Reorganization
+- **Suggestion**: Group controls by function: Data Parameter (Left), View Options (Center), and Actions (Right). Move chart visibility checkboxes into a single "Visible Charts" dropdown.
+- **Difficulty**: Medium
+- **Risk**: Low-Medium
+- **UI Benefit**: High
+- **Notes**: De-clutters the primary control area and makes the UI more scalable for additional positions/charts.
+
+## 3. Main Chart Area Refinements
+- **Suggestion**: 
+    - Add visual "grab handles" to regions for resizing.
+    - Make the selected region more prominent (thicker border, brighter fill).
+    - Move audio controls into the toolbar of the chart they control.
+- **Difficulty**: Medium
+- **Risk**: Medium
+- **UI Benefit**: High
+- **Notes**: These changes will make region interactions much more intuitive and provide better contextual control for audio playback.
+
+## 4. Side Panel Redesign (Highest Impact)
+- **Suggestion**:
+    - Replace the "Select Region" dropdown with an interactive list where each region is an item.
+    - Structure the region details into tabs ("Metrics & Notes", "Spectrum Analysis").
+    - Add a small bar chart to visualize the average spectrum for the selected region.
+- **Difficulty**: High
+- **Risk**: High
+- **UI Benefit**: Very High
+- **Notes**: This is a major but transformative redesign. It will turn the cluttered side panel into a structured, workflow-oriented analysis tool, dramatically improving usability for multi-region analysis.
+
+## 5. New Feature: Dedicated "Comparison Mode"
+- **Suggestion**: Create an explicit "Comparison Mode" that transforms the UI to focus on comparing a time slice across multiple selected positions.
+- **Difficulty**: High
+- **Risk**: High
+- **UI Benefit**: Very High
+- **Notes**: A complex but powerful feature that would streamline a core analysis task. Involves a new UI mode, data slicing logic, and comparing visualizations (metrics table, overlaid spectrum chart).
