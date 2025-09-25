@@ -178,22 +178,26 @@ describe('rootReducer', () => {
     });
 
     describe('Marker Actions', () => {
-        it('should handle ADD_MARKER action', () => {
-            const state = rootReducer(initialState, actions.addMarker(12345));
-            expect(state.markers.timestamps).toEqual([12345]);
+        it('should add a marker and select it', () => {
+            const state = rootReducer(initialState, actions.markerAdd(12345));
+            expect(state.markers.allIds).toEqual([1]);
+            expect(state.markers.byId[1].timestamp).toBe(12345);
+            expect(state.markers.selectedId).toBe(1);
         });
 
-        it('should handle REMOVE_MARKER action', () => {
-            let state = rootReducer(initialState, actions.addMarker(12345));
-            state = rootReducer(state, actions.removeMarker(12340)); // Click near the marker
-            expect(state.markers.timestamps).toEqual([]);
+        it('should remove a marker by id', () => {
+            let state = rootReducer(initialState, actions.markerAdd(12345));
+            state = rootReducer(state, actions.markerRemove(1));
+            expect(state.markers.allIds).toHaveLength(0);
+            expect(state.markers.byId[1]).toBeUndefined();
         });
 
-        it('should handle CLEAR_ALL_MARKERS action', () => {
-            let state = rootReducer(initialState, actions.addMarker(100));
-            state = rootReducer(state, actions.addMarker(200));
-            state = rootReducer(state, actions.clearAllMarkers());
-            expect(state.markers.timestamps).toEqual([]);
+        it('should replace markers with a provided list', () => {
+            let state = rootReducer(initialState, actions.markerAdd(100));
+            state = rootReducer(state, actions.markerAdd(200));
+            state = rootReducer(state, actions.markersReplace([{ id: 10, timestamp: 300 }]));
+            expect(state.markers.allIds).toEqual([10]);
+            expect(state.markers.byId[10].timestamp).toBe(300);
         });
     });
 

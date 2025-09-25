@@ -12,8 +12,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const interactionThunks = app.features?.interaction?.thunks || {};
     const audioThunks = app.features?.audio?.thunks || {};
     const viewThunks = app.features?.view?.thunks || {};
+    const markerThunks = app.features?.markers?.thunks || {};
 
     app.thunks = {
+        ...markerThunks,
         ...regionThunks,
         ...interactionThunks,
         ...audioThunks,

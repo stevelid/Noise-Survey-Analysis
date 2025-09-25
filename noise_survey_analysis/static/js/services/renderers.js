@@ -471,8 +471,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const { controllers } = app.registry;
         if (!controllers?.chartsByName) return;
 
+        const markerSelectors = app.features?.markers?.selectors || {};
+        const markers = typeof markerSelectors.selectAllMarkers === 'function'
+            ? markerSelectors.selectAllMarkers(state)
+            : [];
+        const timestamps = markers.map(marker => marker?.timestamp).filter(timestamp => Number.isFinite(timestamp));
+        const enabled = typeof markerSelectors.selectAreMarkersEnabled === 'function'
+            ? markerSelectors.selectAreMarkersEnabled(state)
+            : Boolean(state?.markers?.enabled !== false);
+
         controllers.chartsByName.forEach(chart => {
-            chart.syncMarkers(state.markers.timestamps, state.markers.enabled);
+            chart.syncMarkers(timestamps, enabled);
         });
     }
 

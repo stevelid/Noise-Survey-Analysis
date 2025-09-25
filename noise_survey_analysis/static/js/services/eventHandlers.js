@@ -151,11 +151,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function handleDoubleClick(cb_obj) {
         if (cb_obj.origin.name === 'frequency_bar') return;
-        app.store.dispatch(actions.addMarker(cb_obj.x));
+        if (typeof actions?.markerAdd !== 'function') {
+            console.error('[EventHandler] markerAdd action creator is not available.');
+            return;
+        }
+        app.store.dispatch(actions.markerAdd(cb_obj.x));
     }
 
     function clearAllMarkers() {
-        app.store.dispatch(actions.clearAllMarkers());
+        if (typeof actions?.markersReplace !== 'function') {
+            console.error('[EventHandler] markersReplace action creator is not available.');
+            return;
+        }
+        app.store.dispatch(actions.markersReplace([]));
     }
 
     function handleParameterChange(value) {

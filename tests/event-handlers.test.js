@@ -139,10 +139,10 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     });
 
     describe('handleDoubleClick', () => {
-        it('should dispatch an ADD_MARKER action', () => {
+        it('should dispatch a markerAdd action', () => {
             const cb_obj = { origin: { name: 'figure_P1_timeseries' }, x: 54321 };
             eventHandlers.handleDoubleClick(cb_obj);
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.addMarker(54321));
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.markerAdd(54321));
         });
     });
 

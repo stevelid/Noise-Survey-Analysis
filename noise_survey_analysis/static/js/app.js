@@ -24,6 +24,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         _spectrogramCanvasBuffers: {}
     };
 
+    app.dataCache = dataCache;
+
     function handleDragToolKeyDown(event) {
         if (event.key !== 'Shift') {
             return;
@@ -132,7 +134,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didViewToggleChange = state.view.globalViewType !== previousState.view.globalViewType;
         const didVisibilityChange = state.view.chartVisibility !== previousState.view.chartVisibility;
         const didChartOffsetsChange = state.view.positionChartOffsets !== previousState.view.positionChartOffsets;
-        const didMarkersChange = state.markers.timestamps !== previousState.markers.timestamps;
+        const didMarkersChange = state.markers !== previousState.markers;
         const didRegionsChange = state.regions !== previousState.regions;
         const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
 
@@ -168,7 +170,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.renderers.renderControlWidgets(state);
 
         // Always sync markers
-        if (isInitialLoad || didMarkersChange || state.system.lastAction.type === app.actionTypes.CLEAR_ALL_MARKERS) {
+        if (isInitialLoad || didMarkersChange) {
             app.renderers.renderMarkers(state);
         }
 

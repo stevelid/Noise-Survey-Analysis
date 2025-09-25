@@ -10,6 +10,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const { actions } = app;
     const regionSelectors = app.features?.regions?.selectors || {};
+    const markerSelectors = app.features?.markers?.selectors || {};
     const MIN_REGION_WIDTH_MS = 1;
 
     function handleTapIntent(payload) {
@@ -65,7 +66,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             if (isCtrl) {
-                dispatch(actions.removeMarker(timestamp));
+                const { marker, distance } = typeof markerSelectors.selectClosestMarkerToTimestamp === 'function'
+                    ? markerSelectors.selectClosestMarkerToTimestamp(state, timestamp)
+                    : { marker: null, distance: Infinity };
+
+                const viewport = state?.view?.viewport;
+                if (marker && viewport) {
+                    const viewportWidthMs = Number(viewport.max) - Number(viewport.min);
+                    const threshold = Math.max(viewportWidthMs * 0.02, 10000);
+                    if (distance <= threshold && typeof actions.markerRemove === 'function') {
+                        dispatch(actions.markerRemove(marker.id));
+                    }
+                }
                 return;
             }
 

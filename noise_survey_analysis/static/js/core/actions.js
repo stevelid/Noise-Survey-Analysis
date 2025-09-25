@@ -41,9 +41,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         COMPARISON_SLICE_UPDATED: 'view/comparisonSliceUpdated',
 
         // Markers
-        ADD_MARKER: 'ADD_MARKER',
-        REMOVE_MARKER: 'REMOVE_MARKER',
-        CLEAR_ALL_MARKERS: 'CLEAR_ALL_MARKERS',
+        MARKER_ADDED: 'markers/markerAdded',
+        MARKER_REMOVED: 'markers/markerRemoved',
+        MARKER_UPDATED: 'markers/markerUpdated',
+        MARKER_SELECTED: 'markers/markerSelected',
+        MARKER_NOTE_SET: 'markers/markerNoteSet',
+        MARKER_COLOR_SET: 'markers/markerColorSet',
+        MARKER_METRICS_SET: 'markers/markerMetricsSet',
+        MARKERS_REPLACED: 'markers/markersReplaced',
 
         // Regions
         REGION_ADDED: 'markers/regionAdded',
@@ -125,11 +130,36 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             payload: { start, end }
         }),
 
-        addMarker: (timestamp) => ({ type: actionTypes.ADD_MARKER, payload: { timestamp } }),
+        markerAdd: (timestamp, extras = {}) => ({
+            type: actionTypes.MARKER_ADDED,
+            payload: {
+                timestamp,
+                note: typeof extras.note === 'string' ? extras.note : undefined,
+                color: extras.color,
+                metrics: extras.metrics
+            }
+        }),
 
-        removeMarker: (clickTimestamp) => ({ type: actionTypes.REMOVE_MARKER, payload: { clickTimestamp } }),
+        markerRemove: (id) => ({ type: actionTypes.MARKER_REMOVED, payload: { id } }),
 
-        clearAllMarkers: () => ({ type: actionTypes.CLEAR_ALL_MARKERS }),
+        markerUpdate: (id, changes) => ({ type: actionTypes.MARKER_UPDATED, payload: { id, changes } }),
+
+        markerSelect: (id) => ({ type: actionTypes.MARKER_SELECTED, payload: { id } }),
+
+        markerSetNote: (id, note) => ({ type: actionTypes.MARKER_NOTE_SET, payload: { id, note } }),
+
+        markerSetColor: (id, color) => ({ type: actionTypes.MARKER_COLOR_SET, payload: { id, color } }),
+
+        markerSetMetrics: (id, metrics) => ({ type: actionTypes.MARKER_METRICS_SET, payload: { id, metrics } }),
+
+        markersReplace: (markers, options = {}) => ({
+            type: actionTypes.MARKERS_REPLACED,
+            payload: {
+                markers,
+                enabled: typeof options.enabled === 'boolean' ? options.enabled : undefined,
+                selectedId: Number.isFinite(options.selectedId) ? options.selectedId : undefined
+            }
+        }),
 
         regionAdd: (positionId, start, end) => ({
             type: actionTypes.REGION_ADDED,
