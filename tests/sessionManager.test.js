@@ -47,6 +47,7 @@ describe('Annotation CSV helpers', () => {
         expect(lines[2]).toContain('region');
         expect(lines[1]).toContain('2024-03-10 09:08:07.123');
         expect(lines[2]).toContain('2024-03-10 09:30:00.456');
+        expect(helpers.CSV_HEADER).toContain('areas');
 
         const { markers, regions } = helpers.parseAnnotationsCsv(csv);
         expect(markers).toHaveLength(1);
@@ -64,6 +65,40 @@ describe('Annotation CSV helpers', () => {
         expect(region.areas).toEqual([{ start: regionStart, end: regionEnd }]);
         expect(region.note).toBe('Region note');
         expect(region.color).toBe('#123456');
+    });
+
+    it('preserves multi-area regions through CSV round-trip', () => {
+        const firstStart = Date.UTC(2024, 4, 1, 12, 0, 0, 0);
+        const firstEnd = Date.UTC(2024, 4, 1, 12, 5, 0, 0);
+        const secondStart = Date.UTC(2024, 4, 1, 12, 10, 0, 0);
+        const secondEnd = Date.UTC(2024, 4, 1, 12, 15, 0, 0);
+
+        const csv = helpers.buildAnnotationsCsv([], [{
+            id: 7,
+            positionId: 'P2',
+            start: firstStart,
+            end: secondEnd,
+            areas: [
+                { start: firstStart, end: firstEnd },
+                { start: secondStart, end: secondEnd }
+            ],
+            note: 'Multi area',
+            color: '#abcdef'
+        }]);
+
+        const { regions } = helpers.parseAnnotationsCsv(csv);
+        expect(regions).toHaveLength(1);
+
+        const [region] = regions;
+        expect(region.positionId).toBe('P2');
+        expect(region.start).toBe(firstStart);
+        expect(region.end).toBe(secondEnd);
+        expect(region.areas).toEqual([
+            { start: firstStart, end: firstEnd },
+            { start: secondStart, end: secondEnd }
+        ]);
+        expect(region.note).toBe('Multi area');
+        expect(region.color).toBe('#abcdef');
     });
 
     it('parses timestamps without fractional seconds', () => {
