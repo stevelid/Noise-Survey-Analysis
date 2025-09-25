@@ -11,11 +11,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const { actions } = app;
     const markerSelectors = app.features?.markers?.selectors || {};
 
+    function hasArrayLikeLength(values) {
+        return Boolean(values && typeof values.length === 'number');
+    }
+
     function cloneArrayLike(values) {
-        if (!values || typeof values.length !== 'number') {
+        if (!hasArrayLikeLength(values)) {
             return [];
         }
         return Array.from(values);
+    }
+
+    function findLastIndexBeforeOrEqual(values, target) {
+        if (!hasArrayLikeLength(values) || !Number.isFinite(target)) {
+            return -1;
+        }
+        for (let i = values.length - 1; i >= 0; i--) {
+            const value = Number(values[i]);
+            if (Number.isFinite(value) && value <= target) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     function sliceSpectralSnapshot(spectralData, timeIndex) {
@@ -87,22 +104,31 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const spectralData = dataCache.activeSpectralData?.[positionId];
 
                 let timeIndex = -1;
-                if (lineData && Array.isArray(lineData.Datetime)) {
-                    timeIndex = typeof app.utils?.findAssociatedDateIndex === 'function'
-                        ? app.utils.findAssociatedDateIndex(lineData, timestamp)
-                        : lineData.Datetime.findLastIndex(value => Number(value) <= timestamp);
+                if (lineData && hasArrayLikeLength(lineData.Datetime)) {
+                    if (typeof app.utils?.findAssociatedDateIndex === 'function') {
+                        timeIndex = app.utils.findAssociatedDateIndex(lineData, timestamp);
+                    }
+                    if (!Number.isInteger(timeIndex) || timeIndex < 0) {
+                        timeIndex = findLastIndexBeforeOrEqual(lineData.Datetime, timestamp);
+                    }
                 }
 
-                if (timeIndex !== -1 && selectedParameter && Array.isArray(lineData?.[selectedParameter])) {
-                    const broadbandValue = Number(lineData[selectedParameter][timeIndex]);
+                const parameterValues = lineData?.[selectedParameter];
+                if (
+                    timeIndex !== -1
+                    && selectedParameter
+                    && hasArrayLikeLength(parameterValues)
+                    && timeIndex < parameterValues.length
+                ) {
+                    const broadbandValue = Number(parameterValues[timeIndex]);
                     metricsPayload.broadband.push({
                         positionId,
                         value: Number.isFinite(broadbandValue) ? broadbandValue : null
                     });
                 }
 
-                if (spectralData && Array.isArray(spectralData.times_ms)) {
-                    const spectralTimeIndex = spectralData.times_ms.findLastIndex(value => Number(value) <= timestamp);
+                if (spectralData && hasArrayLikeLength(spectralData.times_ms)) {
+                    const spectralTimeIndex = findLastIndexBeforeOrEqual(spectralData.times_ms, timestamp);
                     if (spectralTimeIndex !== -1) {
                         const snapshot = sliceSpectralSnapshot(spectralData, spectralTimeIndex);
                         if (snapshot) {
