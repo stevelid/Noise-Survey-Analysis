@@ -1,5 +1,4 @@
 import logging
-import re
 from bokeh.plotting import curdoc
 from bokeh.models import ColumnDataSource, Div
 import sys
@@ -8,7 +7,6 @@ import argparse
 import os
 from pathlib import Path
 import threading
-from datetime import datetime
 
 # --- Project Root Setup ---
 current_file = Path(__file__)
@@ -19,13 +17,92 @@ from noise_survey_analysis.core.config import CHART_SETTINGS
 from noise_survey_analysis.core.data_manager import DataManager
 from noise_survey_analysis.core.audio_processor import AudioDataProcessor
 from noise_survey_analysis.core.app_setup import load_config_and_prepare_sources
-from noise_survey_analysis.core.utils import find_lowest_common_folder
 from noise_survey_analysis.core.config_io import save_config_from_selected_sources
 from noise_survey_analysis.export.static_export import generate_static_html
 from noise_survey_analysis.core.audio_handler import AudioPlaybackHandler
 from noise_survey_analysis.core.app_callbacks import AppCallbacks, session_destroyed
 from noise_survey_analysis.visualization.dashBuilder import DashBuilder
 from noise_survey_analysis.ui.data_source_selector import create_data_source_selector
+
+
+def _decode_argument_value(raw_value):
+    """Decode Bokeh request argument values to plain strings."""
+    if raw_value is None:
+        return None
+
+    # Bokeh wraps argument values in lists; accept plain values as well for safety
+    if isinstance(raw_value, (list, tuple)):
+        for candidate in raw_value:
+            decoded = _decode_argument_value(candidate)
+            if decoded is not None:
+                return decoded
+        return None
+
+    if isinstance(raw_value, (bytes, bytearray)):
+        try:
+            return raw_value.decode('utf-8')
+        except Exception:
+            return raw_value.decode('utf-8', errors='ignore')
+
+    return str(raw_value)
+
+
+def _extract_request_argument(arguments, *names):
+    """Return the first matching argument from a Bokeh request."""
+    if not arguments:
+        return None
+
+    normalized_names = {name.lstrip('-').lower() for name in names if name}
+    for raw_key, raw_value in arguments.items():
+        if raw_key is None:
+            continue
+        if isinstance(raw_key, (bytes, bytearray)):
+            key = raw_key.decode('utf-8', errors='ignore')
+        else:
+            key = str(raw_key)
+
+        normalized_key = key.lstrip('-').lower()
+        if '[' in normalized_key:
+            normalized_key = normalized_key.split('[', 1)[0]
+        if normalized_key in normalized_names:
+            return _decode_argument_value(raw_value)
+
+    return None
+
+
+def _extract_argv_argument(*flags):
+    """Fallback parser for command-line style flags from sys.argv."""
+    if not sys.argv:
+        return None
+
+    for index, token in enumerate(sys.argv):
+        for flag in flags:
+            if not flag:
+                continue
+            if token == flag and index + 1 < len(sys.argv):
+                return sys.argv[index + 1]
+            if token.startswith(f"{flag}="):
+                return token.split('=', 1)[1]
+
+    return None
+
+
+def _normalize_path(value):
+    """Convert various argument representations into a filesystem path string."""
+    if value is None:
+        return None
+
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode('utf-8')
+        except Exception:
+            value = value.decode('utf-8', errors='ignore')
+
+    value = str(value).strip()
+    if not value:
+        return None
+
+    return os.path.expanduser(value)
 
 # --- Configure Logging ---
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -52,13 +129,8 @@ def create_app(doc, config_path=None, state_path=None):
     initial_saved_workspace_state = None
     source_configs_from_state = None
 
+    state_path = _normalize_path(state_path)
     if state_path:
-        if isinstance(state_path, (bytes, bytearray)):
-            try:
-                state_path = state_path.decode('utf-8')
-            except Exception:
-                state_path = str(state_path)
-
         logger.info(f"Attempting to load workspace state file: {state_path}")
         try:
             with open(state_path, 'r', encoding='utf-8') as state_file:
@@ -142,29 +214,24 @@ def create_app(doc, config_path=None, state_path=None):
     
     if source_configs_from_state:
         doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs_from_state))
-    elif config_path:
-        # Ensure config_path is a string (Bokeh passes bytes for --args)
-        if isinstance(config_path, (bytes, bytearray)):
-            try:
-                config_path = config_path.decode('utf-8')
-            except Exception:
-                config_path = str(config_path)
-
-        logger.info(f"Attempting to load data directly from config file: {config_path}")
-        _, source_configs = load_config_and_prepare_sources(config_path=config_path)
-        if source_configs is not None:
-            # Use a next tick callback to ensure the document is fully ready
-            doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs))
+    else:
+        config_path = _normalize_path(config_path)
+        if config_path:
+            logger.info(f"Attempting to load data directly from config file: {config_path}")
+            _, source_configs = load_config_and_prepare_sources(config_path=config_path)
+            if source_configs is not None:
+                # Use a next tick callback to ensure the document is fully ready
+                doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs))
+            else:
+                logger.error(f"Failed to load from config file {config_path}. Falling back to selector.")
+                # Fallback to selector if config loading fails
+                selector = create_data_source_selector(doc, on_data_sources_selected)
+                doc.add_root(selector.get_layout())
         else:
-            logger.error(f"Failed to load from config file {config_path}. Falling back to selector.")
-            # Fallback to selector if config loading fails
+            # Show data source selector initially if no config path is provided
+            logger.info("No config file provided. Showing data source selector...")
             selector = create_data_source_selector(doc, on_data_sources_selected)
             doc.add_root(selector.get_layout())
-    else:
-        # Show data source selector initially if no config path is provided
-        logger.info("No config file provided. Showing data source selector...")
-        selector = create_data_source_selector(doc, on_data_sources_selected)
-        doc.add_root(selector.get_layout())
     doc.on_session_destroyed(session_destroyed)
 
     logger.info("--- Live application setup complete for this session. ---")
@@ -204,9 +271,17 @@ doc = curdoc()
 if doc.session_context:
     # Session context exists, so we're running as a Bokeh server app.
     logger.info("Bokeh session context found. Setting up live application.")
-    args = doc.session_context.request.arguments
-    config_file_path = args.get('config', [None])[0]
-    state_file_path = args.get('state', [None])[0]
+    request_arguments = doc.session_context.request.arguments
+
+    config_file_path = _extract_request_argument(request_arguments, 'config')
+    state_file_path = _extract_request_argument(request_arguments, 'state', 'workspace', 'savedworkspace')
+
+    if config_file_path is None:
+        config_file_path = _extract_argv_argument('--config')
+
+    if state_file_path is None:
+        state_file_path = _extract_argv_argument('--state', '--workspace', '--savedworkspace')
+
     create_app(doc, config_path=config_file_path, state_path=state_file_path)
 else:
     # No session context, so we're running as a standalone script.
