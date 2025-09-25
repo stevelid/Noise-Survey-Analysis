@@ -41,9 +41,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         COMPARISON_SLICE_UPDATED: 'view/comparisonSliceUpdated',
 
         // Markers
-        ADD_MARKER: 'ADD_MARKER',
-        REMOVE_MARKER: 'REMOVE_MARKER',
-        CLEAR_ALL_MARKERS: 'CLEAR_ALL_MARKERS',
+        MARKER_ADDED: 'markers/markerAdded',
+        MARKER_REMOVED: 'markers/markerRemoved',
+        MARKER_UPDATED: 'markers/markerUpdated',
+        MARKER_SELECTED: 'markers/markerSelected',
+        MARKER_NOTE_SET: 'markers/markerNoteSet',
+        MARKER_COLOR_SET: 'markers/markerColorSet',
+        MARKER_METRICS_SET: 'markers/markerMetricsSet',
+        MARKERS_REPLACED: 'markers/markersReplaced',
+        MARKERS_VISIBILITY_SET: 'markers/visibilitySet',
 
         // Regions
         REGION_ADDED: 'markers/regionAdded',
@@ -59,6 +65,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REGION_MERGE_MODE_SET: 'markers/regionMergeModeSet',
         REGIONS_REPLACED: 'markers/regionsReplaced',
         REGION_VISIBILITY_SET: 'regions/visibilitySet',
+
+        REGION_CREATION_STARTED: 'interaction/regionCreationStarted',
+        REGION_CREATION_CANCELLED: 'interaction/regionCreationCancelled',
 
         // Audio
         AUDIO_STATUS_UPDATE: 'AUDIO_STATUS_UPDATE',
@@ -125,11 +134,42 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             payload: { start, end }
         }),
 
-        addMarker: (timestamp) => ({ type: actionTypes.ADD_MARKER, payload: { timestamp } }),
+        markerAdd: (timestamp, extras = {}) => ({
+            type: actionTypes.MARKER_ADDED,
+            payload: {
+                timestamp,
+                note: typeof extras.note === 'string' ? extras.note : undefined,
+                color: extras.color,
+                metrics: extras.metrics,
+                positionId: typeof extras.positionId === 'string' ? extras.positionId : undefined
+            }
+        }),
 
-        removeMarker: (clickTimestamp) => ({ type: actionTypes.REMOVE_MARKER, payload: { clickTimestamp } }),
+        markerRemove: (id) => ({ type: actionTypes.MARKER_REMOVED, payload: { id } }),
 
-        clearAllMarkers: () => ({ type: actionTypes.CLEAR_ALL_MARKERS }),
+        markerUpdate: (id, changes) => ({ type: actionTypes.MARKER_UPDATED, payload: { id, changes } }),
+
+        markerSelect: (id) => ({ type: actionTypes.MARKER_SELECTED, payload: { id } }),
+
+        markerSetNote: (id, note) => ({ type: actionTypes.MARKER_NOTE_SET, payload: { id, note } }),
+
+        markerSetColor: (id, color) => ({ type: actionTypes.MARKER_COLOR_SET, payload: { id, color } }),
+
+        markerSetMetrics: (id, metrics) => ({ type: actionTypes.MARKER_METRICS_SET, payload: { id, metrics } }),
+
+        markersReplace: (markers, options = {}) => ({
+            type: actionTypes.MARKERS_REPLACED,
+            payload: {
+                markers,
+                enabled: typeof options.enabled === 'boolean' ? options.enabled : undefined,
+                selectedId: Number.isFinite(options.selectedId) ? options.selectedId : undefined
+            }
+        }),
+
+        markersVisibilitySet: (enabled) => ({
+            type: actionTypes.MARKERS_VISIBILITY_SET,
+            payload: { enabled: typeof enabled === 'boolean' ? enabled : Boolean(enabled) }
+        }),
 
         regionAdd: (positionId, start, end) => ({
             type: actionTypes.REGION_ADDED,
@@ -167,6 +207,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 showOverlays: typeof config?.showOverlays === 'boolean' ? config.showOverlays : undefined,
             }
         }),
+
+        regionCreationStarted: (payload) => ({
+            type: actionTypes.REGION_CREATION_STARTED,
+            payload: {
+                timestamp: Number.isFinite(payload?.timestamp) ? Number(payload.timestamp) : null,
+                positionId: typeof payload?.positionId === 'string' ? payload.positionId : null
+            }
+        }),
+
+        regionCreationCancelled: () => ({ type: actionTypes.REGION_CREATION_CANCELLED }),
 
         regionSetAddAreaMode: (regionId) => ({
             type: actionTypes.REGION_ADD_AREA_MODE_SET,

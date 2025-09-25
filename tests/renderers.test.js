@@ -6,6 +6,7 @@ import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';
 import '../noise_survey_analysis/static/js/comparison-metrics.js';
 import '../noise_survey_analysis/static/js/services/regions/regionPanelRenderer.js';
 import '../noise_survey_analysis/static/js/services/renderers.js';
+import '../noise_survey_analysis/static/js/features/markers/markersSelectors.js';
 
 describe('NoiseSurveyApp.renderers', () => {
     let renderers;
@@ -533,6 +534,20 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionAutoDayButton.disabled).toBe(false);
             expect(models.regionAutoNightButton.disabled).toBe(false);
 
+            const pendingState = {
+                view: { availablePositions: ['P9'] },
+                regions: populatedState.regions,
+                interaction: {
+                    pendingRegionStart: { timestamp: 1500, positionId: 'P9' }
+                }
+            };
+
+            renderers.renderRegions(pendingState, {});
+            expect(models.regionPanelMessageDiv.visible).toBe(true);
+            expect(models.regionPanelMessageDiv.text).toContain('Region start pinned');
+            expect(models.regionPanelMessageDiv.text).toContain('P9');
+            expect(models.regionPanelDetail.visible).toBe(true);
+
 
             const multiRegionState = {
                 view: { availablePositions: ['P9'] },
@@ -655,7 +670,16 @@ describe('NoiseSurveyApp.renderers', () => {
     describe('renderMarkers', () => {
         it('should sync markers for all charts', () => {
             const mockState = {
-                markers: { timestamps: [100, 200], enabled: true }
+                markers: {
+                    byId: {
+                        1: { id: 1, timestamp: 100 },
+                        2: { id: 2, timestamp: 200 }
+                    },
+                    allIds: [1, 2],
+                    selectedId: null,
+                    counter: 3,
+                    enabled: true
+                }
             };
             renderers.renderMarkers(mockState);
             expect(mockSyncMarkers).toHaveBeenCalledWith([100, 200], true);

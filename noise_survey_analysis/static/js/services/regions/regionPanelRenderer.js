@@ -33,6 +33,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             .region-spectrum .bar-empty { background: #cfd8dc; }
             .region-segments { margin: 8px 0; padding-left: 18px; font-size: 12px; }
             .region-segments li { margin-bottom: 2px; }
+            .region-panel-pending { background: #fff3cd; border-left: 4px solid #ffa000; padding: 6px 8px; margin: 0 0 8px 0; color: #5f4200; font-size: 12px; line-height: 1.4; border-radius: 4px; }
+            .region-panel-pending strong { font-weight: 600; }
+            .region-panel-pending kbd { display: inline-block; padding: 1px 4px; border-radius: 3px; border: 1px solid #d7ccc8; background: #fff; font-size: 11px; font-family: 'Segoe UI', sans-serif; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1); }
         </style>
     `;
 
@@ -364,17 +367,32 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
-    function updateMessage(messageDiv, detailLayout, hasRegions, panelVisible) {
+    function updateMessage(messageDiv, detailLayout, hasRegions, panelVisible, pendingRegionStart) {
         if (!messageDiv || !detailLayout) return;
-        const shouldShowMessage = panelVisible && !hasRegions;
+        const hasPending = Number.isFinite(pendingRegionStart?.timestamp) && typeof pendingRegionStart?.positionId === 'string';
+        const shouldShowMessage = panelVisible && (!hasRegions || hasPending);
         const shouldShowDetail = panelVisible && hasRegions;
         messageDiv.visible = shouldShowMessage;
         detailLayout.visible = shouldShowDetail;
-        if (!hasRegions) {
-            const text = `${PANEL_STYLE}<div class='region-panel-empty'>No regions defined.</div>`;
+        if (!shouldShowMessage) {
+            return;
+        }
+
+        if (hasPending) {
+            const formattedTimestamp = formatDateTime(pendingRegionStart.timestamp);
+            const positionLabel = pendingRegionStart.positionId
+                ? ` for <strong>${escapeHtml(String(pendingRegionStart.positionId))}</strong>`
+                : '';
+            const text = `${PANEL_STYLE}<div class="region-panel-pending">Region start pinned at <strong>${formattedTimestamp}</strong>${positionLabel}. Press <kbd>R</kbd> to set the end point or <kbd>Esc</kbd> to cancel.</div>`;
             if (messageDiv.text !== text) {
                 messageDiv.text = text;
             }
+            return;
+        }
+
+        const emptyText = `${PANEL_STYLE}<div class='region-panel-empty'>No regions defined.</div>`;
+        if (messageDiv.text !== emptyText) {
+            messageDiv.text = emptyText;
         }
     }
 
@@ -578,7 +596,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         updateVisibilityToggle(visibilityToggle, regionList.length, panelVisible, overlaysVisible);
         updateAutoButtons(autoDayButton, autoNightButton, hasPositions, panelVisible);
-        updateMessage(messageDiv, detail, hasRegions, panelVisible);
+        updateMessage(messageDiv, detail, hasRegions, panelVisible, state?.interaction?.pendingRegionStart || null);
         updateButtons(panelModels, hasSelection, selectedRegion, state, isMergeModeActive);
         updateNoteInput(noteInput, selectedRegion);
 

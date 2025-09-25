@@ -105,7 +105,7 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
 
   it('clearAllMarkers should dispatch the corresponding action', () => {
     window.NoiseSurveyApp.eventHandlers.clearAllMarkers();
-    expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.clearAllMarkers());
+    expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.markersReplace([]));
   });
 
   it('handleAutoRegions should normalise mode and dispatch the intent thunk', () => {

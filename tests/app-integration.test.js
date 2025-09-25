@@ -179,13 +179,14 @@ describe('App Orchestration Integration Tests', () => {
             // Part 1: Add marker via double click
             const beforeMarkers = renderers.renderMarkers.mock.calls.length;
             eventHandlers.handleDoubleClick({ origin: { name: 'figure_P1_timeseries' }, x: 50000 });
-            expect(store.getState().markers.timestamps).toContain(50000);
+            const markerTimestamps = window.NoiseSurveyApp.features.markers.selectors.selectMarkerTimestamps(store.getState());
+            expect(markerTimestamps).toContain(50000);
             expect(renderers.renderMarkers.mock.calls.length).toBeGreaterThan(beforeMarkers);
 
             // Part 2: Remove marker via ctrl-tap near the marker
             const beforeMarkers2 = renderers.renderMarkers.mock.calls.length;
             eventHandlers.handleTap({ origin: { name: 'figure_P1_timeseries' }, x: 50100, modifiers: { ctrl: true } });
-            expect(store.getState().markers.timestamps).toHaveLength(0);
+            expect(window.NoiseSurveyApp.features.markers.selectors.selectAllMarkers(store.getState())).toHaveLength(0);
             expect(renderers.renderMarkers.mock.calls.length).toBeGreaterThan(beforeMarkers2);
         });
 
@@ -194,11 +195,11 @@ describe('App Orchestration Integration Tests', () => {
             // Add a couple markers first
             eventHandlers.handleDoubleClick({ origin: { name: 'figure_P1_timeseries' }, x: 10000 });
             eventHandlers.handleDoubleClick({ origin: { name: 'figure_P1_timeseries' }, x: 20000 });
-            expect(store.getState().markers.timestamps.length).toBe(2);
+            expect(window.NoiseSurveyApp.features.markers.selectors.selectAllMarkers(store.getState())).toHaveLength(2);
 
             const beforeMarkers = renderers.renderMarkers.mock.calls.length;
             eventHandlers.clearAllMarkers();
-            expect(store.getState().markers.timestamps).toHaveLength(0);
+            expect(window.NoiseSurveyApp.features.markers.selectors.selectAllMarkers(store.getState())).toHaveLength(0);
             expect(renderers.renderMarkers.mock.calls.length).toBeGreaterThan(beforeMarkers);
         });
 

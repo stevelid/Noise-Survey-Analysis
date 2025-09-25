@@ -468,12 +468,43 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     * marker visuals with the central state.
     */
     function renderMarkers(state) {
-        const { controllers } = app.registry;
+        const { controllers, models } = app.registry;
         if (!controllers?.chartsByName) return;
 
+        const markerSelectors = app.features?.markers?.selectors || {};
+        const markers = typeof markerSelectors.selectAllMarkers === 'function'
+            ? markerSelectors.selectAllMarkers(state)
+            : [];
+        const timestamps = markers.map(marker => marker?.timestamp).filter(timestamp => Number.isFinite(timestamp));
+        const enabled = typeof markerSelectors.selectAreMarkersEnabled === 'function'
+            ? markerSelectors.selectAreMarkersEnabled(state)
+            : Boolean(state?.markers?.enabled !== false);
+
         controllers.chartsByName.forEach(chart => {
-            chart.syncMarkers(state.markers.timestamps, state.markers.enabled);
+            chart.syncMarkers(timestamps, enabled);
         });
+
+        const markerPanelRenderer = app.services?.markerPanelRenderer;
+        if (markerPanelRenderer && typeof markerPanelRenderer.renderMarkerPanel === 'function') {
+            markerPanelRenderer.renderMarkerPanel(
+                {
+                    markerSource: models?.markerPanelSource,
+                    markerTable: models?.markerPanelTable,
+                    messageDiv: models?.markerPanelMessageDiv,
+                    detail: models?.markerPanelDetail,
+                    colorPicker: models?.markerPanelColorPicker,
+                    noteInput: models?.markerPanelNoteInput,
+                    metricsDiv: models?.markerPanelMetricsDiv,
+                    copyButton: models?.markerPanelCopyButton,
+                    deleteButton: models?.markerPanelDeleteButton,
+                    addAtTapButton: models?.markerPanelAddAtTapButton,
+                    visibilityToggle: models?.markerVisibilityToggle,
+                },
+                state?.markers || {},
+                state?.interaction || {},
+                state?.view || {}
+            );
+        }
     }
 
     function renderRegions(state, dataCache) {
@@ -937,11 +968,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (models.regionPanelLayout) {
             models.regionPanelLayout.visible = !isComparisonActive;
         }
+        if (models.markerPanelLayout) {
+            models.markerPanelLayout.visible = !isComparisonActive;
+        }
         if (models.comparisonPanelLayout) {
             models.comparisonPanelLayout.visible = isComparisonActive;
         }
         if (models.sidePanelTabs) {
-            models.sidePanelTabs.active = isComparisonActive ? 1 : 0;
+            models.sidePanelTabs.visible = !isComparisonActive;
+            if (isComparisonActive && models.sidePanelTabs.active !== 0) {
+                models.sidePanelTabs.active = 0;
+            }
         }
         if (models.frequencyBarLayout) {
             models.frequencyBarLayout.visible = !isComparisonActive;

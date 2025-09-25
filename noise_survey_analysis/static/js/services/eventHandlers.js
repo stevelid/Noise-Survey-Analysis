@@ -150,12 +150,25 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function handleDoubleClick(cb_obj) {
-        if (cb_obj.origin.name === 'frequency_bar') return;
-        app.store.dispatch(actions.addMarker(cb_obj.x));
+        const chartName = cb_obj?.origin?.name || cb_obj?.model?.name;
+        if (!chartName || chartName === 'frequency_bar') return;
+        const positionId = _getChartPositionByName(chartName);
+        if (!positionId) return;
+        const timestamp = cb_obj?.x;
+        if (!Number.isFinite(timestamp)) return;
+        if (typeof actions?.markerAdd !== 'function') {
+            console.error('[EventHandler] markerAdd action creator is not available.');
+            return;
+        }
+        app.store.dispatch(actions.markerAdd(timestamp, { positionId }));
     }
 
     function clearAllMarkers() {
-        app.store.dispatch(actions.clearAllMarkers());
+        if (typeof actions?.markersReplace !== 'function') {
+            console.error('[EventHandler] markersReplace action creator is not available.');
+            return;
+        }
+        app.store.dispatch(actions.markersReplace([]));
     }
 
     function handleParameterChange(value) {
@@ -349,20 +362,67 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const targetTagName = e.target.tagName.toLowerCase();
         if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') return;
 
+        const dispatch = app.store && app.store.dispatch;
+        if (typeof dispatch !== 'function') {
+            console.error('[EventHandler] Store is not available for dispatch.');
+            return;
+        }
+
+        const getState = app.store && app.store.getState;
+
         if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
             e.preventDefault();
             const thunkCreator = app.thunks && app.thunks.togglePlaybackFromKeyboardIntent;
-            const dispatch = app.store && app.store.dispatch;
             if (typeof thunkCreator !== 'function') {
                 console.error('[EventHandler] Missing togglePlaybackFromKeyboardIntent thunk.');
                 return;
             }
-            if (typeof dispatch !== 'function') {
-                console.error('[EventHandler] Store is not available for dispatch.');
+
+            dispatch(thunkCreator());
+            return;
+        }
+
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            if (typeof actions?.regionCreationCancelled === 'function') {
+                dispatch(actions.regionCreationCancelled());
+            }
+            return;
+        }
+
+        const normalizedKey = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+
+        if (normalizedKey === 'm') {
+            e.preventDefault();
+            const thunkCreator = app.thunks
+                && (app.thunks.createMarkerFromKeyboardIntent || app.thunks.addMarkerAtTapIntent);
+            if (typeof thunkCreator !== 'function') {
+                console.error('[EventHandler] Missing marker creation thunk.');
                 return;
             }
 
-            dispatch(thunkCreator());
+            if (thunkCreator === app.thunks.createMarkerFromKeyboardIntent) {
+                dispatch(thunkCreator({}));
+            } else {
+                dispatch(thunkCreator());
+            }
+            return;
+        }
+
+        if (normalizedKey === 'r') {
+            e.preventDefault();
+            const thunkCreator = app.thunks
+                && (app.thunks.createRegionFromMarkersIntent || app.thunks.toggleRegionCreationIntent);
+            if (typeof thunkCreator !== 'function') {
+                console.error('[EventHandler] Missing region creation thunk.');
+                return;
+            }
+
+            if (thunkCreator === app.thunks.createRegionFromMarkersIntent) {
+                dispatch(thunkCreator({}));
+            } else {
+                dispatch(thunkCreator());
+            }
             return;
         }
 
@@ -372,14 +432,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         if (e.ctrlKey || e.altKey) { //todo: move key modifiers to config and provide user help tips
             e.preventDefault();
-            const thunkCreator = app.thunks && app.thunks.resizeSelectedRegionIntent;
-            const dispatch = app.store && app.store.dispatch;
-            if (typeof thunkCreator !== 'function') {
-                console.error('[EventHandler] Missing resizeSelectedRegionIntent thunk.');
+
+            const markerSelectors = app.features?.markers?.selectors || {};
+            const state = typeof getState === 'function' ? getState() : null;
+            const selectedMarker = state && typeof markerSelectors.selectSelectedMarker === 'function'
+                ? markerSelectors.selectSelectedMarker(state)
+                : null;
+
+            if (e.ctrlKey && selectedMarker) {
+                const markerThunk = app.thunks && app.thunks.nudgeSelectedMarkerIntent;
+                if (typeof markerThunk !== 'function') {
+                    console.error('[EventHandler] Missing nudgeSelectedMarkerIntent thunk.');
+                    return;
+                }
+                dispatch(markerThunk({ key: e.key }));
                 return;
             }
-            if (typeof dispatch !== 'function') {
-                console.error('[EventHandler] Store is not available for dispatch.');
+
+            const regionThunk = app.thunks && app.thunks.resizeSelectedRegionIntent;
+            if (typeof regionThunk !== 'function') {
+                console.error('[EventHandler] Missing resizeSelectedRegionIntent thunk.');
                 return;
             }
 
@@ -391,7 +463,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 modifiers.alt = true;
             }
 
-            dispatch(thunkCreator({
+            dispatch(regionThunk({
                 key: e.key,
                 modifiers
             }));
@@ -400,18 +472,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         e.preventDefault();
         const thunkCreator = app.thunks && app.thunks.nudgeTapLineIntent;
-        const dispatch = app.store && app.store.dispatch;
         if (typeof thunkCreator !== 'function') {
             console.error('[EventHandler] Missing nudgeTapLineIntent thunk.');
-            return;
-        }
-        if (typeof dispatch !== 'function') {
-            console.error('[EventHandler] Store is not available for dispatch.');
             return;
         }
 
         dispatch(thunkCreator({ key: e.key }));
     }
+
 
 
 

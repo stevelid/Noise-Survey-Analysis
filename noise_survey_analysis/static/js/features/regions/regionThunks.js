@@ -30,6 +30,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const viewSelectors = app.features?.view?.selectors || {};
     const regionSelectors = app.features?.regions?.selectors || {};
+    const markerSelectors = app.features?.markers?.selectors || {};
 
     function collectTimestampsFromSource(source) {
         const data = source?.data;
@@ -216,6 +217,78 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    /**
+     * Creates a region using the two most recent markers. This mirrors the
+     * manual workflow where analysts drop start and end markers and then press
+     * the dedicated shortcut to convert them into a full region selection.
+     *
+     * @param {Object} [payload] - Optional overrides.
+     * @param {string} [payload.positionId] - Explicit position to associate with the new region.
+     * @returns {Function} Thunk function for dispatch.
+     */
+    function createRegionFromMarkersIntent(payload = {}) {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') {
+                return;
+            }
+
+            const state = getState();
+            const markers = typeof markerSelectors.selectAllMarkers === 'function'
+                ? markerSelectors.selectAllMarkers(state)
+                : [];
+
+            if (!Array.isArray(markers) || markers.length < 2) {
+                return;
+            }
+
+            const sortedMarkers = markers
+                .map(marker => marker)
+                .filter(marker => Number.isFinite(marker?.timestamp))
+                .sort((a, b) => a.timestamp - b.timestamp);
+
+            if (sortedMarkers.length < 2) {
+                return;
+            }
+
+            const last = sortedMarkers[sortedMarkers.length - 1];
+            const previous = sortedMarkers[sortedMarkers.length - 2];
+            const start = Number(previous.timestamp);
+            const end = Number(last.timestamp);
+
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) {
+                return;
+            }
+
+            let positionId = payload.positionId;
+            if (!positionId) {
+                const tapPosition = state?.interaction?.tap?.position;
+                if (tapPosition) {
+                    positionId = tapPosition;
+                }
+            }
+            if (!positionId) {
+                const availablePositions = Array.isArray(state?.view?.availablePositions)
+                    ? state.view.availablePositions
+                    : [];
+                if (availablePositions.length) {
+                    positionId = availablePositions[0];
+                }
+            }
+            if (!positionId) {
+                const fallbackKeys = state?.view?.positionChartOffsets
+                    ? Object.keys(state.view.positionChartOffsets)
+                    : [];
+                positionId = fallbackKeys[0];
+            }
+
+            if (!positionId) {
+                return;
+            }
+
+            dispatch(actions.regionAdd(positionId, start, end));
+        };
+    }
+
     function createRegionIntent(payload) {
         return function (dispatch, getState) {
             if (!actions) return;
@@ -328,6 +401,46 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    function toggleRegionCreationIntent() {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') {
+                return;
+            }
+
+            const state = getState();
+            const tapState = state?.interaction?.tap;
+            if (!tapState?.isActive || !Number.isFinite(tapState.timestamp) || !tapState.position) {
+                return;
+            }
+
+            const pending = state?.interaction?.pendingRegionStart;
+            if (!pending || pending.positionId !== tapState.position) {
+                dispatch(actions.regionCreationStarted({
+                    timestamp: tapState.timestamp,
+                    positionId: tapState.position
+                }));
+                return;
+            }
+
+            const start = Number(pending.timestamp);
+            const end = Number(tapState.timestamp);
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) {
+                dispatch(actions.regionCreationCancelled());
+                return;
+            }
+
+            const normalizedStart = Math.min(start, end);
+            const normalizedEnd = Math.max(start, end);
+            if (Math.abs(normalizedEnd - normalizedStart) < MIN_REGION_WIDTH_MS) {
+                dispatch(actions.regionCreationCancelled());
+                return;
+            }
+
+            dispatch(actions.regionAdd(pending.positionId, normalizedStart, normalizedEnd));
+            dispatch(actions.regionCreationCancelled());
+        };
+    }
+
     function resizeSelectedRegionIntent(payload) {
         return function (dispatch, getState) {
             if (!actions || typeof getState !== 'function') return;
@@ -403,8 +516,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         createRegionsFromComparisonIntent,
         createRegionIntent,
         createAutoRegionsIntent,
+        createRegionFromMarkersIntent,
         mergeRegionIntoSelectedIntent,
-        resizeSelectedRegionIntent
+        resizeSelectedRegionIntent,
+        toggleRegionCreationIntent
     };
 })(window.NoiseSurveyApp);
 

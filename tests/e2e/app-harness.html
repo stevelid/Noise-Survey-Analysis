@@ -18,6 +18,10 @@
         justify-content: center;
       }
 
+      [hidden] {
+        display: none !important;
+      }
+
       .harness-root {
         width: min(960px, 100%);
         display: flex;
@@ -208,6 +212,74 @@
         font-size: 0.85rem;
         color: #475569;
       }
+
+      .annotation-tabs {
+        display: flex;
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      .annotation-tabs .tab-button {
+        padding: 8px 16px;
+        border-radius: 999px;
+        border: 1px solid #cbd5f5;
+        background: #e2e8f0;
+        color: #1e3a8a;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .annotation-tabs .tab-button.active {
+        background: #1d4ed8;
+        color: #fff;
+        box-shadow: 0 4px 12px rgba(29, 78, 216, 0.3);
+      }
+
+      .markers-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .markers-panel h2 {
+        margin: 0;
+        font-size: 1.2rem;
+        color: #0f172a;
+      }
+
+      .marker-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .marker-entry {
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: #fff;
+        box-shadow: 0 1px 2px rgba(148, 163, 184, 0.15);
+        cursor: pointer;
+      }
+
+      .marker-entry.selected {
+        border-color: #f59e0b;
+        background: #fef3c7;
+      }
+
+      .marker-empty {
+        font-style: italic;
+        color: #64748b;
+      }
+
+      .marker-detail {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 0.95rem;
+      }
     </style>
   </head>
   <body>
@@ -217,6 +289,8 @@
         <p class="keyboard-hint">
           Hold <strong>Shift</strong> and drag on the chart to create a region. Click inside a
           region to select it. Use <strong>Ctrl + Click</strong> to remove a region.
+          Press <strong>M</strong> to drop a marker at the active tap and <strong>R</strong> to
+          convert the latest markers into a region.
         </p>
       </header>
 
@@ -259,11 +333,24 @@
         </div>
       </section>
 
+      <nav class="annotation-tabs" data-testid="annotation-tabs">
+        <button type="button" class="tab-button active" data-testid="tab-regions" data-tab="regions">Regions</button>
+        <button type="button" class="tab-button" data-testid="tab-markers" data-tab="markers">Markers</button>
+      </nav>
+
       <section class="regions-panel">
         <h2>Regions (<span data-testid="region-count">0</span>)</h2>
         <div class="region-list" data-testid="region-list">
           <div class="region-empty">No regions defined</div>
         </div>
+      </section>
+
+      <section class="markers-panel" data-testid="markers-panel" hidden>
+        <h2>Markers (<span data-testid="marker-count">0</span>)</h2>
+        <div class="marker-list" data-testid="marker-list">
+          <div class="marker-empty">No markers defined</div>
+        </div>
+        <div class="marker-detail" data-testid="marker-detail">No marker selected</div>
       </section>
     </main>
 
@@ -273,6 +360,7 @@
     <script src="../../noise_survey_analysis/static/js/features/interaction/interactionReducer.js"></script>
     <script src="../../noise_survey_analysis/static/js/features/markers/markersReducer.js"></script>
     <script src="../../noise_survey_analysis/static/js/features/markers/markersSelectors.js"></script>
+    <script src="../../noise_survey_analysis/static/js/features/markers/markersThunks.js"></script>
     <script src="../../noise_survey_analysis/static/js/features/regions/regionReducer.js"></script>
     <script src="../../noise_survey_analysis/static/js/features/regions/regionSelectors.js"></script>
     <script src="../../noise_survey_analysis/static/js/features/regions/regionUtils.js"></script>

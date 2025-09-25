@@ -2,7 +2,7 @@ import logging
 from bokeh.plotting import curdoc
 from bokeh.layouts import column, row, LayoutDOM # Ensure column is imported
 from bokeh.models import Div, ColumnDataSource, CustomJS, Button # Import for assertions and error messages
-from bokeh.models import Panel, Tabs, TabPanel
+from bokeh.models import Panel
 import pandas as pd
 import numpy as np  # Import numpy for array operations
 import os
@@ -29,7 +29,9 @@ from noise_survey_analysis.ui.components import (
     SummaryTableComponent,
     ComparisonPanelComponent,
     create_audio_controls_for_position,
-    RegionPanelComponent
+    RegionPanelComponent,
+    MarkerPanelComponent,
+    SidePanelComponent,
 )
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
@@ -151,8 +153,12 @@ class DashBuilder:
         self.shared_components['summary_table'] = SummaryTableComponent(all_positions, ['LAeq', 'LAFmax', 'LAF90'])
 
         region_panel_div = RegionPanelComponent()
+        marker_panel_div = MarkerPanelComponent()
+        side_panel = SidePanelComponent(region_panel_div, marker_panel_div)
 
         self.shared_components['region_panel'] = region_panel_div
+        self.shared_components['marker_panel'] = marker_panel_div
+        self.shared_components['side_panel'] = side_panel
 
         first_position_processed = False
         # Create components for each position found in the data
@@ -288,49 +294,36 @@ class DashBuilder:
             name="main_layout",
         )
 
-        region_panel_layout = column(
-            self.shared_components['region_panel'].layout(),
-            name="region_panel_layout",
-            width=SIDE_PANEL_WIDTH,
-        )
+        region_panel_layout = self.shared_components['region_panel'].layout()
+        region_panel_layout.name = "region_panel_layout"
+        region_panel_layout.visible = True
         self.shared_components['region_panel_layout'] = region_panel_layout
+
+        marker_panel_layout = self.shared_components['marker_panel'].layout()
+        marker_panel_layout.name = "marker_panel_layout"
+        marker_panel_layout.visible = True
+        self.shared_components['marker_panel_layout'] = marker_panel_layout
 
         comparison_panel_layout = self.shared_components['comparison_panel'].layout()
         comparison_panel_layout.visible = False
+        comparison_panel_layout.name = "comparison_panel_layout"
         self.shared_components['comparison_panel_layout'] = comparison_panel_layout
 
-        side_panel_tabs = Tabs(
-            tabs=[
-                TabPanel(child=region_panel_layout, title="Regions"),
-                TabPanel(child=comparison_panel_layout, title="Comparison"),
-            ],
-            name="side_panel_tabs",
+        side_panel_tabs = self.shared_components['side_panel'].layout()
+        side_panel_tabs.visible = True
+        self.shared_components['side_panel_tabs'] = side_panel_tabs
+
+        side_panel_container = column(
+            side_panel_tabs,
+            comparison_panel_layout,
+            name="side_panel_container",
             width=SIDE_PANEL_WIDTH + 32,
         )
-
-        side_panel_tabs.js_on_change(
-            "active",
-            CustomJS(
-                code="""
-                    const activeIndex = cb_obj.active ?? 0;
-                    const store = window.NoiseSurveyApp?.store;
-                    const thunks = window.NoiseSurveyApp?.thunks;
-                    if (typeof store?.dispatch !== 'function' || typeof thunks?.handleTabSwitchIntent !== 'function') {
-                        return;
-                    }
-                    store.dispatch(thunks.handleTabSwitchIntent({ newIndex: activeIndex }));
-                """,
-            ),
-        )
-
-        side_panel_tabs.visible = True
-        self.shared_components['region_panel_layout'].visible = True
-
-        self.shared_components['side_panel_tabs'] = side_panel_tabs
+        self.shared_components['side_panel_container'] = side_panel_container
 
         final_layout = row(
             main_layout,
-            side_panel_tabs,
+            side_panel_container,
             name="root_layout",
         )
 
@@ -350,6 +343,7 @@ class DashBuilder:
                 'features/interaction/interactionReducer.js',
                 'features/markers/markersReducer.js',
                 'features/markers/markersSelectors.js',
+                'features/markers/markersThunks.js',
                 'features/regions/regionReducer.js',
                 'features/regions/regionSelectors.js',
                 'features/regions/regionUtils.js',
@@ -370,6 +364,7 @@ class DashBuilder:
                 'chart-classes.js',   # Defines Chart classes, needed by registry
                 'registry.js',        # Defines the model/controller registry
                 'data-processors.js', # (No hard dependencies on others)
+                'services/markers/markerPanelRenderer.js',
                 'services/regions/regionPanelRenderer.js',
                 'services/renderers.js',
                 'services/session/sessionManager.js',
@@ -468,8 +463,10 @@ class DashBuilder:
             'components': {},
             'frequencyBarLayout': self.shared_components.get('freq_bar_layout'),
             'regionPanelLayout': self.shared_components.get('region_panel_layout'),
+            'markerPanelLayout': self.shared_components.get('marker_panel_layout'),
             'comparisonPanelLayout': self.shared_components.get('comparison_panel_layout'),
             'sidePanelTabs': self.shared_components.get('side_panel_tabs'),
+            'sidePanelContainer': self.shared_components.get('side_panel_container'),
             'comparisonPositionSelector': self.shared_components['comparison_panel'].position_selector,
             'comparisonPositionIds': self.shared_components['comparison_panel'].position_ids,
             'comparisonFinishButton': self.shared_components['comparison_panel'].finish_button,
@@ -500,6 +497,18 @@ class DashBuilder:
             'regionVisibilityToggle': self.shared_components['region_panel'].visibility_toggle,
             'regionAutoDayButton': self.shared_components['region_panel'].auto_day_button,
             'regionAutoNightButton': self.shared_components['region_panel'].auto_night_button,
+            'markerPanelDiv': self.shared_components['marker_panel'].container,
+            'markerPanelSource': self.shared_components['marker_panel'].marker_source,
+            'markerPanelTable': self.shared_components['marker_panel'].marker_table,
+            'markerPanelMessageDiv': self.shared_components['marker_panel'].message_div,
+            'markerPanelDetail': self.shared_components['marker_panel'].detail_layout,
+            'markerPanelColorPicker': self.shared_components['marker_panel'].color_picker,
+            'markerPanelNoteInput': self.shared_components['marker_panel'].note_input,
+            'markerPanelMetricsDiv': self.shared_components['marker_panel'].metrics_div,
+            'markerPanelCopyButton': self.shared_components['marker_panel'].copy_button,
+            'markerPanelDeleteButton': self.shared_components['marker_panel'].delete_button,
+            'markerPanelAddAtTapButton': self.shared_components['marker_panel'].add_at_tap_button,
+            'markerVisibilityToggle': self.shared_components['marker_panel'].visibility_toggle,
         }
 
         # Populate position-specific models

@@ -14,7 +14,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         tap: { isActive: false, timestamp: null, position: null, sourceChartName: null },
         hover: { isActive: false, timestamp: null, position: null, sourceChartName: null, spec_y: null },
         keyboard: { enabled: false, stepSizeMs: 300000 },
-        activeDragTool: 'pan'
+        activeDragTool: 'pan',
+        pendingRegionStart: null
     };
 
     function clamp(value, min, max) {
@@ -96,6 +97,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 };
             }
+
+            case actionTypes.REGION_CREATION_STARTED: {
+                const timestamp = Number(action.payload?.timestamp);
+                const positionId = action.payload?.positionId || null;
+                if (!Number.isFinite(timestamp) || !positionId) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    pendingRegionStart: { timestamp, positionId }
+                };
+            }
+
+            case actionTypes.REGION_CREATION_CANCELLED:
+                if (state.pendingRegionStart === null) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    pendingRegionStart: null
+                };
 
             default:
                 return state;

@@ -126,35 +126,42 @@ Here is an example of the `v1.2` format:
 
 ## Working with Markers and Regions
 
-The dashboard provides two complementary annotation tools that make it easy to flag interesting timestamps and build longer analysis windows.
 
-### Markers
+The dashboard provides two complementary annotation tools. Markers flag individual timestamps while regions capture spans that
+drive the metrics sidebar.
 
-*   **Drop a marker** with a quick double-click on any time-based chart. A persistent vertical line appears at that timestamp across linked views.
-*   **Remove a marker** by Ctrl+clicking near it. The app automatically removes the closest marker within the current viewport so you do not need pixel-perfect precision.
-*   **Clear all markers** from the toolbar button in the Region & Marker panel when you want to start from a clean slate.
+### Marker workflow
 
-Markers are lightweight breadcrumbs—ideal for marking complaints, audio cues, or other single-moment references that you might revisit later in the session.
+- **Drop a marker** with a quick double-click on any time-based chart. A persistent vertical line appears at that timestamp across linked views.
+- **Press `M`** to drop a marker at the current tap timestamp. Without an active tap, the keyboard intent centres on the viewport and preserves optional note or colour payloads.
+- **Remove a marker** by Ctrl+clicking near it. The thunk removes the closest marker within the current viewport so pixel-perfect clicks are unnecessary.
+- **Fine-tune a marker** with Ctrl + Left/Right. When a marker is selected, these shortcuts nudge it using the current keyboard step size so you can align it precisely with an event.
+- **Clear all markers** from the Region & Marker toolbar when you want to start from a clean slate.
+- **Share context:** Use the marker panel (or the `markerUpdate` actions) to capture notes and colours. `markerUtils.formatMarkersCsv` and `markerUtils.parseMarkersCsv` export and restore annotations for reporting workflows.
 
-### Regions
 
-Regions capture continuous time spans and power the metrics sidebar.
 
-*   **Create a region** by holding **Shift** and dragging horizontally on a timeseries or spectrogram. A blue band appears on every chart for that position.
-*   **Select a region** either by clicking the band on the chart or choosing it from the region list. Only one region is active at a time, and the active selection drives the metrics panel.
-*   **Refine bounds** using **Shift + ←/→** to move the right edge and **Alt + ←/→** to move the left edge in ~3 s increments. Drag handles on the charts also respond to direct manipulation.
-*   **Add more areas** to the active region with the **Add Area** button in the panel. Each new Shift+drag becomes an additional segment and metrics update for the combined duration. Toggle the button again to exit the add-area mode.
-*   **Merge related regions** by selecting a source region, clicking **Merge Regions**, and choosing the destination. The panel walks you through the process and keeps a full audit trail in the Notes field.
-*   **Delete segments or entire regions** with **Ctrl+click** (removes the hit segment, or the whole region if there is only one) or by using the Delete button in the panel list.
-*   **Capture notes and metrics** in the detail view. LAeq, LAFmax, LAF90, and the Average Spectrum chart all update instantly when you adjust bounds.
+### Region workflow
 
-Tip: Regions are stored per position, so you can maintain independent annotations for each measurement site without cross-contamination.
+- **Create:** Hold Shift and drag horizontally on a timeseries or spectrogram. Alternatively, press `R` to convert the two most recent markers into a new region on the active position.
+- **Select:** Click the overlay or choose a region in the side panel; only one region is active at a time and it drives the metrics view.
+- **Refine:** Use Shift + Left/Right to move the right edge and Alt + Left/Right to move the left edge in roughly three-second increments. Drag handles respond to direct manipulation.
+- **Add more areas:** Enable Add Area in the panel to stitch additional Shift+drag selections into the active region; toggle it again to exit.
+- **Merge related regions:** Select the source region, click Merge Regions, and choose the destination. Notes capture the merge history automatically.
+- **Delete:** Hold Ctrl and click within a segment (or use the panel controls) to remove it. Metrics, clipboard summaries, and average spectrum visualisations refresh automatically.
+- **Capture notes and metrics:** The detail view refreshes LAeq, LAFmax, LAF90, and the Average Spectrum every time bounds change.
+
+Tip: Markers and regions are stored per position, so you can maintain independent annotations for each measurement site without cross-contamination.
+
+
 
 ## Importing, Exporting, and Restoring Your Work
 
-### Region files
+### Annotation CSV files
 
-Use the **Menu ▸ Export Regions** command to download a JSON file that contains every region’s bounds, notes, and the latest metric snapshot. **Menu ▸ Import Regions** rebuilds those regions in the current session and re-computes metrics against the newly loaded data so results stay consistent even if the underlying dataset has changed.
+Use the **Menu ▸ Export Annotations (CSV)** command to download a spreadsheet-friendly file containing every marker and region in the current session. The export includes the columns `type`, `id`, `positionId`, `start_utc`, `end_utc`, `note`, and `color`. Marker rows leave `end_utc` empty and record the marker timestamp in `start_utc`. All timestamps are written in UTC using the Excel-ready format `YYYY-MM-DD HH:mm:ss.sss`.
+
+Choose **Menu ▸ Import Annotations (CSV)** to restore annotations captured in the same format. The importer treats all timestamps as UTC milliseconds, rebuilds region areas, and preserves notes and colours before replacing the in-memory marker and region lists. This keeps annotations portable between workspaces and makes it easy to share review notes with collaborators.
 
 ### Workspace saves
 
@@ -260,4 +267,5 @@ The front-end interactivity is managed by a self-contained JavaScript applicatio
 *   **services/renderers.js** consumes the latest state plus derived data to update the visible Bokeh models.
 
 This pattern keeps the code organized, predictable, and easier to debug and extend.
+
 

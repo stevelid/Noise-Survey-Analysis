@@ -53,6 +53,17 @@ describe('rootReducer', () => {
             const state = rootReducer(initialState, actions.dragToolChanged('box_select'));
             expect(state.interaction.activeDragTool).toBe('box_select');
         });
+
+        it('should record pending region start when creation begins', () => {
+            const state = rootReducer(initialState, actions.regionCreationStarted({ timestamp: 2500, positionId: 'P1' }));
+            expect(state.interaction.pendingRegionStart).toEqual({ timestamp: 2500, positionId: 'P1' });
+        });
+
+        it('should clear pending region start on cancellation', () => {
+            const baseState = rootReducer(initialState, actions.regionCreationStarted({ timestamp: 4000, positionId: 'P2' }));
+            const state = rootReducer(baseState, actions.regionCreationCancelled());
+            expect(state.interaction.pendingRegionStart).toBeNull();
+        });
     });
 
     describe('View Actions', () => {
@@ -178,22 +189,46 @@ describe('rootReducer', () => {
     });
 
     describe('Marker Actions', () => {
-        it('should handle ADD_MARKER action', () => {
-            const state = rootReducer(initialState, actions.addMarker(12345));
-            expect(state.markers.timestamps).toEqual([12345]);
+        it('should add a marker and select it', () => {
+            const state = rootReducer(initialState, actions.markerAdd(12345));
+            expect(state.markers.allIds).toEqual([1]);
+            expect(state.markers.byId[1].timestamp).toBe(12345);
+            expect(state.markers.selectedId).toBe(1);
+            expect(state.markers.byId[1].color).toBe('#fdd835');
         });
 
-        it('should handle REMOVE_MARKER action', () => {
-            let state = rootReducer(initialState, actions.addMarker(12345));
-            state = rootReducer(state, actions.removeMarker(12340)); // Click near the marker
-            expect(state.markers.timestamps).toEqual([]);
+        it('should remove a marker by id', () => {
+            let state = rootReducer(initialState, actions.markerAdd(12345));
+            state = rootReducer(state, actions.markerRemove(1));
+            expect(state.markers.allIds).toHaveLength(0);
+            expect(state.markers.byId[1]).toBeUndefined();
         });
 
-        it('should handle CLEAR_ALL_MARKERS action', () => {
-            let state = rootReducer(initialState, actions.addMarker(100));
-            state = rootReducer(state, actions.addMarker(200));
-            state = rootReducer(state, actions.clearAllMarkers());
-            expect(state.markers.timestamps).toEqual([]);
+        it('should replace markers with a provided list', () => {
+            let state = rootReducer(initialState, actions.markerAdd(100));
+            state = rootReducer(state, actions.markerAdd(200));
+            state = rootReducer(state, actions.markersReplace([{ id: 10, timestamp: 300 }]));
+            expect(state.markers.allIds).toEqual([10]);
+            expect(state.markers.byId[10].timestamp).toBe(300);
+            expect(state.markers.enabled).toBe(true);
+        });
+
+        it('should set metrics payload on markerSetMetrics', () => {
+            let state = rootReducer(initialState, actions.markerAdd(500));
+            const metrics = {
+                timestamp: 500,
+                parameter: 'LZeq',
+                broadband: [{ positionId: 'P1', value: 42.1 }]
+            };
+            state = rootReducer(state, actions.markerSetMetrics(1, metrics));
+            expect(state.markers.byId[1].metrics).toEqual(metrics);
+        });
+
+        it('should update note and color via markerUpdate', () => {
+            let state = rootReducer(initialState, actions.markerAdd(700));
+            state = rootReducer(state, actions.markerUpdate(1, { note: 'important', color: '#abcdef' }));
+            expect(state.markers.byId[1].note).toBe('important');
+            expect(state.markers.byId[1].color).toBe('#abcdef');
         });
     });
 
