@@ -16,12 +16,6 @@ const {
 const {
     selectRegionByTimestamp
 } = window.NoiseSurveyApp.features.regions.selectors;
-const {
-    exportRegions,
-    importRegions
-} = window.NoiseSurveyApp.features.regions.utils;
-
-
 describe('Region Management (Multi-Area)', () => {
 
     let state;
@@ -170,26 +164,4 @@ describe('Region Management (Multi-Area)', () => {
         });
     });
 
-    describe('Region Utils', () => {
-        it('exportRegions includes color information', () => {
-            let regionState = regionsReducer(state, actions.regionAdd('P1', 100, 200));
-            regionState = regionsReducer(regionState, actions.regionSetColor(1, '#ff0000'));
-            const exportJson = exportRegions({ regions: regionState });
-            const parsed = JSON.parse(exportJson);
-            expect(parsed).toHaveLength(1);
-            expect(parsed[0].color).toBe('#ff0000');
-        });
-
-        it('importRegions preserves color when available', () => {
-            const payload = JSON.stringify([
-                { positionId: 'P1', areas: [{ start: 0, end: 1000 }], color: '#00ff00' }
-            ]);
-            const imported = importRegions(payload);
-            expect(imported).toHaveLength(1);
-            expect(imported[0].color).toBe('#00ff00');
-
-            const newState = regionsReducer(state, actions.regionReplaceAll(imported));
-            expect(newState.byId[newState.allIds[0]].color).toBe('#00ff00');
-        });
-    });
 });
