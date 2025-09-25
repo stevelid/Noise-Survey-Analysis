@@ -343,6 +343,7 @@ class DashBuilder:
                 'features/interaction/interactionReducer.js',
                 'features/markers/markersReducer.js',
                 'features/markers/markersSelectors.js',
+                'features/markers/markersThunks.js',
                 'features/regions/regionReducer.js',
                 'features/regions/regionSelectors.js',
                 'features/regions/regionUtils.js',
