@@ -131,8 +131,10 @@ The dashboard provides two complementary annotation tools that make it easy to f
 ### Markers
 
 *   **Drop a marker** with a quick double-click on any time-based chart. A persistent vertical line appears at that timestamp across linked views.
+*   **Press `M`** to instantly drop a marker at the current tap-line position without touching the mouse. This is ideal when you are scrubbing through a survey with the keyboard.
 *   **Remove a marker** by Ctrl+clicking near it. The app automatically removes the closest marker within the current viewport so you do not need pixel-perfect precision.
 *   **Clear all markers** from the toolbar button in the Region & Marker panel when you want to start from a clean slate.
+*   **Fine-tune a marker** with **Ctrl + ←/→**. When a marker is selected, these shortcuts nudge it forward or backward using the current keyboard step size so you can align it precisely with an event.
 
 Markers are lightweight breadcrumbs—ideal for marking complaints, audio cues, or other single-moment references that you might revisit later in the session.
 
@@ -141,6 +143,7 @@ Markers are lightweight breadcrumbs—ideal for marking complaints, audio cues, 
 Regions capture continuous time spans and power the metrics sidebar.
 
 *   **Create a region** by holding **Shift** and dragging horizontally on a timeseries or spectrogram. A blue band appears on every chart for that position.
+*   **Or build a region from the keyboard:** tap once to place the cursor, press **`R`** to lock the start time, then move the tap line and press **`R`** again to set the end. A banner in the Region panel reminds you when a start time is armed, and **`Esc`** cancels the pending region if you change your mind.
 *   **Select a region** either by clicking the band on the chart or choosing it from the region list. Only one region is active at a time, and the active selection drives the metrics panel.
 *   **Refine bounds** using **Shift + ←/→** to move the right edge and **Alt + ←/→** to move the left edge in ~3 s increments. Drag handles on the charts also respond to direct manipulation.
 *   **Add more areas** to the active region with the **Add Area** button in the panel. Each new Shift+drag becomes an additional segment and metrics update for the combined duration. Toggle the button again to exit the add-area mode.

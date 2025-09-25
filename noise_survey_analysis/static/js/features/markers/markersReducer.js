@@ -69,6 +69,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         });
     }
 
+    function normalizePositionId(positionId) {
+        if (typeof positionId === 'string') {
+            const trimmed = positionId.trim();
+            if (trimmed) {
+                return trimmed;
+            }
+        }
+        return null;
+    }
+
     function addMarker(state, payload) {
         const timestamp = Number(payload?.timestamp);
         if (!Number.isFinite(timestamp)) {
@@ -84,7 +94,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             timestamp,
             note: normalizeNote(payload?.note),
             color: normalizeColor(payload?.color),
-            metrics: cloneMetrics(payload?.metrics)
+            metrics: cloneMetrics(payload?.metrics),
+            positionId: normalizePositionId(payload?.positionId)
         };
 
         const nextById = { ...state.byId, [id]: marker };
@@ -162,6 +173,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 mutated = true;
             }
             delete updates.color;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(updates, 'positionId')) {
+            const positionId = normalizePositionId(updates.positionId);
+            if (positionId !== existing.positionId) {
+                nextMarker.positionId = positionId;
+                mutated = true;
+            }
+            delete updates.positionId;
         }
 
         if (Object.prototype.hasOwnProperty.call(updates, 'metrics')) {
@@ -244,7 +264,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 timestamp,
                 note: normalizeNote(rawMarker?.note),
                 color: normalizeColor(rawMarker?.color),
-                metrics: cloneMetrics(rawMarker?.metrics)
+                metrics: cloneMetrics(rawMarker?.metrics),
+                positionId: normalizePositionId(rawMarker?.positionId)
             };
             nextById[id] = marker;
             nextAllIds.push(id);
