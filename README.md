@@ -124,6 +124,53 @@ Here is an example of the `v1.2` format:
 *   `"position"`: The name for the measurement position that appears in the dashboard.
 *   `"parser_type"`: The specific parser to use (`svan`, `nti`, `sentry`, `audio`, or `auto`).
 
+## Working with Markers and Regions
+
+The dashboard provides two complementary annotation tools that make it easy to flag interesting timestamps and build longer analysis windows.
+
+### Markers
+
+*   **Drop a marker** with a quick double-click on any time-based chart. A persistent vertical line appears at that timestamp across linked views.
+*   **Remove a marker** by Ctrl+clicking near it. The app automatically removes the closest marker within the current viewport so you do not need pixel-perfect precision.
+*   **Clear all markers** from the toolbar button in the Region & Marker panel when you want to start from a clean slate.
+
+Markers are lightweight breadcrumbs—ideal for marking complaints, audio cues, or other single-moment references that you might revisit later in the session.
+
+### Regions
+
+Regions capture continuous time spans and power the metrics sidebar.
+
+*   **Create a region** by holding **Shift** and dragging horizontally on a timeseries or spectrogram. A blue band appears on every chart for that position.
+*   **Select a region** either by clicking the band on the chart or choosing it from the region list. Only one region is active at a time, and the active selection drives the metrics panel.
+*   **Refine bounds** using **Shift + ←/→** to move the right edge and **Alt + ←/→** to move the left edge in ~3 s increments. Drag handles on the charts also respond to direct manipulation.
+*   **Add more areas** to the active region with the **Add Area** button in the panel. Each new Shift+drag becomes an additional segment and metrics update for the combined duration. Toggle the button again to exit the add-area mode.
+*   **Merge related regions** by selecting a source region, clicking **Merge Regions**, and choosing the destination. The panel walks you through the process and keeps a full audit trail in the Notes field.
+*   **Delete segments or entire regions** with **Ctrl+click** (removes the hit segment, or the whole region if there is only one) or by using the Delete button in the panel list.
+*   **Capture notes and metrics** in the detail view. LAeq, LAFmax, LAF90, and the Average Spectrum chart all update instantly when you adjust bounds.
+
+Tip: Regions are stored per position, so you can maintain independent annotations for each measurement site without cross-contamination.
+
+## Importing, Exporting, and Restoring Your Work
+
+### Region files
+
+Use the **Menu ▸ Export Regions** command to download a JSON file that contains every region’s bounds, notes, and the latest metric snapshot. **Menu ▸ Import Regions** rebuilds those regions in the current session and re-computes metrics against the newly loaded data so results stay consistent even if the underlying dataset has changed.
+
+### Workspace saves
+
+The **Menu ▸ Save Workspace** option captures the full Redux-style UI state—marker lists, active parameters, selected regions, viewport, and more—along with the set of source configurations currently in memory. The downloaded `workspace-*.json` file can be re-applied later in two ways:
+
+1. **During an active session:** choose **Menu ▸ Load Workspace** and pick the JSON file. The interface is rehydrated immediately; if the save references different source files than the data you currently have loaded, the application warns you so you can reload matching data before continuing.
+2. **When launching the server:** provide the saved workspace when starting Bokeh to arrive at the same layout automatically. For example:
+
+    ```bash
+    bokeh serve noise_survey_analysis --show --args \
+        --config /path/to/config.json \
+        --state  /path/to/workspace-2024-01-01T12-00-00.json
+    ```
+
+The workspace loader rehydrates the UI while the `--config` argument points to the data to load. If you only need to restore layout choices without changing the dataset, you can omit `--config` and load sources from the selector after the workspace applies.
+
 ## Project Structure
 
 ```
