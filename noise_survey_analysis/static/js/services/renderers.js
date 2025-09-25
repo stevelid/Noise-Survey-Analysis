@@ -665,7 +665,34 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!models || !controllers) return;
 
         const { isPlaying, activePositionId, playbackRate, volumeBoost } = state.audio;
-        const chartVisibility = state?.view?.chartVisibility || {};
+        const viewState = state?.view || {};
+        const chartVisibility = viewState.chartVisibility || {};
+        const availablePositions = Array.isArray(viewState.availablePositions)
+            ? viewState.availablePositions
+            : [];
+        const displayDetails = viewState.displayDetails || {};
+        const selectedParameter = viewState.selectedParameter;
+        const positionChartOffsets = viewState.positionChartOffsets || {};
+        const positionAudioOffsets = viewState.positionAudioOffsets || {};
+        const positionEffectiveOffsets = viewState.positionEffectiveOffsets || {};
+
+        const viewToggleModel = models.viewToggle;
+        if (viewToggleModel) {
+            const isLogActive = viewState.globalViewType === 'log';
+            if (viewToggleModel.active !== isLogActive) {
+                viewToggleModel.active = isLogActive;
+            }
+            viewToggleModel.label = isLogActive ? 'Log View Enabled' : 'Log View Disabled';
+        }
+
+        const hoverToggleModel = models.hoverToggle;
+        if (hoverToggleModel) {
+            const isHoverActive = Boolean(viewState.hoverEnabled);
+            if (hoverToggleModel.active !== isHoverActive) {
+                hoverToggleModel.active = isHoverActive;
+            }
+            hoverToggleModel.label = isHoverActive ? 'Hover Enabled' : 'Hover Disabled';
+        }
         const isChartVisible = chartName => {
             if (!chartName) {
                 return true;
@@ -676,7 +703,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return true;
         };
 
-        state.view.availablePositions.forEach(pos => {
+        availablePositions.forEach(pos => {
             const controller = controllers.positions[pos];
             const controls = models.audio_controls[pos];
             const isThisPositionActive = isPlaying && activePositionId === pos;
@@ -692,13 +719,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (controller && controller.timeSeriesChart) {
                 const tsChart = controller.timeSeriesChart;
                 // Base title comes from the state's displayDetails
-                const baseTitle = `${pos} - Time History${state.view.displayDetails[pos].line.reason}`;
+                const positionDetails = displayDetails[pos] || {};
+                const lineDetails = positionDetails.line || {};
+                const baseTitle = `${pos} - Time History${lineDetails.reason || ''}`;
                 tsChart.model.title.text = isThisPositionActive ? `${baseTitle} (▶ PLAYING)` : baseTitle;
                 tsChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }
             if (controller && controller.spectrogramChart) {
                 const specChart = controller.spectrogramChart;
-                const baseTitle = `${pos} - ${state.view.selectedParameter} Spectrogram${state.view.displayDetails[pos].spec.reason}`;
+                const positionDetails = displayDetails[pos] || {};
+                const specDetails = positionDetails.spec || {};
+                const baseTitle = `${pos} - ${selectedParameter} Spectrogram${specDetails.reason || ''}`;
                 specChart.model.title.text = isThisPositionActive ? `${baseTitle} (▶ PLAYING)` : baseTitle;
                 specChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }
@@ -720,9 +751,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 controls.volumeBoostButton.active = isBoostActiveForThisPos;
                 controls.volumeBoostButton.button_type = isBoostActiveForThisPos ? 'warning' : 'light'; // 'warning' (orange) when active, 'light' (grey) otherwise
 
-                const chartOffsetMs = Number(state.view.positionChartOffsets?.[pos]);
-                const audioOffsetMs = Number(state.view.positionAudioOffsets?.[pos]);
-                const effectiveOffsetMs = Number(state.view.positionEffectiveOffsets?.[pos]);
+                const chartOffsetMs = Number(positionChartOffsets?.[pos]);
+                const audioOffsetMs = Number(positionAudioOffsets?.[pos]);
+                const effectiveOffsetMs = Number(positionEffectiveOffsets?.[pos]);
 
                 if (controls.chartOffsetSpinner) {
                     const offsetSeconds = Number.isFinite(chartOffsetMs) ? Math.round(chartOffsetMs / 100) / 10 : 0;

@@ -241,11 +241,9 @@ class DataManager:
                 continue
 
             for path in file_paths_to_process:
-                self.add_source_file(path, position_name, 
+                self.add_source_file(path, position_name,
                                      parser_type_hint=config.get("parser_type_hint"),
                                      return_all_columns=use_return_all_cols)
-
-            self._post_process_position_data()
 
     def add_source_file(self, file_path: str, position_name: str, 
                         parser_type_hint: Optional[str] = None,
@@ -346,50 +344,6 @@ class DataManager:
                         continue
                     else:
                         print(f"  {pos_data.head()}")
-
-    def _post_process_position_data(self):
-        """
-        After all files are loaded, this method calculates absolute timestamps
-        for audio files by anchoring them to the measurement data.
-        """
-        logger.info("DataManager: Starting post-processing to anchor audio files...")
-        for position_name in self.positions():
-            pos_data = self[position_name]
-
-            # Check if this position has audio and measurement data
-            if not pos_data.has_audio_files or (not pos_data.has_log_totals and not pos_data.has_overview_totals):
-                continue
-
-            logger.info(f"Anchoring audio for position '{position_name}'...")
-
-            # 1. Find the anchor time (the earliest measurement timestamp)
-            anchor_time = pd.Timestamp.max.tz_localize('UTC') # Start with a very large value
-            if pos_data.has_log_totals:
-                anchor_time = min(anchor_time, pos_data.log_totals['Datetime'].min())
-            if pos_data.has_overview_totals:
-                anchor_time = min(anchor_time, pos_data.overview_totals['Datetime'].min())
-
-            if anchor_time == pd.Timestamp.max.tz_localize('UTC'):
-                logger.warning(f"Could not find an anchor time for position '{position_name}'. Skipping audio anchoring.")
-                continue
-            
-            logger.info(f"Found anchor time for '{position_name}': {anchor_time}")
-
-            # 2. Calculate the absolute timestamp for each audio file
-            audio_df = pos_data.audio_files_list
-            timestamps = []
-            current_time = anchor_time
-            
-            for _, row in audio_df.iterrows():
-                timestamps.append(current_time)
-                duration_seconds = row['duration_sec']
-                current_time += pd.to_timedelta(duration_seconds, unit='s')
-            
-            # 3. Add the new 'Datetime' column to the audio DataFrame
-            audio_df['Datetime'] = timestamps
-            pos_data.audio_files_list = audio_df # Update the DataFrame in the PositionData object
-
-            logger.info(f"Successfully anchored {len(audio_df)} audio files for '{position_name}'.")
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

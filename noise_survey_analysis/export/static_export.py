@@ -10,6 +10,7 @@ from bokeh.resources import CDN, INLINE
 
 from noise_survey_analysis.core.app_setup import load_config_and_prepare_sources
 from noise_survey_analysis.core.data_manager import DataManager
+from noise_survey_analysis.core.audio_processor import AudioDataProcessor
 from noise_survey_analysis.core.config import CHART_SETTINGS
 from noise_survey_analysis.visualization.dashBuilder import DashBuilder
 
@@ -57,6 +58,7 @@ def generate_static_html(config_path: str, resources: str = "CDN") -> Optional[P
 
         # 1. Load Data
         app_data = DataManager(source_configurations=source_configs)
+        AudioDataProcessor().anchor_audio_files(app_data)
 
         # 2. Instantiate builder (no audio for static version)
         dash_builder = DashBuilder(audio_control_source=None, audio_status_source=None)

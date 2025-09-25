@@ -17,6 +17,7 @@ sys.path.insert(0, str(project_root))
 
 from noise_survey_analysis.core.config import CHART_SETTINGS
 from noise_survey_analysis.core.data_manager import DataManager
+from noise_survey_analysis.core.audio_processor import AudioDataProcessor
 from noise_survey_analysis.core.app_setup import load_config_and_prepare_sources
 from noise_survey_analysis.core.utils import find_lowest_common_folder
 from noise_survey_analysis.core.config_io import save_config_from_selected_sources
@@ -116,6 +117,8 @@ def create_app(doc, config_path=None, state_path=None):
         def build_dashboard():
             nonlocal initial_saved_workspace_state
             app_data = DataManager(source_configurations=source_configs)
+            audio_processor = AudioDataProcessor()
+            audio_processor.anchor_audio_files(app_data)
             audio_handler = AudioPlaybackHandler(position_data=app_data.get_all_position_data())
             audio_control_source = ColumnDataSource(data={'command': [], 'position_id': [], 'value': []}, name='audio_control_source')
             audio_status_source = ColumnDataSource(data={'is_playing': [False], 'current_time': [0], 'playback_rate': [1.0], 'current_file_duration': [0], 'current_file_start_time': [0], 'active_position_id': [None], 'volume_boost': [False]}, name='audio_status_source')

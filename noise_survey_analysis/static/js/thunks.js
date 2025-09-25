@@ -11,10 +11,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const regionThunks = app.features?.regions?.thunks || {};
     const interactionThunks = app.features?.interaction?.thunks || {};
     const audioThunks = app.features?.audio?.thunks || {};
+    const viewThunks = app.features?.view?.thunks || {};
 
     app.thunks = {
         ...regionThunks,
         ...interactionThunks,
-        ...audioThunks
+        ...audioThunks,
+        ...viewThunks
     };
 })(window.NoiseSurveyApp);
