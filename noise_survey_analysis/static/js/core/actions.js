@@ -49,6 +49,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         MARKER_COLOR_SET: 'markers/markerColorSet',
         MARKER_METRICS_SET: 'markers/markerMetricsSet',
         MARKERS_REPLACED: 'markers/markersReplaced',
+        MARKERS_VISIBILITY_SET: 'markers/visibilitySet',
 
         // Regions
         REGION_ADDED: 'markers/regionAdded',
@@ -159,6 +160,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 enabled: typeof options.enabled === 'boolean' ? options.enabled : undefined,
                 selectedId: Number.isFinite(options.selectedId) ? options.selectedId : undefined
             }
+        }),
+
+        markersVisibilitySet: (enabled) => ({
+            type: actionTypes.MARKERS_VISIBILITY_SET,
+            payload: { enabled: typeof enabled === 'boolean' ? enabled : Boolean(enabled) }
         }),
 
         regionAdd: (positionId, start, end) => ({
