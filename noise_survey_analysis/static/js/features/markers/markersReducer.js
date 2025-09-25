@@ -294,6 +294,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             case actionTypes.MARKERS_REPLACED:
                 return replaceMarkers(state, action.payload);
 
+            case actionTypes.MARKERS_VISIBILITY_SET: {
+                const enabledFlag = action.payload?.enabled;
+                const nextEnabled = typeof enabledFlag === 'boolean'
+                    ? enabledFlag
+                    : Boolean(enabledFlag);
+                return { ...state, enabled: nextEnabled };
+            }
+
             default:
                 return state;
         }
