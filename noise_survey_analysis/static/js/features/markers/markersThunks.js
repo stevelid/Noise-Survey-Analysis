@@ -163,6 +163,79 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    /**
+     * Creates a marker from a keyboard shortcut. The thunk determines the best
+     * timestamp based on the payload, the active tap line, or the centre of the
+     * current viewport.
+     *
+     * @param {Object} [payload] - Optional overrides supplied by the caller.
+     * @param {number} [payload.timestamp] - Explicit timestamp in milliseconds.
+     * @param {string} [payload.note] - Optional note to store with the marker.
+     * @param {string} [payload.color] - Optional colour override.
+     * @returns {Function} Thunk function that can be dispatched.
+     */
+    function createMarkerFromKeyboardIntent(payload = {}) {
+        return function (dispatch, getState) {
+            if (!actions || typeof dispatch !== 'function') {
+                return;
+            }
+
+            const state = typeof getState === 'function' ? getState() : null;
+            const markersState = state?.markers || {};
+            const beforeCount = Array.isArray(markersState.allIds) ? markersState.allIds.length : 0;
+
+            let timestamp = Number(payload.timestamp);
+            const tapState = state?.interaction?.tap;
+            if (!Number.isFinite(timestamp) && tapState?.isActive) {
+                const tapTimestamp = Number(tapState.timestamp);
+                if (Number.isFinite(tapTimestamp)) {
+                    timestamp = tapTimestamp;
+                }
+            }
+            if (!Number.isFinite(timestamp)) {
+                const viewport = typeof viewSelectors.selectViewport === 'function'
+                    ? viewSelectors.selectViewport(state)
+                    : state?.view?.viewport || {};
+                if (Number.isFinite(viewport?.min) && Number.isFinite(viewport?.max)) {
+                    timestamp = Math.round((viewport.min + viewport.max) / 2);
+                }
+            }
+            if (!Number.isFinite(timestamp)) {
+                return;
+            }
+
+            const extras = {};
+            if (typeof payload.note === 'string') {
+                extras.note = payload.note;
+            }
+            if (typeof payload.color === 'string') {
+                extras.color = payload.color;
+            }
+            if (payload.metrics) {
+                extras.metrics = payload.metrics;
+            }
+
+            dispatch(actions.markerAdd(timestamp, extras));
+
+            if (typeof getState !== 'function') {
+                return;
+            }
+
+            const updatedState = getState();
+            const updatedMarkers = updatedState?.markers || {};
+            const afterIds = Array.isArray(updatedMarkers.allIds) ? updatedMarkers.allIds : [];
+
+            if (afterIds.length <= beforeCount) {
+                return;
+            }
+
+            const newMarkerId = updatedMarkers.selectedId;
+            if (Number.isFinite(newMarkerId)) {
+                dispatch(computeMarkerMetricsIntent(newMarkerId));
+            }
+        };
+    }
+
     function nudgeSelectedMarkerIntent(payload) {
         return function (dispatch, getState) {
             if (!actions || typeof getState !== 'function') {
@@ -189,8 +262,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const viewport = typeof viewSelectors.selectViewport === 'function'
                 ? viewSelectors.selectViewport(state)
                 : state?.view?.viewport || {};
-            const viewportMin = Number.isFinite(viewport.min) ? viewport.min : -Infinity;
-            const viewportMax = Number.isFinite(viewport.max) ? viewport.max : Infinity;
+            const viewportMin = Number.isFinite(viewport?.min) ? viewport.min : -Infinity;
+            const viewportMax = Number.isFinite(viewport?.max) ? viewport.max : Infinity;
 
             const currentTimestamp = Number(selectedMarker.timestamp);
             if (!Number.isFinite(currentTimestamp)) {
@@ -212,6 +285,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.features.markers.thunks = {
         computeMarkerMetricsIntent,
         addMarkerAtTapIntent,
+        createMarkerFromKeyboardIntent,
         nudgeSelectedMarkerIntent
     };
 })(window.NoiseSurveyApp);

@@ -21,8 +21,8 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     let toggleVolumeBoostIntentSpy;
     let handleAudioStatusUpdateIntentSpy;
     let togglePlaybackFromKeyboardIntentSpy;
-    let addMarkerAtTapIntentSpy;
-    let toggleRegionCreationIntentSpy;
+    let createMarkerFromKeyboardIntentSpy;
+    let createRegionFromMarkersIntentSpy;
     let nudgeSelectedMarkerIntentSpy;
 
     beforeEach(() => {
@@ -55,8 +55,8 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         toggleVolumeBoostIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleVolumeBoostIntent').mockImplementation(() => () => {});
         handleAudioStatusUpdateIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleAudioStatusUpdateIntent').mockImplementation(() => () => {});
         togglePlaybackFromKeyboardIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'togglePlaybackFromKeyboardIntent').mockImplementation(() => () => {});
-        addMarkerAtTapIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'addMarkerAtTapIntent').mockImplementation(() => () => {});
-        toggleRegionCreationIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleRegionCreationIntent').mockImplementation(() => () => {});
+        createMarkerFromKeyboardIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createMarkerFromKeyboardIntent').mockImplementation(() => () => {});
+        createRegionFromMarkersIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createRegionFromMarkersIntent').mockImplementation(() => () => {});
         nudgeSelectedMarkerIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'nudgeSelectedMarkerIntent').mockImplementation(() => () => {});
     });
 
@@ -271,18 +271,20 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             expect(dispatchSpy).toHaveBeenCalledWith(actions.regionCreationCancelled());
         });
 
-        it('should dispatch marker creation thunk on M key', () => {
+        it('should create a marker when pressing M', () => {
             const event = { key: 'M', preventDefault: vi.fn(), target: { tagName: 'div' } };
             eventHandlers.handleKeyPress(event);
             expect(event.preventDefault).toHaveBeenCalled();
-            expect(addMarkerAtTapIntentSpy).toHaveBeenCalledWith();
+            expect(createMarkerFromKeyboardIntentSpy).toHaveBeenCalledWith({});
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
 
-        it('should toggle region creation on R key', () => {
+        it('should request region creation when pressing R', () => {
             const event = { key: 'r', preventDefault: vi.fn(), target: { tagName: 'div' } };
             eventHandlers.handleKeyPress(event);
             expect(event.preventDefault).toHaveBeenCalled();
-            expect(toggleRegionCreationIntentSpy).toHaveBeenCalledWith();
+            expect(createRegionFromMarkersIntentSpy).toHaveBeenCalledWith({});
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
     });
 });

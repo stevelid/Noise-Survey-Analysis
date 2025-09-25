@@ -194,6 +194,7 @@ describe('rootReducer', () => {
             expect(state.markers.allIds).toEqual([1]);
             expect(state.markers.byId[1].timestamp).toBe(12345);
             expect(state.markers.selectedId).toBe(1);
+            expect(state.markers.byId[1].color).toBe('#fdd835');
         });
 
         it('should remove a marker by id', () => {
@@ -209,6 +210,25 @@ describe('rootReducer', () => {
             state = rootReducer(state, actions.markersReplace([{ id: 10, timestamp: 300 }]));
             expect(state.markers.allIds).toEqual([10]);
             expect(state.markers.byId[10].timestamp).toBe(300);
+            expect(state.markers.enabled).toBe(true);
+        });
+
+        it('should set metrics payload on markerSetMetrics', () => {
+            let state = rootReducer(initialState, actions.markerAdd(500));
+            const metrics = {
+                timestamp: 500,
+                parameter: 'LZeq',
+                broadband: [{ positionId: 'P1', value: 42.1 }]
+            };
+            state = rootReducer(state, actions.markerSetMetrics(1, metrics));
+            expect(state.markers.byId[1].metrics).toEqual(metrics);
+        });
+
+        it('should update note and color via markerUpdate', () => {
+            let state = rootReducer(initialState, actions.markerAdd(700));
+            state = rootReducer(state, actions.markerUpdate(1, { note: 'important', color: '#abcdef' }));
+            expect(state.markers.byId[1].note).toBe('important');
+            expect(state.markers.byId[1].color).toBe('#abcdef');
         });
     });
 

@@ -7,6 +7,7 @@ import '../noise_survey_analysis/static/js/features/interaction/interactionReduc
 import '../noise_survey_analysis/static/js/features/markers/markersReducer.js';
 import '../noise_survey_analysis/static/js/features/markers/markersSelectors.js';
 import '../noise_survey_analysis/static/js/features/markers/markersThunks.js';
+import '../noise_survey_analysis/static/js/features/markers/markerUtils.js';
 import '../noise_survey_analysis/static/js/features/regions/regionReducer.js';
 import '../noise_survey_analysis/static/js/features/regions/regionSelectors.js';
 import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';

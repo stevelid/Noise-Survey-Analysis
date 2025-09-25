@@ -37,11 +37,20 @@
   const selectedRegionSummary = document.querySelector('[data-testid="selected-region"]');
   const regionCountLabel = document.querySelector('[data-testid="region-count"]');
   const regionList = document.querySelector('[data-testid="region-list"]');
+  const regionsPanel = document.querySelector('.regions-panel');
+  const markerCountLabel = document.querySelector('[data-testid="marker-count"]');
+  const markerList = document.querySelector('[data-testid="marker-list"]');
+  const markerDetail = document.querySelector('[data-testid="marker-detail"]');
+  const markersPanel = document.querySelector('[data-testid="markers-panel"]');
+  const tabButtons = document.querySelectorAll('.annotation-tabs .tab-button');
 
   if (!parameterSelect || !selectedParameterLabel || !viewToggleButton || !viewModeLabel || !chartSurface ||
-      !regionOverlayLayer || !tapLine || !tapSummary || !selectedRegionSummary || !regionCountLabel || !regionList) {
+      !regionOverlayLayer || !tapLine || !tapSummary || !selectedRegionSummary || !regionCountLabel || !regionList ||
+      !markerCountLabel || !markerList || !markerDetail || !markersPanel || tabButtons.length === 0) {
     throw new Error('Harness failed to locate required DOM nodes.');
   }
+
+  let activeTab = 'regions';
 
   parameterSelect.addEventListener('change', (event) => {
     eventHandlers.handleParameterChange(event.target.value);
@@ -54,6 +63,29 @@
   });
 
   const chartName = chartSurface.getAttribute('data-chart-name') || 'figure_P1_timeseries';
+
+  function setActiveTab(tab) {
+    activeTab = tab === 'markers' ? 'markers' : 'regions';
+    tabButtons.forEach(button => {
+      const isActive = button.dataset.tab === activeTab;
+      button.classList.toggle('active', isActive);
+    });
+    if (regionsPanel) {
+      regionsPanel.hidden = activeTab !== 'regions';
+    }
+    if (markersPanel) {
+      markersPanel.hidden = activeTab !== 'markers';
+    }
+  }
+
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      setActiveTab(button.dataset.tab === 'markers' ? 'markers' : 'regions');
+      render();
+    });
+  });
+
+  setActiveTab(activeTab);
 
   function getViewport() {
     const { min, max } = store.getState().view.viewport || {};
@@ -142,6 +174,15 @@
     });
   });
 
+  chartSurface.addEventListener('dblclick', (event) => {
+    const timestamp = clientXToTimestamp(event.clientX);
+    skipNextClick = true;
+    eventHandlers.handleDoubleClick({
+      origin: { name: chartName },
+      x: timestamp
+    });
+  });
+
   document.addEventListener('keydown', (event) => {
     eventHandlers.handleKeyPress(event);
   });
@@ -197,6 +238,59 @@
     });
   }
 
+  function renderMarkers(state) {
+    markerList.innerHTML = '';
+
+    const markersState = state.markers || {};
+    const markerIds = Array.isArray(markersState.allIds) ? markersState.allIds : [];
+    markerCountLabel.textContent = String(markerIds.length);
+
+    if (!markerIds.length) {
+      const empty = document.createElement('div');
+      empty.className = 'marker-empty';
+      empty.textContent = 'No markers defined';
+      markerList.appendChild(empty);
+      markerDetail.textContent = 'No marker selected';
+      return;
+    }
+
+    const selectedId = Number(markersState.selectedId);
+
+    markerIds.forEach(id => {
+      const marker = markersState.byId?.[id];
+      if (!marker) {
+        return;
+      }
+      const entry = document.createElement('div');
+      entry.className = 'marker-entry';
+      entry.dataset.markerId = String(marker.id);
+      entry.textContent = `Marker ${marker.id}: ${Math.round(marker.timestamp)}ms`;
+      if (selectedId === marker.id) {
+        entry.classList.add('selected');
+      }
+      entry.addEventListener('click', () => {
+        store.dispatch(actions.markerSelect(marker.id));
+      });
+      markerList.appendChild(entry);
+    });
+
+    const selectedMarker = Number.isFinite(selectedId) ? markersState.byId?.[selectedId] : null;
+    if (!selectedMarker) {
+      markerDetail.textContent = 'No marker selected';
+      return;
+    }
+
+    const metrics = selectedMarker.metrics || {};
+    const broadbandCount = Array.isArray(metrics.broadband) ? metrics.broadband.length : 0;
+    const spectralValues = Array.isArray(metrics.spectral)
+      ? metrics.spectral.flatMap(series => Array.isArray(series.values) ? series.values : [])
+      : [];
+    const spectralCount = spectralValues.filter(value => Number.isFinite(value)).length;
+    const note = selectedMarker.note ? selectedMarker.note : 'None';
+    const color = selectedMarker.color ? selectedMarker.color : 'default';
+    markerDetail.textContent = `Marker ${selectedMarker.id} at ${Math.round(selectedMarker.timestamp)}ms — Note: ${note} — Color: ${color} — Broadband points: ${broadbandCount} — Spectral bands: ${spectralCount}`;
+  }
+
   function renderTapState(state) {
     const tap = state.interaction.tap;
     if (tap.isActive) {
@@ -236,7 +330,9 @@
     renderViewState(state);
     renderTapState(state);
     renderRegions(state);
+    renderMarkers(state);
     renderSelectedRegion(state);
+    setActiveTab(activeTab);
   }
 
   render();

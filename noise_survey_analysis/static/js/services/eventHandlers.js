@@ -394,23 +394,35 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         if (normalizedKey === 'm') {
             e.preventDefault();
-            const thunkCreator = app.thunks && app.thunks.addMarkerAtTapIntent;
+            const thunkCreator = app.thunks
+                && (app.thunks.createMarkerFromKeyboardIntent || app.thunks.addMarkerAtTapIntent);
             if (typeof thunkCreator !== 'function') {
-                console.error('[EventHandler] Missing addMarkerAtTapIntent thunk.');
+                console.error('[EventHandler] Missing marker creation thunk.');
                 return;
             }
-            dispatch(thunkCreator());
+
+            if (thunkCreator === app.thunks.createMarkerFromKeyboardIntent) {
+                dispatch(thunkCreator({}));
+            } else {
+                dispatch(thunkCreator());
+            }
             return;
         }
 
         if (normalizedKey === 'r') {
             e.preventDefault();
-            const thunkCreator = app.thunks && app.thunks.toggleRegionCreationIntent;
+            const thunkCreator = app.thunks
+                && (app.thunks.createRegionFromMarkersIntent || app.thunks.toggleRegionCreationIntent);
             if (typeof thunkCreator !== 'function') {
-                console.error('[EventHandler] Missing toggleRegionCreationIntent thunk.');
+                console.error('[EventHandler] Missing region creation thunk.');
                 return;
             }
-            dispatch(thunkCreator());
+
+            if (thunkCreator === app.thunks.createRegionFromMarkersIntent) {
+                dispatch(thunkCreator({}));
+            } else {
+                dispatch(thunkCreator());
+            }
             return;
         }
 
@@ -467,6 +479,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         dispatch(thunkCreator({ key: e.key }));
     }
+
 
 
 

@@ -25,7 +25,7 @@ function formatLocation(message: ConsoleMessage): string {
 
 test.beforeEach(async ({ page }, testInfo) => {
   const stream = fs.createWriteStream(logFilePath, { flags: 'a' });
-  const testId = testInfo.titlePath().join(' > ');
+  const testId = testInfo.titlePath.join(' > ');
   const baseLabel = `[worker:${testInfo.workerIndex}] [project:${testInfo.project.name}] [test:${testId}]`;
   const beginLine = `[${new Date().toISOString()}] ${baseLabel} BEGIN_BROWSER_CONSOLE`;
   stream.write(`${beginLine}\n`);
@@ -49,7 +49,7 @@ test.afterEach(async ({ page }, testInfo) => {
     return;
   }
   page.off('console', metadata.handler);
-  const testId = testInfo.titlePath().join(' > ');
+  const testId = testInfo.titlePath.join(' > ');
   const baseLabel = `[worker:${testInfo.workerIndex}] [project:${testInfo.project.name}] [test:${testId}]`;
   metadata.stream.write(`[${new Date().toISOString()}] ${baseLabel} END_BROWSER_CONSOLE\n`);
   metadata.stream.end();
@@ -116,4 +116,59 @@ test('users can create, select, and remove regions from the chart', async ({ pag
   await expect(regionCount).toHaveText('0');
   await expect(regionList).toHaveText(/No regions defined/);
   await expect(page.getByTestId('selected-region')).toHaveText('Selected region: none');
+});
+
+test('users can switch between regions and markers tabs', async ({ page }) => {
+  const markersPanel = page.getByTestId('markers-panel');
+  await expect(markersPanel).toBeHidden();
+
+  await page.getByTestId('tab-markers').click();
+  await expect(markersPanel).toBeVisible();
+
+  await page.getByTestId('tab-regions').click();
+  await expect(markersPanel).toBeHidden();
+});
+
+test('user can create a marker with the keyboard and view details', async ({ page }) => {
+  const chart = page.getByTestId('chart');
+  const markerCount = page.getByTestId('marker-count');
+  const markerList = page.getByTestId('marker-list');
+
+  const box = await chart.boundingBox();
+  if (!box) {
+    throw new Error('Unable to determine chart bounding box for marker test.');
+  }
+
+  await chart.click({ position: { x: box.width * 0.3, y: box.height / 2 } });
+  await page.keyboard.press('m');
+
+  await page.getByTestId('tab-markers').click();
+  await expect(markerCount).toHaveText('1');
+
+  const markerEntry = markerList.locator('.marker-entry').first();
+  await expect(markerEntry).toHaveCount(1);
+  await markerEntry.click();
+
+  const markerDetail = page.getByTestId('marker-detail');
+  await expect(markerDetail).toContainText('Marker 1');
+});
+
+test('user can create a region using the R key workflow', async ({ page }) => {
+  const chart = page.getByTestId('chart');
+  const regionCount = page.getByTestId('region-count');
+
+  const box = await chart.boundingBox();
+  if (!box) {
+    throw new Error('Unable to determine chart bounding box for R-key test.');
+  }
+
+  await chart.click({ position: { x: box.width * 0.2, y: box.height / 2 } });
+  await page.keyboard.press('m');
+
+  await chart.click({ position: { x: box.width * 0.7, y: box.height / 2 } });
+  await page.keyboard.press('m');
+
+  await page.keyboard.press('r');
+
+  await expect(regionCount).toHaveText('1');
 });

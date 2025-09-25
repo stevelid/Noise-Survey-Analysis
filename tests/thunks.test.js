@@ -436,5 +436,67 @@ describe('NoiseSurveyApp thunks', () => {
             thunk(dispatchSpy, store.getState);
             expect(dispatchSpy).toHaveBeenCalledWith(actions.audioBoostToggleRequest('P1', true));
         });
-    });
+
+        describe('Marker keyboard workflows', () => {
+            it('createMarkerFromKeyboardIntent adds marker at tap and computes metrics', () => {
+                window.NoiseSurveyApp.dataCache = {
+                    activeLineData: {
+                        P1: {
+                            Datetime: [1000, 1500, 2000],
+                            LZeq: [40, 45, 50]
+                        }
+                    },
+                    activeSpectralData: {
+                        P1: {
+                            frequency_labels: ['63', '125'],
+                            n_freqs: 2,
+                            n_times: 3,
+                            levels_flat_transposed: [1, 2, 3, 4, 5, 6],
+                            times_ms: [1000, 1500, 2000]
+                        }
+                    }
+                };
+
+                store.dispatch(actions.initializeState({
+                    availablePositions: ['P1'],
+                    selectedParameter: 'LZeq',
+                    viewport: { min: 0, max: 3000 },
+                    chartVisibility: {}
+                }));
+                store.dispatch(actions.tap(1500, 'P1', 'figure_P1_timeseries'));
+
+                const thunk = thunks.createMarkerFromKeyboardIntent();
+                thunk(store.dispatch, store.getState);
+
+                const state = store.getState();
+                expect(state.markers.allIds).toEqual([1]);
+                expect(state.markers.byId[1].timestamp).toBe(1500);
+                expect(state.markers.byId[1].metrics?.broadband?.[0]?.value).toBe(45);
+                expect(state.markers.byId[1].metrics?.spectral?.[0]?.values).toEqual([2, 5]);
+            });
+
+            it('createRegionFromMarkersIntent builds a region from the last two markers', () => {
+                store.dispatch(actions.initializeState({
+                    availablePositions: ['P1'],
+                    selectedParameter: 'LZeq',
+                    viewport: { min: 0, max: 4000 },
+                    chartVisibility: {}
+                }));
+                store.dispatch(actions.markersReplace([
+                    { id: 1, timestamp: 1000 },
+                    { id: 2, timestamp: 2500 }
+                ]));
+
+                const thunk = thunks.createRegionFromMarkersIntent();
+                thunk(store.dispatch, store.getState);
+
+                const state = store.getState();
+                expect(state.regions.allIds).toHaveLength(1);
+                const region = state.regions.byId[state.regions.allIds[0]];
+                expect(region.start).toBe(1000);
+                expect(region.end).toBe(2500);
+                expect(region.positionId).toBe('P1');
+            });
+        });
+});
 });
