@@ -311,26 +311,14 @@ class DashBuilder:
         side_panel_tabs.js_on_change(
             "active",
             CustomJS(
-                args={
-                    "region_panel_layout": self.shared_components['region_panel_layout'],
-                    "comparison_panel_layout": self.shared_components['comparison_panel_layout'],
-                },
                 code="""
                     const activeIndex = cb_obj.active ?? 0;
-                    region_panel_layout.visible = activeIndex === 0;
-                    comparison_panel_layout.visible = activeIndex === 1;
-                    const handlers = window.NoiseSurveyApp?.eventHandlers;
                     const store = window.NoiseSurveyApp?.store;
-                    const currentMode = typeof store?.getState === 'function'
-                        ? store.getState()?.view?.mode
-                        : undefined;
-                    if (activeIndex === 1) {
-                        if (currentMode !== 'comparison' && typeof handlers?.handleStartComparison === 'function') {
-                            handlers.handleStartComparison();
-                        }
-                    } else if (currentMode === 'comparison' && typeof handlers?.handleFinishComparison === 'function') {
-                        handlers.handleFinishComparison();
+                    const thunks = window.NoiseSurveyApp?.thunks;
+                    if (typeof store?.dispatch !== 'function' || typeof thunks?.handleTabSwitchIntent !== 'function') {
+                        return;
                     }
+                    store.dispatch(thunks.handleTabSwitchIntent({ newIndex: activeIndex }));
                 """,
             ),
         )
@@ -358,6 +346,7 @@ class DashBuilder:
                 'core/actions.js',
                 'features/view/viewReducer.js',
                 'features/view/viewSelectors.js',
+                'features/view/viewThunks.js',
                 'features/interaction/interactionReducer.js',
                 'features/markers/markersReducer.js',
                 'features/markers/markersSelectors.js',
@@ -470,6 +459,8 @@ class DashBuilder:
             'freqTableDiv': self.shared_components['freq_bar'].table_div,  # Add the frequency table div for copy/paste functionality
             'summaryTableDiv': self.shared_components['summary_table'].summary_div,
             'paramSelect': self.shared_components['controls'].param_select,
+            'viewToggle': self.shared_components['controls'].view_toggle,
+            'hoverToggle': self.shared_components['controls'].hover_toggle,
             'sessionMenu': self.shared_components['controls'].session_menu,
             #'audio_control_source': self.audio_control_source,
             #'audio_status_source': self.audio_status_source,

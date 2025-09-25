@@ -118,18 +118,14 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
     expect(dispatchAction).toHaveBeenCalledTimes(2);
   });
 
-  it('handleViewToggle should dispatch action and update widget label', () => {
-    const toggleWidget = { label: '' };
-    window.NoiseSurveyApp.eventHandlers.handleViewToggle(true, toggleWidget);
+  it('handleViewToggle should dispatch the correct action', () => {
+    window.NoiseSurveyApp.eventHandlers.handleViewToggle(true);
     expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.viewToggle('log'));
-    expect(toggleWidget.label).toBe('Log View Enabled');
   });
 
-  it('handleHoverToggle should dispatch action and update widget label', () => {
-    const toggleWidget = { label: '' };
-    window.NoiseSurveyApp.eventHandlers.handleHoverToggle(false, toggleWidget);
+  it('handleHoverToggle should dispatch the correct action', () => {
+    window.NoiseSurveyApp.eventHandlers.handleHoverToggle(false);
     expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.hoverToggle(false));
-    expect(toggleWidget.label).toBe('Hover Disabled');
   });
 
   it('handlePlaybackRateChange should dispatch the intent thunk', () => {

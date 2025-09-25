@@ -1227,8 +1227,8 @@ class ControlsComponent:
             active=True
         )
         
-        toggle.js_on_change("active", CustomJS(args={"toggle_widget": toggle}, code="""if (window.NoiseSurveyApp and window.NoiseSurveyApp.eventHandlers.handleViewToggle) {
-                window.NoiseSurveyApp.eventHandlers.handleViewToggle(cb_obj.active, toggle_widget); // Pass the toggle widget itself
+        toggle.js_on_change("active", CustomJS(code="""if (window.NoiseSurveyApp and window.NoiseSurveyApp.eventHandlers.handleViewToggle) {
+                window.NoiseSurveyApp.eventHandlers.handleViewToggle(cb_obj.active);
             } else {
                 console.error('window.NoiseSurveyApp.eventHandlers.handleViewToggle function not found!');
             }"""))
@@ -1244,8 +1244,8 @@ class ControlsComponent:
             active=True
         )
         
-        toggle.js_on_change("active", CustomJS(args={"toggle_widget": toggle}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleHoverToggle) {
-                window.NoiseSurveyApp.eventHandlers.handleHoverToggle(cb_obj.active, toggle_widget); // Pass the toggle widget itself
+        toggle.js_on_change("active", CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleHoverToggle) {
+                window.NoiseSurveyApp.eventHandlers.handleHoverToggle(cb_obj.active);
             } else {
                 console.error('window.NoiseSurveyApp.eventHandlers.handleHoverToggle function not found!');
             }"""))

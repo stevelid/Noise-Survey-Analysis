@@ -92,44 +92,61 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            // Hide all existing markers
+            const existingMarkersByTimestamp = new Map();
             this.markerModels.forEach(marker => {
+                existingMarkersByTimestamp.set(marker.location, marker);
                 marker.visible = false;
             });
+
+            const nextMarkers = [];
+            masterTimestampList.forEach(timestamp => {
+                let marker = existingMarkersByTimestamp.get(timestamp);
+                if (!marker) {
+                    const doc = Bokeh.documents[0];
+                    if (!doc) {
+                        console.error("Bokeh document not available for creating Span markers");
+                        return;
+                    }
+
+                    const Span = Bokeh.Models.get("Span");
+                    if (!Span) {
+                        console.error("Could not retrieve Span model constructor from Bokeh.Models.");
+                        return;
+                    }
+
+                    marker = new Span({
+                        location: timestamp,
+                        dimension: 'height',
+                        line_color: 'orange',
+                        line_width: 2,
+                        line_alpha: 0.7,
+                        level: 'underlay',
+                        visible: true,
+                        name: `marker_${this.name}_${timestamp}`
+                    });
+                    this.model.add_layout(marker);
+                } else {
+                    marker.location = timestamp;
+                    marker.visible = true;
+                }
+
+                nextMarkers.push(marker);
+            });
+
+            this.markerModels.forEach(marker => {
+                if (!nextMarkers.includes(marker) && this.model && typeof this.model.remove_layout === 'function') {
+                    this.model.remove_layout(marker);
+                }
+            });
+
+            this.markerModels = nextMarkers;
+
             if (this.model && typeof this.model.request_render === 'function') {
                 this.model.request_render();
             }
 
-            // Add all markers from the master list
-            masterTimestampList.forEach(timestamp => {
-                const doc = Bokeh.documents[0];
-                if (!doc) {
-                    console.error("Bokeh document not available for creating Span markers");
-                    return;
-                }
-                
-                const Span = Bokeh.Models.get("Span");
-                if (!Span) {
-                    console.error("Could not retrieve Span model constructor from Bokeh.Models.");
-                    return;
-                }
-                
-                const newMarker = new Span({
-                    location: timestamp,
-                    dimension: 'height',
-                    line_color: 'orange',
-                    line_width: 2,
-                    line_alpha: 0.7,
-                    level: 'underlay',
-                    visible: true,
-                    name: `marker_${this.name}_${timestamp}`
-                });
-                this.model.add_layout(newMarker);
-                this.markerModels.push(newMarker);
-            });
-
-            if (this.model && typeof this.model.request_render === 'function') {
-                this.model.request_render();
+            if (this.source && this.source.change && typeof this.source.change.emit === 'function') {
+                this.source.change.emit();
             }
         }
 

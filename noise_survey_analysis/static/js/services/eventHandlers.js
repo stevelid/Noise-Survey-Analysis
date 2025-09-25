@@ -162,19 +162,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.store.dispatch(actions.paramChange(value));
     }
 
-    function handleViewToggle(isActive, toggleWidget) {
+    function handleViewToggle(isActive) {
         const newViewType = isActive ? 'log' : 'overview';
         app.store.dispatch(actions.viewToggle(newViewType));
-        if (toggleWidget) { //TODO: move this to a renderer
-            toggleWidget.label = isActive ? "Log View Enabled" : "Log View Disabled";
-        }
     }
 
-    function handleHoverToggle(isActive, toggleWidget) {
+    function handleHoverToggle(isActive) {
         app.store.dispatch(actions.hoverToggle(isActive));
-        if (toggleWidget) { //TODO: move this to a renderer
-            toggleWidget.label = isActive ? "Hover Enabled" : "Hover Disabled";
-        }
     }
 
     function handleVisibilityChange(cb_obj, chartName) {

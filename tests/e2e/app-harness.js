@@ -43,15 +43,6 @@
     throw new Error('Harness failed to locate required DOM nodes.');
   }
 
-  const toggleWidgetAdapter = {
-    get label() {
-      return viewToggleButton.textContent || '';
-    },
-    set label(value) {
-      viewToggleButton.textContent = value;
-    },
-  };
-
   parameterSelect.addEventListener('change', (event) => {
     eventHandlers.handleParameterChange(event.target.value);
   });
@@ -59,7 +50,7 @@
   viewToggleButton.addEventListener('click', () => {
     const currentView = store.getState().view.globalViewType;
     const nextIsLog = currentView !== 'log';
-    eventHandlers.handleViewToggle(nextIsLog, toggleWidgetAdapter);
+    eventHandlers.handleViewToggle(nextIsLog);
   });
 
   const chartName = chartSurface.getAttribute('data-chart-name') || 'figure_P1_timeseries';
@@ -236,7 +227,7 @@
 
     const mode = state.view.globalViewType;
     viewModeLabel.textContent = mode;
-    toggleWidgetAdapter.label = mode === 'log' ? 'Log View Enabled' : 'Log View Disabled';
+    viewToggleButton.textContent = mode === 'log' ? 'Log View Enabled' : 'Log View Disabled';
     viewToggleButton.setAttribute('data-current-view', mode);
   }
 
