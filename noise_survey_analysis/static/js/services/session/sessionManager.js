@@ -45,7 +45,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
-    const CSV_HEADER = ['type', 'id', 'positionId', 'start_utc', 'end_utc', 'note', 'color'];
+    const CSV_HEADER = ['type', 'id', 'positionId', 'start_utc', 'end_utc', 'note', 'color', 'areas'];
 
     function escapeCsvValue(value) {
         if (value === null || value === undefined) {
@@ -141,7 +141,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 formattedStart,
                 '',
                 typeof marker?.note === 'string' ? marker.note : '',
-                typeof marker?.color === 'string' ? marker.color : ''
+                typeof marker?.color === 'string' ? marker.color : '',
+                ''
             ];
 
             rows.push(row.map(escapeCsvValue).join(','));
@@ -154,6 +155,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            const regionAreas = Array.isArray(region?.areas) ? region.areas : [];
+            const serializedAreas = regionAreas
+                .map(area => {
+                    const areaStart = formatTimestampForCsv(area?.start);
+                    const areaEnd = formatTimestampForCsv(area?.end);
+                    if (!areaStart || !areaEnd) {
+                        return null;
+                    }
+                    return { startUtc: areaStart, endUtc: areaEnd };
+                })
+                .filter(Boolean);
+
+            const areasValue = serializedAreas.length
+                ? JSON.stringify(serializedAreas)
+                : JSON.stringify([{ startUtc: formattedStart, endUtc: formattedEnd }]);
+
             const row = [
                 'region',
                 Number.isFinite(Number(region?.id)) ? Number(region.id) : '',
@@ -161,7 +178,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 formattedStart,
                 formattedEnd,
                 typeof region?.note === 'string' ? region.note : '',
-                typeof region?.color === 'string' ? region.color : ''
+                typeof region?.color === 'string' ? region.color : '',
+                areasValue
             ];
 
             rows.push(row.map(escapeCsvValue).join(','));
@@ -260,6 +278,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const noteCell = columnIndex.note !== undefined ? row[columnIndex.note] : '';
             const colorCell = columnIndex.color !== undefined ? row[columnIndex.color] : '';
 
+            const areasCell = columnIndex.areas !== undefined ? row[columnIndex.areas] : '';
             const note = noteCell == null ? '' : String(noteCell);
             const color = colorCell == null ? '' : String(colorCell).trim();
 
@@ -297,11 +316,64 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     if (normalizedStart === normalizedEnd) {
                         continue;
                     }
+
+                    let parsedAreas = [];
+                    if (areasCell !== undefined && areasCell !== null && String(areasCell).trim() !== '') {
+                        try {
+                            const areasValue = JSON.parse(String(areasCell));
+                            const areaArray = Array.isArray(areasValue) ? areasValue : [areasValue];
+                            areaArray.forEach(areaEntry => {
+                                if (areaEntry == null) {
+                                    return;
+                                }
+                                let startCandidate;
+                                let endCandidate;
+                                if (Array.isArray(areaEntry)) {
+                                    [startCandidate, endCandidate] = areaEntry;
+                                } else if (typeof areaEntry === 'object') {
+                                    startCandidate = areaEntry.startUtc ?? areaEntry.start ?? areaEntry.start_utc;
+                                    endCandidate = areaEntry.endUtc ?? areaEntry.end ?? areaEntry.end_utc;
+                                } else {
+                                    const [startPart, endPart] = String(areaEntry).split(/\s*[,;|]\s*/);
+                                    startCandidate = startPart;
+                                    endCandidate = endPart;
+                                }
+                                const areaStart = parseTimestampFromCsv(startCandidate);
+                                const areaEnd = parseTimestampFromCsv(endCandidate);
+                                if (!Number.isFinite(areaStart) || !Number.isFinite(areaEnd)) {
+                                    return;
+                                }
+                                const normalizedAreaStart = Math.min(areaStart, areaEnd);
+                                const normalizedAreaEnd = Math.max(areaStart, areaEnd);
+                                if (normalizedAreaStart === normalizedAreaEnd) {
+                                    return;
+                                }
+                                parsedAreas.push({ start: normalizedAreaStart, end: normalizedAreaEnd });
+                            });
+                        } catch (error) {
+                            console.warn('[Session] Failed to parse region areas from CSV:', error);
+                            parsedAreas = [];
+                        }
+                    }
+
+                    if (!parsedAreas.length) {
+                        parsedAreas = [{ start: normalizedStart, end: normalizedEnd }];
+                    }
+
+                    const combinedStart = parsedAreas.reduce(
+                        (minStart, area) => Math.min(minStart, area.start),
+                        parsedAreas[0].start
+                    );
+                    const combinedEnd = parsedAreas.reduce(
+                        (maxEnd, area) => Math.max(maxEnd, area.end),
+                        parsedAreas[0].end
+                    );
+
                     const region = {
                         positionId,
-                        start: normalizedStart,
-                        end: normalizedEnd,
-                        areas: [{ start: normalizedStart, end: normalizedEnd }],
+                        start: combinedStart,
+                        end: combinedEnd,
+                        areas: parsedAreas,
                         note
                     };
                     if (id !== undefined) {
