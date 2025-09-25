@@ -92,12 +92,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            const existingTimestamps = this.markerModels.map(m => m.location);
-            const timestampsToAdd = masterTimestampList.filter(t => !existingTimestamps.includes(t));
-            const markersToRemove = this.markerModels.filter(m => !masterTimestampList.includes(m.location));
+            // Hide all existing markers
+            this.markerModels.forEach(marker => {
+                marker.visible = false;
+            });
+            if (this.model && typeof this.model.request_render === 'function') {
+                this.model.request_render();
+            }
 
-            // Add new markers using Bokeh document API
-            timestampsToAdd.forEach(timestamp => {
+            // Add all markers from the master list
+            masterTimestampList.forEach(timestamp => {
                 const doc = Bokeh.documents[0];
                 if (!doc) {
                     console.error("Bokeh document not available for creating Span markers");
@@ -124,21 +128,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 this.markerModels.push(newMarker);
             });
 
-            // Remove old markers and update the internal list
-            markersToRemove.forEach(markerModel => this.model.remove_layout(markerModel));
-            this.markerModels = this.markerModels.filter(m => !markersToRemove.includes(m));
-
-            // Ensure all remaining markers are visible
-            this.markerModels.forEach(marker => marker.visible = true);
-
-            const hasChanges = timestampsToAdd.length > 0 || markersToRemove.length > 0;
-            if (hasChanges) {
-                if (this.source) {
-                    this.render();
-                }
-                if (this.model && typeof this.model.request_render === 'function') {
-                    this.model.request_render();
-                }
+            if (this.model && typeof this.model.request_render === 'function') {
+                this.model.request_render();
             }
         }
 
@@ -344,18 +335,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
                 // The image data MUST be updated first, using our special function.
                 _updateBokehImageData(this.source.data.image[0], replacement.image[0]);
-                
+
                 // Update the glyph's position and size on the "canvas"
                 glyph.x = replacement.x[0];
                 glyph.dw = replacement.dw[0];
-                
+
                 // Handle frequency slicing by updating plot range but keeping original glyph positioning
                 if (replacement.y_range_start !== undefined && replacement.y_range_end !== undefined) {
-                    
+
                     // CRITICAL: Keep original glyph positioning to match image data layout
                     glyph.y = replacement.y[0];  // Original image position (matches data layout)
                     glyph.dh = replacement.dh[0]; // Original image height (matches data layout)
-                    
+
                     // Let the plot range crop the view to show only visible frequencies
                     this.model.y_range.start = replacement.y_range_start;
                     this.model.y_range.end = replacement.y_range_end;
@@ -375,9 +366,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         this.model.yaxis.major_label_overrides[tickIndex] = labelText;
                     });
                 }
-                
+
                 this.render();
-            } 
+            }
             // Visibility is now handled exclusively by the renderPrimaryCharts function.
             // This method is now only responsible for updating the data content.
         }

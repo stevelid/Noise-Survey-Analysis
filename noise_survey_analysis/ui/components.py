@@ -1239,6 +1239,7 @@ class ControlsComponent:
             label="Hover Enabled", 
             button_type="success", 
             width=130,
+            height=30,
             name="global_hover_toggle",
             active=True
         )
@@ -1255,6 +1256,7 @@ class ControlsComponent:
             label="Clear All Markers", 
             button_type="warning", 
             width=140,
+            height=30,
             name="clear_markers_button"
         )
         
@@ -1269,7 +1271,8 @@ class ControlsComponent:
         select = Select(
             options=available_params,
             value="LZeq",
-            width=150,
+            width=80,
+            height=30,
             name="global_parameter_selector"
         )
         select.js_on_change("value", CustomJS(args={"select_widget": select}, code="""if (window.NoiseSurveyApp and window.NoiseSurveyApp.eventHandlers.handleParameterChange) {
@@ -1357,9 +1360,9 @@ class ControlsComponent:
             sizing_mode="scale_width",
             name="primary_controls_row",
             styles={
-                "flex-wrap": "wrap",
+                "flex-wrap": "nowrap",
                 "gap": "8px",
-                "align-items": "center"
+                "align-items": "left"
             }
         )
 
@@ -1399,6 +1402,32 @@ class ControlsComponent:
         for position_checkboxes in self.visibility_checkboxes.values():
             all_checkboxes.extend([widget for name, widget in position_checkboxes])
         return all_checkboxes
+
+    def add_session_menu(self):
+        dropdown = Dropdown(
+            label="Menu",
+            button_type="default",
+            width=80,
+            height=30,
+            name="session_actions_dropdown",
+            menu=[
+                ("Save Workspace", "save"),
+                ("Load Workspace", "load"),
+                ("Export Regions", "export_regions"),
+                ("Import Regions", "import_regions"),
+            ],
+        )
+
+        dropdown.js_on_event("menu_item_click", CustomJS(code="""
+            const action = cb_obj?.item;
+            if (window.NoiseSurveyApp?.session?.handleMenuAction) {
+                window.NoiseSurveyApp.session.handleMenuAction(action);
+            } else {
+                console.error('[Session] Session manager is not available for action:', action);
+            }
+        """))
+
+        return dropdown
         
 
 class RangeSelectorComponent:
@@ -2078,6 +2107,7 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         label="Play", 
         button_type="success", 
         width=80,
+        height=25,
         name=f"play_toggle_{position_id}"
     )
 
@@ -2098,6 +2128,7 @@ def create_audio_controls_for_position(position_id: str) -> dict:
     playback_rate_button = Button(
         label="1.0x",
         width=60,
+        height=25,
         name=f"playback_rate_{position_id}"
     )
     playback_rate_button.js_on_click(CustomJS(
@@ -2115,6 +2146,7 @@ def create_audio_controls_for_position(position_id: str) -> dict:
     volume_boost_button = Toggle(
         label="Boost",
         width=70,
+        height=25,
         name=f"volume_boost_{position_id}",
         active=False # Default to off
     )
@@ -2130,11 +2162,18 @@ def create_audio_controls_for_position(position_id: str) -> dict:
     ))
 
     # Layout for the controls
+    chart_offset_label = Div(
+        text="Chart Offset (s)",
+        width=80,
+        height=25,
+        styles={"font-size": "9px", "display": "flex", "align-items": "center"},
+        name=f"chart_offset_label_{position_id}"
+    )
     chart_offset_spinner = Spinner(
-        title="Chart",
-        width=70,
-        low=-3600,
-        high=3600,
+        width=60,
+        height=25,
+        low=-6000,
+        high=6000,
         step=0.1,
         value=0.0,
         format="0.0",
@@ -2152,11 +2191,18 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         """
     ))
 
+    audio_offset_label = Div(
+        text="Audio Offset (s)",
+        width=80,
+        height=25,
+        styles={"font-size": "9px", "display": "flex", "align-items": "center"},
+        name=f"audio_offset_label_{position_id}"
+    )
     audio_offset_spinner = Spinner(
-        title="Audio",
-        width=70,
-        low=-3600,
-        high=3600,
+        width=60,
+        height=25,
+        low=-6000,
+        high=6000,
         step=0.1,
         value=0.0,
         format="0.0",
@@ -2177,15 +2223,18 @@ def create_audio_controls_for_position(position_id: str) -> dict:
     effective_offset_display = Div(
         text="Effective: +0.00 s",
         width=120,
+        height=25,
         name=f"effective_offset_display_{position_id}",
-        styles={"font-size": "0.9em", "margin": "4px 0 0 4px"}
+        styles={"font-size": "9px", "display": "flex", "align-items": "center"}
     )
 
     controls_layout = Row(
         play_toggle,
         playback_rate_button,
         volume_boost_button,
+        chart_offset_label,
         chart_offset_spinner,
+        audio_offset_label,
         audio_offset_spinner,
         effective_offset_display,
         name=f"audio_controls_{position_id}"
@@ -2268,27 +2317,4 @@ class SummaryTableComponent:
     def layout(self):
         """Returns the Bokeh layout object for this component."""
         return self.summary_div
-    def add_session_menu(self):
-        dropdown = Dropdown(
-            label="Session Actions",
-            button_type="default",
-            width=170,
-            name="session_actions_dropdown",
-            menu=[
-                ("Save Workspace", "save"),
-                ("Load Workspace", "load"),
-                ("Export Regions", "export_regions"),
-                ("Import Regions", "import_regions"),
-            ],
-        )
 
-        dropdown.js_on_event("menu_item_click", CustomJS(code="""
-            const action = cb_obj?.item;
-            if (window.NoiseSurveyApp?.session?.handleMenuAction) {
-                window.NoiseSurveyApp.session.handleMenuAction(action);
-            } else {
-                console.error('[Session] Session manager is not available for action:', action);
-            }
-        """))
-
-        return dropdown

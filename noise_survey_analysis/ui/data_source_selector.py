@@ -150,7 +150,7 @@ class DataSourceSelector:
         self.input_row = row(
             column(self.base_dir_label, self.base_directory_input),
             column(self.job_number_label, self.job_number_input),
-            column(Spacer(height=20), self.scan_button),
+            column(Spacer(height=25), self.scan_button),
             sizing_mode="scale_width"
         )
         
@@ -238,7 +238,7 @@ class DataSourceSelector:
 
         self.main_layout = column(
             self.title_div, self.input_row, self.status_div, Spacer(height=10), 
-            self.dual_pane_layout, Spacer(height=20), self.config_controls_row, 
+            self.dual_pane_layout, Spacer(height=25), self.config_controls_row, 
             name="data_source_selector_main_layout", width=1450,
         )
 

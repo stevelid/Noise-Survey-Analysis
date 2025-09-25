@@ -5,6 +5,10 @@
 2. undo - redo functionality for states - needs to decide which state changes trigger a store point for the undo/redo functionality. 
 3. improve UI with drop down menus / clean audio control bars / drop down menu for each displayed chart for offset adjustment etc. 
 4. fix splayback speed and boost. maybe a single button for each of these for all positions (the boost state for current position will be remembered).
+5. region import and export via csv (with backwards compatibility for importing json) to include a note of any offsets applied. 
+6. if loading with a state input, do not show the file selector. 
+7. when rendering and saving a region we should think about how to handle offsets. make sure labels, spectrum, freq outputs etc align with the realigned chart data. 
+8. allow offsets to charts without audio. 
 
 # UI/UX Improvement Suggestions (Analysis)
 

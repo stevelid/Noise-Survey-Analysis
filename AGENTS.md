@@ -40,7 +40,8 @@ All new features must place logic in the correct layer. The flow is: event handl
 
 ### Renderers (`services/renderers.js`) — “Dumb Painters”
 - Synchronize Bokeh models with the current state by reading data via selectors and updating the UI.
-- Must remain dumb: no business logic, no dispatching actions.
+- Must remain dumb: no business logic (i.e., logic that computes new application state or decides what actions to take), no dispatching actions.
+- Presentational logic (e.g., formatting data for display, building HTML strings from state) is permitted and belongs here. Renderers must not dispatch actions.
 
 ## 3. Naming Conventions
 Follow consistent naming to make intent obvious:
@@ -108,5 +109,14 @@ Follow consistent naming to make intent obvious:
 4. **Reducer (`regionsReducer`):** Handles `{ type: 'markers/regionRemoved', ... }`, performs a pure immutable update to remove the region from `state.regions`, and returns the new slice.
 5. **Orchestrator (`onStateChange`):** Detects changes to `state.regions` and invokes `renderers.renderRegions(newState)`.
 6. **Renderer (`renderRegions`):** Reads the updated region list via a selector, removes the corresponding `BoxAnnotation`, and updates the side panel UI.
+
+## 8. Python Backend Principles
+**Separation of Concerns:** Logic should be separated by function. Data parsing is in data_parsers.py, data aggregation in data_manager.py, data transformation for visualization in data_processors.py, UI component assembly in visualization/ and ui/, and I/O-heavy side effects (like audio) in dedicated handlers (audio_handler.py).
+**Single Responsibility:** Classes should have a single, well-defined purpose. Avoid "god objects" that manage too many unrelated tasks.
+**Configuration Driven:** Core application settings (chart colors, ranges, default paths) should be centralized in core/config.py to avoid hardcoding values in application logic.
+
+## 9. Avoid Magic Values
+- Avoid hardcoding strings, numbers, or colors that are used in multiple places or represent configuration.
+- Define these as constants at the top of the file. For values used across multiple files (e.g., UI colors, enum-like state strings), create a dedicated constants module (e.g., static/js/core/constants.js).
 
 By following this handbook, contributors maintain a clean, scalable, and predictable codebase that respects the project’s performance constraints and architectural conventions.
