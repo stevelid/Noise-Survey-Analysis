@@ -53,6 +53,17 @@ describe('rootReducer', () => {
             const state = rootReducer(initialState, actions.dragToolChanged('box_select'));
             expect(state.interaction.activeDragTool).toBe('box_select');
         });
+
+        it('should record pending region start when creation begins', () => {
+            const state = rootReducer(initialState, actions.regionCreationStarted({ timestamp: 2500, positionId: 'P1' }));
+            expect(state.interaction.pendingRegionStart).toEqual({ timestamp: 2500, positionId: 'P1' });
+        });
+
+        it('should clear pending region start on cancellation', () => {
+            const baseState = rootReducer(initialState, actions.regionCreationStarted({ timestamp: 4000, positionId: 'P2' }));
+            const state = rootReducer(baseState, actions.regionCreationCancelled());
+            expect(state.interaction.pendingRegionStart).toBeNull();
+        });
     });
 
     describe('View Actions', () => {

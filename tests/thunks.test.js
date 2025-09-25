@@ -74,6 +74,21 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.regions.byId[1].areas).toEqual([{ start: 1000, end: 2000 }]);
     });
 
+    it('handleTapIntent selects a nearby marker before regions', () => {
+        store.dispatch(actions.viewportChange(0, 10000));
+        store.dispatch(actions.markerAdd(1200, { positionId: 'P1' }));
+        const thunk = thunks.handleTapIntent({
+            timestamp: 1210,
+            positionId: 'P1',
+            chartName: 'figure_P1_timeseries',
+            modifiers: {}
+        });
+        thunk(store.dispatch, store.getState);
+        const state = store.getState();
+        expect(state.markers.selectedId).toBe(1);
+        expect(state.interaction.tap.timestamp).toBe(1200);
+    });
+
     it('createRegionIntent adds region when bounds valid', () => {
         const thunk = thunks.createRegionIntent({
             positionId: 'P1',
@@ -134,6 +149,46 @@ describe('NoiseSurveyApp thunks', () => {
         thunk(store.dispatch, store.getState);
         const state = store.getState();
         expect(state.interaction.tap.timestamp).toBe(4000);
+    });
+
+    it('addMarkerAtTapIntent adds a marker at the tap timestamp', () => {
+        store.dispatch(actions.tap(2500, 'P2', 'figure_P2_timeseries'));
+        const thunk = thunks.addMarkerAtTapIntent();
+        thunk(store.dispatch, store.getState);
+        const state = store.getState();
+        expect(state.markers.allIds).toHaveLength(1);
+        expect(state.markers.byId[1]).toMatchObject({ timestamp: 2500, positionId: 'P2' });
+    });
+
+    it('nudgeSelectedMarkerIntent shifts the marker timestamp', () => {
+        store.dispatch(actions.viewportChange(0, 10000));
+        store.dispatch(actions.stepSizeCalculated(500));
+        store.dispatch(actions.markerAdd(3000, { positionId: 'P1' }));
+        store.dispatch(actions.markerSelect(1));
+        const thunk = thunks.nudgeSelectedMarkerIntent({ key: 'ArrowRight' });
+        thunk(store.dispatch, store.getState);
+        const state = store.getState();
+        expect(state.markers.byId[1].timestamp).toBe(3500);
+    });
+
+    it('toggleRegionCreationIntent stores a pending start when idle', () => {
+        store.dispatch(actions.tap(4000, 'P3', 'figure_P3_timeseries'));
+        const thunk = thunks.toggleRegionCreationIntent();
+        thunk(store.dispatch, store.getState);
+        const state = store.getState();
+        expect(state.interaction.pendingRegionStart).toEqual({ timestamp: 4000, positionId: 'P3' });
+    });
+
+    it('toggleRegionCreationIntent creates a region and clears pending state', () => {
+        store.dispatch(actions.tap(5000, 'P4', 'figure_P4_timeseries'));
+        thunks.toggleRegionCreationIntent()(store.dispatch, store.getState);
+        store.dispatch(actions.tap(5400, 'P4', 'figure_P4_timeseries'));
+        thunks.toggleRegionCreationIntent()(store.dispatch, store.getState);
+        const state = store.getState();
+        expect(state.regions.allIds).toHaveLength(1);
+        const region = state.regions.byId[1];
+        expect(region).toMatchObject({ positionId: 'P4', start: 5000, end: 5400 });
+        expect(state.interaction.pendingRegionStart).toBeNull();
     });
 
     it('enterComparisonModeIntent enables comparison mode', () => {

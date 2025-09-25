@@ -66,6 +66,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REGIONS_REPLACED: 'markers/regionsReplaced',
         REGION_VISIBILITY_SET: 'regions/visibilitySet',
 
+        REGION_CREATION_STARTED: 'interaction/regionCreationStarted',
+        REGION_CREATION_CANCELLED: 'interaction/regionCreationCancelled',
+
         // Audio
         AUDIO_STATUS_UPDATE: 'AUDIO_STATUS_UPDATE',
         AUDIO_RATE_CHANGE_REQUEST: 'audio/RATE_CHANGE_REQUEST', 
@@ -137,7 +140,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 timestamp,
                 note: typeof extras.note === 'string' ? extras.note : undefined,
                 color: extras.color,
-                metrics: extras.metrics
+                metrics: extras.metrics,
+                positionId: typeof extras.positionId === 'string' ? extras.positionId : undefined
             }
         }),
 
@@ -203,6 +207,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 showOverlays: typeof config?.showOverlays === 'boolean' ? config.showOverlays : undefined,
             }
         }),
+
+        regionCreationStarted: (payload) => ({
+            type: actionTypes.REGION_CREATION_STARTED,
+            payload: {
+                timestamp: Number.isFinite(payload?.timestamp) ? Number(payload.timestamp) : null,
+                positionId: typeof payload?.positionId === 'string' ? payload.positionId : null
+            }
+        }),
+
+        regionCreationCancelled: () => ({ type: actionTypes.REGION_CREATION_CANCELLED }),
 
         regionSetAddAreaMode: (regionId) => ({
             type: actionTypes.REGION_ADD_AREA_MODE_SET,

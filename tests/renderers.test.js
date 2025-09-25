@@ -534,6 +534,20 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionAutoDayButton.disabled).toBe(false);
             expect(models.regionAutoNightButton.disabled).toBe(false);
 
+            const pendingState = {
+                view: { availablePositions: ['P9'] },
+                regions: populatedState.regions,
+                interaction: {
+                    pendingRegionStart: { timestamp: 1500, positionId: 'P9' }
+                }
+            };
+
+            renderers.renderRegions(pendingState, {});
+            expect(models.regionPanelMessageDiv.visible).toBe(true);
+            expect(models.regionPanelMessageDiv.text).toContain('Region start pinned');
+            expect(models.regionPanelMessageDiv.text).toContain('P9');
+            expect(models.regionPanelDetail.visible).toBe(true);
+
 
             const multiRegionState = {
                 view: { availablePositions: ['P9'] },

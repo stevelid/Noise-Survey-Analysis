@@ -10,6 +10,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const { actions } = app;
     const markerSelectors = app.features?.markers?.selectors || {};
+    const viewSelectors = app.features?.view?.selectors || {};
 
     function hasArrayLikeLength(values) {
         return Boolean(values && typeof values.length === 'number');
@@ -146,9 +147,71 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    function addMarkerAtTapIntent() {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') {
+                return;
+            }
+
+            const state = getState();
+            const tapState = state?.interaction?.tap;
+            if (!tapState?.isActive || !Number.isFinite(tapState.timestamp) || !tapState.position) {
+                return;
+            }
+
+            dispatch(actions.markerAdd(tapState.timestamp, { positionId: tapState.position }));
+        };
+    }
+
+    function nudgeSelectedMarkerIntent(payload) {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') {
+                return;
+            }
+
+            const { key } = payload || {};
+            if (key !== 'ArrowLeft' && key !== 'ArrowRight') {
+                return;
+            }
+
+            const state = getState();
+            const selectedMarker = typeof markerSelectors.selectSelectedMarker === 'function'
+                ? markerSelectors.selectSelectedMarker(state)
+                : null;
+            if (!selectedMarker) {
+                return;
+            }
+
+            const direction = key === 'ArrowLeft' ? -1 : 1;
+            const stepSize = Number.isFinite(state?.interaction?.keyboard?.stepSizeMs)
+                ? state.interaction.keyboard.stepSizeMs
+                : 1000;
+            const viewport = typeof viewSelectors.selectViewport === 'function'
+                ? viewSelectors.selectViewport(state)
+                : state?.view?.viewport || {};
+            const viewportMin = Number.isFinite(viewport.min) ? viewport.min : -Infinity;
+            const viewportMax = Number.isFinite(viewport.max) ? viewport.max : Infinity;
+
+            const currentTimestamp = Number(selectedMarker.timestamp);
+            if (!Number.isFinite(currentTimestamp)) {
+                return;
+            }
+
+            const rawTimestamp = currentTimestamp + (direction * stepSize);
+            const clampedTimestamp = Math.min(Math.max(rawTimestamp, viewportMin), viewportMax);
+            if (clampedTimestamp === currentTimestamp) {
+                return;
+            }
+
+            dispatch(actions.markerUpdate(selectedMarker.id, { timestamp: clampedTimestamp }));
+        };
+    }
+
     app.features = app.features || {};
     app.features.markers = app.features.markers || {};
     app.features.markers.thunks = {
-        computeMarkerMetricsIntent
+        computeMarkerMetricsIntent,
+        addMarkerAtTapIntent,
+        nudgeSelectedMarkerIntent
     };
 })(window.NoiseSurveyApp);

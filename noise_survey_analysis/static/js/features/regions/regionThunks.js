@@ -328,6 +328,46 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    function toggleRegionCreationIntent() {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') {
+                return;
+            }
+
+            const state = getState();
+            const tapState = state?.interaction?.tap;
+            if (!tapState?.isActive || !Number.isFinite(tapState.timestamp) || !tapState.position) {
+                return;
+            }
+
+            const pending = state?.interaction?.pendingRegionStart;
+            if (!pending || pending.positionId !== tapState.position) {
+                dispatch(actions.regionCreationStarted({
+                    timestamp: tapState.timestamp,
+                    positionId: tapState.position
+                }));
+                return;
+            }
+
+            const start = Number(pending.timestamp);
+            const end = Number(tapState.timestamp);
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) {
+                dispatch(actions.regionCreationCancelled());
+                return;
+            }
+
+            const normalizedStart = Math.min(start, end);
+            const normalizedEnd = Math.max(start, end);
+            if (Math.abs(normalizedEnd - normalizedStart) < MIN_REGION_WIDTH_MS) {
+                dispatch(actions.regionCreationCancelled());
+                return;
+            }
+
+            dispatch(actions.regionAdd(pending.positionId, normalizedStart, normalizedEnd));
+            dispatch(actions.regionCreationCancelled());
+        };
+    }
+
     function resizeSelectedRegionIntent(payload) {
         return function (dispatch, getState) {
             if (!actions || typeof getState !== 'function') return;
@@ -404,7 +444,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         createRegionIntent,
         createAutoRegionsIntent,
         mergeRegionIntoSelectedIntent,
-        resizeSelectedRegionIntent
+        resizeSelectedRegionIntent,
+        toggleRegionCreationIntent
     };
 })(window.NoiseSurveyApp);
 
