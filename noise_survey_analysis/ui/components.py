@@ -1413,8 +1413,8 @@ class ControlsComponent:
             menu=[
                 ("Save Workspace", "save"),
                 ("Load Workspace", "load"),
-                ("Export Regions", "export_regions"),
-                ("Import Regions", "import_regions"),
+                ("Export Annotations (CSV)", "export_annotations_csv"),
+                ("Import Annotations (CSV)", "import_annotations_csv"),
             ],
         )
 

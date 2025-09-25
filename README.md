@@ -152,9 +152,11 @@ Tip: Regions are stored per position, so you can maintain independent annotation
 
 ## Importing, Exporting, and Restoring Your Work
 
-### Region files
+### Annotation CSV files
 
-Use the **Menu ▸ Export Regions** command to download a JSON file that contains every region’s bounds, notes, and the latest metric snapshot. **Menu ▸ Import Regions** rebuilds those regions in the current session and re-computes metrics against the newly loaded data so results stay consistent even if the underlying dataset has changed.
+Use the **Menu ▸ Export Annotations (CSV)** command to download a spreadsheet-friendly file containing every marker and region in the current session. The export includes the columns `type`, `id`, `positionId`, `start_utc`, `end_utc`, `note`, and `color`. Marker rows leave `end_utc` empty and record the marker timestamp in `start_utc`. All timestamps are written in UTC using the Excel-ready format `YYYY-MM-DD HH:mm:ss.sss`.
+
+Choose **Menu ▸ Import Annotations (CSV)** to restore annotations captured in the same format. The importer treats all timestamps as UTC milliseconds, rebuilds region areas, and preserves notes and colours before replacing the in-memory marker and region lists. This keeps annotations portable between workspaces and makes it easy to share review notes with collaborators.
 
 ### Workspace saves
 
