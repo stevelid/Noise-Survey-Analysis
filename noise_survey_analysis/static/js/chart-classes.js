@@ -12,6 +12,40 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     const DEFAULT_REGION_COLOR = '#1e88e5';
+    const DEFAULT_MARKER_COLOR = '#fdd835';
+    const SELECTED_MARKER_LINE_WIDTH = 3;
+    const UNSELECTED_MARKER_LINE_WIDTH = 2;
+    const SELECTED_MARKER_LINE_ALPHA = 0.95;
+    const UNSELECTED_MARKER_LINE_ALPHA = 0.7;
+
+    function normalizeMarkerColor(color) {
+        if (typeof color === 'string') {
+            const trimmed = color.trim();
+            if (trimmed) {
+                return trimmed;
+            }
+        }
+        return DEFAULT_MARKER_COLOR;
+    }
+
+    function styleMarkerSpan(span, color, isSelected) {
+        if (!span) {
+            return;
+        }
+        const desiredColor = normalizeMarkerColor(color);
+        const desiredWidth = isSelected ? SELECTED_MARKER_LINE_WIDTH : UNSELECTED_MARKER_LINE_WIDTH;
+        const desiredAlpha = isSelected ? SELECTED_MARKER_LINE_ALPHA : UNSELECTED_MARKER_LINE_ALPHA;
+
+        if (span.line_color !== desiredColor) {
+            span.line_color = desiredColor;
+        }
+        if (span.line_width !== desiredWidth) {
+            span.line_width = desiredWidth;
+        }
+        if (span.line_alpha !== desiredAlpha) {
+            span.line_alpha = desiredAlpha;
+        }
+    }
 
     function _updateBokehImageData(existingImageData, newData) {
         if (existingImageData.length !== newData.length) {
@@ -80,7 +114,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
          * @param {number[]} masterTimestampList - The global list of marker timestamps from _state.
          * @param {boolean} areMarkersEnabled - The global visibility toggle from _state.
          */
-        syncMarkers(masterTimestampList, areMarkersEnabled) {
+        syncMarkers(markers, areMarkersEnabled, selectedMarkerId) {
             // First, handle the global visibility toggle
             if (!areMarkersEnabled) {
                 this.markerModels.forEach(marker => marker.visible = false);
@@ -92,15 +126,31 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            const existingMarkersByTimestamp = new Map();
+            const existingMarkersById = new Map();
             this.markerModels.forEach(marker => {
-                existingMarkersByTimestamp.set(marker.location, marker);
+                if (Number.isFinite(marker.__markerId)) {
+                    existingMarkersById.set(marker.__markerId, marker);
+                } else {
+                    existingMarkersById.set(marker.location, marker);
+                }
                 marker.visible = false;
             });
 
             const nextMarkers = [];
-            masterTimestampList.forEach(timestamp => {
-                let marker = existingMarkersByTimestamp.get(timestamp);
+            const markerList = Array.isArray(markers) ? markers : [];
+            markerList.forEach(markerState => {
+                const timestamp = Number(markerState?.timestamp);
+                if (!Number.isFinite(timestamp)) {
+                    return;
+                }
+
+                const markerId = Number(markerState?.id);
+                const markerColor = markerState?.color;
+                const isSelected = Number.isFinite(selectedMarkerId) && markerId === selectedMarkerId;
+
+                let marker = Number.isFinite(markerId)
+                    ? existingMarkersById.get(markerId)
+                    : existingMarkersById.get(timestamp);
                 if (!marker) {
                     const doc = Bokeh.documents[0];
                     if (!doc) {
@@ -117,9 +167,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     marker = new Span({
                         location: timestamp,
                         dimension: 'height',
-                        line_color: 'orange',
-                        line_width: 2,
-                        line_alpha: 0.7,
+                        line_color: normalizeMarkerColor(markerColor),
+                        line_width: UNSELECTED_MARKER_LINE_WIDTH,
+                        line_alpha: UNSELECTED_MARKER_LINE_ALPHA,
                         level: 'underlay',
                         visible: true,
                         name: `marker_${this.name}_${timestamp}`
@@ -130,6 +180,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     marker.visible = true;
                 }
 
+                marker.__markerId = Number.isFinite(markerId) ? markerId : null;
+                styleMarkerSpan(marker, markerColor, isSelected);
                 nextMarkers.push(marker);
             });
 

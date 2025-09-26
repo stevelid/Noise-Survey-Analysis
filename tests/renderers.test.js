@@ -682,7 +682,10 @@ describe('NoiseSurveyApp.renderers', () => {
                 }
             };
             renderers.renderMarkers(mockState);
-            expect(mockSyncMarkers).toHaveBeenCalledWith([100, 200], true);
+            expect(mockSyncMarkers).toHaveBeenCalledWith([
+                expect.objectContaining({ id: 1, timestamp: 100 }),
+                expect.objectContaining({ id: 2, timestamp: 200 })
+            ], true, null);
             expect(mockSyncMarkers).toHaveBeenCalledTimes(2);
         });
     });
