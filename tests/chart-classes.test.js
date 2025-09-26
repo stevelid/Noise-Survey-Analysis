@@ -110,25 +110,43 @@ describe('NoiseSurveyApp.classes', () => {
     expect(spec.render).toHaveBeenCalled();
   });
 
-  it('Chart.syncMarkers should add, remove, and hide markers correctly', () => {
+  it('Chart.syncMarkers should add, update styling, and remove markers correctly', () => {
     // Base Chart with stubs
     const chartModel = { name: 'figure_P1_timeseries', add_layout: vi.fn(), remove_layout: vi.fn(), x_range: { start: 0, end: 100 }, y_range: { start: 0, end: 1 } };
     const sourceModel = { change: { emit: vi.fn() } };
     const chart = new classes.Chart(chartModel, sourceModel, {}, {}, 'P1');
 
-    // Add markers 100, 200
-    chart.syncMarkers([100, 200], true);
+    // Add markers 100, 200 with custom colors and selection
+    chart.syncMarkers([
+      { id: 1, timestamp: 100, color: '#123456' },
+      { id: 2, timestamp: 200, color: ' ' },
+    ], true, 2);
     expect(chart.markerModels).toHaveLength(2);
     expect(chartModel.add_layout).toHaveBeenCalledTimes(2);
     expect(sourceModel.change.emit).toHaveBeenCalled();
+    const markerOne = chart.markerModels.find((m) => m.__markerId === 1);
+    const markerTwo = chart.markerModels.find((m) => m.__markerId === 2);
+    expect(markerOne.line_color).toBe('#123456');
+    expect(markerTwo.line_width).toBeGreaterThan(markerOne.line_width);
+    expect(markerTwo.line_alpha).toBeGreaterThan(markerOne.line_alpha);
 
-    // Replace one and add one (remove 100, add 300)
-    chart.syncMarkers([200, 300], true);
+    // Replace one and add one (remove id 1, add id 3, update color of id 2)
+    chart.syncMarkers([
+      { id: 2, timestamp: 200, color: '#abcdef' },
+      { id: 3, timestamp: 300 },
+    ], true, 3);
     expect(chart.markerModels.map(m => m.location).sort()).toEqual([200, 300]);
     expect(chartModel.remove_layout).toHaveBeenCalledTimes(1);
+    const updatedMarkerTwo = chart.markerModels.find((m) => m.__markerId === 2);
+    expect(updatedMarkerTwo.line_color).toBe('#abcdef');
+    const selectedMarker = chart.markerModels.find((m) => m.__markerId === 3);
+    expect(selectedMarker.line_width).toBeGreaterThan(updatedMarkerTwo.line_width);
 
     // Hide markers when disabled
-    chart.syncMarkers([200, 300], false);
+    chart.syncMarkers([
+      { id: 2, timestamp: 200 },
+      { id: 3, timestamp: 300 },
+    ], false, 3);
     expect(chart.markerModels.every(m => m.visible === false)).toBe(true);
   });
 
@@ -306,7 +324,7 @@ describe('NoiseSurveyApp.classes', () => {
     const chartModel = { name: 'figure_P1_timeseries', add_layout: vi.fn(), remove_layout: vi.fn(), x_range: { start: 0, end: 1 }, y_range: { start: 0, end: 1 } };
     const sourceModel = { change: { emit: vi.fn() } };
     const chart = new classes.Chart(chartModel, sourceModel, {}, {}, 'P1');
-    chart.syncMarkers([100], true);
+    chart.syncMarkers([{ id: 1, timestamp: 100 }], true, null);
     expect(sourceModel.change.emit).toHaveBeenCalled();
     expect(chart.markerModels.length).toBe(0);
     global.Bokeh.documents = originalDocs;

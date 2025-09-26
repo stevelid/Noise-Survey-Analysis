@@ -475,13 +475,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const markers = typeof markerSelectors.selectAllMarkers === 'function'
             ? markerSelectors.selectAllMarkers(state)
             : [];
-        const timestamps = markers.map(marker => marker?.timestamp).filter(timestamp => Number.isFinite(timestamp));
         const enabled = typeof markerSelectors.selectAreMarkersEnabled === 'function'
             ? markerSelectors.selectAreMarkersEnabled(state)
             : Boolean(state?.markers?.enabled !== false);
+        const selectedId = Number.isFinite(state?.markers?.selectedId)
+            ? state.markers.selectedId
+            : null;
 
         controllers.chartsByName.forEach(chart => {
-            chart.syncMarkers(timestamps, enabled);
+            chart.syncMarkers(markers, enabled, selectedId);
         });
 
         const markerPanelRenderer = app.services?.markerPanelRenderer;
