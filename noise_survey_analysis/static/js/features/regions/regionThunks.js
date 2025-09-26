@@ -16,6 +16,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const DAY_MS = 24 * HOUR_MS;
     const DAYTIME_START_HOUR = 7;
     const DAYTIME_END_HOUR = 23;
+    const AUTO_REGION_MODES = {
+        daytime: { color: '#4caf50' },
+        nighttime: { color: '#7e57c2' }
+    };
 
     function getRegionAreas(region) {
         if (!region) return [];
@@ -332,7 +336,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (!actions || typeof dispatch !== 'function') {
                 return;
             }
-            const mode = payload?.mode === 'nighttime' ? 'nighttime' : 'daytime';
             const state = typeof getState === 'function' ? getState() : null;
             const availablePositions = Array.isArray(state?.view?.availablePositions)
                 ? state.view.availablePositions
@@ -345,6 +348,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            const requestedModes = (() => {
+                const primary = typeof payload?.mode === 'string' ? payload.mode : null;
+                const modeList = Array.isArray(payload?.modes) ? payload.modes : null;
+                const raw = modeList && modeList.length ? modeList : (primary ? [primary] : null);
+                const result = [];
+                const candidates = raw && raw.length ? raw : Object.keys(AUTO_REGION_MODES);
+                candidates.forEach(candidate => {
+                    const normalized = candidate === 'nighttime' ? 'nighttime' : candidate === 'daytime' ? 'daytime' : null;
+                    if (normalized && !result.includes(normalized)) {
+                        result.push(normalized);
+                    }
+                });
+                return result.length ? result : Object.keys(AUTO_REGION_MODES);
+            })();
+
             const generated = [];
             positions.forEach(positionId => {
                 if (!positionId) {
@@ -354,12 +372,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 if (!timestamps.length) {
                     return;
                 }
-                const intervals = buildDailyIntervals(timestamps, mode);
-                intervals.forEach(interval => {
-                    generated.push({
-                        positionId,
-                        start: interval.start,
-                        end: interval.end
+                requestedModes.forEach(modeName => {
+                    const config = AUTO_REGION_MODES[modeName];
+                    if (!config) {
+                        return;
+                    }
+                    const intervals = buildDailyIntervals(timestamps, modeName);
+                    intervals.forEach(interval => {
+                        generated.push({
+                            positionId,
+                            start: interval.start,
+                            end: interval.end,
+                            color: config.color
+                        });
                     });
                 });
             });

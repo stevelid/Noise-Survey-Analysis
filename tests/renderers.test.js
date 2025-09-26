@@ -164,8 +164,7 @@ describe('NoiseSurveyApp.renderers', () => {
             frequencyTableDiv: { text: '', visible: false },
             spectrumDiv: { text: '', visible: false },
             visibilityToggle: { label: 'Regions', active: true, button_type: 'primary' },
-            autoDayButton: { disabled: false, button_type: 'default', visible: true },
-            autoNightButton: { disabled: false, button_type: 'default', visible: true },
+            autoDayNightButton: { disabled: false, button_type: 'default', visible: true },
         };
 
         Object.assign(window.NoiseSurveyApp.registry.models, {
@@ -185,8 +184,7 @@ describe('NoiseSurveyApp.renderers', () => {
             regionPanelFrequencyTableDiv: regionPanelMocks.frequencyTableDiv,
             regionPanelSpectrumDiv: regionPanelMocks.spectrumDiv,
             regionVisibilityToggle: regionPanelMocks.visibilityToggle,
-            regionAutoDayButton: regionPanelMocks.autoDayButton,
-            regionAutoNightButton: regionPanelMocks.autoNightButton,
+            regionAutoDayNightButton: regionPanelMocks.autoDayNightButton,
         });
 
     });
@@ -224,8 +222,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionVisibilityToggle.active).toBe(false);
             expect(models.regionVisibilityToggle.label).toBe('Regions (1)');
             expect(models.regionVisibilityToggle.button_type).toBe('default');
-            expect(models.regionAutoDayButton.visible).toBe(false);
-            expect(models.regionAutoNightButton.visible).toBe(false);
+            expect(models.regionAutoDayNightButton.visible).toBe(false);
 
             const hiddenCall = mockSyncRegions.mock.calls.at(-1);
             expect(hiddenCall[0]).toEqual([]);
@@ -262,8 +259,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionVisibilityToggle.active).toBe(true);
             expect(models.regionVisibilityToggle.label).toBe('Regions (2)');
             expect(models.regionVisibilityToggle.button_type).toBe('primary');
-            expect(models.regionAutoDayButton.visible).toBe(true);
-            expect(models.regionAutoNightButton.visible).toBe(true);
+            expect(models.regionAutoDayNightButton.visible).toBe(true);
 
             const visibleCall = mockSyncRegions.mock.calls.at(-1);
             expect(Array.isArray(visibleCall[0])).toBe(true);
@@ -477,8 +473,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelFrequencyCopyButton.disabled).toBe(true);
             expect(models.regionPanelFrequencyCopyButton.visible).toBe(false);
             expect(models.regionPanelFrequencyTableDiv.visible).toBe(false);
-            expect(models.regionAutoDayButton.disabled).toBe(true);
-            expect(models.regionAutoNightButton.disabled).toBe(true);
+            expect(models.regionAutoDayNightButton.disabled).toBe(true);
 
 
             const populatedState = {
@@ -531,8 +526,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelFrequencyCopyButton.visible).toBe(true);
             expect(models.regionPanelFrequencyTableDiv.visible).toBe(true);
             expect(models.regionPanelFrequencyTableDiv.text).toContain('No frequency data available');
-            expect(models.regionAutoDayButton.disabled).toBe(false);
-            expect(models.regionAutoNightButton.disabled).toBe(false);
+            expect(models.regionAutoDayNightButton.disabled).toBe(false);
 
             const pendingState = {
                 view: { availablePositions: ['P9'] },

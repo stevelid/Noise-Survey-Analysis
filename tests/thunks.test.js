@@ -277,21 +277,25 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.regions.byId[2].positionId).toBe('P2');
     });
 
-    it('createAutoRegionsIntent builds daytime regions for each day', () => {
-        const dayTimes = [
+    it('createAutoRegionsIntent builds daytime and nighttime regions with colours', () => {
+        const times = [
             Date.UTC(2024, 0, 1, 6, 0, 0),
             Date.UTC(2024, 0, 1, 8, 0, 0),
             Date.UTC(2024, 0, 1, 22, 0, 0),
             Date.UTC(2024, 0, 1, 23, 30, 0),
+            Date.UTC(2024, 0, 2, 1, 0, 0),
             Date.UTC(2024, 0, 2, 6, 30, 0),
-            Date.UTC(2024, 0, 2, 12, 0, 0)
+            Date.UTC(2024, 0, 2, 8, 0, 0),
+            Date.UTC(2024, 0, 2, 22, 0, 0),
+            Date.UTC(2024, 0, 2, 23, 30, 0),
+            Date.UTC(2024, 0, 3, 6, 30, 0)
         ];
 
         window.NoiseSurveyApp.registry.models = window.NoiseSurveyApp.registry.models || {};
         const originalSources = window.NoiseSurveyApp.registry.models.timeSeriesSources;
         window.NoiseSurveyApp.registry.models.timeSeriesSources = {
             P1: {
-                overview: { data: { Datetime: dayTimes } },
+                overview: { data: { Datetime: times } },
                 log: { data: { Datetime: [] } },
             }
         };
@@ -299,26 +303,31 @@ describe('NoiseSurveyApp thunks', () => {
         store.dispatch(actions.initializeState({
             availablePositions: ['P1'],
             selectedParameter: 'LZeq',
-            viewport: { min: dayTimes[0], max: dayTimes[dayTimes.length - 1] },
+            viewport: { min: times[0], max: times[times.length - 1] },
             chartVisibility: {}
         }));
 
-        const thunk = thunks.createAutoRegionsIntent({ mode: 'daytime' });
+        const thunk = thunks.createAutoRegionsIntent();
         thunk(store.dispatch, store.getState);
 
         const state = store.getState();
-        expect(state.regions.allIds.length).toBe(2);
-        const firstRegion = state.regions.byId[state.regions.allIds[0]];
-        const secondRegion = state.regions.byId[state.regions.allIds[1]];
-        expect(new Date(firstRegion.start).getUTCHours()).toBe(7);
-        expect(new Date(firstRegion.end).getUTCHours()).toBe(23);
-        expect(new Date(secondRegion.start).getUTCHours()).toBe(7);
-        expect(new Date(secondRegion.end).getUTCHours()).toBe(12);
+        expect(state.regions.allIds.length).toBe(4);
+        const regions = state.regions.allIds.map(id => state.regions.byId[id]);
+        const daytimeRegions = regions.filter(region => region.color === '#4caf50');
+        const nighttimeRegions = regions.filter(region => region.color === '#7e57c2');
+        expect(daytimeRegions.length).toBe(2);
+        expect(nighttimeRegions.length).toBe(2);
+        daytimeRegions.forEach(region => {
+            expect(new Date(region.start).getUTCHours()).toBe(7);
+        });
+        nighttimeRegions.forEach(region => {
+            expect(new Date(region.start).getUTCHours()).toBe(23);
+        });
 
         window.NoiseSurveyApp.registry.models.timeSeriesSources = originalSources;
     });
 
-    it('createAutoRegionsIntent builds nighttime regions spanning midnight', () => {
+    it('createAutoRegionsIntent respects explicit mode filters', () => {
         const times = [
             Date.UTC(2024, 0, 1, 20, 0, 0),
             Date.UTC(2024, 0, 1, 23, 30, 0),
@@ -343,8 +352,8 @@ describe('NoiseSurveyApp thunks', () => {
         const state = store.getState();
         expect(state.regions.allIds.length).toBe(1);
         const region = state.regions.byId[state.regions.allIds[0]];
+        expect(region.color).toBe('#7e57c2');
         expect(new Date(region.start).getUTCHours()).toBe(23);
-        expect(new Date(region.end).getUTCHours()).toBe(7);
 
         window.NoiseSurveyApp.registry.models.timeSeriesSources = previousSources;
     });

@@ -189,8 +189,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.store.dispatch(actions.visibilityChange(chartName, isVisible));
     }
 
-    function handleAutoRegions(mode) {
-        const normalizedMode = mode === 'nighttime' ? 'nighttime' : 'daytime';
+    function handleAutoRegions() {
         const thunkCreator = app.thunks && app.thunks.createAutoRegionsIntent;
         const dispatch = app.store && app.store.dispatch;
         if (typeof thunkCreator !== 'function') {
@@ -202,7 +201,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return;
         }
 
-        dispatch(thunkCreator({ mode: normalizedMode }));
+        dispatch(thunkCreator());
     }
 
     function handleAudioStatusUpdate() {
