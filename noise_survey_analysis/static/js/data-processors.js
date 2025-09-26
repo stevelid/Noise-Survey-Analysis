@@ -96,6 +96,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      *    _updateActiveFreqBarData() to update the bar chart's data.
      */
     function updateActiveData(viewState, dataCache, models) {
+        const displayDetailsByPosition = {};
         viewState.availablePositions.forEach(position => {
             const tsChartName = `figure_${position}_timeseries`;
             const specChartName = `figure_${position}_spectrogram`;
@@ -105,10 +106,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // Only process data for charts that are currently visible
             if (viewState.chartVisibility[tsChartName] || viewState.chartVisibility[specChartName]) {
                 const offsetMs = getChartOffsetMs(viewState, position);
-                updateActiveLineChartData(position, viewState, dataCache, models, offsetMs);
-                updateActiveSpectralData(position, viewState, dataCache, models, offsetMs);
+                const lineDetails = updateActiveLineChartData(position, viewState, dataCache, models, offsetMs);
+                const spectralDetails = updateActiveSpectralData(position, viewState, dataCache, models, offsetMs);
+
+                if (lineDetails || spectralDetails) {
+                    displayDetailsByPosition[position] = {
+                        ...(lineDetails ? { line: lineDetails } : {}),
+                        ...(spectralDetails ? { spec: spectralDetails } : {})
+                    };
+                }
             }
         });
+
+        return displayDetailsByPosition;
 
         // This function is now called from onStateChange, so we get the full state there.
         // We'll need to get the state inside this function for now.
@@ -189,13 +199,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 displayDetails = { type: 'overview', reason: ' (Overview)' };
             }
 
-            if (!viewState.displayDetails[position]) {
-                viewState.displayDetails[position] = {};
-            }
-            viewState.displayDetails[position].line = displayDetails;
+            return displayDetails;
         }
         catch (error) {
             console.error(" [data-processors.js - updateActiveLineChartData()]", error);
+            return null;
         }
     }
 
@@ -219,7 +227,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const logData = positionGlyphData?.log?.prepared_params?.[parameter];
             const hasLogData = logData && logData.times_ms && logData.times_ms.length > 0;
 
-            let finalDataToUse, finalGlyphData, displayReason;
+            let finalDataToUse, finalGlyphData;
+            let displayMetadata = { type: 'none', reason: ' (No Data Available)' };
 
             const offsetMs = positionOffsetMs;
             const viewportMin = Number(viewState.viewport?.min);
@@ -234,7 +243,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     if (pointsInView <= MAX_SPECTRAL_POINTS_TO_RENDER) {
                         // Happy Path: Show chunked LOG data
                         finalDataToUse = logData;
-                        displayReason = ' (Log Data)'; // Explicitly label the log view
+                        displayMetadata = { type: 'log', reason: ' (Log Data)' }; // Explicitly label the log view
 
                         const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs } = finalDataToUse;
                         let viewportCenter = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
@@ -260,21 +269,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     } else {
                         // Log view active, but too zoomed out
                         finalDataToUse = overviewData;
-                        displayReason = ' - Zoom in for Log Data';
+                        displayMetadata = { type: 'overview', reason: ' - Zoom in for Log Data' };
                         const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                         finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
                     }
                 } else {
                     // Log view active, but no log data exists
                     finalDataToUse = overviewData;
-                    displayReason = ' (No Log Data Available)';
+                    displayMetadata = { type: 'overview', reason: ' (No Log Data Available)' };
                     const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                     finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
                 }
             } else {
                 // Overview view is explicitly active
                 finalDataToUse = overviewData;
-                displayReason = ' (Overview)';
+                displayMetadata = { type: 'overview', reason: ' (Overview)' };
                 const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                 finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
             }
@@ -292,15 +301,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 // This case handles when overviewData was also null in one of the fallback paths.
                 dataCache.activeSpectralData[position] = { source_replacement: null, reason: 'No Data Available', times_ms: [] };
                 // If we ended up with no data, this reason overrides any previous one.
-                displayReason = ' (No Data Available)';
+                displayMetadata = { type: 'none', reason: ' (No Data Available)' };
             }
-            if (!viewState.displayDetails[position]) {
-                viewState.displayDetails[position] = {};
-            }
-            viewState.displayDetails[position].spec = { reason: displayReason };
+            return displayMetadata;
         }
         catch (error) {
             console.error(" [data-processors.js - updateActiveSpectralData()]", error);
+            return null;
         }
     }
 

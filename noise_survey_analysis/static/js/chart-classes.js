@@ -461,11 +461,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateAllCharts(state, dataCache) {
             const activeLineData = dataCache.activeLineData[this.id];
             const activeSpecData = dataCache.activeSpectralData[this.id];
+            const positionDetails = state?.view?.displayDetails?.[this.id] || {};
             if (this.timeSeriesChart) {
-                this.timeSeriesChart.update(activeLineData, state.view.displayDetails[this.id].line);
+                this.timeSeriesChart.update(activeLineData, positionDetails.line || {});
             }
             if (this.spectrogramChart) {
-                this.spectrogramChart.update(activeSpecData, state.view.displayDetails[this.id].spec, state.view.selectedParameter);
+                this.spectrogramChart.update(activeSpecData, positionDetails.spec || {}, state.view.selectedParameter);
             }
         }
 

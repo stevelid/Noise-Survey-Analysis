@@ -94,6 +94,41 @@ describe('rootReducer', () => {
             expect(state.view.positionAudioOffsets.P1).toBe(-700);
             expect(state.view.positionEffectiveOffsets.P1).toBe(500);
         });
+
+        it('should merge display details immutably when updates are dispatched', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    displayDetails: {
+                        P1: { line: { type: 'overview', reason: ' (Overview)' } }
+                    }
+                }
+            };
+
+            const firstUpdate = rootReducer(baseState, actions.displayDetailsUpdated({
+                P1: {
+                    line: { type: 'log', reason: ' (Log Data)' },
+                    spec: { type: 'log', reason: ' (Log Data)' }
+                },
+                P2: {
+                    spec: { type: 'overview', reason: ' (Overview)' }
+                }
+            }));
+
+            expect(firstUpdate.view.displayDetails.P1.line).toEqual({ type: 'log', reason: ' (Log Data)' });
+            expect(firstUpdate.view.displayDetails.P1.spec).toEqual({ type: 'log', reason: ' (Log Data)' });
+            expect(firstUpdate.view.displayDetails.P2.spec).toEqual({ type: 'overview', reason: ' (Overview)' });
+            expect(baseState.view.displayDetails.P1.line).toEqual({ type: 'overview', reason: ' (Overview)' });
+
+            const secondUpdate = rootReducer(firstUpdate, actions.displayDetailsUpdated({
+                P1: {
+                    line: { type: 'log', reason: ' (Log Data)' }
+                }
+            }));
+
+            expect(secondUpdate.view).toBe(firstUpdate.view);
+        });
     });
 
     describe('Comparison Mode actions', () => {

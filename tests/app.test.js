@@ -18,7 +18,7 @@ beforeEach(() => {
     renderActiveTool: vi.fn(),
   };
   window.NoiseSurveyApp.data_processors = {
-    updateActiveData: vi.fn(),
+    updateActiveData: vi.fn().mockReturnValue({}),
     calculateStepSize: vi.fn().mockReturnValue(120000),
     updateActiveFreqBarData: vi.fn(),
   };
@@ -84,6 +84,13 @@ describe('NoiseSurveyApp.app orchestrator', () => {
     vi.clearAllMocks();
 
     // Dispatch a viewport change
+    window.NoiseSurveyApp.data_processors.updateActiveData.mockReturnValueOnce({
+      P1: {
+        line: { type: 'log', reason: ' (Log Data)' },
+        spec: { type: 'log', reason: ' (Log Data)' },
+      },
+    });
+
     window.NoiseSurveyApp.store.dispatch(
       window.NoiseSurveyApp.actions.viewportChange(0, 2000)
     );
@@ -92,5 +99,9 @@ describe('NoiseSurveyApp.app orchestrator', () => {
     const vp = window.NoiseSurveyApp.store.getState().view.viewport;
     expect(vp.min).toBe(0);
     expect(vp.max).toBe(2000);
+
+    const details = window.NoiseSurveyApp.store.getState().view.displayDetails;
+    expect(details.P1.line).toEqual({ type: 'log', reason: ' (Log Data)' });
+    expect(details.P1.spec).toEqual({ type: 'log', reason: ' (Log Data)' });
   });
 });

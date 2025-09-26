@@ -111,7 +111,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * @param {boolean} [isInitialLoad=false] - A flag to force a full update.
      */
     function onStateChange(isInitialLoad = false) {
-        const state = app.store.getState();
+        let state = app.store.getState();
         const { models, controllers } = app.registry;
         const actionTypes = app.actionTypes || {};
         const lastActionType = state.system?.lastAction?.type;
@@ -141,10 +141,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange || didChartOffsetsChange;
 
         // --- B. ORCHESTRATE DATA PROCESSING & RENDERING ---
+        let displayDetailsUpdates = null;
+
         if (isHeavyUpdate) {
             // 1. Process heavy data (time series, spectrograms)
             if (app.data_processors?.updateActiveData) {
-                app.data_processors.updateActiveData(state.view, dataCache, app.registry.models);
+                displayDetailsUpdates = app.data_processors.updateActiveData(state.view, dataCache, app.registry.models);
             }
 
             // 2. Calculate new step size based on new data
@@ -154,7 +156,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (Number.isFinite(newStepSize) && newStepSize !== state.interaction.keyboard.stepSizeMs) {
                 app.store.dispatch(app.actions.stepSizeCalculated(newStepSize));
             }
+        }
 
+        if (displayDetailsUpdates && Object.keys(displayDetailsUpdates).length > 0) {
+            previousState = state;
+            app.store.dispatch(app.actions.displayDetailsUpdated(displayDetailsUpdates));
+            state = app.store.getState();
+        }
+
+        if (isHeavyUpdate) {
             // 3. Render the main charts with the new data
             app.renderers.renderPrimaryCharts(state, dataCache);
         }
