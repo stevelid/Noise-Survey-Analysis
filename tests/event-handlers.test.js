@@ -24,6 +24,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     let createMarkerFromKeyboardIntentSpy;
     let createRegionFromMarkersIntentSpy;
     let nudgeSelectedMarkerIntentSpy;
+    let handleKeyboardShortcutIntentSpy;
 
     beforeEach(() => {
         vi.useFakeTimers();
@@ -58,6 +59,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         createMarkerFromKeyboardIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createMarkerFromKeyboardIntent').mockImplementation(() => () => {});
         createRegionFromMarkersIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createRegionFromMarkersIntent').mockImplementation(() => () => {});
         nudgeSelectedMarkerIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'nudgeSelectedMarkerIntent').mockImplementation(() => () => {});
+        handleKeyboardShortcutIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleKeyboardShortcutIntent');
     });
 
     afterEach(() => {
@@ -268,6 +270,19 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             const event = { key: 'Escape', preventDefault: vi.fn(), target: { tagName: 'div' } };
             eventHandlers.handleKeyPress(event);
             expect(event.preventDefault).toHaveBeenCalled();
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
+            expect(handleKeyboardShortcutIntentSpy).toHaveBeenCalledWith({
+                key: 'Escape',
+                code: '',
+                ctrlKey: false,
+                altKey: false
+            });
+
+            const dispatchedThunk = dispatchSpy.mock.calls[dispatchSpy.mock.calls.length - 1][0];
+            expect(typeof dispatchedThunk).toBe('function');
+
+            dispatchSpy.mockClear();
+            dispatchedThunk(dispatchSpy, store.getState);
             expect(dispatchSpy).toHaveBeenCalledWith(actions.regionCreationCancelled());
         });
 
