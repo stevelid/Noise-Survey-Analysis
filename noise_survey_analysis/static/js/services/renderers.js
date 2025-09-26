@@ -546,8 +546,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 frequencyTableDiv: models?.regionPanelFrequencyTableDiv,
                 spectrumDiv: models?.regionPanelSpectrumDiv,
                 visibilityToggle: models?.regionVisibilityToggle,
-                autoDayButton: models?.regionAutoDayButton,
-                autoNightButton: models?.regionAutoNightButton,
+                autoDayNightButton: models?.regionAutoDayNightButton,
             };
             const availablePositions = Array.isArray(state?.view?.availablePositions)
                 ? state.view.availablePositions
