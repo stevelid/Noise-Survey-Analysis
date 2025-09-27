@@ -42,7 +42,6 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
       globalViewType: 'log',
       selectedParameter: 'LAeq',
       viewport: { min: 0, max: 3 }, // targetChunkStartTimeIdx = 0 for chunk_time_length=3
-      displayDetails: {},
     };
     const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
     const log = buildSpectralPrepared(6, 4, 1, 3);
@@ -54,7 +53,7 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
       config: { spectrogram_freq_range_hz: [200, 300] },
     };
 
-    dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
 
     const rep = dataState.activeSpectralData[position].source_replacement;
     expect(rep).toBeTruthy();
@@ -65,6 +64,9 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     expect(rep.visible_freq_indices).toEqual([1, 2]);
     // Verify that copied canvas buffer retains visible rows and is correct size
     expect(rep.image[0].length).toBe(log.n_freqs * log.chunk_time_length);
+    expect(details.type).toBe('log');
+    expect(details.reason).toBe(' (Log Data)');
+    expect(dataState.activeSpectralData[position].dataViewType).toBe('log');
   });
 
   it('zoomed out: falls back to overview with reason and initial glyph image', () => {
@@ -73,7 +75,6 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
       globalViewType: 'log',
       selectedParameter: 'LAeq',
       viewport: { min: 0, max: 6000 }, // pointsInView = 6000 > MAX_SPECTRAL_POINTS_TO_RENDER
-      displayDetails: {},
     };
     const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
     const log = buildSpectralPrepared(6, 4, 1, 3);
@@ -87,57 +88,62 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
       config: { spectrogram_freq_range_hz: [100, 400] },
     };
 
-    dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
     const rep = dataState.activeSpectralData[position].source_replacement;
-    expect(viewState.displayDetails[position].spec.reason).toBe(' - Zoom in for Log Data');
+    expect(details.reason).toBe(' - Zoom in for Log Data');
+    expect(details.type).toBe('overview');
     // Should use overview image buffer size
     expect(rep.image[0]).toEqual(overview.initial_glyph_data.image[0]);
+    expect(dataState.activeSpectralData[position].dataViewType).toBe('overview');
   });
 
   it('no log data: falls back to overview with specific reason', () => {
     const position = 'P1';
-    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 0, max: 3 }, displayDetails: {} };
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 0, max: 3 } };
     const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
     const overview = buildSpectralPrepared(6, 4, 1, 3);
     const models = {
       preparedGlyphData: { [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } } },
       config: { spectrogram_freq_range_hz: [100, 400] },
     };
-    dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
-    expect(viewState.displayDetails[position].spec.reason).toBe(' (No Log Data Available)');
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    expect(details.reason).toBe(' (No Log Data Available)');
+    expect(details.type).toBe('overview');
   });
 
   it('missing config: returns chunk image without y-range slicing', () => {
     const position = 'P1';
-    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 0, max: 3 }, displayDetails: {} };
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 0, max: 3 } };
     const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
     const log = buildSpectralPrepared(6, 4, 1, 3);
     const models = {
       preparedGlyphData: { [position]: { overview: { prepared_params: { LAeq: log } }, log: { prepared_params: { LAeq: log } } } },
       // No config provided
     };
-    dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
     const rep = dataState.activeSpectralData[position].source_replacement;
     // Should have a chunk-sized image with no y_range metadata
     expect(rep.image[0].length).toBe(log.n_freqs * log.chunk_time_length);
     expect(rep.y_range_start).toBeUndefined();
     expect(rep.y_range_end).toBeUndefined();
+    expect(details.type).toBe('log');
   });
 
   it('out-of-range freqs: falls back to full chunk image', () => {
     const position = 'P1';
-    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 0, max: 3 }, displayDetails: {} };
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 0, max: 3 } };
     const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
     const log = buildSpectralPrepared(6, 4, 1, 3);
     const models = {
       preparedGlyphData: { [position]: { overview: { prepared_params: { LAeq: log } }, log: { prepared_params: { LAeq: log } } } },
       config: { spectrogram_freq_range_hz: [5000, 8000] },
     };
-    dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
     const rep = dataState.activeSpectralData[position].source_replacement;
     // Should be the full chunk (fallback path)
     expect(rep.image[0].length).toBe(log.n_freqs * log.chunk_time_length);
     expect(rep.y_range_start).toBeUndefined();
     expect(rep.y_range_end).toBeUndefined();
+    expect(details.type).toBe('log');
   });
 });

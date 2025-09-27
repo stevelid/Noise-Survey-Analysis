@@ -339,14 +339,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
          * This is a HEAVY operation and should only be called when the underlying
          * data view (zoom level, parameter, log/overview) changes.
          */
-    function renderPrimaryCharts(state, dataCache) {
+    function renderPrimaryCharts(state, dataCache, displayDetailsByPosition = {}) {
         const { controllers } = app.registry;
         if (!controllers?.positions) return;
+
+        const safeDisplayDetails = displayDetailsByPosition || {};
 
         for (const posId in controllers.positions) {
             const controller = controllers.positions[posId];
             const tsChartName = `figure_${posId}_timeseries`;
             const specChartName = `figure_${posId}_spectrogram`;
+            const positionDisplayDetails = safeDisplayDetails[posId] || {};
 
             // Explicitly set visibility for each chart based on the state
             if (controller.timeSeriesChart) {
@@ -360,7 +363,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
             }
             // Update the data for the controller if any of its charts are visible
-            controller.updateAllCharts(state, dataCache);
+            controller.updateAllCharts(state, dataCache, positionDisplayDetails);
         }
     }
 
@@ -692,7 +695,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const PLAYING_BACKGROUND_COLOR = '#e6f0ff'; // A light blue to highlight the active chart
     const DEFAULT_BACKGROUND_COLOR = '#ffffff'; // Standard white background
 
-    function renderControlWidgets(state) {
+    function renderControlWidgets(state, displayDetailsByPosition = null) {
         const { models, controllers } = app.registry;
         if (!models || !controllers) return;
 
@@ -702,7 +705,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const availablePositions = Array.isArray(viewState.availablePositions)
             ? viewState.availablePositions
             : [];
-        const displayDetails = viewState.displayDetails || {};
         const selectedParameter = viewState.selectedParameter;
         const positionChartOffsets = viewState.positionChartOffsets || {};
         const positionAudioOffsets = viewState.positionAudioOffsets || {};
@@ -750,18 +752,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // --- Update Chart Visuals (Title and Background) ---
             if (controller && controller.timeSeriesChart) {
                 const tsChart = controller.timeSeriesChart;
-                // Base title comes from the state's displayDetails
-                const positionDetails = displayDetails[pos] || {};
-                const lineDetails = positionDetails.line || {};
-                const baseTitle = `${pos} - Time History${lineDetails.reason || ''}`;
+                const transientLineDetails = displayDetailsByPosition?.[pos]?.line;
+                if (transientLineDetails) {
+                    tsChart.lastDisplayDetails = transientLineDetails;
+                }
+                const baseDetails = tsChart.lastDisplayDetails || { reason: '' };
+                const baseTitle = `${pos} - Time History${baseDetails.reason || ''}`;
                 tsChart.model.title.text = isThisPositionActive ? `${baseTitle} (▶ PLAYING)` : baseTitle;
                 tsChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }
             if (controller && controller.spectrogramChart) {
                 const specChart = controller.spectrogramChart;
-                const positionDetails = displayDetails[pos] || {};
-                const specDetails = positionDetails.spec || {};
-                const baseTitle = `${pos} - ${selectedParameter} Spectrogram${specDetails.reason || ''}`;
+                const transientSpecDetails = displayDetailsByPosition?.[pos]?.spec;
+                if (transientSpecDetails) {
+                    specChart.lastDisplayDetails = transientSpecDetails;
+                }
+                const baseDetails = specChart.lastDisplayDetails || { reason: '' };
+                const baseTitle = `${pos} - ${selectedParameter} Spectrogram${baseDetails.reason || ''}`;
                 specChart.model.title.text = isThisPositionActive ? `${baseTitle} (▶ PLAYING)` : baseTitle;
                 specChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }

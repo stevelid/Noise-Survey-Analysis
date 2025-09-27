@@ -141,10 +141,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange || didChartOffsetsChange;
 
         // --- B. ORCHESTRATE DATA PROCESSING & RENDERING ---
+        let displayDetailsUpdates = null;
+
         if (isHeavyUpdate) {
             // 1. Process heavy data (time series, spectrograms)
             if (app.data_processors?.updateActiveData) {
-                app.data_processors.updateActiveData(state.view, dataCache, app.registry.models);
+                displayDetailsUpdates = app.data_processors.updateActiveData(state.view, dataCache, app.registry.models) || {};
             }
 
             // 2. Calculate new step size based on new data
@@ -156,7 +158,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             // 3. Render the main charts with the new data
-            app.renderers.renderPrimaryCharts(state, dataCache);
+            app.renderers.renderPrimaryCharts(state, dataCache, displayDetailsUpdates);
         }
 
         // Always update the frequency bar, as it depends on hover/tap (light changes)
@@ -167,7 +169,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.renderers.renderOverlays(state, dataCache);
 
         // Always keep UI widgets in sync with the stat
-        app.renderers.renderControlWidgets(state);
+        app.renderers.renderControlWidgets(state, displayDetailsUpdates);
 
         // Always sync markers
         if (isInitialLoad || didMarkersChange) {
