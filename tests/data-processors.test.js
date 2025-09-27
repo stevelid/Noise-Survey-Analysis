@@ -88,8 +88,7 @@ describe('NoiseSurveyApp.data_processors', () => {
                 },
                 audio: { isPlaying: false },
                 view: {
-                    selectedParameter: 'LAeq',
-                    displayDetails: { P1: { spec: { type: 'None' } } }
+                    selectedParameter: 'LAeq'
                 }
             };
             const mockDataCache = {
@@ -119,8 +118,7 @@ describe('NoiseSurveyApp.data_processors', () => {
                 },
                 audio: { isPlaying: false },
                 view: {
-                    selectedParameter: 'LAeq',
-                    displayDetails: { P1: { spec: { type: 'None' } } }
+                    selectedParameter: 'LAeq'
                 }
             };
             const mockDataCache = {
@@ -169,8 +167,7 @@ describe('NoiseSurveyApp.data_processors', () => {
                 },
                 audio: { isPlaying: true, activePositionId: 'P1' },
                 view: {
-                    selectedParameter: 'LAeq',
-                    displayDetails: { P1: { spec: { type: 'None' } } }
+                    selectedParameter: 'LAeq'
                 }
             };
             const mockDataCache = {
@@ -199,8 +196,7 @@ describe('NoiseSurveyApp.data_processors', () => {
                 },
                 audio: { isPlaying: false },
                 view: {
-                    selectedParameter: 'LAeq',
-                    displayDetails: { P1: { spec: { type: 'None' } } }
+                    selectedParameter: 'LAeq'
                 }
             };
             const mockDataCache = {
@@ -234,8 +230,7 @@ describe('NoiseSurveyApp.data_processors', () => {
         it('should show log data when in log view and zoomed in', () => {
             const viewState = {
                 globalViewType: 'log',
-                viewport: { min: 1000, max: 2000 },
-                displayDetails: {}
+                viewport: { min: 1000, max: 2000 }
             };
             const mockDataCache = { activeLineData: {} };
             const models = {
@@ -251,17 +246,16 @@ describe('NoiseSurveyApp.data_processors', () => {
                 }
             };
 
-            dataProcessors.updateActiveLineChartData('P1', viewState, mockDataCache, models);
+            const details = dataProcessors.updateActiveLineChartData('P1', viewState, mockDataCache, models);
 
             expect(mockDataCache.activeLineData.P1.LAeq).toEqual([60, 70]);
-            expect(viewState.displayDetails.P1.line.type).toBe('log');
+            expect(details.type).toBe('log');
         });
 
         it('should show overview data when in log view but zoomed out', () => {
             const viewState = {
                 globalViewType: 'log',
-                viewport: { min: 0, max: 5001000 }, // Large range
-                displayDetails: {}
+                viewport: { min: 0, max: 5001000 } // Large range
             };
             const dataCache = { activeLineData: {} };
             const models = {
@@ -283,17 +277,16 @@ describe('NoiseSurveyApp.data_processors', () => {
                 }
             };
 
-            dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
+            const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
 
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
-            expect(viewState.displayDetails.P1.line.type).toBe('overview');
+            expect(details.type).toBe('overview');
         });
 
         it('should use overview data when log data is not available', () => {
             const viewState = {
                 globalViewType: 'log',
-                viewport: { min: 1000, max: 2000 },
-                displayDetails: {}
+                viewport: { min: 1000, max: 2000 }
             };
             const dataCache = { activeLineData: {} };
             const models = {
@@ -309,17 +302,16 @@ describe('NoiseSurveyApp.data_processors', () => {
                 }
             };
 
-            dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
+            const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
 
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
-            expect(viewState.displayDetails.P1.line.type).toBe('overview');
+            expect(details.type).toBe('overview');
         });
 
         it('should use overview data when globalViewType is overview', () => {
             const viewState = {
                 globalViewType: 'overview',
-                viewport: { min: 1000, max: 2000 },
-                displayDetails: {}
+                viewport: { min: 1000, max: 2000 }
             };
             const dataCache = { activeLineData: {} };
             const models = {
@@ -341,10 +333,10 @@ describe('NoiseSurveyApp.data_processors', () => {
                 }
             };
 
-            dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
+            const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
 
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
-            expect(viewState.displayDetails.P1.line.type).toBe('overview');
+            expect(details.type).toBe('overview');
         });
     });
 });

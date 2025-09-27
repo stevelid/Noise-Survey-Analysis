@@ -73,8 +73,8 @@ describe('NoiseSurveyApp.renderers', () => {
                     positions: {
                         P1: {
                             updateAllCharts: mockUpdateAllCharts,
-                            timeSeriesChart: { setVisible: mockSetVisible, model: { title: { text: '' }, background_fill_color: '' } },
-                            spectrogramChart: { setVisible: mockSetVisible, hoverDivModel: { visible: true }, model: { title: { text: '' }, background_fill_color: '' } }
+                            timeSeriesChart: { setVisible: mockSetVisible, model: { title: { text: '' }, background_fill_color: '' }, lastDisplayDetails: { reason: '' } },
+                            spectrogramChart: { setVisible: mockSetVisible, hoverDivModel: { visible: true }, model: { title: { text: '' }, background_fill_color: '' }, lastDisplayDetails: { reason: '' } }
                         }
                     },
                     chartsByName: new Map([
@@ -286,10 +286,11 @@ describe('NoiseSurveyApp.renderers', () => {
                 }
             };
             const mockDataCache = {}; // Not used by this renderer directly, but passed down
-            renderers.renderPrimaryCharts(mockState, mockDataCache);
+            const displayDetails = { P1: { line: { reason: ' (Overview)' }, spec: { reason: ' (Overview)' } } };
+            renderers.renderPrimaryCharts(mockState, mockDataCache, displayDetails);
             expect(mockSetVisible).toHaveBeenCalledWith(true);
             expect(mockSetVisible).toHaveBeenCalledWith(false);
-            expect(mockUpdateAllCharts).toHaveBeenCalledWith(mockState, mockDataCache);
+            expect(mockUpdateAllCharts).toHaveBeenCalledWith(mockState, mockDataCache, displayDetails.P1);
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.spectrogramChart.hoverDivModel.visible).toBe(false);
         });
     });
@@ -781,9 +782,10 @@ describe('NoiseSurveyApp.renderers', () => {
         it('should update chart titles and background colors based on audio state', () => {
             const mockState = {
                 audio: { isPlaying: true, activePositionId: 'P1', playbackRate: 1.0, volumeBoost: false },
-                view: { availablePositions: ['P1'], selectedParameter: 'LAeq', displayDetails: { P1: { line: { reason: '' }, spec: { reason: '' } } } }
+                view: { availablePositions: ['P1'], selectedParameter: 'LAeq' }
             };
-            renderers.renderControlWidgets(mockState);
+            const displayDetails = { P1: { line: { reason: '' }, spec: { reason: '' } } };
+            renderers.renderControlWidgets(mockState, displayDetails);
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.timeSeriesChart.model.title.text).toContain('(▶ PLAYING)');
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.timeSeriesChart.model.background_fill_color).toBe('#e6f0ff');
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.spectrogramChart.model.title.text).toContain('(▶ PLAYING)');
@@ -793,9 +795,10 @@ describe('NoiseSurveyApp.renderers', () => {
         it('should update control widget visuals', () => {
             const mockState = {
                 audio: { isPlaying: true, activePositionId: 'P1', playbackRate: 1.5, volumeBoost: true },
-                view: { availablePositions: ['P1'], selectedParameter: 'LAeq', displayDetails: { P1: { line: { reason: '' }, spec: { reason: '' } } } }
+                view: { availablePositions: ['P1'], selectedParameter: 'LAeq' }
             };
-            renderers.renderControlWidgets(mockState);
+            const displayDetails = { P1: { line: { reason: '' }, spec: { reason: '' } } };
+            renderers.renderControlWidgets(mockState, displayDetails);
             const controls = window.NoiseSurveyApp.registry.models.audio_controls.P1;
             expect(controls.playToggle.active).toBe(true);
             expect(controls.playToggle.label).toBe('Pause');
@@ -810,10 +813,10 @@ describe('NoiseSurveyApp.renderers', () => {
                 audio: { isPlaying: false, activePositionId: null, playbackRate: 1.0, volumeBoost: false },
                 view: {
                     availablePositions: ['P1'],
-                    selectedParameter: 'LAeq',
-                    displayDetails: { P1: { line: { reason: '' }, spec: { reason: '' } } }
+                    selectedParameter: 'LAeq'
                 }
             };
+            const displayDetails = { P1: { line: { reason: '' }, spec: { reason: '' } } };
 
             renderers.renderControlWidgets({
                 ...baseState,
@@ -824,7 +827,7 @@ describe('NoiseSurveyApp.renderers', () => {
                         figure_P1_spectrogram: false
                     }
                 }
-            });
+            }, displayDetails);
 
             const controls = window.NoiseSurveyApp.registry.models.audio_controls.P1;
             expect(controls.layout.visible).toBe(false);
@@ -838,7 +841,7 @@ describe('NoiseSurveyApp.renderers', () => {
                         figure_P1_spectrogram: false
                     }
                 }
-            });
+            }, displayDetails);
 
             expect(controls.layout.visible).toBe(true);
         });

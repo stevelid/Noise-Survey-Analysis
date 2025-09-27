@@ -23,7 +23,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         positionAudioOffsets: {},
         positionEffectiveOffsets: {},
         chartVisibility: {},
-        displayDetails: {},
         viewport: { min: null, max: null },
         globalViewType: 'log',
         selectedParameter: 'LZeq',

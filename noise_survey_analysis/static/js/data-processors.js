@@ -96,6 +96,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      *    _updateActiveFreqBarData() to update the bar chart's data.
      */
     function updateActiveData(viewState, dataCache, models) {
+        const displayDetailsByPosition = {};
+
         viewState.availablePositions.forEach(position => {
             const tsChartName = `figure_${position}_timeseries`;
             const specChartName = `figure_${position}_spectrogram`;
@@ -105,8 +107,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // Only process data for charts that are currently visible
             if (viewState.chartVisibility[tsChartName] || viewState.chartVisibility[specChartName]) {
                 const offsetMs = getChartOffsetMs(viewState, position);
-                updateActiveLineChartData(position, viewState, dataCache, models, offsetMs);
-                updateActiveSpectralData(position, viewState, dataCache, models, offsetMs);
+                const lineDetails = updateActiveLineChartData(position, viewState, dataCache, models, offsetMs);
+                const specDetails = updateActiveSpectralData(position, viewState, dataCache, models, offsetMs);
+
+                if (lineDetails || specDetails) {
+                    displayDetailsByPosition[position] = {};
+                    if (lineDetails) {
+                        displayDetailsByPosition[position].line = lineDetails;
+                    }
+                    if (specDetails) {
+                        displayDetailsByPosition[position].spec = specDetails;
+                    }
+                }
             }
         });
 
@@ -115,6 +127,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         // updateActiveFreqBarData is now called from onStateChange, so this call is redundant.
         // const state = app.store.getState();
         // updateActiveFreqBarData(state, dataCache);
+
+        return displayDetailsByPosition;
     }
 
     /**
@@ -189,13 +203,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 displayDetails = { type: 'overview', reason: ' (Overview)' };
             }
 
-            if (!viewState.displayDetails[position]) {
-                viewState.displayDetails[position] = {};
-            }
-            viewState.displayDetails[position].line = displayDetails;
+            return displayDetails;
         }
         catch (error) {
             console.error(" [data-processors.js - updateActiveLineChartData()]", error);
+            return { type: 'unknown', reason: '' };
         }
     }
 
@@ -220,6 +232,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const hasLogData = logData && logData.times_ms && logData.times_ms.length > 0;
 
             let finalDataToUse, finalGlyphData, displayReason;
+            let displayType = 'overview';
 
             const offsetMs = positionOffsetMs;
             const viewportMin = Number(viewState.viewport?.min);
@@ -235,6 +248,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         // Happy Path: Show chunked LOG data
                         finalDataToUse = logData;
                         displayReason = ' (Log Data)'; // Explicitly label the log view
+                        displayType = 'log';
 
                         const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs } = finalDataToUse;
                         let viewportCenter = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
@@ -261,6 +275,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         // Log view active, but too zoomed out
                         finalDataToUse = overviewData;
                         displayReason = ' - Zoom in for Log Data';
+                        displayType = 'overview';
                         const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                         finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
                     }
@@ -268,6 +283,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     // Log view active, but no log data exists
                     finalDataToUse = overviewData;
                     displayReason = ' (No Log Data Available)';
+                    displayType = 'overview';
                     const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                     finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
                 }
@@ -275,6 +291,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 // Overview view is explicitly active
                 finalDataToUse = overviewData;
                 displayReason = ' (Overview)';
+                displayType = 'overview';
                 const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                 finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
             }
@@ -293,14 +310,24 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 dataCache.activeSpectralData[position] = { source_replacement: null, reason: 'No Data Available', times_ms: [] };
                 // If we ended up with no data, this reason overrides any previous one.
                 displayReason = ' (No Data Available)';
+                displayType = 'none';
             }
-            if (!viewState.displayDetails[position]) {
-                viewState.displayDetails[position] = {};
+            let displayDetails;
+            if (displayReason === undefined) {
+                displayDetails = { type: 'unknown', reason: '' };
+            } else {
+                displayDetails = { type: displayType, reason: displayReason };
             }
-            viewState.displayDetails[position].spec = { reason: displayReason };
+
+            if (dataCache.activeSpectralData[position]) {
+                dataCache.activeSpectralData[position].dataViewType = displayDetails.type;
+            }
+
+            return displayDetails;
         }
         catch (error) {
             console.error(" [data-processors.js - updateActiveSpectralData()]", error);
+            return { type: 'unknown', reason: '' };
         }
     }
 
@@ -388,6 +415,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         barLevelsSlice[i] = activeSpectralData.levels_flat_transposed[globalFreqIdx * activeSpectralData.n_times + closestTimeIdx];
                     }
                     
+                    const viewTypeLabel = activeSpectralData.dataViewType || 'None';
+                    const normalizedType = viewTypeLabel === 'none' ? 'None' : viewTypeLabel;
                     dataCache.activeFreqBarData = {
                         levels: Array.from(barLevelsSlice).map(l => (l === null || isNaN(l)) ? 0 : l),
                         frequency_labels: activeSpectralData.frequency_labels.slice(bar_start_idx, bar_end_idx + 1),
@@ -395,18 +424,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         timestamp: timestamp,
                         setBy: setBy,
                         param: state.view.selectedParameter,
-                        dataViewType: state.view.displayDetails[position]?.spec?.type || 'None'
+                        dataViewType: normalizedType
                     };
                     return;
                 }
             }
-            
+
             // --- Fallback: Use full frequency range if slicing config is missing or invalid ---
             const freqDataSlice = new Float32Array(activeSpectralData.n_freqs);
             for (let i = 0; i < activeSpectralData.n_freqs; i++) {
                 freqDataSlice[i] = activeSpectralData.levels_flat_transposed[i * activeSpectralData.n_times + closestTimeIdx];
             }
 
+            const viewTypeLabel = activeSpectralData.dataViewType || 'None';
+            const normalizedType = viewTypeLabel === 'none' ? 'None' : viewTypeLabel;
             dataCache.activeFreqBarData = {
                 levels: Array.from(freqDataSlice).map(l => (l === null || isNaN(l)) ? 0 : l),
                 frequency_labels: activeSpectralData.frequency_labels,
@@ -414,7 +445,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 timestamp: timestamp,
                 setBy: setBy,
                 param: state.view.selectedParameter,
-                dataViewType: state.view.displayDetails[position]?.spec?.type || 'None'
+                dataViewType: normalizedType
             };
         }
         catch (error) {

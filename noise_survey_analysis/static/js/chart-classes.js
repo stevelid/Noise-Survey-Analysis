@@ -349,13 +349,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         constructor(...args) {
             super(...args);
             this.activeData = {};
+            this.lastDisplayDetails = { reason: '' };
         }
 
         update(activeLineData, displayDetails) {
             this.activeData = activeLineData;
             this.source.data = activeLineData;
+            this.lastDisplayDetails = displayDetails || { reason: '' };
             // The 'reason' now contains the full suffix, including leading spaces/parentheses
-            this.model.title.text = `${this.positionId} - Time History${displayDetails.reason}`;
+            const suffix = this.lastDisplayDetails.reason || '';
+            this.model.title.text = `${this.positionId} - Time History${suffix}`;
             this.render();
         }
 
@@ -392,11 +395,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             super(chartModel, imageRenderer.data_source, labelModel, hoverLineModel, positionId);
             this.imageRenderer = imageRenderer;
             this.hoverDivModel = hoverDivModel;
+            this.lastDisplayDetails = { reason: '' };
         }
 
         update(activeSpectralData, displayDetails, selectedParameter) {
+            this.lastDisplayDetails = displayDetails || { reason: '' };
             // The 'reason' now contains the full suffix, including leading spaces/parentheses
-            this.model.title.text = `${this.positionId} - ${selectedParameter} Spectrogram${displayDetails.reason}`;
+            const suffix = this.lastDisplayDetails.reason || '';
+            this.model.title.text = `${this.positionId} - ${selectedParameter} Spectrogram${suffix}`;
 
             const replacement = activeSpectralData?.source_replacement;
             if (replacement && this.imageRenderer) {
@@ -510,14 +516,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
 
-        updateAllCharts(state, dataCache) {
+        updateAllCharts(state, dataCache, displayDetails = {}) {
             const activeLineData = dataCache.activeLineData[this.id];
             const activeSpecData = dataCache.activeSpectralData[this.id];
             if (this.timeSeriesChart) {
-                this.timeSeriesChart.update(activeLineData, state.view.displayDetails[this.id].line);
+                const lineDetails = displayDetails.line || this.timeSeriesChart.lastDisplayDetails || { reason: '' };
+                this.timeSeriesChart.update(activeLineData, lineDetails);
             }
             if (this.spectrogramChart) {
-                this.spectrogramChart.update(activeSpecData, state.view.displayDetails[this.id].spec, state.view.selectedParameter);
+                const specDetails = displayDetails.spec || this.spectrogramChart.lastDisplayDetails || { reason: '' };
+                this.spectrogramChart.update(activeSpecData, specDetails, state.view.selectedParameter);
             }
         }
 
