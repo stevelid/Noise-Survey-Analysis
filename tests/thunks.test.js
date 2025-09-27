@@ -484,28 +484,6 @@ describe('NoiseSurveyApp thunks', () => {
                 expect(state.markers.byId[1].metrics?.spectral?.[0]?.values).toEqual([2, 5]);
             });
 
-            it('createRegionFromMarkersIntent builds a region from the last two markers', () => {
-                store.dispatch(actions.initializeState({
-                    availablePositions: ['P1'],
-                    selectedParameter: 'LZeq',
-                    viewport: { min: 0, max: 4000 },
-                    chartVisibility: {}
-                }));
-                store.dispatch(actions.markersReplace([
-                    { id: 1, timestamp: 1000 },
-                    { id: 2, timestamp: 2500 }
-                ]));
-
-                const thunk = thunks.createRegionFromMarkersIntent();
-                thunk(store.dispatch, store.getState);
-
-                const state = store.getState();
-                expect(state.regions.allIds).toHaveLength(1);
-                const region = state.regions.byId[state.regions.allIds[0]];
-                expect(region.start).toBe(1000);
-                expect(region.end).toBe(2500);
-                expect(region.positionId).toBe('P1');
-            });
         });
 });
 });

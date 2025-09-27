@@ -22,7 +22,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     let handleAudioStatusUpdateIntentSpy;
     let togglePlaybackFromKeyboardIntentSpy;
     let createMarkerFromKeyboardIntentSpy;
-    let createRegionFromMarkersIntentSpy;
+    let toggleRegionCreationIntentSpy;
     let nudgeSelectedMarkerIntentSpy;
     let handleKeyboardShortcutIntentSpy;
 
@@ -57,7 +57,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         handleAudioStatusUpdateIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleAudioStatusUpdateIntent').mockImplementation(() => () => {});
         togglePlaybackFromKeyboardIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'togglePlaybackFromKeyboardIntent').mockImplementation(() => () => {});
         createMarkerFromKeyboardIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createMarkerFromKeyboardIntent').mockImplementation(() => () => {});
-        createRegionFromMarkersIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createRegionFromMarkersIntent').mockImplementation(() => () => {});
+        toggleRegionCreationIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleRegionCreationIntent').mockImplementation(() => () => {});
         nudgeSelectedMarkerIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'nudgeSelectedMarkerIntent').mockImplementation(() => () => {});
         handleKeyboardShortcutIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleKeyboardShortcutIntent');
     });
@@ -294,11 +294,11 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
 
-        it('should request region creation when pressing R', () => {
+        it('should toggle region creation mode when pressing R', () => {
             const event = { key: 'r', preventDefault: vi.fn(), target: { tagName: 'div' } };
             eventHandlers.handleKeyPress(event);
             expect(event.preventDefault).toHaveBeenCalled();
-            expect(createRegionFromMarkersIntentSpy).toHaveBeenCalledWith({});
+            expect(toggleRegionCreationIntentSpy).toHaveBeenCalled();
             expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
     });
