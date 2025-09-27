@@ -79,6 +79,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return effective;
     }
 
+    function isShallowEqualObject(a, b) {
+        if (a === b) {
+            return true;
+        }
+        if (!a || !b || typeof a !== 'object' || typeof b !== 'object') {
+            return false;
+        }
+        const aKeys = Object.keys(a);
+        const bKeys = Object.keys(b);
+        if (aKeys.length !== bKeys.length) {
+            return false;
+        }
+        for (let i = 0; i < aKeys.length; i++) {
+            const key = aKeys[i];
+            if (!Object.prototype.hasOwnProperty.call(b, key) || a[key] !== b[key]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     function viewReducer(state = initialViewState, action) {
         switch (action.type) {
             case actionTypes.INITIALIZE_STATE: {
@@ -208,6 +229,57 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         [action.payload?.chartName]: action.payload?.isVisible
                     }
                 };
+
+            case actionTypes.DISPLAY_DETAILS_UPDATED: {
+                const incoming = action.payload?.displayDetails;
+                if (!incoming || typeof incoming !== 'object') {
+                    return state;
+                }
+
+                let didChange = false;
+                const nextDisplayDetails = { ...state.displayDetails };
+
+                Object.keys(incoming).forEach(positionId => {
+                    const updatesForPosition = incoming[positionId];
+                    if (!updatesForPosition || typeof updatesForPosition !== 'object') {
+                        return;
+                    }
+
+                    const previousForPosition = state.displayDetails?.[positionId] || {};
+                    const nextForPosition = { ...previousForPosition };
+                    let positionChanged = false;
+
+                    if (Object.prototype.hasOwnProperty.call(updatesForPosition, 'line')) {
+                        const nextLine = updatesForPosition.line;
+                        if (!isShallowEqualObject(previousForPosition.line, nextLine)) {
+                            nextForPosition.line = nextLine;
+                            positionChanged = true;
+                        }
+                    }
+
+                    if (Object.prototype.hasOwnProperty.call(updatesForPosition, 'spec')) {
+                        const nextSpec = updatesForPosition.spec;
+                        if (!isShallowEqualObject(previousForPosition.spec, nextSpec)) {
+                            nextForPosition.spec = nextSpec;
+                            positionChanged = true;
+                        }
+                    }
+
+                    if (positionChanged) {
+                        nextDisplayDetails[positionId] = nextForPosition;
+                        didChange = true;
+                    }
+                });
+
+                if (!didChange) {
+                    return state;
+                }
+
+                return {
+                    ...state,
+                    displayDetails: nextDisplayDetails
+                };
+            }
 
             case actionTypes.HOVER_TOGGLE:
                 return {

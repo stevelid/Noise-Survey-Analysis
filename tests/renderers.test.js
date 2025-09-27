@@ -157,6 +157,7 @@ describe('NoiseSurveyApp.renderers', () => {
             addAreaButton: { disabled: true, label: 'Add Area', button_type: 'default' },
             mergeButton: { disabled: true },
             mergeSelect: { options: [], value: '', disabled: true },
+            splitButton: { disabled: true, visible: true },
             noteInput: { value: '', disabled: true },
             colorPicker: { color: '#1e88e5', disabled: true },
             metricsDiv: { text: '', visible: false },
@@ -177,6 +178,7 @@ describe('NoiseSurveyApp.renderers', () => {
             regionPanelAddAreaButton: regionPanelMocks.addAreaButton,
             regionPanelMergeButton: regionPanelMocks.mergeButton,
             regionPanelMergeSelect: regionPanelMocks.mergeSelect,
+            regionPanelSplitButton: regionPanelMocks.splitButton,
             regionPanelNoteInput: regionPanelMocks.noteInput,
             regionPanelColorPicker: regionPanelMocks.colorPicker,
             regionPanelMetricsDiv: regionPanelMocks.metricsDiv,
@@ -222,6 +224,8 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionVisibilityToggle.active).toBe(false);
             expect(models.regionVisibilityToggle.label).toBe('Regions (1)');
             expect(models.regionVisibilityToggle.button_type).toBe('default');
+
+            expect(models.regionPanelSplitButton.visible).toBe(false);
             expect(models.regionAutoDayNightButton.visible).toBe(false);
 
             const hiddenCall = mockSyncRegions.mock.calls.at(-1);
@@ -467,6 +471,8 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelAddAreaButton.disabled).toBe(true);
             expect(models.regionPanelMergeButton.disabled).toBe(true);
             expect(models.regionPanelMergeSelect.disabled).toBe(true);
+            expect(models.regionPanelSplitButton.disabled).toBe(true);
+            expect(models.regionPanelSplitButton.visible).toBe(true);
             expect(models.regionPanelNoteInput.disabled).toBe(true);
 
             expect(models.regionPanelColorPicker.disabled).toBe(true);
@@ -517,6 +523,8 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelAddAreaButton.disabled).toBe(false);
             expect(models.regionPanelMergeButton.disabled).toBe(true);
             expect(models.regionPanelMergeSelect.disabled).toBe(true);
+            expect(models.regionPanelSplitButton.disabled).toBe(true);
+            expect(models.regionPanelSplitButton.visible).toBe(true);
             expect(models.regionPanelNoteInput.disabled).toBe(false);
             expect(models.regionPanelNoteInput.value).toBe('hello');
 
@@ -542,6 +550,35 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMessageDiv.text).toContain('Region start pinned');
             expect(models.regionPanelMessageDiv.text).toContain('P9');
             expect(models.regionPanelDetail.visible).toBe(true);
+
+            const multiAreaState = {
+                view: { availablePositions: ['P9'] },
+                regions: {
+                    byId: {
+                        5: {
+                            id: 5,
+                            positionId: 'P9',
+                            start: 1000,
+                            end: 4000,
+                            note: 'hello',
+                            color: '#2196f3',
+                            metrics: null,
+                            areas: [
+                                { start: 1000, end: 2000 },
+                                { start: 3000, end: 4000 }
+                            ]
+                        }
+                    },
+                    allIds: [5],
+                    selectedId: 5,
+                    counter: 6,
+                    panelVisible: true,
+                    overlaysVisible: true,
+                }
+            };
+
+            renderers.renderRegions(multiAreaState, {});
+            expect(models.regionPanelSplitButton.disabled).toBe(false);
 
 
             const multiRegionState = {

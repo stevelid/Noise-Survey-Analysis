@@ -488,6 +488,7 @@ class DashBuilder:
             'regionPanelAddAreaButton': self.shared_components['region_panel'].add_area_button,
             'regionPanelMergeButton': self.shared_components['region_panel'].merge_button,
             'regionPanelMergeSelect': self.shared_components['region_panel'].merge_select,
+            'regionPanelSplitButton': self.shared_components['region_panel'].split_button,
             'regionPanelColorPicker': self.shared_components['region_panel'].color_picker,
             'regionPanelNoteInput': self.shared_components['region_panel'].note_input,
             'regionPanelMetricsDiv': self.shared_components['region_panel'].metrics_div,

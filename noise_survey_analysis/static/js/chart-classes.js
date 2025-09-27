@@ -519,6 +519,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateAllCharts(state, dataCache, displayDetails = {}) {
             const activeLineData = dataCache.activeLineData[this.id];
             const activeSpecData = dataCache.activeSpectralData[this.id];
+            const positionDetails = state?.view?.displayDetails?.[this.id] || {};
             if (this.timeSeriesChart) {
                 const lineDetails = displayDetails.line || this.timeSeriesChart.lastDisplayDetails || { reason: '' };
                 this.timeSeriesChart.update(activeLineData, lineDetails);

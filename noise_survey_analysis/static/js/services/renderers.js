@@ -551,6 +551,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 addAreaButton: models?.regionPanelAddAreaButton,
                 mergeButton: models?.regionPanelMergeButton,
                 mergeSelect: models?.regionPanelMergeSelect,
+                splitButton: models?.regionPanelSplitButton,
                 colorPicker: models?.regionPanelColorPicker,
                 noteInput: models?.regionPanelNoteInput,
                 metricsDiv: models?.regionPanelMetricsDiv,

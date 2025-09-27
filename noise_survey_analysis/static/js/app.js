@@ -111,10 +111,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * @param {boolean} [isInitialLoad=false] - A flag to force a full update.
      */
     function onStateChange(isInitialLoad = false) {
-        const state = app.store.getState();
+        let state = app.store.getState();
         const { models, controllers } = app.registry;
         const actionTypes = app.actionTypes || {};
+        const previousStateForAudio = previousState;
         const lastActionType = state.system?.lastAction?.type;
+        const lastExternalAction = state.system?.lastAction;
         const shouldForceRegionRender = Boolean(lastActionType && (
             lastActionType === actionTypes.REGION_VISIBILITY_SET ||
             lastActionType === actionTypes.REGION_SELECTED ||
@@ -156,7 +158,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (Number.isFinite(newStepSize) && newStepSize !== state.interaction.keyboard.stepSizeMs) {
                 app.store.dispatch(app.actions.stepSizeCalculated(newStepSize));
             }
+        }
 
+        let dispatchedDisplayDetailsUpdate = false;
+        if (displayDetailsUpdates && Object.keys(displayDetailsUpdates).length > 0) {
+            dispatchedDisplayDetailsUpdate = true;
+            const previousStateBeforeInternalDispatch = previousState;
+            previousState = state;
+            app.store.dispatch(app.actions.displayDetailsUpdated(displayDetailsUpdates));
+            state = app.store.getState();
+            previousState = previousStateBeforeInternalDispatch;
+        }
+
+        if (isHeavyUpdate) {
             // 3. Render the main charts with the new data
             app.renderers.renderPrimaryCharts(state, dataCache, displayDetailsUpdates);
         }
@@ -197,7 +211,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // --- C. HANDLE SIDE EFFECTS ---
         // These are tasks that interact with the outside world (e.g., Bokeh backend)
-        handleAudioSideEffects(state, previousState, models);
+        const shouldRestoreLastAction = dispatchedDisplayDetailsUpdate
+            && lastExternalAction
+            && lastExternalAction.type !== actionTypes.DISPLAY_DETAILS_UPDATED;
+        const stateForAudio = shouldRestoreLastAction
+            ? { ...state, system: { ...(state.system || {}), lastAction: lastExternalAction } }
+            : state;
+
+        handleAudioSideEffects(stateForAudio, previousStateForAudio, models);
 
         // --- D. CLEANUP ---
         // Update previousState for the next cycle

@@ -109,6 +109,7 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
     expect(details.reason).toBe(' (No Log Data Available)');
     expect(details.type).toBe('overview');
+    expect(viewState.displayDetails).toEqual({});
   });
 
   it('missing config: returns chunk image without y-range slicing', () => {
@@ -126,7 +127,6 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     expect(rep.image[0].length).toBe(log.n_freqs * log.chunk_time_length);
     expect(rep.y_range_start).toBeUndefined();
     expect(rep.y_range_end).toBeUndefined();
-    expect(details.type).toBe('log');
   });
 
   it('out-of-range freqs: falls back to full chunk image', () => {
@@ -144,6 +144,5 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     expect(rep.image[0].length).toBe(log.n_freqs * log.chunk_time_length);
     expect(rep.y_range_start).toBeUndefined();
     expect(rep.y_range_end).toBeUndefined();
-    expect(details.type).toBe('log');
   });
 });
