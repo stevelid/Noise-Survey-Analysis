@@ -34,12 +34,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const viewSelectors = app.features?.view?.selectors || {};
     const regionSelectors = app.features?.regions?.selectors || {};
+
     const markerSelectors = app.features?.markers?.selectors || {};
     const constants = app.constants || {};
     const sidePanelTabs = constants.sidePanelTabs || {};
     const SIDE_PANEL_TAB_REGIONS = Number.isFinite(sidePanelTabs.regions)
         ? sidePanelTabs.regions
         : 0;
+
 
     function collectTimestampsFromSource(source) {
         const data = source?.data;
@@ -226,6 +228,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+
     /**
      * Creates a region using the two most recent markers. This mirrors the
      * manual workflow where analysts drop start and end markers and then press
@@ -257,76 +260,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
-    function createRegionFromMarkersIntent(payload = {}) {
-        return function (dispatch, getState) {
-            if (!actions || typeof getState !== 'function') {
-                return;
-            }
-
-            const state = getState();
-            const markers = typeof markerSelectors.selectAllMarkers === 'function'
-                ? markerSelectors.selectAllMarkers(state)
-                : [];
-
-            if (!Array.isArray(markers) || markers.length < 2) {
-                return;
-            }
-
-            const sortedMarkers = markers
-                .map(marker => marker)
-                .filter(marker => Number.isFinite(marker?.timestamp))
-                .sort((a, b) => a.timestamp - b.timestamp);
-
-            if (sortedMarkers.length < 2) {
-                return;
-            }
-
-            const last = sortedMarkers[sortedMarkers.length - 1];
-            const previous = sortedMarkers[sortedMarkers.length - 2];
-            const start = Number(previous.timestamp);
-            const end = Number(last.timestamp);
-
-            if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) {
-                return;
-            }
-
-            let positionId = payload.positionId;
-            if (!positionId) {
-                const tapPosition = state?.interaction?.tap?.position;
-                if (tapPosition) {
-                    positionId = tapPosition;
-                }
-            }
-            if (!positionId) {
-                const availablePositions = Array.isArray(state?.view?.availablePositions)
-                    ? state.view.availablePositions
-                    : [];
-                if (availablePositions.length) {
-                    positionId = availablePositions[0];
-                }
-            }
-            if (!positionId) {
-                const fallbackKeys = state?.view?.positionChartOffsets
-                    ? Object.keys(state.view.positionChartOffsets)
-                    : [];
-                positionId = fallbackKeys[0];
-            }
-
-            if (!positionId) {
-                return;
-            }
-
-            const nextRegionId = Number.isFinite(state?.regions?.counter)
-                ? state.regions.counter
-                : null;
-
-            dispatch(actions.regionAdd(positionId, start, end));
-
-            if (Number.isFinite(nextRegionId)) {
-                dispatch(selectRegionIntent(nextRegionId));
-            }
-        };
-    }
 
     function createRegionIntent(payload) {
         return function (dispatch, getState) {
@@ -653,7 +586,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         createRegionsFromComparisonIntent,
         createRegionIntent,
         createAutoRegionsIntent,
-        createRegionFromMarkersIntent,
         mergeRegionIntoSelectedIntent,
         resizeSelectedRegionIntent,
         splitSelectedRegionIntent,

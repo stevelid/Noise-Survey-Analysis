@@ -168,17 +168,12 @@ const { marker: closestMarker, distance } = typeof markerSelectors.selectClosest
             }
 
             if (normalizedKey === 'r') {
-                const regionThunk = thunks.createRegionFromMarkersIntent
-                    || thunks.toggleRegionCreationIntent;
-                if (typeof regionThunk !== 'function') {
-                    console.error('[InteractionThunk] Missing region creation thunk.');
+                const toggleRegionThunk = thunks.toggleRegionCreationIntent;
+                if (typeof toggleRegionThunk !== 'function') {
+                    console.error('[InteractionThunk] Missing toggleRegionCreationIntent thunk.');
                     return;
                 }
-                if (regionThunk === thunks.createRegionFromMarkersIntent) {
-                    dispatch(regionThunk({}));
-                } else {
-                    dispatch(regionThunk());
-                }
+                dispatch(toggleRegionThunk());
                 return;
             }
 
