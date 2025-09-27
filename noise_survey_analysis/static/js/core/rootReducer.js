@@ -10,6 +10,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const { actionTypes } = app;
 
+    const markerSelectionActionTypes = new Set([
+        actionTypes.MARKER_ADDED,
+        actionTypes.MARKER_SELECTED,
+        actionTypes.MARKERS_REPLACED
+    ]);
+
+    const regionSelectionActionTypes = new Set([
+        actionTypes.REGION_ADDED,
+        actionTypes.REGIONS_ADDED,
+        actionTypes.REGION_SELECTED,
+        actionTypes.REGIONS_REPLACED
+    ]);
+
+    function normalizeSelectedId(value) {
+        return Number.isFinite(value) ? value : null;
+    }
+
     const viewFeature = app.features?.view || {};
     const interactionFeature = app.features?.interaction || {};
     const markersFeature = app.features?.markers || {};
@@ -61,7 +78,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             const baseState = createInitialState();
 
-            const mergedState = {
+            let mergedState = {
                 view: providedState.view ? { ...baseState.view, ...providedState.view } : baseState.view,
                 interaction: providedState.interaction ? { ...baseState.interaction, ...providedState.interaction } : baseState.interaction,
                 markers: providedState.markers ? { ...baseState.markers, ...providedState.markers } : baseState.markers,
@@ -69,6 +86,47 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 audio: providedState.audio ? { ...baseState.audio, ...providedState.audio } : baseState.audio,
                 system: { ...baseState.system, ...(providedState.system || {}), initialized: true },
             };
+
+            const rehydratedMarkerSelected = normalizeSelectedId(mergedState?.markers?.selectedId);
+            const rehydratedRegionSelected = normalizeSelectedId(mergedState?.regions?.selectedId);
+
+            if (rehydratedMarkerSelected !== null && rehydratedRegionSelected !== null) {
+                const lastActionType = providedState?.system?.lastAction?.type;
+                const prefersMarker = markerSelectionActionTypes.has(lastActionType);
+                const prefersRegion = regionSelectionActionTypes.has(lastActionType);
+
+                let preferredSlice = null;
+                if (prefersMarker && !prefersRegion) {
+                    preferredSlice = 'marker';
+                } else if (prefersRegion && !prefersMarker) {
+                    preferredSlice = 'region';
+                } else if (prefersRegion) {
+                    preferredSlice = 'region';
+                } else if (prefersMarker) {
+                    preferredSlice = 'marker';
+                } else {
+                    preferredSlice = 'region';
+                }
+
+                if (preferredSlice === 'marker') {
+                    mergedState = {
+                        ...mergedState,
+                        regions: {
+                            ...mergedState.regions,
+                            selectedId: null,
+                            isMergeModeActive: false,
+                        }
+                    };
+                } else {
+                    mergedState = {
+                        ...mergedState,
+                        markers: {
+                            ...mergedState.markers,
+                            selectedId: null,
+                        }
+                    };
+                }
+            }
 
             return {
                 ...mergedState,
@@ -101,11 +159,67 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const nextSystem = systemReducer(previousState.system, action);
 
+        const prevMarkerSelected = normalizeSelectedId(previousState?.markers?.selectedId);
+        const prevRegionSelected = normalizeSelectedId(previousState?.regions?.selectedId);
+        const nextMarkerSelected = normalizeSelectedId(nextMarkers?.selectedId);
+        const nextRegionSelected = normalizeSelectedId(nextRegions?.selectedId);
+
+        const markerSelectionChanged = nextMarkerSelected !== null && nextMarkerSelected !== prevMarkerSelected;
+        const regionSelectionChanged = nextRegionSelected !== null && nextRegionSelected !== prevRegionSelected;
+
+        let markersResult = nextMarkers;
+        let regionsResult = nextRegions;
+
+        let preferredSelection = null;
+        if (markerSelectionActionTypes.has(action.type)) {
+            preferredSelection = 'marker';
+        } else if (regionSelectionActionTypes.has(action.type)) {
+            preferredSelection = 'region';
+        } else if (regionSelectionChanged && !markerSelectionChanged) {
+            preferredSelection = 'region';
+        } else if (markerSelectionChanged && !regionSelectionChanged) {
+            preferredSelection = 'marker';
+        } else if (regionSelectionChanged) {
+            preferredSelection = 'region';
+        } else if (markerSelectionChanged) {
+            preferredSelection = 'marker';
+        }
+
+        if (preferredSelection === 'marker' && nextMarkerSelected !== null && nextRegionSelected !== null) {
+            regionsResult = {
+                ...nextRegions,
+                selectedId: null,
+                isMergeModeActive: false
+            };
+        } else if (preferredSelection === 'region' && nextRegionSelected !== null && nextMarkerSelected !== null) {
+            markersResult = {
+                ...nextMarkers,
+                selectedId: null
+            };
+        }
+
+        const finalMarkerSelected = normalizeSelectedId(markersResult?.selectedId);
+        const finalRegionSelected = normalizeSelectedId(regionsResult?.selectedId);
+        if (finalMarkerSelected !== null && finalRegionSelected !== null) {
+            if (preferredSelection === 'marker') {
+                regionsResult = {
+                    ...regionsResult,
+                    selectedId: null,
+                    isMergeModeActive: false
+                };
+            } else {
+                markersResult = {
+                    ...markersResult,
+                    selectedId: null
+                };
+            }
+        }
+
         const combinedState = {
             view: nextView,
             interaction: nextInteraction,
-            markers: nextMarkers,
-            regions: nextRegions,
+            markers: markersResult,
+            regions: regionsResult,
             audio: nextAudio,
             system: nextSystem
         };
