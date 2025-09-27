@@ -70,7 +70,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
         let closestMarker = null;
         let smallestDistance = Infinity;
-        const pool = positionId ? selectMarkersByPosition(state, positionId) : selectAllMarkers(state);
+        const poolByPosition = positionId ? selectMarkersByPosition(state, positionId) : [];
+        const pool = poolByPosition.length ? poolByPosition : selectAllMarkers(state);
         pool.forEach(marker => {
             const markerTimestamp = Number(marker?.timestamp);
             if (!Number.isFinite(markerTimestamp)) {
