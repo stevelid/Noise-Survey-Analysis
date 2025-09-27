@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import './loadCoreModules.js';
 
-const { createStore, actions, rootReducer, thunks } = window.NoiseSurveyApp;
+const { createStore, actions, rootReducer, thunks, constants } = window.NoiseSurveyApp;
 
 describe('NoiseSurveyApp thunks', () => {
     let store;
@@ -39,6 +39,7 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.regions.selectedId).toBe(1);
         expect(state.interaction.tap.timestamp).toBe(1500);
         expect(state.regions.byId[1]).toBeTruthy();
+        expect(state.view.activeSidePanelTab).toBe(constants.sidePanelTabs.regions);
     });
 
     it('handleTapIntent removes region on ctrl click', () => {
@@ -87,6 +88,7 @@ describe('NoiseSurveyApp thunks', () => {
         const state = store.getState();
         expect(state.markers.selectedId).toBe(1);
         expect(state.interaction.tap.timestamp).toBe(1200);
+        expect(state.view.activeSidePanelTab).toBe(constants.sidePanelTabs.markers);
     });
 
     it('createRegionIntent adds region when bounds valid', () => {
@@ -101,6 +103,7 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.regions.byId[1].start).toBe(1000);
         expect(state.regions.byId[1].end).toBe(2000);
         expect(state.regions.selectedId).toBe(1);
+        expect(state.view.activeSidePanelTab).toBe(constants.sidePanelTabs.regions);
     });
 
     it('createRegionIntent ignores creation requests during comparison mode', () => {

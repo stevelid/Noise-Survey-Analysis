@@ -53,7 +53,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     });
 
                     if (closestMarker && smallestDistance <= markerThreshold) {
-                        dispatch(actions.markerSelect(closestMarker.id));
+                        const selectMarkerThunk = app.features?.markers?.thunks?.selectMarkerIntent;
+                        if (typeof selectMarkerThunk === 'function') {
+                            dispatch(selectMarkerThunk(closestMarker.id));
+                        } else {
+                            dispatch(actions.markerSelect(closestMarker.id));
+                            if (typeof actions.regionClearSelection === 'function') {
+                                dispatch(actions.regionClearSelection());
+                            }
+                        }
                         dispatch(actions.tap(closestMarker.timestamp, positionId, chartName));
                         return;
                     }
@@ -98,7 +106,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             if (regionHit) {
-                dispatch(actions.regionSelect(regionHit.id));
+                const selectRegionThunk = app.features?.regions?.thunks?.selectRegionIntent;
+                if (typeof selectRegionThunk === 'function') {
+                    dispatch(selectRegionThunk(regionHit.id));
+                } else {
+                    dispatch(actions.regionSelect(regionHit.id));
+                    if (typeof actions.markerSelect === 'function') {
+                        dispatch(actions.markerSelect(null));
+                    }
+                }
             } else {
                 dispatch(actions.regionClearSelection());
             }

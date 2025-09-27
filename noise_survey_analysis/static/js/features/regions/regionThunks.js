@@ -35,6 +35,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const viewSelectors = app.features?.view?.selectors || {};
     const regionSelectors = app.features?.regions?.selectors || {};
 
+    const markerSelectors = app.features?.markers?.selectors || {};
+    const constants = app.constants || {};
+    const sidePanelTabs = constants.sidePanelTabs || {};
+    const SIDE_PANEL_TAB_REGIONS = Number.isFinite(sidePanelTabs.regions)
+        ? sidePanelTabs.regions
+        : 0;
+
+
     function collectTimestampsFromSource(source) {
         const data = source?.data;
         if (!data || !data.Datetime) {
@@ -220,6 +228,110 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+
+    /**
+     * Creates a region using the two most recent markers. This mirrors the
+     * manual workflow where analysts drop start and end markers and then press
+     * the dedicated shortcut to convert them into a full region selection.
+     *
+     * @param {Object} [payload] - Optional overrides.
+     * @param {string} [payload.positionId] - Explicit position to associate with the new region.
+     * @returns {Function} Thunk function for dispatch.
+     */
+    function selectRegionIntent(regionId) {
+        return function (dispatch) {
+            if (!actions || typeof dispatch !== 'function') {
+                return;
+            }
+
+            const normalizedId = Number(regionId);
+            if (!Number.isFinite(normalizedId)) {
+                dispatch(actions.regionClearSelection());
+                return;
+            }
+
+            dispatch(actions.regionSelect(normalizedId));
+            if (typeof actions.markerSelect === 'function') {
+                dispatch(actions.markerSelect(null));
+            }
+            if (typeof actions.setActiveSidePanelTab === 'function') {
+                dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
+            }
+        };
+    }
+
+    function createRegionFromMarkersIntent(payload = {}) {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') {
+                return;
+            }
+
+            const state = getState();
+            const markers = typeof markerSelectors.selectAllMarkers === 'function'
+                ? markerSelectors.selectAllMarkers(state)
+                : [];
+
+            if (!Array.isArray(markers) || markers.length < 2) {
+                return;
+            }
+
+            const sortedMarkers = markers
+                .map(marker => marker)
+                .filter(marker => Number.isFinite(marker?.timestamp))
+                .sort((a, b) => a.timestamp - b.timestamp);
+
+            if (sortedMarkers.length < 2) {
+                return;
+            }
+
+            const last = sortedMarkers[sortedMarkers.length - 1];
+            const previous = sortedMarkers[sortedMarkers.length - 2];
+            const start = Number(previous.timestamp);
+            const end = Number(last.timestamp);
+
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) {
+                return;
+            }
+
+            let positionId = payload.positionId;
+            if (!positionId) {
+                const tapPosition = state?.interaction?.tap?.position;
+                if (tapPosition) {
+                    positionId = tapPosition;
+                }
+            }
+            if (!positionId) {
+                const availablePositions = Array.isArray(state?.view?.availablePositions)
+                    ? state.view.availablePositions
+                    : [];
+                if (availablePositions.length) {
+                    positionId = availablePositions[0];
+                }
+            }
+            if (!positionId) {
+                const fallbackKeys = state?.view?.positionChartOffsets
+                    ? Object.keys(state.view.positionChartOffsets)
+                    : [];
+                positionId = fallbackKeys[0];
+            }
+
+            if (!positionId) {
+                return;
+            }
+
+            const nextRegionId = Number.isFinite(state?.regions?.counter)
+                ? state.regions.counter
+                : null;
+
+            dispatch(actions.regionAdd(positionId, start, end));
+
+            if (Number.isFinite(nextRegionId)) {
+                dispatch(selectRegionIntent(nextRegionId));
+            }
+        };
+    }
+
+
     function createRegionIntent(payload) {
         return function (dispatch, getState) {
             if (!actions) return;
@@ -244,7 +356,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const nextAreas = [...existingAreas, { start, end }];
                 dispatch(actions.regionUpdate(targetRegion.id, { areas: nextAreas }));
                 if (regionsState?.selectedId !== targetRegion.id) {
-                    dispatch(actions.regionSelect(targetRegion.id));
+                    dispatch(selectRegionIntent(targetRegion.id));
                 }
                 return;
             }
@@ -253,7 +365,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 dispatch(actions.regionSetAddAreaMode(null));
             }
 
+            const nextRegionId = Number.isFinite(regionsState?.counter)
+                ? regionsState.counter
+                : null;
+
             dispatch(actions.regionAdd(positionId, start, end));
+
+            if (Number.isFinite(nextRegionId)) {
+                dispatch(selectRegionIntent(nextRegionId));
+            }
         };
     }
 
@@ -461,6 +581,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.features = app.features || {};
     app.features.regions = app.features.regions || {};
     app.features.regions.thunks = {
+        selectRegionIntent,
         enterComparisonModeIntent,
         exitComparisonModeIntent,
         updateIncludedPositionsIntent,
