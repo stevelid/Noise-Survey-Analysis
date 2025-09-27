@@ -142,6 +142,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      */
     function updateActiveLineChartData(position, viewState, dataCache, models, positionOffsetMs = 0) {
         try {
+            if (!viewState.displayDetails) {
+                viewState.displayDetails = {};
+            }
+
+            if (!dataCache.activeLineData) {
+                dataCache.activeLineData = {};
+            }
+
             const viewType = viewState.globalViewType;
             const sourceData = models.timeSeriesSources[position];
             const overviewData = sourceData?.overview?.data;
@@ -155,6 +163,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const effectiveMin = Number.isFinite(viewportMin) ? viewportMin - positionOffsetMs : viewportMin;
             const effectiveMax = Number.isFinite(viewportMax) ? viewportMax - positionOffsetMs : viewportMax;
 
+            let nextActiveLine = null;
+
             if (viewType === 'log') {
                 if (hasLogData) {
                     const startIndex = logData.Datetime.findIndex(t => t >= effectiveMin);
@@ -165,7 +175,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         // Log view is active, but user is too zoomed out
                         const overviewClone = cloneDataColumns(overviewData || {});
                         applyDatetimeOffset(overviewClone, positionOffsetMs);
-                        dataCache.activeLineData[position] = overviewClone;
+                        nextActiveLine = overviewClone;
                         displayDetails = { type: 'overview', reason: ' - Zoom in for Log Data' };
                     } else {
                         // Happy path: Show a chunk of log data
@@ -184,22 +194,35 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             }
                         }
                         applyDatetimeOffset(chunk, positionOffsetMs);
-                        dataCache.activeLineData[position] = chunk;
+                        nextActiveLine = chunk;
                         displayDetails = { type: 'log', reason: ' (Log Data)' };
                     }
                 } else {
                     // Log view is active, but no log data exists for this position
                     const overviewClone = cloneDataColumns(overviewData || {});
                     applyDatetimeOffset(overviewClone, positionOffsetMs);
-                    dataCache.activeLineData[position] = overviewClone;
+                    nextActiveLine = overviewClone;
                     displayDetails = { type: 'overview', reason: ' (No Log Data Available)' };
                 }
             } else {
                 // Overview view is explicitly active
                 const overviewClone = cloneDataColumns(overviewData || {});
                 applyDatetimeOffset(overviewClone, positionOffsetMs);
-                dataCache.activeLineData[position] = overviewClone;
+                nextActiveLine = overviewClone;
                 displayDetails = { type: 'overview', reason: ' (Overview)' };
+            }
+
+            if (nextActiveLine) {
+                dataCache.activeLineData[position] = {
+                    ...nextActiveLine,
+                    dataViewType: displayDetails.type,
+                    displayDetails
+                };
+            } else {
+                dataCache.activeLineData[position] = {
+                    dataViewType: 'none',
+                    displayDetails: { type: 'none', reason: ' (No Data Available)' }
+                };
             }
 
             return displayDetails;
@@ -223,6 +246,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      */
     function updateActiveSpectralData(position, viewState, dataCache, models, positionOffsetMs = 0) {
         try {
+            if (!viewState.displayDetails) {
+                viewState.displayDetails = {};
+            }
+
+            if (!dataCache.activeSpectralData) {
+                dataCache.activeSpectralData = {};
+            }
+
             const viewType = viewState.globalViewType;
             const parameter = viewState.selectedParameter;
             const positionGlyphData = models.preparedGlyphData[position];
@@ -298,11 +329,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 dataCache.activeSpectralData[position] = {
                     ...finalDataToUse,
                     times_ms: adjustedTimes,
-                    source_replacement: adjustedReplacement
+                    source_replacement: adjustedReplacement,
+                    dataViewType: displayMetadata.type,
+                    displayDetails: displayMetadata
                 };
             } else {
                 // This case handles when overviewData was also null in one of the fallback paths.
-                dataCache.activeSpectralData[position] = { source_replacement: null, reason: 'No Data Available', times_ms: [] };
+                dataCache.activeSpectralData[position] = {
+                    source_replacement: null,
+                    reason: 'No Data Available',
+                    times_ms: [],
+                    dataViewType: 'none',
+                    displayDetails: { type: 'none', reason: ' (No Data Available)' }
+                };
                 // If we ended up with no data, this reason overrides any previous one.
                 displayMetadata = { type: 'none', reason: ' (No Data Available)' };
             }

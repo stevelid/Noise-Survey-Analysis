@@ -33,27 +33,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const markerThreshold = Math.max(Math.abs(viewportWidth) * MARKER_HIT_RATIO, MARKER_MIN_THRESHOLD_MS);
 
             if (!isShift && !isCtrl) {
-const { marker: closestMarker, distance } = typeof markerSelectors.selectClosestMarkerToTimestamp === 'function'
-                    ? markerSelectors.selectClosestMarkerToTimestamp(state, timestamp, positionId)
-                    : { marker: null, distance: Infinity };
+                const { marker: closestMarker, distance } =
+                    typeof markerSelectors.selectClosestMarkerToTimestamp === 'function'
+                        ? markerSelectors.selectClosestMarkerToTimestamp(state, timestamp, positionId)
+                        : { marker: null, distance: Infinity };
 
-                  if (closestMarker && distance <= markerThreshold) {
-                      // This is the "smart" dispatch logic from the 'main' branch.
-                      const selectMarkerThunk = app.features?.markers?.thunks?.selectMarkerIntent;
-                      if (typeof selectMarkerThunk === 'function') {
-                          dispatch(selectMarkerThunk(closestMarker.id));
-                      } else {
-                          // Keep the fallback for safety, just in case.
-                          dispatch(actions.markerSelect(closestMarker.id));
-                          if (typeof actions.regionClearSelection === 'function') {
-                              dispatch(actions.regionClearSelection());
-                          }
-                      }
+                if (closestMarker && distance <= markerThreshold) {
+                    // This is the "smart" dispatch logic from the 'main' branch.
+                    const selectMarkerThunk = app.features?.markers?.thunks?.selectMarkerIntent;
+                    if (typeof selectMarkerThunk === 'function') {
+                        dispatch(selectMarkerThunk(closestMarker.id));
+                    } else {
+                        // Keep the fallback for safety, just in case.
+                        dispatch(actions.markerSelect(closestMarker.id));
+                        if (typeof actions.regionClearSelection === 'function') {
+                            dispatch(actions.regionClearSelection());
+                        }
+                    }
 
-                      // This is the shared logic from both branches.
-                      dispatch(actions.tap(closestMarker.timestamp, positionId, chartName));
-                      return;
-                  }
+                    // This is the shared logic from both branches.
+                    dispatch(actions.tap(closestMarker.timestamp, positionId, chartName));
+                    return;
                 }
             }
 
