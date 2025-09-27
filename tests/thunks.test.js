@@ -141,6 +141,75 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.regions.byId[1].start).toBe(0);
     });
 
+    it('resizeSelectedRegionIntent adjusts the hovered segment only', () => {
+        store.dispatch(actions.viewportChange(0, 10000));
+        store.dispatch(actions.stepSizeCalculated(500));
+        store.dispatch(actions.regionAdd('P1', 1000, 2000));
+        store.dispatch(actions.regionUpdate(1, { areas: [
+            { start: 1000, end: 2000 },
+            { start: 4000, end: 4500 }
+        ] }));
+        store.dispatch(actions.hover({
+            isActive: true,
+            timestamp: 4200,
+            position: 'P1',
+            sourceChartName: 'figure_P1_timeseries'
+        }));
+        const thunk = thunks.resizeSelectedRegionIntent({ key: 'ArrowRight', modifiers: { alt: true } });
+        thunk(store.dispatch, store.getState);
+        const state = store.getState();
+        expect(state.regions.byId[1].areas[1]).toEqual({ start: 4000, end: 5000 });
+        expect(state.regions.byId[1].areas[0]).toEqual({ start: 1000, end: 2000 });
+    });
+
+    it('resizeSelectedRegionIntent falls back to the tapped segment when hover inactive', () => {
+        store.dispatch(actions.viewportChange(0, 10000));
+        store.dispatch(actions.stepSizeCalculated(300));
+        store.dispatch(actions.regionAdd('P1', 0, 800));
+        store.dispatch(actions.regionUpdate(1, { areas: [
+            { start: 0, end: 800 },
+            { start: 2000, end: 2600 }
+        ] }));
+        store.dispatch(actions.tap(2100, 'P1', 'figure_P1_timeseries'));
+        const thunk = thunks.resizeSelectedRegionIntent({ key: 'ArrowLeft', modifiers: { ctrl: true } });
+        thunk(store.dispatch, store.getState);
+        const state = store.getState();
+        expect(state.regions.byId[1].areas[1].start).toBe(1700);
+    });
+
+    it('splitSelectedRegionIntent converts areas into separate regions', () => {
+        store.dispatch(actions.regionAdd('P1', 1000, 2000));
+        store.dispatch(actions.regionUpdate(1, { areas: [
+            { start: 1000, end: 2000 },
+            { start: 3000, end: 3500 }
+        ] }));
+        store.dispatch(actions.regionSetNote(1, 'test note'));
+        store.dispatch(actions.regionSetColor(1, '#123456'));
+        store.dispatch(actions.regionSetAddAreaMode(1));
+
+        const thunk = thunks.splitSelectedRegionIntent();
+        thunk(store.dispatch, store.getState);
+
+        const state = store.getState();
+        expect(state.regions.byId[1]).toBeUndefined();
+        expect(state.regions.allIds).toHaveLength(2);
+        expect(state.regions.addAreaTargetId).toBeNull();
+
+        const firstRegion = state.regions.byId[state.regions.allIds[0]];
+        const secondRegion = state.regions.byId[state.regions.allIds[1]];
+        expect(firstRegion.positionId).toBe('P1');
+        expect(secondRegion.positionId).toBe('P1');
+        expect(firstRegion.areas).toEqual([{ start: 1000, end: 2000 }]);
+        expect(secondRegion.areas).toEqual([{ start: 3000, end: 3500 }]);
+        expect(firstRegion.note).toBe('test note');
+        expect(secondRegion.note).toBe('test note');
+        expect(firstRegion.color).toBe('#123456');
+        expect(secondRegion.color).toBe('#123456');
+        expect(firstRegion.metrics).toBeNull();
+        expect(secondRegion.metrics).toBeNull();
+        expect(state.regions.selectedId).toBe(state.regions.allIds[1]);
+    });
+
     it('nudgeTapLineIntent dispatches key nav', () => {
         store.dispatch(actions.viewportChange(0, 10000));
         store.dispatch(actions.stepSizeCalculated(1000));

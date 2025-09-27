@@ -270,6 +270,13 @@ class RegionPanelComponent:
             disabled=True,
         )
 
+        self.split_button = Button(
+            label="Split Areas",
+            width=panel_width,
+            name="region_split_button",
+            disabled=True,
+        )
+
         self.note_input = TextAreaInput(
             title="Notes",
             value="",
@@ -337,6 +344,7 @@ class RegionPanelComponent:
             primary_actions,
             self.merge_select,
             secondary_actions,
+            self.split_button,
             self.note_input,
             self.metrics_div,
             self.frequency_copy_button,
@@ -633,6 +641,28 @@ class RegionPanelComponent:
             }
         """)
         self.merge_button.js_on_event('button_click', merge_callback)
+
+        split_callback = CustomJS(args={'source': self.region_source}, code="""
+            const store = window.NoiseSurveyApp?.store;
+            const thunks = window.NoiseSurveyApp?.thunks;
+            if (typeof store?.dispatch !== 'function' || typeof store?.getState !== 'function' || typeof thunks?.splitSelectedRegionIntent !== 'function') {
+                return;
+            }
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                return;
+            }
+            const state = store.getState();
+            const regionsState = state?.regions || {};
+            const selectedId = regionsState.selectedId;
+            const selectedRegion = Number.isFinite(selectedId) ? regionsState.byId?.[selectedId] : null;
+            const areas = Array.isArray(selectedRegion?.areas) ? selectedRegion.areas : [];
+            if (areas.length <= 1) {
+                return;
+            }
+            store.dispatch(thunks.splitSelectedRegionIntent());
+        """)
+        self.split_button.js_on_event('button_click', split_callback)
 
         visibility_callback = CustomJS(code="""
             const actions = window.NoiseSurveyApp?.actions;
