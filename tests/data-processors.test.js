@@ -248,9 +248,10 @@ describe('NoiseSurveyApp.data_processors', () => {
 
             const details = dataProcessors.updateActiveLineChartData('P1', viewState, mockDataCache, models);
 
-            expect(dataCache.activeLineData.P1.LAeq).toEqual([60, 70]);
-            expect(details.type).toBe('log');
-            expect(details.reason).toBe(' (Log Data)');
+            expect(mockDataCache.activeLineData.P1.LAeq).toEqual([60, 70]);
+            expect(details?.type).toBe('log');
+            expect(details?.reason).toBe(' (Log Data)');
+            expect(viewState.displayDetails).toEqual({});
         });
 
         it('should show overview data when in log view but zoomed out', () => {
@@ -281,8 +282,9 @@ describe('NoiseSurveyApp.data_processors', () => {
             const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
 
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
-            expect(details.type).toBe('overview');
-            expect(details.reason).toBe(' - Zoom in for Log Data');
+            expect(details?.type).toBe('overview');
+            expect(details?.reason).toBe(' - Zoom in for Log Data');
+            expect(viewState.displayDetails).toEqual({});
         });
 
         it('should use overview data when log data is not available', () => {
@@ -307,8 +309,9 @@ describe('NoiseSurveyApp.data_processors', () => {
             const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
 
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
-            expect(details.type).toBe('overview');
-            expect(details.reason).toBe(' (No Log Data Available)');
+            expect(details?.type).toBe('overview');
+            expect(details?.reason).toBe(' (No Log Data Available)');
+            expect(viewState.displayDetails).toEqual({});
         });
 
         it('should use overview data when globalViewType is overview', () => {
@@ -339,8 +342,9 @@ describe('NoiseSurveyApp.data_processors', () => {
             const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
 
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
-            expect(details.type).toBe('overview');
-            expect(details.reason).toBe(' (Overview)');
+            expect(details?.type).toBe('overview');
+            expect(details?.reason).toBe(' (Overview)');
+            expect(viewState.displayDetails).toEqual({});
         });
     });
 });
