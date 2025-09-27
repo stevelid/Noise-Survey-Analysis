@@ -531,6 +531,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            const areas = getRegionAreas(region);
+            if (!areas.length) {
+                return;
+            }
+
             const stepSize = Number.isFinite(state?.interaction?.keyboard?.stepSizeMs)
                 ? state.interaction.keyboard.stepSizeMs
                 : 1000;
@@ -539,38 +544,101 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const viewportMin = Number.isFinite(viewport.min) ? viewport.min : -Infinity;
             const viewportMax = Number.isFinite(viewport.max) ? viewport.max : Infinity;
 
-            let nextStart = region.start;
-            let nextEnd = region.end;
+            const hoverState = state?.interaction?.hover;
+            const hoverTimestamp = hoverState?.isActive
+                && hoverState?.position === region.positionId
+                && Number.isFinite(hoverState?.timestamp)
+                ? hoverState.timestamp
+                : null;
+            const tapState = state?.interaction?.tap;
+            const tapTimestamp = tapState?.isActive
+                && tapState?.position === region.positionId
+                && Number.isFinite(tapState?.timestamp)
+                ? tapState.timestamp
+                : null;
+            const pointerTimestamp = hoverTimestamp != null ? hoverTimestamp : tapTimestamp;
 
-            if (adjustStart) { //todo: move key modifiers to config
-                const rawStart = region.start + delta;
-                const maxStart = region.end - MIN_REGION_WIDTH_MS;
-                const clampedStart = Math.max(Math.min(maxStart, rawStart), viewportMin);
-                if (clampedStart !== region.start) {
-                    nextStart = clampedStart;
+            const nextAreas = areas.map(area => ({ start: area.start, end: area.end }));
+
+            let targetAreaIndex = -1;
+            if (Number.isFinite(pointerTimestamp)) {
+                targetAreaIndex = nextAreas.findIndex(area => pointerTimestamp >= area.start && pointerTimestamp <= area.end);
+            }
+
+            if (adjustStart) {
+                const index = targetAreaIndex !== -1 ? targetAreaIndex : 0;
+                const area = nextAreas[index];
+                const previousEnd = index > 0 ? nextAreas[index - 1].end : -Infinity;
+                const lowerBound = Math.max(viewportMin, previousEnd);
+                const upperBound = area.end - MIN_REGION_WIDTH_MS;
+                const rawStart = area.start + delta;
+                const clampedStart = Math.max(Math.min(rawStart, upperBound), lowerBound);
+                if (clampedStart !== area.start) {
+                    area.start = clampedStart;
                 }
             }
 
-            if (adjustEnd) { //todo: move key modifiers to config
-                const rawEnd = region.end + delta;
-                const minEnd = nextStart + MIN_REGION_WIDTH_MS;
-                const clampedEnd = Math.min(Math.max(minEnd, rawEnd), viewportMax);
-                if (clampedEnd !== region.end) {
-                    nextEnd = clampedEnd;
+            if (adjustEnd) {
+                const index = targetAreaIndex !== -1 ? targetAreaIndex : nextAreas.length - 1;
+                const area = nextAreas[index];
+                const nextStart = index < nextAreas.length - 1 ? nextAreas[index + 1].start : Infinity;
+                const upperBound = Math.min(viewportMax, nextStart);
+                const lowerBound = area.start + MIN_REGION_WIDTH_MS;
+                const rawEnd = area.end + delta;
+                const clampedEnd = Math.min(Math.max(rawEnd, lowerBound), upperBound);
+                if (clampedEnd !== area.end) {
+                    area.end = clampedEnd;
                 }
             }
 
-            const changes = {};
-            if (nextStart !== region.start) {
-                changes.start = nextStart;
-            }
-            if (nextEnd !== region.end) {
-                changes.end = nextEnd;
+            let mutated = false;
+            for (let i = 0; i < nextAreas.length; i++) {
+                if (nextAreas[i].start !== areas[i].start || nextAreas[i].end !== areas[i].end) {
+                    mutated = true;
+                    break;
+                }
             }
 
-            if (Object.keys(changes).length) {
-                dispatch(actions.regionUpdate(region.id, changes));
+            if (mutated) {
+                dispatch(actions.regionUpdate(region.id, { areas: nextAreas }));
             }
+        };
+    }
+
+    function splitSelectedRegionIntent() {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') return;
+            const state = getState();
+            const regionsState = regionSelectors.selectRegionsState
+                ? regionSelectors.selectRegionsState(state)
+                : state?.regions;
+            const selectedId = regionsState?.selectedId;
+            if (!Number.isFinite(selectedId)) {
+                return;
+            }
+
+            const region = regionsState.byId[selectedId];
+            if (!region) {
+                return;
+            }
+
+            const areas = getRegionAreas(region);
+            if (areas.length <= 1) {
+                return;
+            }
+
+            const newRegions = areas.map(area => ({
+                positionId: region.positionId,
+                areas: [{ start: area.start, end: area.end }],
+                note: region.note,
+                color: region.color
+            }));
+
+            dispatch(actions.regionRemove(region.id));
+            if (regionsState?.addAreaTargetId === region.id && actions.regionSetAddAreaMode) {
+                dispatch(actions.regionSetAddAreaMode(null));
+            }
+            dispatch(actions.regionsAdded(newRegions));
         };
     }
 
@@ -588,6 +656,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         createRegionFromMarkersIntent,
         mergeRegionIntoSelectedIntent,
         resizeSelectedRegionIntent,
+        splitSelectedRegionIntent,
         toggleRegionCreationIntent
     };
 })(window.NoiseSurveyApp);

@@ -427,8 +427,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         autoButton.visible = panelVisible;
     }
 
-    function updateButtons(models, hasSelection, selectedRegion, state, isMergeModeActive) {
-        const { copyButton, deleteButton, addAreaButton, mergeButton, mergeSelect } = models;
+    function updateButtons(models, hasSelection, selectedRegion, state, isMergeModeActive, panelVisible) {
+        const { copyButton, deleteButton, addAreaButton, mergeButton, mergeSelect, splitButton } = models;
         const addAreaTargetId = state?.regions?.addAreaTargetId ?? null;
         const hasOtherRegions = state?.regions?.allIds.length > 1;
         const mergeOptionsAvailable = Array.isArray(mergeSelect?.options) && mergeSelect.options.length > 0;
@@ -460,6 +460,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const shouldShow = isMergeModeActive && hasSelection && hasOtherRegions;
             mergeSelect.visible = shouldShow;
             mergeSelect.disabled = !(hasSelection && hasOtherRegions && mergeOptionsAvailable);
+        }
+        if (splitButton) {
+            const areaCount = Array.isArray(selectedRegion?.areas) ? selectedRegion.areas.length : 0;
+            splitButton.disabled = !(hasSelection && areaCount > 1);
+            splitButton.visible = panelVisible;
         }
     }
 
@@ -570,7 +575,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             frequencyTableDiv,
             frequencyCopyButton,
             visibilityToggle,
-            autoDayNightButton
+
+            autoDayNightButton,
+            splitButton
+
+
         } = panelModels;
 
         const regionsState = state?.regions || {};
@@ -589,7 +598,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateVisibilityToggle(visibilityToggle, regionList.length, panelVisible, overlaysVisible);
         updateAutoButton(autoDayNightButton, hasPositions, panelVisible);
         updateMessage(messageDiv, detail, hasRegions, panelVisible, state?.interaction?.pendingRegionStart || null);
-        updateButtons(panelModels, hasSelection, selectedRegion, state, isMergeModeActive);
+        updateButtons(panelModels, hasSelection, selectedRegion, state, isMergeModeActive, panelVisible);
         updateNoteInput(noteInput, selectedRegion);
 
         updateColorPicker(colorPicker, selectedRegion);
