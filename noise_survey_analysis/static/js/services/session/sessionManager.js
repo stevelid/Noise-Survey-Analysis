@@ -46,6 +46,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     const CSV_HEADER = ['type', 'id', 'positionId', 'start_utc', 'end_utc', 'note', 'color', 'areas'];
+    const METRIC_COLUMNS = [
+        'timestamp_utc',
+        'duration_ms',
+        'metrics_parameter',
+        'metrics_data_resolution',
+        'metrics_duration_ms',
+        'metrics_laeq',
+        'metrics_lafmax',
+        'metrics_la90',
+        'metrics_la90_available',
+        'metrics_broadband_value',
+        'metrics_broadband_position',
+        'metrics_timestamp_utc',
+        'metrics_spectrum_source'
+    ];
 
     function escapeCsvValue(value) {
         if (value === null || value === undefined) {
@@ -123,10 +138,198 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         throw new Error(`Invalid timestamp value: ${value}`);
     }
 
+    function formatNumberValue(value, decimals = null) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            return '';
+        }
+        if (decimals === 0) {
+            return String(Math.round(numeric));
+        }
+        if (Number.isInteger(numeric)) {
+            return String(numeric);
+        }
+        const precision = Number.isInteger(decimals) && decimals >= 0 ? decimals : 3;
+        const factor = Math.pow(10, precision);
+        return String(Math.round(numeric * factor) / factor);
+    }
+
+    function normaliseBandKey(label) {
+        if (label === null || label === undefined) {
+            return null;
+        }
+        const trimmed = String(label).trim();
+        if (!trimmed) {
+            return null;
+        }
+        return trimmed.toLowerCase();
+    }
+
+    function compareBandLabels(a, b) {
+        return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+    }
+
+    function makeBandColumnName(label, usedNames) {
+        const raw = String(label)
+            .trim()
+            .replace(/\s+/g, '_')
+            .replace(/[^0-9a-zA-Z_]+/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_+|_+$/g, '');
+        const base = raw ? `band_${raw}` : 'band_value';
+        let candidate = base;
+        let suffix = 2;
+        while (usedNames.has(candidate)) {
+            candidate = `${base}_${suffix}`;
+            suffix += 1;
+        }
+        usedNames.add(candidate);
+        return candidate;
+    }
+
+    function extractMarkerBroadband(marker) {
+        const metrics = marker?.metrics;
+        if (!metrics) {
+            return null;
+        }
+        const broadbandEntries = Array.isArray(metrics.broadband) ? metrics.broadband : [];
+        if (!broadbandEntries.length) {
+            return null;
+        }
+        const markerPosition = typeof marker?.positionId === 'string' ? marker.positionId : null;
+        let entry = markerPosition
+            ? broadbandEntries.find(item => item?.positionId === markerPosition)
+            : null;
+        if (!entry) {
+            entry = broadbandEntries.find(item => Number.isFinite(Number(item?.value))) || null;
+        }
+        if (!entry) {
+            return null;
+        }
+        const value = Number(entry.value);
+        return {
+            positionId: typeof entry.positionId === 'string' ? entry.positionId : markerPosition || '',
+            value: Number.isFinite(value) ? value : null
+        };
+    }
+
+    function extractMarkerSpectrum(marker) {
+        const metrics = marker?.metrics;
+        if (!metrics) {
+            return { labels: [], values: [] };
+        }
+        const spectralEntries = Array.isArray(metrics.spectral) ? metrics.spectral : [];
+        let snapshot = null;
+        const markerPosition = typeof marker?.positionId === 'string' ? marker.positionId : null;
+        if (markerPosition) {
+            snapshot = spectralEntries.find(item => item?.positionId === markerPosition) || null;
+        }
+        if (!snapshot && spectralEntries.length) {
+            snapshot = spectralEntries[0];
+        }
+        if (!snapshot) {
+            return { labels: [], values: [] };
+        }
+        const labels = Array.isArray(snapshot.labels)
+            ? snapshot.labels
+            : Array.isArray(snapshot.bands)
+                ? snapshot.bands
+                : [];
+        const values = Array.isArray(snapshot.values)
+            ? snapshot.values
+            : Array.isArray(snapshot.band_values)
+                ? snapshot.band_values
+                : [];
+        return { labels, values };
+    }
+
+    function extractRegionSpectrum(region) {
+        const spectrum = region?.metrics?.spectrum || {};
+        const labels = Array.isArray(spectrum.labels)
+            ? spectrum.labels
+            : Array.isArray(spectrum.bands)
+                ? spectrum.bands
+                : [];
+        const values = Array.isArray(spectrum.values)
+            ? spectrum.values
+            : Array.isArray(spectrum.band_values)
+                ? spectrum.band_values
+                : [];
+        return {
+            labels,
+            values
+        };
+    }
+
+    function collectBandColumns(markers, regions) {
+        const labelSet = new Map();
+
+        function addLabels(labels) {
+            if (!Array.isArray(labels)) {
+                return;
+            }
+            labels.forEach(label => {
+                const key = normaliseBandKey(label);
+                if (!key || labelSet.has(key)) {
+                    return;
+                }
+                labelSet.set(key, String(label));
+            });
+        }
+
+        markers.forEach(marker => {
+            const spectrum = extractMarkerSpectrum(marker);
+            addLabels(spectrum.labels);
+        });
+        regions.forEach(region => {
+            const spectrum = extractRegionSpectrum(region);
+            addLabels(spectrum.labels);
+        });
+
+        const sortedLabels = Array.from(labelSet.values()).sort(compareBandLabels);
+        const usedNames = new Set();
+        return sortedLabels.map(label => ({
+            label,
+            key: normaliseBandKey(label),
+            column: makeBandColumnName(label, usedNames)
+        }));
+    }
+
+    function assignSpectrumValues(rowData, spectrum, bandLookup) {
+        if (!spectrum) {
+            return;
+        }
+        const labels = Array.isArray(spectrum.labels) ? spectrum.labels : [];
+        const values = Array.isArray(spectrum.values) ? spectrum.values : [];
+        for (let i = 0; i < labels.length; i++) {
+            const key = normaliseBandKey(labels[i]);
+            if (!key) {
+                continue;
+            }
+            const column = bandLookup.get(key);
+            if (!column) {
+                continue;
+            }
+            rowData[column] = formatNumberValue(values[i]);
+        }
+    }
+
     function buildAnnotationsCsv(markersInput, regionsInput) {
-        const rows = [CSV_HEADER.join(',')];
         const markers = Array.isArray(markersInput) ? markersInput : [];
         const regions = Array.isArray(regionsInput) ? regionsInput : [];
+        const bandColumns = collectBandColumns(markers, regions);
+        const bandLookup = new Map(bandColumns.map(entry => [entry.key, entry.column]));
+        const header = CSV_HEADER.concat(METRIC_COLUMNS, bandColumns.map(entry => entry.column));
+
+        const rows = [header.join(',')];
+
+        function createBaseRow() {
+            const rowData = {};
+            header.forEach(column => {
+                rowData[column] = '';
+            });
+            return rowData;
+        }
 
         markers.forEach(marker => {
             const formattedStart = formatTimestampForCsv(marker?.timestamp);
@@ -134,18 +337,30 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            const row = [
-                'marker',
-                Number.isFinite(Number(marker?.id)) ? Number(marker.id) : '',
-                marker?.positionId ?? '',
-                formattedStart,
-                '',
-                typeof marker?.note === 'string' ? marker.note : '',
-                typeof marker?.color === 'string' ? marker.color : '',
-                ''
-            ];
+            const rowData = createBaseRow();
+            rowData.type = 'marker';
+            rowData.id = Number.isFinite(Number(marker?.id)) ? Number(marker.id) : '';
+            rowData.positionId = marker?.positionId ?? '';
+            rowData.start_utc = formattedStart;
+            rowData.timestamp_utc = formattedStart;
+            rowData.note = typeof marker?.note === 'string' ? marker.note : '';
+            rowData.color = typeof marker?.color === 'string' ? marker.color : '';
 
-            rows.push(row.map(escapeCsvValue).join(','));
+            const metrics = marker?.metrics || null;
+            if (metrics) {
+                rowData.metrics_parameter = metrics.parameter ?? '';
+                rowData.metrics_timestamp_utc = formatTimestampForCsv(metrics.timestamp);
+                const broadband = extractMarkerBroadband(marker);
+                if (broadband && Number.isFinite(broadband.value)) {
+                    rowData.metrics_broadband_value = formatNumberValue(broadband.value);
+                    rowData.metrics_broadband_position = broadband.positionId || '';
+                }
+                const spectrum = extractMarkerSpectrum(marker);
+                assignSpectrumValues(rowData, spectrum, bandLookup);
+            }
+
+            const row = header.map(column => escapeCsvValue(rowData[column]));
+            rows.push(row.join(','));
         });
 
         regions.forEach(region => {
@@ -154,6 +369,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (!formattedStart || !formattedEnd) {
                 return;
             }
+
+            const rowData = createBaseRow();
+            rowData.type = 'region';
+            rowData.id = Number.isFinite(Number(region?.id)) ? Number(region.id) : '';
+            rowData.positionId = typeof region?.positionId === 'string' ? region.positionId : '';
+            rowData.start_utc = formattedStart;
+            rowData.end_utc = formattedEnd;
+            rowData.note = typeof region?.note === 'string' ? region.note : '';
+            rowData.color = typeof region?.color === 'string' ? region.color : '';
 
             const regionAreas = Array.isArray(region?.areas) ? region.areas : [];
             const serializedAreas = regionAreas
@@ -166,23 +390,35 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     return { startUtc: areaStart, endUtc: areaEnd };
                 })
                 .filter(Boolean);
-
             const areasValue = serializedAreas.length
                 ? JSON.stringify(serializedAreas)
                 : JSON.stringify([{ startUtc: formattedStart, endUtc: formattedEnd }]);
+            rowData.areas = areasValue;
 
-            const row = [
-                'region',
-                Number.isFinite(Number(region?.id)) ? Number(region.id) : '',
-                typeof region?.positionId === 'string' ? region.positionId : '',
-                formattedStart,
-                formattedEnd,
-                typeof region?.note === 'string' ? region.note : '',
-                typeof region?.color === 'string' ? region.color : '',
-                areasValue
-            ];
+            const metrics = region?.metrics || null;
+            if (metrics) {
+                rowData.metrics_parameter = metrics.parameter ?? '';
+                rowData.metrics_data_resolution = metrics.dataResolution ?? '';
+                rowData.metrics_duration_ms = formatNumberValue(metrics.durationMs, 0);
+                rowData.duration_ms = formatNumberValue(metrics.durationMs, 0);
+                rowData.metrics_laeq = formatNumberValue(metrics.laeq);
+                rowData.metrics_lafmax = formatNumberValue(metrics.lafmax);
+                rowData.metrics_la90 = formatNumberValue(metrics.la90);
+                rowData.metrics_la90_available = metrics.la90Available ? 'true' : '';
+                const spectrum = extractRegionSpectrum(region);
+                assignSpectrumValues(rowData, spectrum, bandLookup);
+                if (metrics.spectrum && typeof metrics.spectrum.source === 'string') {
+                    rowData.metrics_spectrum_source = metrics.spectrum.source;
+                }
+            }
 
-            rows.push(row.map(escapeCsvValue).join(','));
+            if (!rowData.duration_ms && Number.isFinite(Number(region?.end)) && Number.isFinite(Number(region?.start))) {
+                const duration = Number(region.end) - Number(region.start);
+                rowData.duration_ms = formatNumberValue(duration, 0);
+            }
+
+            const row = header.map(column => escapeCsvValue(rowData[column]));
+            rows.push(row.join(','));
         });
 
         return rows.join('\n');
@@ -394,6 +630,135 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return { markers, regions };
     }
 
+    function normaliseMarkerFromJson(entry) {
+        if (!entry || typeof entry !== 'object') {
+            return null;
+        }
+        const timestampCandidate = entry.timestamp ?? entry.timestampMs ?? entry.timestamp_ms ?? entry.time ?? entry.timeUtc ?? entry.time_utc;
+        const timestamp = Number(timestampCandidate);
+        if (!Number.isFinite(timestamp)) {
+            return null;
+        }
+        const marker = {
+            timestamp,
+            note: typeof entry.note === 'string' ? entry.note : ''
+        };
+        const idCandidate = Number(entry.id);
+        if (Number.isFinite(idCandidate) && idCandidate > 0) {
+            marker.id = idCandidate;
+        }
+        if (typeof entry.color === 'string' && entry.color) {
+            marker.color = entry.color;
+        }
+        const positionCandidate = entry.positionId ?? entry.position_id ?? entry.position;
+        if (typeof positionCandidate === 'string' && positionCandidate) {
+            marker.positionId = positionCandidate;
+        }
+        if (entry.metrics && typeof entry.metrics === 'object') {
+            marker.metrics = entry.metrics;
+        }
+        return marker;
+    }
+
+    function importMarkersFromJson(entries) {
+        if (!Array.isArray(entries) || !entries.length) {
+            return false;
+        }
+        if (!app.store || typeof app.store.dispatch !== 'function') {
+            console.error('[Session] Store not available; cannot import markers.');
+            return false;
+        }
+        if (!app.actions || typeof app.actions.markersReplace !== 'function') {
+            console.error('[Session] Marker replace action is unavailable.');
+            return false;
+        }
+        const normalised = entries
+            .map(normaliseMarkerFromJson)
+            .filter(Boolean);
+        if (!normalised.length) {
+            return false;
+        }
+        app.store.dispatch(app.actions.markersReplace(normalised));
+        return true;
+    }
+
+    function importRegionsFromJson(entries) {
+        if (!Array.isArray(entries) || !entries.length) {
+            return false;
+        }
+        if (!app.store || typeof app.store.dispatch !== 'function') {
+            console.error('[Session] Store not available; cannot import regions.');
+            return false;
+        }
+        if (!app.actions || typeof app.actions.regionsAdded !== 'function') {
+            console.error('[Session] Region add action is unavailable.');
+            return false;
+        }
+        const importRegionsFn = app.features?.regions?.utils?.importRegions;
+        if (typeof importRegionsFn !== 'function') {
+            console.error('[Session] Region import utility is unavailable.');
+            return false;
+        }
+        try {
+            const payload = importRegionsFn(JSON.stringify(entries));
+            if (!Array.isArray(payload) || !payload.length) {
+                return false;
+            }
+            app.store.dispatch(app.actions.regionsAdded(payload));
+            return true;
+        } catch (error) {
+            console.error('[Session] Failed to import regions from JSON:', error);
+            return false;
+        }
+    }
+
+    function importAnnotationsFromJson(jsonText) {
+        if (typeof jsonText !== 'string') {
+            throw new Error('Annotation payload must be a string.');
+        }
+        let parsed;
+        try {
+            parsed = JSON.parse(jsonText);
+        } catch (error) {
+            throw new Error('Invalid JSON annotation file.');
+        }
+
+        let imported = false;
+        if (Array.isArray(parsed)) {
+            imported = importRegionsFromJson(parsed) || imported;
+        } else if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.regions)) {
+                imported = importRegionsFromJson(parsed.regions) || imported;
+            }
+            if (Array.isArray(parsed.markers)) {
+                imported = importMarkersFromJson(parsed.markers) || imported;
+            }
+            if (!imported && Array.isArray(parsed.annotations)) {
+                const annotations = parsed.annotations;
+                const markerCandidates = annotations.filter(item => item?.type === 'marker').map(item => item?.data ?? item);
+                const regionCandidates = annotations.filter(item => item?.type === 'region').map(item => item?.data ?? item);
+                imported = importMarkersFromJson(markerCandidates) || imported;
+                imported = importRegionsFromJson(regionCandidates) || imported;
+            }
+        }
+
+        if (!imported) {
+            throw new Error('No annotations found in JSON file.');
+        }
+        return true;
+    }
+
+    function shouldTreatContentAsJson(filename, fileText) {
+        if (typeof filename === 'string' && /\.json$/i.test(filename)) {
+            return true;
+        }
+        const trimmed = typeof fileText === 'string' ? fileText.trim() : '';
+        if (!trimmed) {
+            return false;
+        }
+        return trimmed.startsWith('{') || trimmed.startsWith('[');
+    }
+
     function getCurrentSourceConfigs() {
         const configs = app.registry?.models?.sourceConfigs;
         return Array.isArray(configs) ? configs : [];
@@ -553,7 +918,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
-        fileInput.accept = '.csv,text/csv';
+        fileInput.accept = '.csv,text/csv,application/json,.json';
         fileInput.addEventListener('change', event => {
             const file = event.target?.files?.[0];
             if (!file) {
@@ -562,16 +927,31 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             const reader = new FileReader();
             reader.onload = () => {
+                const fileText = typeof reader.result === 'string' ? reader.result : '';
+                const treatAsJson = shouldTreatContentAsJson(file.name, fileText);
                 try {
-                    const csvText = typeof reader.result === 'string' ? reader.result : '';
-                    const { markers, regions } = parseAnnotationsCsv(csvText);
+                    if (treatAsJson) {
+                        importAnnotationsFromJson(fileText);
+                        console.info('[Session] Annotation JSON import complete.');
+                        return;
+                    }
+
+                    const { markers, regions } = parseAnnotationsCsv(fileText);
                     if (Array.isArray(markers)) {
-                        app.store.dispatch(app.actions.markersReplace(markers));
+                        if (typeof app.actions?.markersReplace === 'function') {
+                            app.store.dispatch(app.actions.markersReplace(markers));
+                        } else {
+                            console.error('[Session] Marker replace action is unavailable.');
+                        }
                     }
                     if (Array.isArray(regions)) {
-                        app.store.dispatch(app.actions.regionReplaceAll(regions));
+                        if (typeof app.actions?.regionReplaceAll === 'function') {
+                            app.store.dispatch(app.actions.regionReplaceAll(regions));
+                        } else {
+                            console.error('[Session] Region replace action is unavailable.');
+                        }
                     }
-                    console.info('[Session] Annotation import complete.');
+                    console.info('[Session] Annotation CSV import complete.');
                 } catch (error) {
                     console.error('[Session] Failed to import annotations:', error);
                 }
@@ -609,7 +989,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         parseTimestampFromCsv,
         buildAnnotationsCsv,
         parseAnnotationsCsv,
-        CSV_HEADER: CSV_HEADER.slice()
+        CSV_HEADER: CSV_HEADER.slice(),
+        METRIC_COLUMNS: METRIC_COLUMNS.slice()
     };
 
     app.session = {
@@ -620,6 +1001,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         applyInitialWorkspaceState,
         handleExportCsv,
         handleImportCsv,
+        handleImportAnnotations: handleImportCsv,
         __testHelpers: testHelpers,
     };
 })(window.NoiseSurveyApp);
