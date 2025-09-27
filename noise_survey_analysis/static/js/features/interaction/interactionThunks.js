@@ -33,38 +33,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const markerThreshold = Math.max(Math.abs(viewportWidth) * MARKER_HIT_RATIO, MARKER_MIN_THRESHOLD_MS);
 
             if (!isShift && !isCtrl) {
-                const markersForPosition = typeof markerSelectors.selectMarkersByPosition === 'function'
-                    ? markerSelectors.selectMarkersByPosition(state, positionId)
-                    : [];
+const { marker: closestMarker, distance } = typeof markerSelectors.selectClosestMarkerToTimestamp === 'function'
+                    ? markerSelectors.selectClosestMarkerToTimestamp(state, timestamp, positionId)
+                    : { marker: null, distance: Infinity };
 
-                if (markersForPosition.length) {
-                    let closestMarker = null;
-                    let smallestDistance = Infinity;
-                    markersForPosition.forEach(marker => {
-                        const markerTimestamp = Number(marker?.timestamp);
-                        if (!Number.isFinite(markerTimestamp)) {
-                            return;
-                        }
-                        const distance = Math.abs(markerTimestamp - timestamp);
-                        if (distance < smallestDistance) {
-                            smallestDistance = distance;
-                            closestMarker = marker;
-                        }
-                    });
+                  if (closestMarker && distance <= markerThreshold) {
+                      // This is the "smart" dispatch logic from the 'main' branch.
+                      const selectMarkerThunk = app.features?.markers?.thunks?.selectMarkerIntent;
+                      if (typeof selectMarkerThunk === 'function') {
+                          dispatch(selectMarkerThunk(closestMarker.id));
+                      } else {
+                          // Keep the fallback for safety, just in case.
+                          dispatch(actions.markerSelect(closestMarker.id));
+                          if (typeof actions.regionClearSelection === 'function') {
+                              dispatch(actions.regionClearSelection());
+                          }
+                      }
 
-                    if (closestMarker && smallestDistance <= markerThreshold) {
-                        const selectMarkerThunk = app.features?.markers?.thunks?.selectMarkerIntent;
-                        if (typeof selectMarkerThunk === 'function') {
-                            dispatch(selectMarkerThunk(closestMarker.id));
-                        } else {
-                            dispatch(actions.markerSelect(closestMarker.id));
-                            if (typeof actions.regionClearSelection === 'function') {
-                                dispatch(actions.regionClearSelection());
-                            }
-                        }
-                        dispatch(actions.tap(closestMarker.timestamp, positionId, chartName));
-                        return;
-                    }
+                      // This is the shared logic from both branches.
+                      dispatch(actions.tap(closestMarker.timestamp, positionId, chartName));
+                      return;
+                  }
                 }
             }
 

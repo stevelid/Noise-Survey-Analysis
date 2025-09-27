@@ -232,6 +232,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             const extras = {};
+            if (typeof payload.positionId === 'string' && payload.positionId.trim()) {
+                extras.positionId = payload.positionId.trim();
+            } else if (tapState?.position) {
+                extras.positionId = tapState.position;
+            } else {
+                const availablePositions = Array.isArray(state?.view?.availablePositions)
+                    ? state.view.availablePositions
+                        .map(pos => typeof pos === 'string' ? pos.trim() : '')
+                        .filter(Boolean)
+                    : [];
+                if (availablePositions.length === 1) {
+                    extras.positionId = availablePositions[0];
+                }
+            }
             if (typeof payload.note === 'string') {
                 extras.note = payload.note;
             }
