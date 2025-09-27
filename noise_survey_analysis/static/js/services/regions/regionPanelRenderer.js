@@ -414,24 +414,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
-    function updateAutoButtons(autoDayButton, autoNightButton, hasPositions, panelVisible) {
+    function updateAutoButton(autoButton, hasPositions, panelVisible) {
+        if (!autoButton) {
+            return;
+        }
         const disabled = !hasPositions;
-        if (autoDayButton) {
-            autoDayButton.disabled = disabled;
-            const desiredType = disabled ? 'light' : 'default';
-            if (autoDayButton.button_type !== desiredType) {
-                autoDayButton.button_type = desiredType;
-            }
-            autoDayButton.visible = panelVisible;
+        autoButton.disabled = disabled;
+        const desiredType = disabled ? 'light' : 'primary';
+        if (autoButton.button_type !== desiredType) {
+            autoButton.button_type = desiredType;
         }
-        if (autoNightButton) {
-            autoNightButton.disabled = disabled;
-            const desiredType = disabled ? 'light' : 'default';
-            if (autoNightButton.button_type !== desiredType) {
-                autoNightButton.button_type = desiredType;
-            }
-            autoNightButton.visible = panelVisible;
-        }
+        autoButton.visible = panelVisible;
     }
 
     function updateButtons(models, hasSelection, selectedRegion, state, isMergeModeActive) {
@@ -577,8 +570,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             frequencyTableDiv,
             frequencyCopyButton,
             visibilityToggle,
-            autoDayButton,
-            autoNightButton
+            autoDayNightButton
         } = panelModels;
 
         const regionsState = state?.regions || {};
@@ -595,7 +587,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const hasSelection = Boolean(selectedRegion);
 
         updateVisibilityToggle(visibilityToggle, regionList.length, panelVisible, overlaysVisible);
-        updateAutoButtons(autoDayButton, autoNightButton, hasPositions, panelVisible);
+        updateAutoButton(autoDayNightButton, hasPositions, panelVisible);
         updateMessage(messageDiv, detail, hasRegions, panelVisible, state?.interaction?.pendingRegionStart || null);
         updateButtons(panelModels, hasSelection, selectedRegion, state, isMergeModeActive);
         updateNoteInput(noteInput, selectedRegion);

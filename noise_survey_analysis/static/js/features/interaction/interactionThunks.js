@@ -53,7 +53,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     });
 
                     if (closestMarker && smallestDistance <= markerThreshold) {
-                        dispatch(actions.markerSelect(closestMarker.id));
+                        const selectMarkerThunk = app.features?.markers?.thunks?.selectMarkerIntent;
+                        if (typeof selectMarkerThunk === 'function') {
+                            dispatch(selectMarkerThunk(closestMarker.id));
+                        } else {
+                            dispatch(actions.markerSelect(closestMarker.id));
+                            if (typeof actions.regionClearSelection === 'function') {
+                                dispatch(actions.regionClearSelection());
+                            }
+                        }
                         dispatch(actions.tap(closestMarker.timestamp, positionId, chartName));
                         return;
                     }
@@ -98,7 +106,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             if (regionHit) {
-                dispatch(actions.regionSelect(regionHit.id));
+                const selectRegionThunk = app.features?.regions?.thunks?.selectRegionIntent;
+                if (typeof selectRegionThunk === 'function') {
+                    dispatch(selectRegionThunk(regionHit.id));
+                } else {
+                    dispatch(actions.regionSelect(regionHit.id));
+                    if (typeof actions.markerSelect === 'function') {
+                        dispatch(actions.markerSelect(null));
+                    }
+                }
             } else {
                 dispatch(actions.regionClearSelection());
             }
@@ -118,6 +134,116 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    function handleKeyboardShortcutIntent(payload) {
+        return function (dispatch, getState) {
+            if (!actions) return;
+
+            const rawKey = typeof payload?.key === 'string' ? payload.key : '';
+            const code = typeof payload?.code === 'string' ? payload.code : '';
+            const normalizedKey = rawKey.toLowerCase();
+            const ctrlKey = Boolean(payload?.ctrlKey);
+            const altKey = Boolean(payload?.altKey);
+
+            const thunks = app.thunks || {};
+
+            if (code === 'Space' || rawKey === ' ' || rawKey === 'Spacebar') {
+                const toggleThunk = thunks.togglePlaybackFromKeyboardIntent;
+                if (typeof toggleThunk !== 'function') {
+                    console.error('[InteractionThunk] Missing togglePlaybackFromKeyboardIntent thunk.');
+                    return;
+                }
+                dispatch(toggleThunk());
+                return;
+            }
+
+            if (rawKey === 'Escape') {
+                if (typeof actions.regionCreationCancelled === 'function') {
+                    dispatch(actions.regionCreationCancelled());
+                }
+                return;
+            }
+
+            if (normalizedKey === 'm') {
+                const markerThunk = thunks.createMarkerFromKeyboardIntent
+                    || thunks.addMarkerAtTapIntent;
+                if (typeof markerThunk !== 'function') {
+                    console.error('[InteractionThunk] Missing marker creation thunk.');
+                    return;
+                }
+                if (markerThunk === thunks.createMarkerFromKeyboardIntent) {
+                    dispatch(markerThunk({}));
+                } else {
+                    dispatch(markerThunk());
+                }
+                return;
+            }
+
+            if (normalizedKey === 'r') {
+                const regionThunk = thunks.createRegionFromMarkersIntent
+                    || thunks.toggleRegionCreationIntent;
+                if (typeof regionThunk !== 'function') {
+                    console.error('[InteractionThunk] Missing region creation thunk.');
+                    return;
+                }
+                if (regionThunk === thunks.createRegionFromMarkersIntent) {
+                    dispatch(regionThunk({}));
+                } else {
+                    dispatch(regionThunk());
+                }
+                return;
+            }
+
+            if (rawKey !== 'ArrowLeft' && rawKey !== 'ArrowRight') {
+                return;
+            }
+
+            if (ctrlKey || altKey) {
+                const state = typeof getState === 'function' ? getState() : null;
+                const selectedMarker = state && typeof markerSelectors.selectSelectedMarker === 'function'
+                    ? markerSelectors.selectSelectedMarker(state)
+                    : null;
+
+                if (ctrlKey && selectedMarker) {
+                    const nudgeMarkerThunk = thunks.nudgeSelectedMarkerIntent;
+                    if (typeof nudgeMarkerThunk !== 'function') {
+                        console.error('[InteractionThunk] Missing nudgeSelectedMarkerIntent thunk.');
+                        return;
+                    }
+                    dispatch(nudgeMarkerThunk({ key: rawKey }));
+                    return;
+                }
+
+                const resizeRegionThunk = thunks.resizeSelectedRegionIntent;
+                if (typeof resizeRegionThunk !== 'function') {
+                    console.error('[InteractionThunk] Missing resizeSelectedRegionIntent thunk.');
+                    return;
+                }
+
+                const modifiers = {};
+                if (ctrlKey) {
+                    modifiers.ctrl = true;
+                }
+                if (altKey) {
+                    modifiers.alt = true;
+                }
+
+                dispatch(resizeRegionThunk({
+                    key: rawKey,
+                    modifiers
+                }));
+                return;
+            }
+
+            const nudgeTapThunk = thunks.nudgeTapLineIntent;
+            if (typeof nudgeTapThunk !== 'function') {
+                console.error('[InteractionThunk] Missing nudgeTapLineIntent thunk.');
+                return;
+            }
+
+            dispatch(nudgeTapThunk({ key: rawKey }));
+        };
+    }
+
     function nudgeTapLineIntent(payload) {
         return function (dispatch) {
             if (!actions) return;
@@ -132,6 +258,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.features.interaction = app.features.interaction || {};
     app.features.interaction.thunks = {
         handleTapIntent,
+        handleKeyboardShortcutIntent,
         nudgeTapLineIntent
     };
 })(window.NoiseSurveyApp);

@@ -73,8 +73,8 @@ describe('NoiseSurveyApp.renderers', () => {
                     positions: {
                         P1: {
                             updateAllCharts: mockUpdateAllCharts,
-                            timeSeriesChart: { setVisible: mockSetVisible, model: { title: { text: '' }, background_fill_color: '' } },
-                            spectrogramChart: { setVisible: mockSetVisible, hoverDivModel: { visible: true }, model: { title: { text: '' }, background_fill_color: '' } }
+                            timeSeriesChart: { setVisible: mockSetVisible, model: { title: { text: '' }, background_fill_color: '' }, lastDisplayDetails: { reason: '' } },
+                            spectrogramChart: { setVisible: mockSetVisible, hoverDivModel: { visible: true }, model: { title: { text: '' }, background_fill_color: '' }, lastDisplayDetails: { reason: '' } }
                         }
                     },
                     chartsByName: new Map([
@@ -164,8 +164,7 @@ describe('NoiseSurveyApp.renderers', () => {
             frequencyTableDiv: { text: '', visible: false },
             spectrumDiv: { text: '', visible: false },
             visibilityToggle: { label: 'Regions', active: true, button_type: 'primary' },
-            autoDayButton: { disabled: false, button_type: 'default', visible: true },
-            autoNightButton: { disabled: false, button_type: 'default', visible: true },
+            autoDayNightButton: { disabled: false, button_type: 'default', visible: true },
         };
 
         Object.assign(window.NoiseSurveyApp.registry.models, {
@@ -185,8 +184,7 @@ describe('NoiseSurveyApp.renderers', () => {
             regionPanelFrequencyTableDiv: regionPanelMocks.frequencyTableDiv,
             regionPanelSpectrumDiv: regionPanelMocks.spectrumDiv,
             regionVisibilityToggle: regionPanelMocks.visibilityToggle,
-            regionAutoDayButton: regionPanelMocks.autoDayButton,
-            regionAutoNightButton: regionPanelMocks.autoNightButton,
+            regionAutoDayNightButton: regionPanelMocks.autoDayNightButton,
         });
 
     });
@@ -224,8 +222,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionVisibilityToggle.active).toBe(false);
             expect(models.regionVisibilityToggle.label).toBe('Regions (1)');
             expect(models.regionVisibilityToggle.button_type).toBe('default');
-            expect(models.regionAutoDayButton.visible).toBe(false);
-            expect(models.regionAutoNightButton.visible).toBe(false);
+            expect(models.regionAutoDayNightButton.visible).toBe(false);
 
             const hiddenCall = mockSyncRegions.mock.calls.at(-1);
             expect(hiddenCall[0]).toEqual([]);
@@ -262,8 +259,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionVisibilityToggle.active).toBe(true);
             expect(models.regionVisibilityToggle.label).toBe('Regions (2)');
             expect(models.regionVisibilityToggle.button_type).toBe('primary');
-            expect(models.regionAutoDayButton.visible).toBe(true);
-            expect(models.regionAutoNightButton.visible).toBe(true);
+            expect(models.regionAutoDayNightButton.visible).toBe(true);
 
             const visibleCall = mockSyncRegions.mock.calls.at(-1);
             expect(Array.isArray(visibleCall[0])).toBe(true);
@@ -290,10 +286,11 @@ describe('NoiseSurveyApp.renderers', () => {
                 }
             };
             const mockDataCache = {}; // Not used by this renderer directly, but passed down
-            renderers.renderPrimaryCharts(mockState, mockDataCache);
+            const displayDetails = { P1: { line: { reason: ' (Overview)' }, spec: { reason: ' (Overview)' } } };
+            renderers.renderPrimaryCharts(mockState, mockDataCache, displayDetails);
             expect(mockSetVisible).toHaveBeenCalledWith(true);
             expect(mockSetVisible).toHaveBeenCalledWith(false);
-            expect(mockUpdateAllCharts).toHaveBeenCalledWith(mockState, mockDataCache);
+            expect(mockUpdateAllCharts).toHaveBeenCalledWith(mockState, mockDataCache, displayDetails.P1);
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.spectrogramChart.hoverDivModel.visible).toBe(false);
         });
     });
@@ -477,8 +474,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelFrequencyCopyButton.disabled).toBe(true);
             expect(models.regionPanelFrequencyCopyButton.visible).toBe(false);
             expect(models.regionPanelFrequencyTableDiv.visible).toBe(false);
-            expect(models.regionAutoDayButton.disabled).toBe(true);
-            expect(models.regionAutoNightButton.disabled).toBe(true);
+            expect(models.regionAutoDayNightButton.disabled).toBe(true);
 
 
             const populatedState = {
@@ -531,8 +527,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelFrequencyCopyButton.visible).toBe(true);
             expect(models.regionPanelFrequencyTableDiv.visible).toBe(true);
             expect(models.regionPanelFrequencyTableDiv.text).toContain('No frequency data available');
-            expect(models.regionAutoDayButton.disabled).toBe(false);
-            expect(models.regionAutoNightButton.disabled).toBe(false);
+            expect(models.regionAutoDayNightButton.disabled).toBe(false);
 
             const pendingState = {
                 view: { availablePositions: ['P9'] },
@@ -682,7 +677,10 @@ describe('NoiseSurveyApp.renderers', () => {
                 }
             };
             renderers.renderMarkers(mockState);
-            expect(mockSyncMarkers).toHaveBeenCalledWith([100, 200], true);
+            expect(mockSyncMarkers).toHaveBeenCalledWith([
+                expect.objectContaining({ id: 1, timestamp: 100 }),
+                expect.objectContaining({ id: 2, timestamp: 200 })
+            ], true, null);
             expect(mockSyncMarkers).toHaveBeenCalledTimes(2);
         });
     });
@@ -784,9 +782,10 @@ describe('NoiseSurveyApp.renderers', () => {
         it('should update chart titles and background colors based on audio state', () => {
             const mockState = {
                 audio: { isPlaying: true, activePositionId: 'P1', playbackRate: 1.0, volumeBoost: false },
-                view: { availablePositions: ['P1'], selectedParameter: 'LAeq', displayDetails: { P1: { line: { reason: '' }, spec: { reason: '' } } } }
+                view: { availablePositions: ['P1'], selectedParameter: 'LAeq' }
             };
-            renderers.renderControlWidgets(mockState);
+            const displayDetails = { P1: { line: { reason: '' }, spec: { reason: '' } } };
+            renderers.renderControlWidgets(mockState, displayDetails);
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.timeSeriesChart.model.title.text).toContain('(▶ PLAYING)');
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.timeSeriesChart.model.background_fill_color).toBe('#e6f0ff');
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.spectrogramChart.model.title.text).toContain('(▶ PLAYING)');
@@ -796,9 +795,10 @@ describe('NoiseSurveyApp.renderers', () => {
         it('should update control widget visuals', () => {
             const mockState = {
                 audio: { isPlaying: true, activePositionId: 'P1', playbackRate: 1.5, volumeBoost: true },
-                view: { availablePositions: ['P1'], selectedParameter: 'LAeq', displayDetails: { P1: { line: { reason: '' }, spec: { reason: '' } } } }
+                view: { availablePositions: ['P1'], selectedParameter: 'LAeq' }
             };
-            renderers.renderControlWidgets(mockState);
+            const displayDetails = { P1: { line: { reason: '' }, spec: { reason: '' } } };
+            renderers.renderControlWidgets(mockState, displayDetails);
             const controls = window.NoiseSurveyApp.registry.models.audio_controls.P1;
             expect(controls.playToggle.active).toBe(true);
             expect(controls.playToggle.label).toBe('Pause');
@@ -813,10 +813,10 @@ describe('NoiseSurveyApp.renderers', () => {
                 audio: { isPlaying: false, activePositionId: null, playbackRate: 1.0, volumeBoost: false },
                 view: {
                     availablePositions: ['P1'],
-                    selectedParameter: 'LAeq',
-                    displayDetails: { P1: { line: { reason: '' }, spec: { reason: '' } } }
+                    selectedParameter: 'LAeq'
                 }
             };
+            const displayDetails = { P1: { line: { reason: '' }, spec: { reason: '' } } };
 
             renderers.renderControlWidgets({
                 ...baseState,
@@ -827,7 +827,7 @@ describe('NoiseSurveyApp.renderers', () => {
                         figure_P1_spectrogram: false
                     }
                 }
-            });
+            }, displayDetails);
 
             const controls = window.NoiseSurveyApp.registry.models.audio_controls.P1;
             expect(controls.layout.visible).toBe(false);
@@ -841,7 +841,7 @@ describe('NoiseSurveyApp.renderers', () => {
                         figure_P1_spectrogram: false
                     }
                 }
-            });
+            }, displayDetails);
 
             expect(controls.layout.visible).toBe(true);
         });

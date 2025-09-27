@@ -5,9 +5,13 @@ import './loadCoreModules.js';
 import '../noise_survey_analysis/static/js/init.js';
 
 // We'll stub dependencies that app.js orchestrates
+let defaultDisplayDetails;
+
 beforeEach(() => {
   vi.restoreAllMocks();
   // Fresh spies before every test
+  defaultDisplayDetails = { P1: { line: { reason: ' (Overview)' }, spec: { reason: ' (Overview)' } } };
+
   window.NoiseSurveyApp.renderers = {
     renderPrimaryCharts: vi.fn(),
     renderFrequencyBar: vi.fn(),
@@ -18,7 +22,7 @@ beforeEach(() => {
     renderActiveTool: vi.fn(),
   };
   window.NoiseSurveyApp.data_processors = {
-    updateActiveData: vi.fn().mockReturnValue({}),
+    updateActiveData: vi.fn().mockReturnValue(defaultDisplayDetails),
     calculateStepSize: vi.fn().mockReturnValue(120000),
     updateActiveFreqBarData: vi.fn(),
   };
@@ -67,6 +71,15 @@ describe('NoiseSurveyApp.app orchestrator', () => {
 
     // on initial load, step size should be calculated and always-run renderers should be invoked
     expect(window.NoiseSurveyApp.data_processors.calculateStepSize).toHaveBeenCalled();
+    const primaryDetailsArgs = window.NoiseSurveyApp.renderers.renderPrimaryCharts.mock.calls
+      .map(call => call[2])
+      .filter(details => details != null);
+    expect(primaryDetailsArgs.at(-1)).toBe(defaultDisplayDetails);
+
+    const controlDetailsArgs = window.NoiseSurveyApp.renderers.renderControlWidgets.mock.calls
+      .map(call => call[1])
+      .filter(details => details != null);
+    expect(controlDetailsArgs.at(-1)).toBe(defaultDisplayDetails);
 
     // Basic sanity: registry initializer was used and keyboard step updated
     expect(window.NoiseSurveyApp.registry.initialize).toHaveBeenCalled();

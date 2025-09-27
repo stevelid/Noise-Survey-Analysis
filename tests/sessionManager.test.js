@@ -28,26 +28,51 @@ describe('Annotation CSV helpers', () => {
                 id: 2,
                 timestamp: markerTimestamp,
                 note: 'Marker, "note"',
-                color: '#ff00ff'
+                color: '#ff00ff',
+                positionId: 'P1',
+                metrics: {
+                    parameter: 'LZeq',
+                    timestamp: markerTimestamp,
+                    broadband: [{ positionId: 'P1', value: 48.23 }],
+                    spectral: [{ positionId: 'P1', labels: ['63', '125'], values: [40.5, 41.25] }]
+                }
             }],
             [{
                 id: 5,
                 positionId: 'P1',
                 start: regionStart,
                 end: regionEnd,
+                areas: [{ start: regionStart, end: regionEnd }],
                 note: 'Region note',
-                color: '#123456'
+                color: '#123456',
+                metrics: {
+                    laeq: 55.1234,
+                    lafmax: 71.6,
+                    la90: 42.987,
+                    la90Available: true,
+                    dataResolution: 'log',
+                    durationMs: 30 * 60 * 1000,
+                    parameter: 'LAeq',
+                    spectrum: { labels: ['63', '125'], values: [32.1, 28.9], source: 'log' }
+                }
             }]
         );
 
         const lines = csv.split('\n');
-        expect(lines[0]).toBe(helpers.CSV_HEADER.join(','));
+        const headerCells = lines[0].split(',');
+        expect(headerCells.slice(0, helpers.CSV_HEADER.length)).toEqual(helpers.CSV_HEADER);
+        expect(headerCells).toEqual(expect.arrayContaining(helpers.METRIC_COLUMNS));
+        expect(headerCells).toEqual(expect.arrayContaining(['band_63', 'band_125']));
         expect(lines).toHaveLength(3);
         expect(lines[1]).toContain('marker');
         expect(lines[2]).toContain('region');
         expect(lines[1]).toContain('2024-03-10 09:08:07.123');
         expect(lines[2]).toContain('2024-03-10 09:30:00.456');
-        expect(helpers.CSV_HEADER).toContain('areas');
+        expect(lines[1]).toContain('48.23');
+        expect(lines[1]).toContain('40.5');
+        expect(lines[2]).toContain('55.123');
+        expect(lines[2]).toContain('71.6');
+        expect(lines[2]).toContain('true');
 
         const { markers, regions } = helpers.parseAnnotationsCsv(csv);
         expect(markers).toHaveLength(1);

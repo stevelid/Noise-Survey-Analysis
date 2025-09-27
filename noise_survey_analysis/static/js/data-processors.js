@@ -97,6 +97,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      */
     function updateActiveData(viewState, dataCache, models) {
         const displayDetailsByPosition = {};
+
         viewState.availablePositions.forEach(position => {
             const tsChartName = `figure_${position}_timeseries`;
             const specChartName = `figure_${position}_spectrogram`;
@@ -125,6 +126,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         // updateActiveFreqBarData is now called from onStateChange, so this call is redundant.
         // const state = app.store.getState();
         // updateActiveFreqBarData(state, dataCache);
+
+        return displayDetailsByPosition;
     }
 
     /**
@@ -203,7 +206,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
         catch (error) {
             console.error(" [data-processors.js - updateActiveLineChartData()]", error);
-            return null;
+            return { type: 'unknown', reason: '' };
         }
     }
 
@@ -307,7 +310,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
         catch (error) {
             console.error(" [data-processors.js - updateActiveSpectralData()]", error);
-            return null;
+            return { type: 'unknown', reason: '' };
         }
     }
 
@@ -395,6 +398,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         barLevelsSlice[i] = activeSpectralData.levels_flat_transposed[globalFreqIdx * activeSpectralData.n_times + closestTimeIdx];
                     }
                     
+                    const viewTypeLabel = activeSpectralData.dataViewType || 'None';
+                    const normalizedType = viewTypeLabel === 'none' ? 'None' : viewTypeLabel;
                     dataCache.activeFreqBarData = {
                         levels: Array.from(barLevelsSlice).map(l => (l === null || isNaN(l)) ? 0 : l),
                         frequency_labels: activeSpectralData.frequency_labels.slice(bar_start_idx, bar_end_idx + 1),
@@ -402,18 +407,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         timestamp: timestamp,
                         setBy: setBy,
                         param: state.view.selectedParameter,
-                        dataViewType: state.view.displayDetails[position]?.spec?.type || 'None'
+                        dataViewType: normalizedType
                     };
                     return;
                 }
             }
-            
+
             // --- Fallback: Use full frequency range if slicing config is missing or invalid ---
             const freqDataSlice = new Float32Array(activeSpectralData.n_freqs);
             for (let i = 0; i < activeSpectralData.n_freqs; i++) {
                 freqDataSlice[i] = activeSpectralData.levels_flat_transposed[i * activeSpectralData.n_times + closestTimeIdx];
             }
 
+            const viewTypeLabel = activeSpectralData.dataViewType || 'None';
+            const normalizedType = viewTypeLabel === 'none' ? 'None' : viewTypeLabel;
             dataCache.activeFreqBarData = {
                 levels: Array.from(freqDataSlice).map(l => (l === null || isNaN(l)) ? 0 : l),
                 frequency_labels: activeSpectralData.frequency_labels,
@@ -421,7 +428,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 timestamp: timestamp,
                 setBy: setBy,
                 param: state.view.selectedParameter,
-                dataViewType: state.view.displayDetails[position]?.spec?.type || 'None'
+                dataViewType: normalizedType
             };
         }
         catch (error) {

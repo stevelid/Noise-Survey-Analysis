@@ -51,6 +51,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         });
     }
 
+    const constants = app.constants || {};
+    const sidePanelTabs = constants.sidePanelTabs || {};
+    const SIDE_PANEL_TAB_REGIONS = Number.isFinite(sidePanelTabs.regions)
+        ? sidePanelTabs.regions
+        : 0;
+
     const COMPARISON_METRICS_STYLE = `
         <style>
             .comparison-metrics-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -339,14 +345,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
          * This is a HEAVY operation and should only be called when the underlying
          * data view (zoom level, parameter, log/overview) changes.
          */
-    function renderPrimaryCharts(state, dataCache) {
+    function renderPrimaryCharts(state, dataCache, displayDetailsByPosition = {}) {
         const { controllers } = app.registry;
         if (!controllers?.positions) return;
+
+        const safeDisplayDetails = displayDetailsByPosition || {};
 
         for (const posId in controllers.positions) {
             const controller = controllers.positions[posId];
             const tsChartName = `figure_${posId}_timeseries`;
             const specChartName = `figure_${posId}_spectrogram`;
+            const positionDisplayDetails = safeDisplayDetails[posId] || {};
 
             // Explicitly set visibility for each chart based on the state
             if (controller.timeSeriesChart) {
@@ -360,7 +369,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
             }
             // Update the data for the controller if any of its charts are visible
-            controller.updateAllCharts(state, dataCache);
+            controller.updateAllCharts(state, dataCache, positionDisplayDetails);
         }
     }
 
@@ -469,20 +478,24 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     */
     function renderMarkers(state) {
         const { controllers, models } = app.registry;
-        if (!controllers?.chartsByName) return;
+        const charts = controllers?.chartsByName;
 
         const markerSelectors = app.features?.markers?.selectors || {};
         const markers = typeof markerSelectors.selectAllMarkers === 'function'
             ? markerSelectors.selectAllMarkers(state)
             : [];
-        const timestamps = markers.map(marker => marker?.timestamp).filter(timestamp => Number.isFinite(timestamp));
         const enabled = typeof markerSelectors.selectAreMarkersEnabled === 'function'
             ? markerSelectors.selectAreMarkersEnabled(state)
             : Boolean(state?.markers?.enabled !== false);
+        const selectedId = Number.isFinite(state?.markers?.selectedId)
+            ? state.markers.selectedId
+            : null;
 
-        controllers.chartsByName.forEach(chart => {
-            chart.syncMarkers(timestamps, enabled);
-        });
+        if (charts) {
+            charts.forEach(chart => {
+                chart.syncMarkers(markers, enabled, selectedId);
+            });
+        }
 
         const markerPanelRenderer = app.services?.markerPanelRenderer;
         if (markerPanelRenderer && typeof markerPanelRenderer.renderMarkerPanel === 'function') {
@@ -505,6 +518,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 state?.view || {}
             );
         }
+
     }
 
     function renderRegions(state, dataCache) {
@@ -544,8 +558,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 frequencyTableDiv: models?.regionPanelFrequencyTableDiv,
                 spectrumDiv: models?.regionPanelSpectrumDiv,
                 visibilityToggle: models?.regionVisibilityToggle,
-                autoDayButton: models?.regionAutoDayButton,
-                autoNightButton: models?.regionAutoNightButton,
+                autoDayNightButton: models?.regionAutoDayNightButton,
             };
             const availablePositions = Array.isArray(state?.view?.availablePositions)
                 ? state.view.availablePositions
@@ -567,6 +580,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
             );
         }
+
     }
 
     function renderFrequencyTable(state, dataCache) {
@@ -691,17 +705,32 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const PLAYING_BACKGROUND_COLOR = '#e6f0ff'; // A light blue to highlight the active chart
     const DEFAULT_BACKGROUND_COLOR = '#ffffff'; // Standard white background
 
-    function renderControlWidgets(state) {
+    function renderControlWidgets(state, displayDetailsByPosition = null) {
         const { models, controllers } = app.registry;
         if (!models || !controllers) return;
 
         const { isPlaying, activePositionId, playbackRate, volumeBoost } = state.audio;
         const viewState = state?.view || {};
+        const sidePanelTabsModel = models.sidePanelTabs;
+        if (sidePanelTabsModel) {
+            if (viewState.mode === 'comparison') {
+                if (sidePanelTabsModel.active !== SIDE_PANEL_TAB_REGIONS) {
+                    sidePanelTabsModel.active = SIDE_PANEL_TAB_REGIONS;
+                }
+            } else {
+                const desiredIndex = Number(viewState.activeSidePanelTab);
+                const normalizedIndex = Number.isFinite(desiredIndex) && desiredIndex >= 0
+                    ? Math.floor(desiredIndex)
+                    : SIDE_PANEL_TAB_REGIONS;
+                if (sidePanelTabsModel.active !== normalizedIndex) {
+                    sidePanelTabsModel.active = normalizedIndex;
+                }
+            }
+        }
         const chartVisibility = viewState.chartVisibility || {};
         const availablePositions = Array.isArray(viewState.availablePositions)
             ? viewState.availablePositions
             : [];
-        const displayDetails = viewState.displayDetails || {};
         const selectedParameter = viewState.selectedParameter;
         const positionChartOffsets = viewState.positionChartOffsets || {};
         const positionAudioOffsets = viewState.positionAudioOffsets || {};
@@ -749,18 +778,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // --- Update Chart Visuals (Title and Background) ---
             if (controller && controller.timeSeriesChart) {
                 const tsChart = controller.timeSeriesChart;
-                // Base title comes from the state's displayDetails
-                const positionDetails = displayDetails[pos] || {};
-                const lineDetails = positionDetails.line || {};
-                const baseTitle = `${pos} - Time History${lineDetails.reason || ''}`;
+                const transientLineDetails = displayDetailsByPosition?.[pos]?.line;
+                if (transientLineDetails) {
+                    tsChart.lastDisplayDetails = transientLineDetails;
+                }
+                const baseDetails = tsChart.lastDisplayDetails || { reason: '' };
+                const baseTitle = `${pos} - Time History${baseDetails.reason || ''}`;
                 tsChart.model.title.text = isThisPositionActive ? `${baseTitle} (▶ PLAYING)` : baseTitle;
                 tsChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }
             if (controller && controller.spectrogramChart) {
                 const specChart = controller.spectrogramChart;
-                const positionDetails = displayDetails[pos] || {};
-                const specDetails = positionDetails.spec || {};
-                const baseTitle = `${pos} - ${selectedParameter} Spectrogram${specDetails.reason || ''}`;
+                const transientSpecDetails = displayDetailsByPosition?.[pos]?.spec;
+                if (transientSpecDetails) {
+                    specChart.lastDisplayDetails = transientSpecDetails;
+                }
+                const baseDetails = specChart.lastDisplayDetails || { reason: '' };
+                const baseTitle = `${pos} - ${selectedParameter} Spectrogram${baseDetails.reason || ''}`;
                 specChart.model.title.text = isThisPositionActive ? `${baseTitle} (▶ PLAYING)` : baseTitle;
                 specChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }
@@ -976,8 +1010,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
         if (models.sidePanelTabs) {
             models.sidePanelTabs.visible = !isComparisonActive;
-            if (isComparisonActive && models.sidePanelTabs.active !== 0) {
-                models.sidePanelTabs.active = 0;
+            if (isComparisonActive && models.sidePanelTabs.active !== SIDE_PANEL_TAB_REGIONS) {
+                models.sidePanelTabs.active = SIDE_PANEL_TAB_REGIONS;
             }
         }
         if (models.frequencyBarLayout) {

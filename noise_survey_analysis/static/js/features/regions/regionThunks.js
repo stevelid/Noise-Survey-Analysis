@@ -16,6 +16,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const DAY_MS = 24 * HOUR_MS;
     const DAYTIME_START_HOUR = 7;
     const DAYTIME_END_HOUR = 23;
+    const AUTO_REGION_MODES = {
+        daytime: { color: '#4caf50' },
+        nighttime: { color: '#7e57c2' }
+    };
 
     function getRegionAreas(region) {
         if (!region) return [];
@@ -31,6 +35,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const viewSelectors = app.features?.view?.selectors || {};
     const regionSelectors = app.features?.regions?.selectors || {};
     const markerSelectors = app.features?.markers?.selectors || {};
+    const constants = app.constants || {};
+    const sidePanelTabs = constants.sidePanelTabs || {};
+    const SIDE_PANEL_TAB_REGIONS = Number.isFinite(sidePanelTabs.regions)
+        ? sidePanelTabs.regions
+        : 0;
 
     function collectTimestampsFromSource(source) {
         const data = source?.data;
@@ -226,6 +235,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * @param {string} [payload.positionId] - Explicit position to associate with the new region.
      * @returns {Function} Thunk function for dispatch.
      */
+    function selectRegionIntent(regionId) {
+        return function (dispatch) {
+            if (!actions || typeof dispatch !== 'function') {
+                return;
+            }
+
+            const normalizedId = Number(regionId);
+            if (!Number.isFinite(normalizedId)) {
+                dispatch(actions.regionClearSelection());
+                return;
+            }
+
+            dispatch(actions.regionSelect(normalizedId));
+            if (typeof actions.markerSelect === 'function') {
+                dispatch(actions.markerSelect(null));
+            }
+            if (typeof actions.setActiveSidePanelTab === 'function') {
+                dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
+            }
+        };
+    }
+
     function createRegionFromMarkersIntent(payload = {}) {
         return function (dispatch, getState) {
             if (!actions || typeof getState !== 'function') {
@@ -285,7 +316,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            const nextRegionId = Number.isFinite(state?.regions?.counter)
+                ? state.regions.counter
+                : null;
+
             dispatch(actions.regionAdd(positionId, start, end));
+
+            if (Number.isFinite(nextRegionId)) {
+                dispatch(selectRegionIntent(nextRegionId));
+            }
         };
     }
 
@@ -313,7 +352,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const nextAreas = [...existingAreas, { start, end }];
                 dispatch(actions.regionUpdate(targetRegion.id, { areas: nextAreas }));
                 if (regionsState?.selectedId !== targetRegion.id) {
-                    dispatch(actions.regionSelect(targetRegion.id));
+                    dispatch(selectRegionIntent(targetRegion.id));
                 }
                 return;
             }
@@ -322,7 +361,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 dispatch(actions.regionSetAddAreaMode(null));
             }
 
+            const nextRegionId = Number.isFinite(regionsState?.counter)
+                ? regionsState.counter
+                : null;
+
             dispatch(actions.regionAdd(positionId, start, end));
+
+            if (Number.isFinite(nextRegionId)) {
+                dispatch(selectRegionIntent(nextRegionId));
+            }
         };
     }
 
@@ -332,7 +379,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (!actions || typeof dispatch !== 'function') {
                 return;
             }
-            const mode = payload?.mode === 'nighttime' ? 'nighttime' : 'daytime';
             const state = typeof getState === 'function' ? getState() : null;
             const availablePositions = Array.isArray(state?.view?.availablePositions)
                 ? state.view.availablePositions
@@ -345,6 +391,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            const requestedModes = (() => {
+                const primary = typeof payload?.mode === 'string' ? payload.mode : null;
+                const modeList = Array.isArray(payload?.modes) ? payload.modes : null;
+                const raw = modeList && modeList.length ? modeList : (primary ? [primary] : null);
+                const result = [];
+                const candidates = raw && raw.length ? raw : Object.keys(AUTO_REGION_MODES);
+                candidates.forEach(candidate => {
+                    const normalized = candidate === 'nighttime' ? 'nighttime' : candidate === 'daytime' ? 'daytime' : null;
+                    if (normalized && !result.includes(normalized)) {
+                        result.push(normalized);
+                    }
+                });
+                return result.length ? result : Object.keys(AUTO_REGION_MODES);
+            })();
+
             const generated = [];
             positions.forEach(positionId => {
                 if (!positionId) {
@@ -354,12 +415,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 if (!timestamps.length) {
                     return;
                 }
-                const intervals = buildDailyIntervals(timestamps, mode);
-                intervals.forEach(interval => {
-                    generated.push({
-                        positionId,
-                        start: interval.start,
-                        end: interval.end
+                requestedModes.forEach(modeName => {
+                    const config = AUTO_REGION_MODES[modeName];
+                    if (!config) {
+                        return;
+                    }
+                    const intervals = buildDailyIntervals(timestamps, modeName);
+                    intervals.forEach(interval => {
+                        generated.push({
+                            positionId,
+                            start: interval.start,
+                            end: interval.end,
+                            color: config.color
+                        });
                     });
                 });
             });
@@ -509,6 +577,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.features = app.features || {};
     app.features.regions = app.features.regions || {};
     app.features.regions.thunks = {
+        selectRegionIntent,
         enterComparisonModeIntent,
         exitComparisonModeIntent,
         updateIncludedPositionsIntent,
