@@ -34,6 +34,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         POSITION_CHART_OFFSET_SET: 'view/positionChartOffsetSet',
         POSITION_AUDIO_OFFSET_SET: 'view/positionAudioOffsetSet',
         STEP_SIZE_CALCULATED: 'view/STEP_SIZE_CALCULATED',
+        VIEW_ACTIVE_SIDE_PANEL_TAB_SET: 'view/activeSidePanelTabSet',
 
         COMPARISON_MODE_ENTERED: 'view/comparisonModeEntered',
         COMPARISON_MODE_EXITED: 'view/comparisonModeExited',
@@ -101,6 +102,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         viewToggle: (newViewType) => ({ type: actionTypes.VIEW_TOGGLE, payload: { newViewType } }),
         
         viewportChange: (min, max) => ({ type: actionTypes.VIEWPORT_CHANGE, payload: { min, max } }),
+
+        setActiveSidePanelTab: (index) => ({
+            type: actionTypes.VIEW_ACTIVE_SIDE_PANEL_TAB_SET,
+            payload: { index }
+        }),
 
         positionChartOffsetSet: (positionId, offsetMs) => ({
             type: actionTypes.POSITION_CHART_OFFSET_SET,
@@ -247,5 +253,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     app.actionTypes = actionTypes;
     app.actions = actions;
+
+    app.constants = app.constants || {};
+    app.constants.sidePanelTabs = app.constants.sidePanelTabs || {};
+    if (!Number.isFinite(app.constants.sidePanelTabs.regions)) {
+        app.constants.sidePanelTabs.regions = 0;
+    }
+    if (!Number.isFinite(app.constants.sidePanelTabs.markers)) {
+        app.constants.sidePanelTabs.markers = 1;
+    }
 
 })(window.NoiseSurveyApp);

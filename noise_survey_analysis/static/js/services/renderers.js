@@ -51,6 +51,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         });
     }
 
+    const constants = app.constants || {};
+    const sidePanelTabs = constants.sidePanelTabs || {};
+    const SIDE_PANEL_TAB_REGIONS = Number.isFinite(sidePanelTabs.regions)
+        ? sidePanelTabs.regions
+        : 0;
+
     const COMPARISON_METRICS_STYLE = `
         <style>
             .comparison-metrics-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -513,12 +519,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             );
         }
 
-        if (models?.sidePanelTabs && Number.isFinite(selectedId)) {
-            const desiredIndex = 1;
-            if (models.sidePanelTabs.active !== desiredIndex) {
-                models.sidePanelTabs.active = desiredIndex;
-            }
-        }
     }
 
     function renderRegions(state, dataCache) {
@@ -581,12 +581,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             );
         }
 
-        if (models?.sidePanelTabs && Number.isFinite(regionsState.selectedId)) {
-            const desiredIndex = 0;
-            if (models.sidePanelTabs.active !== desiredIndex) {
-                models.sidePanelTabs.active = desiredIndex;
-            }
-        }
     }
 
     function renderFrequencyTable(state, dataCache) {
@@ -717,6 +711,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const { isPlaying, activePositionId, playbackRate, volumeBoost } = state.audio;
         const viewState = state?.view || {};
+        const sidePanelTabsModel = models.sidePanelTabs;
+        if (sidePanelTabsModel) {
+            if (viewState.mode === 'comparison') {
+                if (sidePanelTabsModel.active !== SIDE_PANEL_TAB_REGIONS) {
+                    sidePanelTabsModel.active = SIDE_PANEL_TAB_REGIONS;
+                }
+            } else {
+                const desiredIndex = Number(viewState.activeSidePanelTab);
+                const normalizedIndex = Number.isFinite(desiredIndex) && desiredIndex >= 0
+                    ? Math.floor(desiredIndex)
+                    : SIDE_PANEL_TAB_REGIONS;
+                if (sidePanelTabsModel.active !== normalizedIndex) {
+                    sidePanelTabsModel.active = normalizedIndex;
+                }
+            }
+        }
         const chartVisibility = viewState.chartVisibility || {};
         const availablePositions = Array.isArray(viewState.availablePositions)
             ? viewState.availablePositions
@@ -1000,8 +1010,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
         if (models.sidePanelTabs) {
             models.sidePanelTabs.visible = !isComparisonActive;
-            if (isComparisonActive && models.sidePanelTabs.active !== 0) {
-                models.sidePanelTabs.active = 0;
+            if (isComparisonActive && models.sidePanelTabs.active !== SIDE_PANEL_TAB_REGIONS) {
+                models.sidePanelTabs.active = SIDE_PANEL_TAB_REGIONS;
             }
         }
         if (models.frequencyBarLayout) {
