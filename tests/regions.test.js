@@ -13,6 +13,7 @@ const {
     createRegionIntent,
     mergeRegionIntoSelectedIntent
 } = window.NoiseSurveyApp.features.regions.thunks;
+const { constants } = window.NoiseSurveyApp;
 const {
     selectRegionByTimestamp
 } = window.NoiseSurveyApp.features.regions.selectors;
@@ -103,7 +104,16 @@ describe('Region Management (Multi-Area)', () => {
             expect(dispatch).toHaveBeenCalledWith(
                 actions.regionUpdate(1, { areas: [{ start: 100, end: 200 }, { start: 250, end: 300 }] })
             );
-            expect(dispatch).toHaveBeenCalledWith(actions.regionSelect(1));
+
+            const [, thunkCall] = dispatch.mock.calls;
+            expect(typeof thunkCall[0]).toBe('function');
+            const followUpDispatch = vi.fn();
+            thunkCall[0](followUpDispatch);
+            expect(followUpDispatch).toHaveBeenCalledWith(actions.regionSelect(1));
+            expect(followUpDispatch).toHaveBeenCalledWith(actions.markerSelect(null));
+            expect(followUpDispatch).toHaveBeenCalledWith(
+                actions.setActiveSidePanelTab(constants.sidePanelTabs.regions)
+            );
             expect(dispatch).not.toHaveBeenCalledWith(actions.regionSetAddAreaMode(null));
         });
 

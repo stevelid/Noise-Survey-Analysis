@@ -11,6 +11,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const { actions } = app;
     const markerSelectors = app.features?.markers?.selectors || {};
     const viewSelectors = app.features?.view?.selectors || {};
+    const constants = app.constants || {};
+    const sidePanelTabs = constants.sidePanelTabs || {};
+    const SIDE_PANEL_TAB_MARKERS = Number.isFinite(sidePanelTabs.markers)
+        ? sidePanelTabs.markers
+        : 1;
 
     function hasArrayLikeLength(values) {
         return Boolean(values && typeof values.length === 'number');
@@ -51,6 +56,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             values[i] = Number.isFinite(level) ? Number(level) : null;
         }
         return { labels, values };
+    }
+
+    function selectMarkerIntent(markerId) {
+        return function (dispatch) {
+            if (!actions || typeof dispatch !== 'function') {
+                return;
+            }
+
+            const normalizedId = Number(markerId);
+            if (!Number.isFinite(normalizedId)) {
+                dispatch(actions.markerSelect(null));
+                return;
+            }
+
+            dispatch(actions.markerSelect(normalizedId));
+            if (typeof actions.regionClearSelection === 'function') {
+                dispatch(actions.regionClearSelection());
+            }
+            if (typeof actions.setActiveSidePanelTab === 'function') {
+                dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_MARKERS));
+            }
+        };
     }
 
     function computeMarkerMetricsIntent(payload) {
@@ -297,6 +324,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.features = app.features || {};
     app.features.markers = app.features.markers || {};
     app.features.markers.thunks = {
+        selectMarkerIntent,
         computeMarkerMetricsIntent,
         addMarkerAtTapIntent,
         createMarkerFromKeyboardIntent,
