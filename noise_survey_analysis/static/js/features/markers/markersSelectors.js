@@ -63,6 +63,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return selectAllMarkers(state).map(marker => marker.timestamp).filter(timestamp => Number.isFinite(timestamp));
     }
 
+    function selectGlobalMarkers(state) {
+        return selectAllMarkers(state).filter(marker => marker?.positionId === undefined || marker.positionId === null);
+    }
+
     function selectClosestMarkerToTimestamp(state, timestamp, positionId = null) {
         const numericTimestamp = Number(timestamp);
         if (!Number.isFinite(numericTimestamp)) {
@@ -71,7 +75,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         let closestMarker = null;
         let smallestDistance = Infinity;
         const poolByPosition = positionId ? selectMarkersByPosition(state, positionId) : [];
-        const pool = poolByPosition.length ? poolByPosition : selectAllMarkers(state);
+        let pool;
+        if (positionId) {
+            pool = poolByPosition.length ? poolByPosition : selectGlobalMarkers(state);
+        } else {
+            pool = selectAllMarkers(state);
+        }
         pool.forEach(marker => {
             const markerTimestamp = Number(marker?.timestamp);
             if (!Number.isFinite(markerTimestamp)) {
@@ -96,6 +105,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         selectSelectedMarker,
         selectAreMarkersEnabled,
         selectMarkerTimestamps,
+        selectGlobalMarkers,
         selectClosestMarkerToTimestamp,
         selectMarkersByPosition
     };
