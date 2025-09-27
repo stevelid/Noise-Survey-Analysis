@@ -79,22 +79,15 @@ class RegionPanelComponent:
             button_type="primary",
         )
 
-        self.auto_day_button = Button(
-            label="Auto Daytime",
-            width=int(panel_width / 2) - 6,
-            name="region_auto_day_button",
-            button_type="default",
-        )
-
-        self.auto_night_button = Button(
-            label="Auto Nighttime",
-            width=int(panel_width / 2) - 6,
-            name="region_auto_night_button",
+        self.auto_daynight_button = Button(
+            label="Auto Day & Night",
+            width=panel_width,
+            name="region_auto_daynight_button",
             button_type="default",
         )
 
         self.auto_buttons = Row(
-            children=[self.auto_day_button, self.auto_night_button],
+            children=[self.auto_daynight_button],
             name="region_auto_buttons",
             sizing_mode="stretch_width",
         )
@@ -675,25 +668,15 @@ class RegionPanelComponent:
         """)
         self.visibility_toggle.js_on_change('active', visibility_callback)
 
-        auto_day_callback = CustomJS(code="""
+        auto_daynight_callback = CustomJS(code="""
             const handlers = window.NoiseSurveyApp?.eventHandlers;
             if (typeof handlers?.handleAutoRegions !== 'function') {
                 console.error('NoiseSurveyApp.eventHandlers.handleAutoRegions not found.');
                 return;
             }
-            handlers.handleAutoRegions('daytime');
+            handlers.handleAutoRegions();
         """)
-        self.auto_day_button.js_on_event('button_click', auto_day_callback)
-
-        auto_night_callback = CustomJS(code="""
-            const handlers = window.NoiseSurveyApp?.eventHandlers;
-            if (typeof handlers?.handleAutoRegions !== 'function') {
-                console.error('NoiseSurveyApp.eventHandlers.handleAutoRegions not found.');
-                return;
-            }
-            handlers.handleAutoRegions('nighttime');
-        """)
-        self.auto_night_button.js_on_event('button_click', auto_night_callback)
+        self.auto_daynight_button.js_on_event('button_click', auto_daynight_callback)
 
     def layout(self):
         return self.container

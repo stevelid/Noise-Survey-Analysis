@@ -189,8 +189,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.store.dispatch(actions.visibilityChange(chartName, isVisible));
     }
 
-    function handleAutoRegions(mode) {
-        const normalizedMode = mode === 'nighttime' ? 'nighttime' : 'daytime';
+    function handleAutoRegions() {
         const thunkCreator = app.thunks && app.thunks.createAutoRegionsIntent;
         const dispatch = app.store && app.store.dispatch;
         if (typeof thunkCreator !== 'function') {
@@ -202,7 +201,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return;
         }
 
-        dispatch(thunkCreator({ mode: normalizedMode }));
+        dispatch(thunkCreator());
     }
 
     function handleAudioStatusUpdate() {
@@ -359,7 +358,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function handleKeyPress(e) {
-        const targetTagName = e.target.tagName.toLowerCase();
+        const targetTagName = typeof e?.target?.tagName === 'string'
+            ? e.target.tagName.toLowerCase()
+            : '';
         if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') return;
 
         const dispatch = app.store && app.store.dispatch;
@@ -368,116 +369,36 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return;
         }
 
-        const getState = app.store && app.store.getState;
-
-        if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
-            e.preventDefault();
-            const thunkCreator = app.thunks && app.thunks.togglePlaybackFromKeyboardIntent;
-            if (typeof thunkCreator !== 'function') {
-                console.error('[EventHandler] Missing togglePlaybackFromKeyboardIntent thunk.');
-                return;
-            }
-
-            dispatch(thunkCreator());
-            return;
-        }
-
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            if (typeof actions?.regionCreationCancelled === 'function') {
-                dispatch(actions.regionCreationCancelled());
-            }
-            return;
-        }
-
-        const normalizedKey = typeof e.key === 'string' ? e.key.toLowerCase() : '';
-
-        if (normalizedKey === 'm') {
-            e.preventDefault();
-            const thunkCreator = app.thunks
-                && (app.thunks.createMarkerFromKeyboardIntent || app.thunks.addMarkerAtTapIntent);
-            if (typeof thunkCreator !== 'function') {
-                console.error('[EventHandler] Missing marker creation thunk.');
-                return;
-            }
-
-            if (thunkCreator === app.thunks.createMarkerFromKeyboardIntent) {
-                dispatch(thunkCreator({}));
-            } else {
-                dispatch(thunkCreator());
-            }
-            return;
-        }
-
-        if (normalizedKey === 'r') {
-            e.preventDefault();
-            const thunkCreator = app.thunks
-                && (app.thunks.createRegionFromMarkersIntent || app.thunks.toggleRegionCreationIntent);
-            if (typeof thunkCreator !== 'function') {
-                console.error('[EventHandler] Missing region creation thunk.');
-                return;
-            }
-
-            if (thunkCreator === app.thunks.createRegionFromMarkersIntent) {
-                dispatch(thunkCreator({}));
-            } else {
-                dispatch(thunkCreator());
-            }
-            return;
-        }
-
-        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
-            return;
-        }
-
-        if (e.ctrlKey || e.altKey) { //todo: move key modifiers to config and provide user help tips
-            e.preventDefault();
-
-            const markerSelectors = app.features?.markers?.selectors || {};
-            const state = typeof getState === 'function' ? getState() : null;
-            const selectedMarker = state && typeof markerSelectors.selectSelectedMarker === 'function'
-                ? markerSelectors.selectSelectedMarker(state)
-                : null;
-
-            if (e.ctrlKey && selectedMarker) {
-                const markerThunk = app.thunks && app.thunks.nudgeSelectedMarkerIntent;
-                if (typeof markerThunk !== 'function') {
-                    console.error('[EventHandler] Missing nudgeSelectedMarkerIntent thunk.');
-                    return;
-                }
-                dispatch(markerThunk({ key: e.key }));
-                return;
-            }
-
-            const regionThunk = app.thunks && app.thunks.resizeSelectedRegionIntent;
-            if (typeof regionThunk !== 'function') {
-                console.error('[EventHandler] Missing resizeSelectedRegionIntent thunk.');
-                return;
-            }
-
-            const modifiers = {};
-            if (e.ctrlKey) {
-                modifiers.ctrl = true;
-            }
-            if (e.altKey) {
-                modifiers.alt = true;
-            }
-
-            dispatch(regionThunk({
-                key: e.key,
-                modifiers
-            }));
-            return;
-        }
-
-        e.preventDefault();
-        const thunkCreator = app.thunks && app.thunks.nudgeTapLineIntent;
+        const thunkCreator = app.thunks && app.thunks.handleKeyboardShortcutIntent;
         if (typeof thunkCreator !== 'function') {
-            console.error('[EventHandler] Missing nudgeTapLineIntent thunk.');
+            console.error('[EventHandler] Missing handleKeyboardShortcutIntent thunk.');
             return;
         }
 
-        dispatch(thunkCreator({ key: e.key }));
+        const rawKey = typeof e.key === 'string' ? e.key : '';
+        const normalizedKey = rawKey.toLowerCase();
+        const code = typeof e.code === 'string' ? e.code : '';
+
+        const isSpace = code === 'Space' || rawKey === ' ' || rawKey === 'Spacebar';
+        const isEscape = rawKey === 'Escape';
+        const isMarkerKey = normalizedKey === 'm';
+        const isRegionKey = normalizedKey === 'r';
+        const isArrowKey = rawKey === 'ArrowLeft' || rawKey === 'ArrowRight';
+
+        if (!(isSpace || isEscape || isMarkerKey || isRegionKey || isArrowKey)) {
+            return;
+        }
+
+        if (isSpace || isEscape || isMarkerKey || isRegionKey || isArrowKey) {
+            e.preventDefault();
+        }
+
+        dispatch(thunkCreator({
+            key: rawKey,
+            code,
+            ctrlKey: Boolean(e.ctrlKey),
+            altKey: Boolean(e.altKey)
+        }));
     }
 
 

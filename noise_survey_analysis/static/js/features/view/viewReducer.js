@@ -9,6 +9,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     const { actionTypes } = app;
+    const constants = app.constants || {};
+    const sidePanelTabs = constants.sidePanelTabs || {};
+    const DEFAULT_ACTIVE_TAB = Number.isFinite(sidePanelTabs.regions)
+        ? sidePanelTabs.regions
+        : 0;
 
     const initialComparisonState = {
         isActive: false,
@@ -23,14 +28,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         positionAudioOffsets: {},
         positionEffectiveOffsets: {},
         chartVisibility: {},
-        displayDetails: {},
         viewport: { min: null, max: null },
         globalViewType: 'log',
         selectedParameter: 'LZeq',
         hoverEnabled: true,
+        activeSidePanelTab: DEFAULT_ACTIVE_TAB,
         mode: 'normal',
         comparison: { ...initialComparisonState }
     };
+
+    function normalizeTabIndex(rawValue, fallback) {
+        const numeric = Number(rawValue);
+        if (!Number.isFinite(numeric)) {
+            return Number.isFinite(fallback) ? fallback : DEFAULT_ACTIVE_TAB;
+        }
+        const floored = Math.floor(numeric);
+        return floored >= 0 ? floored : 0;
+    }
 
     function ensureAvailablePositions(availablePositions) {
         return Array.isArray(availablePositions) ? [...availablePositions] : [];
@@ -99,6 +113,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     positionChartOffsets: initialChartOffsets,
                     positionAudioOffsets: initialAudioOffsets,
                     positionEffectiveOffsets: initialEffectiveOffsets,
+                    activeSidePanelTab: normalizeTabIndex(action.payload?.activeSidePanelTab, state.activeSidePanelTab),
                     mode: 'normal',
                     comparison: {
                         ...initialComparisonState,
@@ -199,6 +214,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     ...state,
                     hoverEnabled: action.payload?.isActive ?? state.hoverEnabled
                 };
+
+            case actionTypes.VIEW_ACTIVE_SIDE_PANEL_TAB_SET: {
+                const desiredIndex = normalizeTabIndex(action.payload?.index, state.activeSidePanelTab);
+                if (desiredIndex === state.activeSidePanelTab) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    activeSidePanelTab: desiredIndex
+                };
+            }
 
             case actionTypes.COMPARISON_MODE_ENTERED: {
                 const availablePositions = ensureAvailablePositions(state.availablePositions);

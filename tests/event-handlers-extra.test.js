@@ -108,14 +108,10 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
     expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.markersReplace([]));
   });
 
-  it('handleAutoRegions should normalise mode and dispatch the intent thunk', () => {
-    window.NoiseSurveyApp.eventHandlers.handleAutoRegions('nighttime');
-    expect(createAutoRegionsIntentSpy).toHaveBeenCalledWith({ mode: 'nighttime' });
+  it('handleAutoRegions should dispatch the intent thunk', () => {
+    window.NoiseSurveyApp.eventHandlers.handleAutoRegions();
+    expect(createAutoRegionsIntentSpy).toHaveBeenCalledWith();
     expect(dispatchAction).toHaveBeenCalledWith(expect.any(Function));
-
-    window.NoiseSurveyApp.eventHandlers.handleAutoRegions('invalid');
-    expect(createAutoRegionsIntentSpy).toHaveBeenCalledWith({ mode: 'daytime' });
-    expect(dispatchAction).toHaveBeenCalledTimes(2);
   });
 
   it('handleViewToggle should dispatch the correct action', () => {

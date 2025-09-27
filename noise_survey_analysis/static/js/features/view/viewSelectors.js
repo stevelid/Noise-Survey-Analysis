@@ -20,11 +20,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return selectViewState(state).comparison || {};
     }
 
+    function selectActiveSidePanelTab(state) {
+        const viewState = selectViewState(state);
+        const rawIndex = viewState.activeSidePanelTab;
+        return Number.isFinite(rawIndex) ? rawIndex : 0;
+    }
+
     app.features = app.features || {};
     app.features.view = app.features.view || {};
     app.features.view.selectors = {
         selectViewState,
         selectViewport,
-        selectComparisonState
+        selectComparisonState,
+        selectActiveSidePanelTab
     };
 })(window.NoiseSurveyApp);
