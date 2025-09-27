@@ -472,7 +472,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     */
     function renderMarkers(state) {
         const { controllers, models } = app.registry;
-        if (!controllers?.chartsByName) return;
+        const charts = controllers?.chartsByName;
 
         const markerSelectors = app.features?.markers?.selectors || {};
         const markers = typeof markerSelectors.selectAllMarkers === 'function'
@@ -485,9 +485,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             ? state.markers.selectedId
             : null;
 
-        controllers.chartsByName.forEach(chart => {
-            chart.syncMarkers(markers, enabled, selectedId);
-        });
+        if (charts) {
+            charts.forEach(chart => {
+                chart.syncMarkers(markers, enabled, selectedId);
+            });
+        }
 
         const markerPanelRenderer = app.services?.markerPanelRenderer;
         if (markerPanelRenderer && typeof markerPanelRenderer.renderMarkerPanel === 'function') {
@@ -509,6 +511,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 state?.interaction || {},
                 state?.view || {}
             );
+        }
+
+        if (models?.sidePanelTabs && Number.isFinite(selectedId)) {
+            const desiredIndex = 1;
+            if (models.sidePanelTabs.active !== desiredIndex) {
+                models.sidePanelTabs.active = desiredIndex;
+            }
         }
     }
 
@@ -570,6 +579,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     positionCount
                 }
             );
+        }
+
+        if (models?.sidePanelTabs && Number.isFinite(regionsState.selectedId)) {
+            const desiredIndex = 0;
+            if (models.sidePanelTabs.active !== desiredIndex) {
+                models.sidePanelTabs.active = desiredIndex;
+            }
         }
     }
 
