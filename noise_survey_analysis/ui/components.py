@@ -119,7 +119,9 @@ class RegionPanelComponent:
                     field="title",
                     title="",
                     formatter=HTMLTemplateFormatter(template=region_card_template),
-                )
+                ),
+                TableColumn(field="subtitle", title="Subtitle", visible=False),
+                TableColumn(field="color", title="Color", visible=False),
             ],
             width=panel_width,
             height=240,
@@ -707,11 +709,17 @@ class MarkerPanelComponent:
             name="marker_panel_source",
         )
 
+        timestamp_column_width = int(panel_width * 0.48)
+        note_column_width = max(int(panel_width * 0.42), panel_width - timestamp_column_width - 24)
+
         self.marker_table = DataTable(
             source=self.marker_source,
             columns=[
-                TableColumn(field="timestamp_display", title="Timestamp"),
-                TableColumn(field="note_preview", title="Note"),
+                TableColumn(field="timestamp_display", title="Timestamp", width=timestamp_column_width),
+                TableColumn(field="note_preview", title="Note", width=note_column_width),
+                TableColumn(field="id", title="ID", visible=False),
+                TableColumn(field="timestamp", title="Timestamp (raw)", visible=False),
+                TableColumn(field="color", title="Color", visible=False),
             ],
             width=panel_width,
             height=220,
@@ -722,7 +730,7 @@ class MarkerPanelComponent:
             selectable=True,
             editable=False,
             reorderable=False,
-            autosize_mode="fit_columns",
+            autosize_mode="none",
             sizing_mode="stretch_width",
             css_classes=["marker-panel-table"],
         )
@@ -1019,26 +1027,14 @@ class MarkerPanelComponent:
         self.copy_button.js_on_event('button_click', copy_callback)
 
         add_at_tap_callback = CustomJS(code="""
-            const actions = window.NoiseSurveyApp?.actions;
             const thunks = window.NoiseSurveyApp?.thunks;
             const store = window.NoiseSurveyApp?.store;
-            if (!actions?.markerAdd || typeof store?.dispatch !== 'function' || typeof store?.getState !== 'function') {
+            
+            if (typeof thunks?.createMarkerIntent !== 'function' || typeof store?.dispatch !== 'function') {
+                console.error('[MarkerPanel] Cannot create marker: createMarkerIntent thunk or store is missing.');
                 return;
             }
-            const state = store.getState();
-            const tapState = state?.interaction?.tap || {};
-            const timestamp = Number(tapState.timestamp);
-            if (!Number.isFinite(timestamp)) {
-                return;
-            }
-            store.dispatch(actions.markerAdd(timestamp));
-            if (typeof thunks?.computeMarkerMetricsIntent === 'function') {
-                const nextState = store.getState();
-                const selectedId = Number(nextState?.markers?.selectedId);
-                if (Number.isFinite(selectedId)) {
-                    store.dispatch(thunks.computeMarkerMetricsIntent(selectedId));
-                }
-            }
+            store.dispatch(thunks.createMarkerIntent());
         """)
         self.add_at_tap_button.js_on_event('button_click', add_at_tap_callback)
 
@@ -2712,7 +2708,7 @@ class SummaryTableComponent:
         
         header_row = "".join(f"<th>{param}</th>" for param in self.parameters)
         
-        placeholder_row = f"<td class='placeholder' colspan='{len(self.parameters) + 1}'>Tap on a time series chart to populate this table.</td>"
+        placeholder_row = f"<tr><td class='placeholder' colspan='{len(self.parameters) + 1}'>Tap on a time series chart to populate this table.</td></tr>"
 
         table_html = f"""
         {style}
@@ -2724,9 +2720,7 @@ class SummaryTableComponent:
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    {placeholder_row}
-                </tr>
+                {placeholder_row}
             </tbody>
         </table>
         """

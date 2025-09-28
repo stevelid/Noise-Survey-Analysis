@@ -720,6 +720,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
             } else {
                 const desiredIndex = Number(viewState.activeSidePanelTab);
+                console.log('[renderControlWidgets] desiredIndex', desiredIndex); // DEBUG
                 const normalizedIndex = Number.isFinite(desiredIndex) && desiredIndex >= 0
                     ? Math.floor(desiredIndex)
                     : SIDE_PANEL_TAB_REGIONS;

@@ -116,18 +116,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const actionTypes = app.actionTypes || {};
         const previousStateForAudio = previousState;
         const lastActionType = state.system?.lastAction?.type;
-        const shouldForceRegionRender = Boolean(lastActionType && (
-            lastActionType === actionTypes.REGION_VISIBILITY_SET ||
-            lastActionType === actionTypes.REGION_SELECTED ||
-            lastActionType === actionTypes.REGION_SELECTION_CLEARED ||
-            lastActionType === actionTypes.REGION_NOTE_SET ||
-            lastActionType === actionTypes.REGION_METRICS_SET ||
-            lastActionType === actionTypes.REGION_COLOR_SET ||
-            lastActionType === actionTypes.REGION_ADD_AREA_MODE_SET ||
-            lastActionType === actionTypes.REGION_MERGE_MODE_SET ||
-            lastActionType === actionTypes.REGIONS_REPLACED
-        ));
-
+    
         // --- A. DETERMINE UPDATE TYPE (HEAVY vs. LIGHT) ---
         // These state changes require re-calculating the main chart data
         const didViewportChange = state.view.viewport !== previousState.view.viewport;
@@ -176,10 +165,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // Always sync markers
         if (isInitialLoad || didMarkersChange) {
+            console.log('Rendering markers');//debug
             app.renderers.renderMarkers(state);
         }
 
-        if (isInitialLoad || didRegionsChange || shouldForceRegionRender) {
+        if (isInitialLoad || didRegionsChange) {
+            console.log('Rendering regions');//debug
             app.renderers.renderRegions(state, dataCache);
         }
 

@@ -287,9 +287,9 @@ class DashBuilder:
             controls_layout,
             range_selector_layout,
             *position_layouts,
-            freq_bar_layout,
-            comparison_frequency_layout,
-            self.shared_components['summary_table'].layout(),
+            #freq_bar_layout,
+            #comparison_frequency_layout,
+            #self.shared_components['summary_table'].layout(),
             self.js_init_trigger,
             name="main_layout",
         )

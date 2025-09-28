@@ -33,22 +33,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const markerThreshold = Math.max(Math.abs(viewportWidth) * MARKER_HIT_RATIO, MARKER_MIN_THRESHOLD_MS);
 
             if (!isShift && !isCtrl) {
+                //select nearest marker
                 const { marker: closestMarker, distance } =
                     typeof markerSelectors.selectClosestMarkerToTimestamp === 'function'
                         ? markerSelectors.selectClosestMarkerToTimestamp(state, timestamp, positionId)
                         : { marker: null, distance: Infinity };
 
                 if (closestMarker && distance <= markerThreshold) {
-                    // This is the "smart" dispatch logic from the 'main' branch.
                     const selectMarkerThunk = app.features?.markers?.thunks?.selectMarkerIntent;
                     if (typeof selectMarkerThunk === 'function') {
                         dispatch(selectMarkerThunk(closestMarker.id));
-                    } else {
-                        // Keep the fallback for safety, just in case.
-                        dispatch(actions.markerSelect(closestMarker.id));
-                        if (typeof actions.regionClearSelection === 'function') {
-                            dispatch(actions.regionClearSelection());
-                        }
                     }
 
                     // This is the shared logic from both branches.
@@ -153,17 +147,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             if (normalizedKey === 'm') {
-                const markerThunk = thunks.createMarkerFromKeyboardIntent
-                    || thunks.addMarkerAtTapIntent;
+                const markerThunk = thunks.createMarkerIntent;
                 if (typeof markerThunk !== 'function') {
                     console.error('[InteractionThunk] Missing marker creation thunk.');
                     return;
                 }
-                if (markerThunk === thunks.createMarkerFromKeyboardIntent) {
-                    dispatch(markerThunk({}));
-                } else {
-                    dispatch(markerThunk());
-                }
+                console.log('[InteractionThunk] dispatching createMarkerIntent'); // DEBUG
+                dispatch(markerThunk({}));
                 return;
             }
 

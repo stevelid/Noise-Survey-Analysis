@@ -147,6 +147,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             color: markers.map(marker => normalizeColor(marker.color))
         };
 
+        console.log('Checking marker table column lengths before update:');
+        for (const key in data) {
+            console.log(`  - ${key}: ${Array.isArray(data[key]) ? data[key].length : 'Not an array'}`);
+        }
+
         const currentData = markerSource.data || {};
         const keys = Object.keys(data);
         let changed = keys.length !== Object.keys(currentData).length;

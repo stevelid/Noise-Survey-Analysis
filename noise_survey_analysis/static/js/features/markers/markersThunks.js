@@ -13,6 +13,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const viewSelectors = app.features?.view?.selectors || {};
     const constants = app.constants || {};
     const sidePanelTabs = constants.sidePanelTabs || {};
+    console.log("[Markers] sidePanelTabs", sidePanelTabs); //debug
     const SIDE_PANEL_TAB_MARKERS = Number.isFinite(sidePanelTabs.markers)
         ? sidePanelTabs.markers
         : 1;
@@ -59,7 +60,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function selectMarkerIntent(markerId) {
-        return function (dispatch) {
+        return function (dispatch, getState) {
             if (!actions || typeof dispatch !== 'function') {
                 return;
             }
@@ -70,11 +71,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            const state = typeof getState === 'function' ? getState() : null;
+            const currentSelectedId = Number.isFinite(state?.markers?.selectedId)
+                ? state.markers.selectedId
+                : null;
+
+            if (currentSelectedId === normalizedId) {
+                return;
+            }
+
             dispatch(actions.markerSelect(normalizedId));
             if (typeof actions.regionClearSelection === 'function') {
                 dispatch(actions.regionClearSelection());
             }
             if (typeof actions.setActiveSidePanelTab === 'function') {
+                console.log('[markersThunks] dispatching setActiveSidePanelTab'); // DEBUG
                 dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_MARKERS));
             }
         };
@@ -174,108 +185,85 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
-    function addMarkerAtTapIntent() {
-        return function (dispatch, getState) {
-            if (!actions || typeof getState !== 'function') {
-                return;
-            }
-
-            const state = getState();
-            const tapState = state?.interaction?.tap;
-            if (!tapState?.isActive || !Number.isFinite(tapState.timestamp) || !tapState.position) {
-                return;
-            }
-
-            dispatch(actions.markerAdd(tapState.timestamp, { positionId: tapState.position }));
-        };
-    }
-
-    /**
-     * Creates a marker from a keyboard shortcut. The thunk determines the best
-     * timestamp based on the payload, the active tap line, or the centre of the
-     * current viewport.
+/**
+     * The canonical thunk for creating a marker. It determines the best
+     * timestamp and position based on the payload, active tap line, or viewport center.
+     * After creation, it computes metrics and switches to the marker panel.
      *
-     * @param {Object} [payload] - Optional overrides supplied by the caller.
+     * @param {Object} [payload={}] - Optional overrides.
      * @param {number} [payload.timestamp] - Explicit timestamp in milliseconds.
+     * @param {string} [payload.positionId] - Explicit position ID.
      * @param {string} [payload.note] - Optional note to store with the marker.
      * @param {string} [payload.color] - Optional colour override.
-     * @returns {Function} Thunk function that can be dispatched.
      */
-    function createMarkerFromKeyboardIntent(payload = {}) {
-        return function (dispatch, getState) {
-            if (!actions || typeof dispatch !== 'function') {
-                return;
-            }
+function createMarkerIntent(payload = {}) {
+    return function (dispatch, getState) {
+        if (!actions || typeof dispatch !== 'function' || typeof getState !== 'function') {
+            return;
+        }
 
-            const state = typeof getState === 'function' ? getState() : null;
-            const markersState = state?.markers || {};
-            const beforeCount = Array.isArray(markersState.allIds) ? markersState.allIds.length : 0;
+        const state = getState();
+        const markersState = state.markers || {};
+        const beforeCount = Array.isArray(markersState.allIds) ? markersState.allIds.length : 0;
 
-            let timestamp = Number(payload.timestamp);
-            const tapState = state?.interaction?.tap;
-            if (!Number.isFinite(timestamp) && tapState?.isActive) {
-                const tapTimestamp = Number(tapState.timestamp);
-                if (Number.isFinite(tapTimestamp)) {
-                    timestamp = tapTimestamp;
-                }
+        // 1. Determine timestamp (Payload > Tap > Viewport Center)
+        let timestamp = Number(payload.timestamp);
+        const tapState = state.interaction?.tap;
+        if (!Number.isFinite(timestamp) && tapState?.isActive) {
+            const tapTimestamp = Number(tapState.timestamp);
+            if (Number.isFinite(tapTimestamp)) {
+                timestamp = tapTimestamp;
             }
-            if (!Number.isFinite(timestamp)) {
-                const viewport = typeof viewSelectors.selectViewport === 'function'
-                    ? viewSelectors.selectViewport(state)
-                    : state?.view?.viewport || {};
-                if (Number.isFinite(viewport?.min) && Number.isFinite(viewport?.max)) {
-                    timestamp = Math.round((viewport.min + viewport.max) / 2);
-                }
+        }
+        if (!Number.isFinite(timestamp)) {
+            const viewport = viewSelectors.selectViewport ? viewSelectors.selectViewport(state) : (state.view?.viewport || {});
+            if (Number.isFinite(viewport.min) && Number.isFinite(viewport.max)) {
+                timestamp = Math.round((viewport.min + viewport.max) / 2);
             }
-            if (!Number.isFinite(timestamp)) {
-                return;
-            }
+        }
+        if (!Number.isFinite(timestamp)) {
+            return; // Cannot create a marker without a timestamp
+        }
 
-            const extras = {};
-            if (typeof payload.positionId === 'string' && payload.positionId.trim()) {
-                extras.positionId = payload.positionId.trim();
-            } else if (tapState?.position) {
-                extras.positionId = tapState.position;
-            } else {
-                const availablePositions = Array.isArray(state?.view?.availablePositions)
-                    ? state.view.availablePositions
-                        .map(pos => typeof pos === 'string' ? pos.trim() : '')
-                        .filter(Boolean)
-                    : [];
-                if (availablePositions.length === 1) {
-                    extras.positionId = availablePositions[0];
-                }
+        // 2. Gather extras, determining positionId (Payload > Tap > Single Available Position)
+        const extras = {};
+        if (typeof payload.positionId === 'string' && payload.positionId.trim()) {
+            extras.positionId = payload.positionId.trim();
+        } else if (tapState?.position) {
+            extras.positionId = tapState.position;
+        } else {
+            const availablePositions = Array.isArray(state.view?.availablePositions)
+                ? state.view.availablePositions.filter(Boolean)
+                : [];
+            if (availablePositions.length === 1) {
+                extras.positionId = availablePositions[0];
             }
-            if (typeof payload.note === 'string') {
-                extras.note = payload.note;
-            }
-            if (typeof payload.color === 'string') {
-                extras.color = payload.color;
-            }
-            if (payload.metrics) {
-                extras.metrics = payload.metrics;
-            }
+        }
+        if (typeof payload.note === 'string') extras.note = payload.note;
+        if (typeof payload.color === 'string') extras.color = payload.color;
+        if (payload.metrics) extras.metrics = payload.metrics;
 
-            dispatch(actions.markerAdd(timestamp, extras));
 
-            if (typeof getState !== 'function') {
-                return;
-            }
+        // 3. Dispatch the creation action
+        dispatch(actions.markerAdd(timestamp, extras));
 
-            const updatedState = getState();
-            const updatedMarkers = updatedState?.markers || {};
-            const afterIds = Array.isArray(updatedMarkers.allIds) ? updatedMarkers.allIds : [];
+        // 4. Handle side effects after state update
+        const updatedState = getState();
+        const updatedMarkers = updatedState.markers || {};
+        const afterIds = Array.isArray(updatedMarkers.allIds) ? updatedMarkers.allIds : [];
 
-            if (afterIds.length <= beforeCount) {
-                return;
-            }
-
+        // If a marker was successfully added...
+        if (afterIds.length > beforeCount) {
             const newMarkerId = updatedMarkers.selectedId;
             if (Number.isFinite(newMarkerId)) {
+                // a. Compute its metrics
                 dispatch(computeMarkerMetricsIntent(newMarkerId));
             }
-        };
-    }
+            // b. Switch to the markers panel
+            dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_MARKERS));
+        }
+    };
+}
 
     function nudgeSelectedMarkerIntent(payload) {
         return function (dispatch, getState) {
@@ -326,8 +314,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.features.markers.thunks = {
         selectMarkerIntent,
         computeMarkerMetricsIntent,
-        addMarkerAtTapIntent,
-        createMarkerFromKeyboardIntent,
+        createMarkerIntent,
         nudgeSelectedMarkerIntent
     };
 })(window.NoiseSurveyApp);

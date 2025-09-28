@@ -202,14 +202,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             if (nextActiveLine) {
                 dataCache.activeLineData[position] = {
-                    ...nextActiveLine,
-                    dataViewType: displayDetails.type,
-                    displayDetails
+                    ...nextActiveLine
                 };
             } else {
                 dataCache.activeLineData[position] = {
-                    dataViewType: 'none',
-                    displayDetails: { type: 'none', reason: ' (No Data Available)' }
+                    dataViewType: 'none'
                 };
             }
 
@@ -313,9 +310,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 dataCache.activeSpectralData[position] = {
                     ...finalDataToUse,
                     times_ms: adjustedTimes,
-                    source_replacement: adjustedReplacement,
-                    dataViewType: displayMetadata.type,
-                    displayDetails: displayMetadata
+                    source_replacement: adjustedReplacement
                 };
             } else {
                 // This case handles when overviewData was also null in one of the fallback paths.
@@ -323,8 +318,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     source_replacement: null,
                     reason: 'No Data Available',
                     times_ms: [],
-                    dataViewType: 'none',
-                    displayDetails: { type: 'none', reason: ' (No Data Available)' }
+                    dataViewType: 'none'
                 };
                 // If we ended up with no data, this reason overrides any previous one.
                 displayMetadata = { type: 'none', reason: ' (No Data Available)' };

@@ -156,11 +156,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!positionId) return;
         const timestamp = cb_obj?.x;
         if (!Number.isFinite(timestamp)) return;
-        if (typeof actions?.markerAdd !== 'function') {
-            console.error('[EventHandler] markerAdd action creator is not available.');
+        
+        const thunkCreator = app.thunks && app.thunks.createMarkerIntent;
+        if (typeof thunkCreator !== 'function') {
+            console.error('[EventHandler] Missing createMarkerIntent thunk.');
             return;
         }
-        app.store.dispatch(actions.markerAdd(timestamp, { positionId }));
+    
+        app.store.dispatch(thunkCreator({ timestamp: timestamp, positionId: positionId }));
     }
 
     function clearAllMarkers() {

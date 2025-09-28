@@ -225,17 +225,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             dispatch(actions.regionsAdded(regions));
             dispatch(actions.comparisonModeExited());
+            console.log('[RegionThunk] dispatching setActiveSidePanelTab'); // DEBUG
+            dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
         };
     }
 
 
     /**
-     * Creates a region using the two most recent markers. This mirrors the
-     * manual workflow where analysts drop start and end markers and then press
-     * the dedicated shortcut to convert them into a full region selection.
+     * Selects a region by ID.
      *
-     * @param {Object} [payload] - Optional overrides.
-     * @param {string} [payload.positionId] - Explicit position to associate with the new region.
+     * @param {number} regionId - The ID of the region to select.
      * @returns {Function} Thunk function for dispatch.
      */
     function selectRegionIntent(regionId) {
@@ -252,9 +251,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             dispatch(actions.regionSelect(normalizedId));
             if (typeof actions.markerSelect === 'function') {
+                console.log('[RegionThunk] dispatching markerSelect(null)'); // DEBUG
                 dispatch(actions.markerSelect(null));
             }
             if (typeof actions.setActiveSidePanelTab === 'function') {
+                console.log('[RegionThunk] dispatching setActiveSidePanelTab'); // DEBUG
                 dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
             }
         };
@@ -275,10 +276,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (viewState?.mode === 'comparison') {
                 return;
             }
-            const regionsState = state?.regions;
-            const rawTargetId = regionsState?.addAreaTargetId;
-            const targetId = Number.isFinite(rawTargetId) ? rawTargetId : null;
-            const targetRegion = targetId !== null ? regionsState?.byId?.[targetId] : null;
+            const regionsState = state.regions;
+            const targetId = regionsState.addAreaTargetId;
+            const targetRegion = Number.isFinite(targetId) ? regionsState.byId[targetId] : null;
 
             if (targetRegion && targetRegion.positionId === positionId) {
                 const existingAreas = getRegionAreas(targetRegion);
@@ -298,10 +298,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ? regionsState.counter
                 : null;
 
+            console.log('[regionAdd] Adding region:', { positionId, start, end });
             dispatch(actions.regionAdd(positionId, start, end));
 
-            if (Number.isFinite(nextRegionId)) {
-                dispatch(selectRegionIntent(nextRegionId));
+            const newState = getState();
+            const newRegionId = newState.regions.selectedId; // The reducer sets the new region as selected
+
+            // Orchestrate post-creation side effects by calling the canonical selection thunk
+            if (Number.isFinite(newRegionId)) {
+                dispatch(selectRegionIntent(newRegionId));
             }
         };
     }
@@ -373,6 +378,57 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+     /**
+     * A stateful thunk that manages the two-step region creation process via keyboard.
+     * First press pins the start, second press finalizes and creates the region.
+     */
+     function toggleRegionCreationIntent() {
+        return function (dispatch, getState) {
+            if (!actions || !getState || !dispatch) return;
+
+            const state = getState();
+            const tapState = state.interaction.tap;
+            if (!tapState?.isActive || !Number.isFinite(tapState.timestamp) || !tapState.position) {
+                return;
+            }
+
+            const pending = state.interaction.pendingRegionStart;
+
+            if (!pending || pending.positionId !== tapState.position) {
+                // --- First 'R' press: Start the creation process ---
+                dispatch(actions.regionCreationStarted({
+                    timestamp: tapState.timestamp,
+                    positionId: tapState.position
+                }));
+                return;
+            }
+
+            // --- Second 'R' press: Finalize the region ---
+            const start = Number(pending.timestamp);
+            const end = Number(tapState.timestamp);
+
+            // Cancel the pending state regardless of what happens next
+            dispatch(actions.regionCreationCancelled());
+            
+            // Validate the region before creation
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) {
+                return;
+            }
+            const normalizedStart = Math.min(start, end);
+            const normalizedEnd = Math.max(start, end);
+            if (Math.abs(normalizedEnd - normalizedStart) < MIN_REGION_WIDTH_MS) {
+                return;
+            }
+
+            // Delegate the actual creation and all its side effects to the canonical thunk
+            dispatch(createRegionIntent({
+                positionId: pending.positionId,
+                start: normalizedStart,
+                end: normalizedEnd
+            }));
+        };
+    }
+
 
     function mergeRegionIntoSelectedIntent(sourceId) {
         return function (dispatch, getState) {
@@ -399,46 +455,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (regionsState?.addAreaTargetId === sourceNumericId) {
                 dispatch(actions.regionSetAddAreaMode(null));
             }
-        };
-    }
-
-    function toggleRegionCreationIntent() {
-        return function (dispatch, getState) {
-            if (!actions || typeof getState !== 'function') {
-                return;
-            }
-
-            const state = getState();
-            const tapState = state?.interaction?.tap;
-            if (!tapState?.isActive || !Number.isFinite(tapState.timestamp) || !tapState.position) {
-                return;
-            }
-
-            const pending = state?.interaction?.pendingRegionStart;
-            if (!pending || pending.positionId !== tapState.position) {
-                dispatch(actions.regionCreationStarted({
-                    timestamp: tapState.timestamp,
-                    positionId: tapState.position
-                }));
-                return;
-            }
-
-            const start = Number(pending.timestamp);
-            const end = Number(tapState.timestamp);
-            if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) {
-                dispatch(actions.regionCreationCancelled());
-                return;
-            }
-
-            const normalizedStart = Math.min(start, end);
-            const normalizedEnd = Math.max(start, end);
-            if (Math.abs(normalizedEnd - normalizedStart) < MIN_REGION_WIDTH_MS) {
-                dispatch(actions.regionCreationCancelled());
-                return;
-            }
-
-            dispatch(actions.regionAdd(pending.positionId, normalizedStart, normalizedEnd));
-            dispatch(actions.regionCreationCancelled());
         };
     }
 
