@@ -109,7 +109,7 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
     expect(details.reason).toBe(' (No Log Data Available)');
     expect(details.type).toBe('overview');
-    expect(viewState.displayDetails).toEqual({});
+    expect(viewState.displayDetails).toBeUndefined();
   });
 
   it('missing config: returns chunk image without y-range slicing', () => {

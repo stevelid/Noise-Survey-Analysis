@@ -120,14 +120,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         });
 
         return displayDetailsByPosition;
-
-        // This function is now called from onStateChange, so we get the full state there.
-        // We'll need to get the state inside this function for now.
-        // updateActiveFreqBarData is now called from onStateChange, so this call is redundant.
-        // const state = app.store.getState();
-        // updateActiveFreqBarData(state, dataCache);
-
-        return displayDetailsByPosition;
     }
 
     /**
@@ -142,10 +134,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      */
     function updateActiveLineChartData(position, viewState, dataCache, models, positionOffsetMs = 0) {
         try {
-            if (!viewState.displayDetails) {
-                viewState.displayDetails = {};
-            }
-
             if (!dataCache.activeLineData) {
                 dataCache.activeLineData = {};
             }
@@ -246,10 +234,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      */
     function updateActiveSpectralData(position, viewState, dataCache, models, positionOffsetMs = 0) {
         try {
-            if (!viewState.displayDetails) {
-                viewState.displayDetails = {};
-            }
-
             if (!dataCache.activeSpectralData) {
                 dataCache.activeSpectralData = {};
             }

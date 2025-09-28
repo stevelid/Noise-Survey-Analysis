@@ -113,8 +113,20 @@ describe('NoiseSurveyApp.app orchestrator', () => {
     expect(vp.min).toBe(0);
     expect(vp.max).toBe(2000);
 
-    const details = window.NoiseSurveyApp.store.getState().view.displayDetails;
-    expect(details.P1.line).toEqual({ type: 'log', reason: ' (Log Data)' });
-    expect(details.P1.spec).toEqual({ type: 'log', reason: ' (Log Data)' });
+    const primaryCallWithDetails = window.NoiseSurveyApp.renderers.renderPrimaryCharts.mock.calls.find(([, , details]) => !!details);
+    expect(primaryCallWithDetails?.[2]).toEqual({
+      P1: {
+        line: { type: 'log', reason: ' (Log Data)' },
+        spec: { type: 'log', reason: ' (Log Data)' },
+      },
+    });
+
+    const controlCallWithDetails = window.NoiseSurveyApp.renderers.renderControlWidgets.mock.calls.find(([, details]) => !!details);
+    expect(controlCallWithDetails?.[1]).toEqual({
+      P1: {
+        line: { type: 'log', reason: ' (Log Data)' },
+        spec: { type: 'log', reason: ' (Log Data)' },
+      },
+    });
   });
 });

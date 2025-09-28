@@ -251,7 +251,7 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(mockDataCache.activeLineData.P1.LAeq).toEqual([60, 70]);
             expect(details?.type).toBe('log');
             expect(details?.reason).toBe(' (Log Data)');
-            expect(viewState.displayDetails).toEqual({});
+            expect(viewState.displayDetails).toBeUndefined();
         });
 
         it('should show overview data when in log view but zoomed out', () => {
@@ -284,7 +284,7 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
             expect(details?.type).toBe('overview');
             expect(details?.reason).toBe(' - Zoom in for Log Data');
-            expect(viewState.displayDetails).toEqual({});
+            expect(viewState.displayDetails).toBeUndefined();
         });
 
         it('should use overview data when log data is not available', () => {
@@ -311,7 +311,7 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
             expect(details?.type).toBe('overview');
             expect(details?.reason).toBe(' (No Log Data Available)');
-            expect(viewState.displayDetails).toEqual({});
+            expect(viewState.displayDetails).toBeUndefined();
         });
 
         it('should use overview data when globalViewType is overview', () => {
@@ -344,7 +344,7 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
             expect(details?.type).toBe('overview');
             expect(details?.reason).toBe(' (Overview)');
-            expect(viewState.displayDetails).toEqual({});
+            expect(viewState.displayDetails).toBeUndefined();
         });
     });
 });
