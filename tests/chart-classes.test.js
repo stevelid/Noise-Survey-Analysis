@@ -10,17 +10,31 @@ describe('NoiseSurveyApp.classes', () => {
     vi.restoreAllMocks();
     classes = window.NoiseSurveyApp.classes;
 
-    const MockSpan = function(props) { Object.assign(this, props); };
-    const MockBoxAnnotation = function(props) { Object.assign(this, props); };
+    const MockSpan = function(props) {
+      Object.assign(this, props);
+      this.visible = true;
+    };
+    const MockBoxAnnotation = function(props) {
+      Object.assign(this, props);
+      this.visible = true;
+    };
+
+    const doc = {
+      roots: [],
+      add_model: vi.fn(),
+      create_model: (type, props) => ({ type, ...props }),
+      add_root: vi.fn(model => {
+        doc.roots.push(model);
+        return model;
+      }),
+      remove_root: vi.fn(model => {
+        doc.roots = doc.roots.filter(existing => existing !== model);
+      }),
+    };
 
     // Minimal Bokeh-like chart and glyph models
     global.Bokeh = {
-      documents: [
-        {
-          add_model: (m) => m,
-          create_model: (type, props) => ({ type, ...props }),
-        },
-      ],
+      documents: [doc],
       Models: {
         get: vi.fn((name) => {
           if (name === 'Span') return MockSpan;

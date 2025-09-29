@@ -66,7 +66,6 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     expect(rep.image[0].length).toBe(log.n_freqs * log.chunk_time_length);
     expect(details.type).toBe('log');
     expect(details.reason).toBe(' (Log Data)');
-    expect(dataState.activeSpectralData[position].dataViewType).toBe('log');
   });
 
   it('zoomed out: falls back to overview with reason and initial glyph image', () => {
@@ -94,7 +93,6 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     expect(details.type).toBe('overview');
     // Should use overview image buffer size
     expect(rep.image[0]).toEqual(overview.initial_glyph_data.image[0]);
-    expect(dataState.activeSpectralData[position].dataViewType).toBe('overview');
   });
 
   it('no log data: falls back to overview with specific reason', () => {

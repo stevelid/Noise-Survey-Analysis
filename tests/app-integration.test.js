@@ -9,6 +9,7 @@ const mockRenderers = {
     renderMarkers: vi.fn(),
     renderControlWidgets: vi.fn(),
     renderRegions: vi.fn(),
+    renderSidePanel: vi.fn(),
 };
 
 

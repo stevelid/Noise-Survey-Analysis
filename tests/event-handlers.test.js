@@ -21,7 +21,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     let toggleVolumeBoostIntentSpy;
     let handleAudioStatusUpdateIntentSpy;
     let togglePlaybackFromKeyboardIntentSpy;
-    let createMarkerFromKeyboardIntentSpy;
+    let createMarkerIntentSpy;
     let toggleRegionCreationIntentSpy;
     let nudgeSelectedMarkerIntentSpy;
     let handleKeyboardShortcutIntentSpy;
@@ -56,7 +56,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         toggleVolumeBoostIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleVolumeBoostIntent').mockImplementation(() => () => {});
         handleAudioStatusUpdateIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleAudioStatusUpdateIntent').mockImplementation(() => () => {});
         togglePlaybackFromKeyboardIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'togglePlaybackFromKeyboardIntent').mockImplementation(() => () => {});
-        createMarkerFromKeyboardIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createMarkerFromKeyboardIntent').mockImplementation(() => () => {});
+        createMarkerIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createMarkerIntent').mockImplementation(() => () => {});
         toggleRegionCreationIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleRegionCreationIntent').mockImplementation(() => () => {});
         nudgeSelectedMarkerIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'nudgeSelectedMarkerIntent').mockImplementation(() => () => {});
         handleKeyboardShortcutIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleKeyboardShortcutIntent');
@@ -147,10 +147,15 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     });
 
     describe('handleDoubleClick', () => {
-        it('should dispatch a markerAdd action', () => {
+        it('should dispatch the createMarkerIntent thunk', () => {
             const cb_obj = { origin: { name: 'figure_P1_timeseries' }, x: 54321 };
+            const markerThunk = vi.fn();
+            createMarkerIntentSpy.mockReturnValue(markerThunk);
+
             eventHandlers.handleDoubleClick(cb_obj);
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.markerAdd(54321, { positionId: 'P1' }));
+
+            expect(createMarkerIntentSpy).toHaveBeenCalledWith({ timestamp: 54321, positionId: 'P1' });
+            expect(dispatchSpy).toHaveBeenCalledWith(markerThunk);
         });
     });
 
@@ -290,7 +295,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             const event = { key: 'M', preventDefault: vi.fn(), target: { tagName: 'div' } };
             eventHandlers.handleKeyPress(event);
             expect(event.preventDefault).toHaveBeenCalled();
-            expect(createMarkerFromKeyboardIntentSpy).toHaveBeenCalledWith({});
+            expect(createMarkerIntentSpy).toHaveBeenCalledWith({});
             expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
 

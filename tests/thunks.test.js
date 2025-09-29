@@ -78,6 +78,7 @@ describe('NoiseSurveyApp thunks', () => {
     it('handleTapIntent selects a nearby marker before regions', () => {
         store.dispatch(actions.viewportChange(0, 10000));
         store.dispatch(actions.markerAdd(1200, { positionId: 'P1' }));
+        store.dispatch(actions.markerSelect(null));
         const thunk = thunks.handleTapIntent({
             timestamp: 1210,
             positionId: 'P1',
@@ -223,13 +224,28 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.interaction.tap.timestamp).toBe(4000);
     });
 
-    it('addMarkerAtTapIntent adds a marker at the tap timestamp', () => {
+    it('createMarkerIntent uses tap timestamp when available', () => {
         store.dispatch(actions.tap(2500, 'P2', 'figure_P2_timeseries'));
-        const thunk = thunks.addMarkerAtTapIntent();
+        const thunk = thunks.createMarkerIntent();
         thunk(store.dispatch, store.getState);
         const state = store.getState();
         expect(state.markers.allIds).toHaveLength(1);
         expect(state.markers.byId[1]).toMatchObject({ timestamp: 2500, positionId: 'P2' });
+    });
+
+    it('createMarkerIntent falls back to viewport center and single position when tap inactive', () => {
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P9'],
+            selectedParameter: 'LZeq',
+            viewport: { min: 0, max: 8000 },
+            chartVisibility: {}
+        }));
+
+        const thunk = thunks.createMarkerIntent();
+        thunk(store.dispatch, store.getState);
+        const state = store.getState();
+        expect(state.markers.allIds).toEqual([1]);
+        expect(state.markers.byId[1]).toMatchObject({ timestamp: 4000, positionId: 'P9' });
     });
 
     it('nudgeSelectedMarkerIntent shifts the marker timestamp', () => {
@@ -517,45 +533,55 @@ describe('NoiseSurveyApp thunks', () => {
             thunk(dispatchSpy, store.getState);
             expect(dispatchSpy).toHaveBeenCalledWith(actions.audioBoostToggleRequest('P1', true));
         });
+    });
 
-        describe('Marker keyboard workflows', () => {
-            it('createMarkerFromKeyboardIntent adds marker at tap and computes metrics', () => {
-                window.NoiseSurveyApp.dataCache = {
-                    activeLineData: {
-                        P1: {
-                            Datetime: [1000, 1500, 2000],
-                            LZeq: [40, 45, 50]
-                        }
-                    },
-                    activeSpectralData: {
-                        P1: {
-                            frequency_labels: ['63', '125'],
-                            n_freqs: 2,
-                            n_times: 3,
-                            levels_flat_transposed: [1, 2, 3, 4, 5, 6],
-                            times_ms: [1000, 1500, 2000]
-                        }
+    describe('marker metric workflows', () => {
+        it('computeMarkerMetricsIntent populates broadband and spectral metrics for a marker', () => {
+            const previousCache = window.NoiseSurveyApp.dataCache;
+            window.NoiseSurveyApp.dataCache = {
+                activeLineData: {
+                    P1: {
+                        Datetime: [1000, 1500, 2000],
+                        LAeq: [40, 45, 50],
+                        LZeq: [41, 46, 51]
                     }
-                };
+                },
+                activeSpectralData: {
+                    P1: {
+                        frequency_labels: ['63', '125'],
+                        n_freqs: 2,
+                        n_times: 3,
+                        levels_flat_transposed: [1, 2, 3, 4, 5, 6],
+                        times_ms: [1000, 1500, 2000]
+                    }
+                }
+            };
 
+            try {
                 store.dispatch(actions.initializeState({
                     availablePositions: ['P1'],
                     selectedParameter: 'LZeq',
                     viewport: { min: 0, max: 3000 },
                     chartVisibility: {}
                 }));
-                store.dispatch(actions.tap(1500, 'P1', 'figure_P1_timeseries'));
 
-                const thunk = thunks.createMarkerFromKeyboardIntent();
+                store.dispatch(actions.markerAdd(1500, { positionId: 'P1' }));
+
+                const thunk = thunks.computeMarkerMetricsIntent(1);
                 thunk(store.dispatch, store.getState);
 
                 const state = store.getState();
-                expect(state.markers.allIds).toEqual([1]);
-                expect(state.markers.byId[1].timestamp).toBe(1500);
-                expect(state.markers.byId[1].metrics?.broadband?.[0]?.value).toBe(45);
-                expect(state.markers.byId[1].metrics?.spectral?.[0]?.values).toEqual([2, 5]);
-            });
-
+                const metrics = state.markers.byId[1].metrics;
+                expect(metrics.parameter).toBe('LZeq');
+                expect(metrics.broadband).toEqual([
+                    { positionId: 'P1', parameter: 'LAeq', value: 45 }
+                ]);
+                expect(metrics.spectral).toHaveLength(1);
+                expect(metrics.spectral[0].labels).toEqual(['63', '125']);
+                expect(metrics.spectral[0].values).toEqual([2, 5]);
+            } finally {
+                window.NoiseSurveyApp.dataCache = previousCache;
+            }
         });
-});
+    });
 });
