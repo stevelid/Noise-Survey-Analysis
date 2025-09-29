@@ -80,10 +80,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            console.log('[markersThunks] dispatching markerSelect'); // DEBUG
             dispatch(actions.markerSelect(normalizedId));
             if (typeof actions.regionClearSelection === 'function') {
                 dispatch(actions.regionClearSelection());
             }
+            
             if (typeof actions.setActiveSidePanelTab === 'function') {
                 console.log('[markersThunks] dispatching setActiveSidePanelTab'); // DEBUG
                 dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_MARKERS));
@@ -133,7 +135,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const selectedParameter = state?.view?.selectedParameter || null;
             const metricsPayload = {
                 timestamp,
-                parameter: selectedParameter,
+                parameter: selectedParameter, // The one selected in the UI
                 broadband: [],
                 spectral: []
             };
@@ -152,18 +154,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 }
 
-                const parameterValues = lineData?.[selectedParameter];
-                if (
-                    timeIndex !== -1
-                    && selectedParameter
-                    && hasArrayLikeLength(parameterValues)
-                    && timeIndex < parameterValues.length
-                ) {
-                    const broadbandValue = Number(parameterValues[timeIndex]);
-                    metricsPayload.broadband.push({
-                        positionId,
-                        value: Number.isFinite(broadbandValue) ? broadbandValue : null
-                    });
+                if (timeIndex !== -1) {
+                    // For broadband, prefer LAeq, fallback to LZeq, regardless of selectedParameter
+                    let broadbandParam = null;
+                    let parameterValues = null;
+
+                    if (lineData && hasArrayLikeLength(lineData.LAeq)) {
+                        broadbandParam = 'LAeq';
+                        parameterValues = lineData.LAeq;
+                    } else if (lineData && hasArrayLikeLength(lineData.LZeq)) {
+                        broadbandParam = 'LZeq';
+                        parameterValues = lineData.LZeq;
+                    }
+
+                    if (broadbandParam && timeIndex < parameterValues.length) {
+                        const broadbandValue = Number(parameterValues[timeIndex]);
+                        metricsPayload.broadband.push({
+                            positionId,
+                            parameter: broadbandParam,
+                            value: Number.isFinite(broadbandValue) ? broadbandValue : null
+                        });
+                    }
                 }
 
                 if (spectralData && hasArrayLikeLength(spectralData.times_ms)) {
@@ -185,85 +196,82 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
-/**
-     * The canonical thunk for creating a marker. It determines the best
-     * timestamp and position based on the payload, active tap line, or viewport center.
-     * After creation, it computes metrics and switches to the marker panel.
-     *
-     * @param {Object} [payload={}] - Optional overrides.
-     * @param {number} [payload.timestamp] - Explicit timestamp in milliseconds.
-     * @param {string} [payload.positionId] - Explicit position ID.
-     * @param {string} [payload.note] - Optional note to store with the marker.
-     * @param {string} [payload.color] - Optional colour override.
-     */
-function createMarkerIntent(payload = {}) {
-    return function (dispatch, getState) {
-        if (!actions || typeof dispatch !== 'function' || typeof getState !== 'function') {
-            return;
-        }
-
-        const state = getState();
-        const markersState = state.markers || {};
-        const beforeCount = Array.isArray(markersState.allIds) ? markersState.allIds.length : 0;
-
-        // 1. Determine timestamp (Payload > Tap > Viewport Center)
-        let timestamp = Number(payload.timestamp);
-        const tapState = state.interaction?.tap;
-        if (!Number.isFinite(timestamp) && tapState?.isActive) {
-            const tapTimestamp = Number(tapState.timestamp);
-            if (Number.isFinite(tapTimestamp)) {
-                timestamp = tapTimestamp;
+    /**
+         * The canonical thunk for creating a marker. It determines the best
+         * timestamp and position based on the payload, active tap line, or viewport center.
+         * After creation, it computes metrics and switches to the marker panel.
+         *
+         * @param {Object} [payload={}] - Optional overrides.
+         * @param {number} [payload.timestamp] - Explicit timestamp in milliseconds.
+         * @param {string} [payload.positionId] - Explicit position ID.
+         * @param {string} [payload.note] - Optional note to store with the marker.
+         * @param {string} [payload.color] - Optional colour override.
+         */
+    function createMarkerIntent(payload = {}) {
+        return function (dispatch, getState) {
+            if (!actions || typeof dispatch !== 'function' || typeof getState !== 'function') {
+                return;
             }
-        }
-        if (!Number.isFinite(timestamp)) {
-            const viewport = viewSelectors.selectViewport ? viewSelectors.selectViewport(state) : (state.view?.viewport || {});
-            if (Number.isFinite(viewport.min) && Number.isFinite(viewport.max)) {
-                timestamp = Math.round((viewport.min + viewport.max) / 2);
+
+            const state = getState();
+            const markersState = state.markers || {};
+            const beforeCount = Array.isArray(markersState.allIds) ? markersState.allIds.length : 0;
+
+            // 1. Determine timestamp (Payload > Tap > Viewport Center)
+            console.log('[markersThunks] 1. Determine timestamp'); // DEBUG
+            let timestamp = Number(payload.timestamp);
+            const tapState = state.interaction?.tap;
+            if (!Number.isFinite(timestamp) && tapState?.isActive) {
+                const tapTimestamp = Number(tapState.timestamp);
+                if (Number.isFinite(tapTimestamp)) {
+                    timestamp = tapTimestamp;
+                }
             }
-        }
-        if (!Number.isFinite(timestamp)) {
-            return; // Cannot create a marker without a timestamp
-        }
-
-        // 2. Gather extras, determining positionId (Payload > Tap > Single Available Position)
-        const extras = {};
-        if (typeof payload.positionId === 'string' && payload.positionId.trim()) {
-            extras.positionId = payload.positionId.trim();
-        } else if (tapState?.position) {
-            extras.positionId = tapState.position;
-        } else {
-            const availablePositions = Array.isArray(state.view?.availablePositions)
-                ? state.view.availablePositions.filter(Boolean)
-                : [];
-            if (availablePositions.length === 1) {
-                extras.positionId = availablePositions[0];
+            if (!Number.isFinite(timestamp)) {
+                const viewport = viewSelectors.selectViewport ? viewSelectors.selectViewport(state) : (state.view?.viewport || {});
+                if (Number.isFinite(viewport.min) && Number.isFinite(viewport.max)) {
+                    timestamp = Math.round((viewport.min + viewport.max) / 2);
+                }
             }
-        }
-        if (typeof payload.note === 'string') extras.note = payload.note;
-        if (typeof payload.color === 'string') extras.color = payload.color;
-        if (payload.metrics) extras.metrics = payload.metrics;
-
-
-        // 3. Dispatch the creation action
-        dispatch(actions.markerAdd(timestamp, extras));
-
-        // 4. Handle side effects after state update
-        const updatedState = getState();
-        const updatedMarkers = updatedState.markers || {};
-        const afterIds = Array.isArray(updatedMarkers.allIds) ? updatedMarkers.allIds : [];
-
-        // If a marker was successfully added...
-        if (afterIds.length > beforeCount) {
-            const newMarkerId = updatedMarkers.selectedId;
-            if (Number.isFinite(newMarkerId)) {
-                // a. Compute its metrics
-                dispatch(computeMarkerMetricsIntent(newMarkerId));
+            if (!Number.isFinite(timestamp)) {
+                return; // Cannot create a marker without a timestamp
             }
-            // b. Switch to the markers panel
-            dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_MARKERS));
-        }
-    };
-}
+
+            // 2. Gather extras, determining positionId (Payload > Tap > Single Available Position)
+            console.log('[markersThunks] 2. Gather extras, determining positionId'); // DEBUG
+            const extras = {};
+            if (typeof payload.positionId === 'string' && payload.positionId.trim()) {
+                extras.positionId = payload.positionId.trim();
+            } else if (tapState?.position) {
+                extras.positionId = tapState.position;
+            } else {
+                const availablePositions = Array.isArray(state.view?.availablePositions)
+                    ? state.view.availablePositions.filter(Boolean)
+                    : [];
+                if (availablePositions.length === 1) {
+                    extras.positionId = availablePositions[0];
+                }
+            }
+            if (typeof payload.note === 'string') extras.note = payload.note;
+            if (typeof payload.color === 'string') extras.color = payload.color;
+            if (payload.metrics) extras.metrics = payload.metrics;
+
+
+            // 3. Dispatch the creation action
+            console.log('[markersThunks] 3. Dispatch the creation action'); // DEBUG
+            dispatch(actions.markerAdd(timestamp, extras));
+
+            // 4. Handle side effects after state update
+            setTimeout(() => {
+                console.log('[markersThunks] 4. Handle side effects after state update'); // DEBUG
+                const updatedState = getState();
+                const newMarkerId = updatedState.markers.selectedId; // The reducer sets this
+                if (Number.isFinite(newMarkerId)) {
+                    dispatch(selectMarkerIntent(newMarkerId));
+                }
+            }, 0);
+        };
+    }
 
     function nudgeSelectedMarkerIntent(payload) {
         return function (dispatch, getState) {

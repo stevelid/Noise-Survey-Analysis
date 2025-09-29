@@ -127,9 +127,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didMarkersChange = state.markers !== previousState.markers;
         const didRegionsChange = state.regions !== previousState.regions;
         const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
+        const didActiveSidePanelTabChange = state.view.activeSidePanelTab !== previousState.view.activeSidePanelTab;
 
         const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange || didChartOffsetsChange;
 
+        
+        //debug
+        if (didMarkersChange) {
+            console.log('[App] marker state changed', state.markers); // DEBUG
+        }
+        
+        
         // --- B. ORCHESTRATE DATA PROCESSING & RENDERING ---
         let displayDetailsUpdates = null;
 
@@ -162,6 +170,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // Always keep UI widgets in sync with the state
         app.renderers.renderControlWidgets(state, displayDetailsUpdates);
+
+        // render the side panel
+        if (didMarkersChange || didRegionsChange || didActiveSidePanelTabChange) {
+            console.log('Rendering markers');//debug
+            app.renderers.renderSidePanel(state);
+        }
 
         // Always sync markers
         if (isInitialLoad || didMarkersChange) {

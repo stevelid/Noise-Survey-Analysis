@@ -174,7 +174,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         visible: true,
                         name: `marker_${this.name}_${timestamp}`
                     });
-                    this.model.add_layout(marker);
+                    try { // Try-catch block added to handle potential errors when span has not been created before execution. 
+                        doc.add_root(marker);
+                        this.model.add_layout(marker);
+                    } catch (error) {
+                        console.warn('[Chart] Failed to attach marker span', { markerId, timestamp }, error);
+                        return;
+                    }
                 } else {
                     marker.location = timestamp;
                     marker.visible = true;
@@ -185,9 +191,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 nextMarkers.push(marker);
             });
 
+            const doc = Bokeh.documents[0];
             this.markerModels.forEach(marker => {
-                if (!nextMarkers.includes(marker) && this.model && typeof this.model.remove_layout === 'function') {
-                    this.model.remove_layout(marker);
+                if (!nextMarkers.includes(marker)) {
+                    if (this.model && typeof this.model.remove_layout === 'function') {
+                        this.model.remove_layout(marker);
+                    }
+                    if (doc && typeof doc.remove_root === 'function') {
+                        doc.remove_root(marker);
+                    }
                 }
             });
 
@@ -271,6 +283,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             name: `region_${this.name}_${region.id}_${index}`
                         });
                         annotations[index] = annotation;
+                        if (doc) doc.add_root(annotation);
                         this.model.add_layout(annotation);
                         didMutate = true;
                     }
@@ -291,7 +304,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         try {
                             if (typeof this.model.remove_layout === 'function') {
                                 this.model.remove_layout(annotation);
-                            } else if (doc && typeof doc.remove_root === 'function') {
+                            } 
+                            if (doc && typeof doc.remove_root === 'function') {
                                 doc.remove_root(annotation);
                             }
                         } catch (error) {
@@ -314,7 +328,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         try {
                             if (typeof this.model.remove_layout === 'function') {
                                 this.model.remove_layout(annotation);
-                            } else if (doc && typeof doc.remove_root === 'function') {
+                            }
+                            if (doc && typeof doc.remove_root === 'function') {
                                 doc.remove_root(annotation);
                             }
                         } catch (error) {

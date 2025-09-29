@@ -173,23 +173,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const selectionIndices = selectedIndex >= 0 ? [selectedIndex] : [];
 
         if (selection) {
-            const currentSelection = Array.isArray(selection.indices) ? selection.indices : [];
-            if (!ensureArrayEquals(currentSelection, selectionIndices)) {
-                if (markerTable) {
-                    markerTable.__suppressSelectionDispatch = true;
-                }
-                selection.indices = selectionIndices;
-                if (selection.change && typeof selection.change.emit === 'function') {
-                    selection.change.emit();
-                }
-                if (markerTable) {
-                    const release = () => { markerTable.__suppressSelectionDispatch = false; };
-                    if (typeof queueMicrotask === 'function') {
-                        queueMicrotask(release);
-                    } else {
-                        Promise.resolve().then(release);
+            try {
+                const currentSelection = Array.isArray(selection.indices) ? selection.indices : [];
+                if (!ensureArrayEquals(currentSelection, selectionIndices)) {
+                    if (markerTable) {
+                        markerTable.__suppressSelectionDispatch = true;
+                    }
+                    selection.indices = selectionIndices;
+                    if (selection.change && typeof selection.change.emit === 'function') {
+                        selection.change.emit();
+                    }
+                    if (markerTable) {
+                        const release = () => { markerTable.__suppressSelectionDispatch = false; };
+                        if (typeof queueMicrotask === 'function') {
+                            queueMicrotask(release);
+                        } else {
+                            Promise.resolve().then(release);
+                        }
                     }
                 }
+            } catch (error) {
+                console.warn('[markerPanelRenderer] Failed to update marker selection', error);
             }
         }
 

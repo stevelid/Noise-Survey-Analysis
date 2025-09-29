@@ -472,117 +472,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         });
     }
 
-    /**
-    * Iterates through all charts and tells them to synchronize their
-    * marker visuals with the central state.
-    */
-    function renderMarkers(state) {
-        const { controllers, models } = app.registry;
-        const charts = controllers?.chartsByName;
 
-        const markerSelectors = app.features?.markers?.selectors || {};
-        const markers = typeof markerSelectors.selectAllMarkers === 'function'
-            ? markerSelectors.selectAllMarkers(state)
-            : [];
-        const enabled = typeof markerSelectors.selectAreMarkersEnabled === 'function'
-            ? markerSelectors.selectAreMarkersEnabled(state)
-            : Boolean(state?.markers?.enabled !== false);
-        const selectedId = Number.isFinite(state?.markers?.selectedId)
-            ? state.markers.selectedId
-            : null;
-
-        if (charts) {
-            charts.forEach(chart => {
-                chart.syncMarkers(markers, enabled, selectedId);
-            });
-        }
-
-        const markerPanelRenderer = app.services?.markerPanelRenderer;
-        if (markerPanelRenderer && typeof markerPanelRenderer.renderMarkerPanel === 'function') {
-            markerPanelRenderer.renderMarkerPanel(
-                {
-                    markerSource: models?.markerPanelSource,
-                    markerTable: models?.markerPanelTable,
-                    messageDiv: models?.markerPanelMessageDiv,
-                    detail: models?.markerPanelDetail,
-                    colorPicker: models?.markerPanelColorPicker,
-                    noteInput: models?.markerPanelNoteInput,
-                    metricsDiv: models?.markerPanelMetricsDiv,
-                    copyButton: models?.markerPanelCopyButton,
-                    deleteButton: models?.markerPanelDeleteButton,
-                    addAtTapButton: models?.markerPanelAddAtTapButton,
-                    visibilityToggle: models?.markerVisibilityToggle,
-                },
-                state?.markers || {},
-                state?.interaction || {},
-                state?.view || {}
-            );
-        }
-
-    }
-
-    function renderRegions(state, dataCache) {
-        const { controllers, models } = app.registry;
-        const regionsState = state?.regions;
-        if (!regionsState) return;
-        const regionList = regionsState.allIds.map(id => regionsState.byId[id]).filter(Boolean);
-        const panelVisible = regionsState.panelVisible !== false;
-        const overlaysVisible = regionsState.overlaysVisible !== false;
-        const regionsForCharts = overlaysVisible ? regionList : [];
-
-        if (controllers?.chartsByName) {
-            controllers.chartsByName.forEach(chart => {
-                if (typeof chart.syncRegions === 'function') {
-                    const selectedId = overlaysVisible ? regionsState.selectedId : null;
-                    chart.syncRegions(regionsForCharts, selectedId);
-                }
-            });
-        }
-
-        const regionPanelRenderer = app.services?.regionPanelRenderer;
-        if (regionPanelRenderer && typeof regionPanelRenderer.renderRegionPanel === 'function') {
-            const panelModels = {
-                regionSource: models?.regionPanelSource,
-                regionTable: models?.regionPanelTable,
-                messageDiv: models?.regionPanelMessageDiv,
-                detail: models?.regionPanelDetail,
-                copyButton: models?.regionPanelCopyButton,
-                deleteButton: models?.regionPanelDeleteButton,
-                addAreaButton: models?.regionPanelAddAreaButton,
-                mergeButton: models?.regionPanelMergeButton,
-                mergeSelect: models?.regionPanelMergeSelect,
-                splitButton: models?.regionPanelSplitButton,
-                colorPicker: models?.regionPanelColorPicker,
-                noteInput: models?.regionPanelNoteInput,
-                metricsDiv: models?.regionPanelMetricsDiv,
-                frequencyCopyButton: models?.regionPanelFrequencyCopyButton,
-                frequencyTableDiv: models?.regionPanelFrequencyTableDiv,
-                spectrumDiv: models?.regionPanelSpectrumDiv,
-                visibilityToggle: models?.regionVisibilityToggle,
-                autoDayNightButton: models?.regionAutoDayNightButton,
-            };
-            const availablePositions = Array.isArray(state?.view?.availablePositions)
-                ? state.view.availablePositions
-                : [];
-            const fallbackPositions = models?.timeSeriesSources
-                ? Object.keys(models.timeSeriesSources)
-                : [];
-            const positionCount = availablePositions.length ? availablePositions.length : fallbackPositions.length;
-
-            regionPanelRenderer.renderRegionPanel(
-                panelModels,
-                regionList,
-                regionsState.selectedId,
-                state,
-                {
-                    panelVisible,
-                    overlaysVisible,
-                    positionCount
-                }
-            );
-        }
-
-    }
 
     function renderFrequencyTable(state, dataCache) {
         const { models } = app.registry;
@@ -712,23 +602,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const { isPlaying, activePositionId, playbackRate, volumeBoost } = state.audio;
         const viewState = state?.view || {};
-        const sidePanelTabsModel = models.sidePanelTabs;
-        if (sidePanelTabsModel) {
-            if (viewState.mode === 'comparison') {
-                if (sidePanelTabsModel.active !== SIDE_PANEL_TAB_REGIONS) {
-                    sidePanelTabsModel.active = SIDE_PANEL_TAB_REGIONS;
-                }
-            } else {
-                const desiredIndex = Number(viewState.activeSidePanelTab);
-                console.log('[renderControlWidgets] desiredIndex', desiredIndex); // DEBUG
-                const normalizedIndex = Number.isFinite(desiredIndex) && desiredIndex >= 0
-                    ? Math.floor(desiredIndex)
-                    : SIDE_PANEL_TAB_REGIONS;
-                if (sidePanelTabsModel.active !== normalizedIndex) {
-                    sidePanelTabsModel.active = normalizedIndex;
-                }
-            }
-        }
+
         const chartVisibility = viewState.chartVisibility || {};
         const availablePositions = Array.isArray(viewState.availablePositions)
             ? viewState.availablePositions
@@ -993,6 +867,151 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         tableDiv.text = newTableHtml;
     }
 
+        /**
+    * Iterates through all charts and tells them to synchronize their
+    * marker visuals with the central state.
+    */
+        function renderMarkers(state) {
+            const { controllers, models } = app.registry;
+            const charts = controllers?.chartsByName;
+    
+            const markerSelectors = app.features?.markers?.selectors || {};
+            const markers = typeof markerSelectors.selectAllMarkers === 'function'
+                ? markerSelectors.selectAllMarkers(state)
+                : [];
+            const enabled = typeof markerSelectors.selectAreMarkersEnabled === 'function'
+                ? markerSelectors.selectAreMarkersEnabled(state)
+                : Boolean(state?.markers?.enabled !== false);
+            const selectedId = Number.isFinite(state?.markers?.selectedId)
+                ? state.markers.selectedId
+                : null;
+    
+            if (charts) {
+                charts.forEach(chart => {
+                    try {
+                        try {
+                        chart.syncMarkers(markers, enabled, selectedId);
+                    } catch (error) {
+                        console.warn('[renderMarkers] Failed to sync markers for chart', chart?.name, error);
+                    }
+                    } catch (error) {
+                        console.warn('[renderMarkers] Failed to sync markers for chart', chart?.name, error);
+                    }
+                });
+            }
+    
+            const markerPanelRenderer = app.services?.markerPanelRenderer;
+            if (markerPanelRenderer && typeof markerPanelRenderer.renderMarkerPanel === 'function') {
+                markerPanelRenderer.renderMarkerPanel(
+                    {
+                        markerSource: models?.markerPanelSource,
+                        markerTable: models?.markerPanelTable,
+                        messageDiv: models?.markerPanelMessageDiv,
+                        detail: models?.markerPanelDetail,
+                        colorPicker: models?.markerPanelColorPicker,
+                        noteInput: models?.markerPanelNoteInput,
+                        metricsDiv: models?.markerPanelMetricsDiv,
+                        copyButton: models?.markerPanelCopyButton,
+                        deleteButton: models?.markerPanelDeleteButton,
+                        addAtTapButton: models?.markerPanelAddAtTapButton,
+                        visibilityToggle: models?.markerVisibilityToggle,
+                    },
+                    state?.markers || {},
+                    state?.interaction || {},
+                    state?.view || {}
+                );
+            }
+    
+        }
+    
+        function renderRegions(state, dataCache) {
+            const { controllers, models } = app.registry;
+            const regionsState = state?.regions;
+            if (!regionsState) return;
+            const regionList = regionsState.allIds.map(id => regionsState.byId[id]).filter(Boolean);
+            const panelVisible = regionsState.panelVisible !== false;
+            const overlaysVisible = regionsState.overlaysVisible !== false;
+            const regionsForCharts = overlaysVisible ? regionList : [];
+    
+            if (controllers?.chartsByName) {
+                controllers.chartsByName.forEach(chart => {
+                    if (typeof chart.syncRegions === 'function') {
+                        const selectedId = overlaysVisible ? regionsState.selectedId : null;
+                        chart.syncRegions(regionsForCharts, selectedId);
+                    }
+                });
+            }
+    
+            const regionPanelRenderer = app.services?.regionPanelRenderer;
+            if (regionPanelRenderer && typeof regionPanelRenderer.renderRegionPanel === 'function') {
+                const panelModels = {
+                    regionSource: models?.regionPanelSource,
+                    regionTable: models?.regionPanelTable,
+                    messageDiv: models?.regionPanelMessageDiv,
+                    detail: models?.regionPanelDetail,
+                    copyButton: models?.regionPanelCopyButton,
+                    deleteButton: models?.regionPanelDeleteButton,
+                    addAreaButton: models?.regionPanelAddAreaButton,
+                    mergeButton: models?.regionPanelMergeButton,
+                    mergeSelect: models?.regionPanelMergeSelect,
+                    splitButton: models?.regionPanelSplitButton,
+                    colorPicker: models?.regionPanelColorPicker,
+                    noteInput: models?.regionPanelNoteInput,
+                    metricsDiv: models?.regionPanelMetricsDiv,
+                    frequencyCopyButton: models?.regionPanelFrequencyCopyButton,
+                    frequencyTableDiv: models?.regionPanelFrequencyTableDiv,
+                    spectrumDiv: models?.regionPanelSpectrumDiv,
+                    visibilityToggle: models?.regionVisibilityToggle,
+                    autoDayNightButton: models?.regionAutoDayNightButton,
+                };
+                const availablePositions = Array.isArray(state?.view?.availablePositions)
+                    ? state.view.availablePositions
+                    : [];
+                const fallbackPositions = models?.timeSeriesSources
+                    ? Object.keys(models.timeSeriesSources)
+                    : [];
+                const positionCount = availablePositions.length ? availablePositions.length : fallbackPositions.length;
+    
+                regionPanelRenderer.renderRegionPanel(
+                    panelModels,
+                    regionList,
+                    regionsState.selectedId,
+                    state,
+                    {
+                        panelVisible,
+                        overlaysVisible,
+                        positionCount
+                    }
+                );
+            }
+    
+        }
+    
+    function renderSidePanel(state) {
+        
+        const { models, controllers } = app.registry;
+        if (!models) return;
+
+        const viewState = state?.view || {};
+        const sidePanelTabsModel = models.sidePanelTabs;
+        if (sidePanelTabsModel) {
+            if (viewState.mode === 'comparison') {
+                if (sidePanelTabsModel.active !== SIDE_PANEL_TAB_REGIONS) {
+                    sidePanelTabsModel.active = SIDE_PANEL_TAB_REGIONS;
+                }
+            } else {
+                const desiredIndex = Number(viewState.activeSidePanelTab);
+                console.log('[renderControlWidgets] desiredIndex', desiredIndex); // DEBUG
+                const normalizedIndex = Number.isFinite(desiredIndex) && desiredIndex >= 0
+                    ? Math.floor(desiredIndex)
+                    : SIDE_PANEL_TAB_REGIONS;
+                if (sidePanelTabsModel.active !== normalizedIndex) {
+                    sidePanelTabsModel.active = normalizedIndex;
+                }
+            }
+        }
+    }
+
     function renderComparisonMode(state) {
         const { models, controllers } = app.registry;
         if (!models) return;
@@ -1179,6 +1198,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         renderFrequencyTable: renderFrequencyTable,
         renderFrequencyBar: renderFrequencyBar,
         renderControlWidgets: renderControlWidgets,
+        renderSidePanel: renderSidePanel,
         renderSummaryTable: renderSummaryTable,
         renderComparisonMode: renderComparisonMode,
         renderActiveTool: renderActiveTool,
