@@ -326,5 +326,17 @@ describe('rootReducer', () => {
             expect(state.audio.isPlaying).toBe(true);
             expect(state.audio.activePositionId).toBe('P1');
         });
+
+        it('should update playbackRate when AUDIO_RATE_CHANGE_REQUEST is dispatched', () => {
+            const playingState = rootReducer(initialState, actions.audioPlayPauseToggle('P1', true));
+            const state = rootReducer(playingState, actions.audioRateChangeRequest('P1', 1.5));
+            expect(state.audio.playbackRate).toBe(1.5);
+        });
+
+        it('should update volumeBoost when AUDIO_BOOST_TOGGLE_REQUEST is dispatched', () => {
+            const playingState = rootReducer(initialState, actions.audioPlayPauseToggle('P1', true));
+            const state = rootReducer(playingState, actions.audioBoostToggleRequest('P1', true));
+            expect(state.audio.volumeBoost).toBe(true);
+        });
     });
 });
