@@ -57,6 +57,34 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             }
 
+            case actionTypes.AUDIO_RATE_CHANGE_REQUEST: {
+                const requestedRate = Number(action.payload?.playbackRate);
+                if (!Number.isFinite(requestedRate) || requestedRate <= 0) {
+                    return state;
+                }
+                if (Math.abs(requestedRate - state.playbackRate) < 0.0001) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    playbackRate: requestedRate
+                };
+            }
+
+            case actionTypes.AUDIO_BOOST_TOGGLE_REQUEST: {
+                const { positionId, isBoostActive } = action.payload || {};
+                if (typeof isBoostActive !== 'boolean' || positionId !== state.activePositionId) {
+                    return state;
+                }
+                if (state.volumeBoost === isBoostActive) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    volumeBoost: isBoostActive
+                };
+            }
+
             default:
                 return state;
         }

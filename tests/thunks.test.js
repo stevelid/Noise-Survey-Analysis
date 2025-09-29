@@ -499,7 +499,15 @@ describe('NoiseSurveyApp thunks', () => {
             const thunk = thunks.changePlaybackRateIntent({ positionId: 'P1', playbackRate: 1.5 });
             const dispatchSpy = vi.fn();
             thunk(dispatchSpy, store.getState);
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioRateChangeRequest('P1'));
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioRateChangeRequest('P1', 1.5));
+        });
+
+        it('changePlaybackRateIntent cycles to the next configured rate when none provided', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            const dispatchSpy = vi.fn();
+            const thunk = thunks.changePlaybackRateIntent({ positionId: 'P1' });
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioRateChangeRequest('P1', 1.5));
         });
 
         it('toggleVolumeBoostIntent ignores inactive positions', () => {

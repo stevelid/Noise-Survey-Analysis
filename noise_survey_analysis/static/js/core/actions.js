@@ -243,7 +243,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         keyboardSetupComplete: () => ({ type: actionTypes.KEYBOARD_SETUP_COMPLETE }),
 
-        audioRateChangeRequest: (positionId) => ({ type: actionTypes.AUDIO_RATE_CHANGE_REQUEST, payload: { positionId } }),
+        audioRateChangeRequest: (positionId, playbackRate) => ({
+            type: actionTypes.AUDIO_RATE_CHANGE_REQUEST,
+            payload: {
+                positionId,
+                playbackRate: Number.isFinite(playbackRate) ? playbackRate : null
+            }
+        }),
         
         audioBoostToggleRequest: (positionId, isBoostActive) => ({ 
             type: actionTypes.AUDIO_BOOST_TOGGLE_REQUEST, 

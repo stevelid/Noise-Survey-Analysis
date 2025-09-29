@@ -9,6 +9,50 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     const { actions } = app;
+    const constants = app.constants || {};
+    const DEFAULT_PLAYBACK_RATES = [0.5, 1.0, 1.5, 2.0];
+
+    function buildPlaybackRateOptions() {
+        const rawRates = Array.isArray(constants.audioPlaybackRates) && constants.audioPlaybackRates.length
+            ? constants.audioPlaybackRates
+            : DEFAULT_PLAYBACK_RATES;
+
+        const normalized = [];
+        rawRates.forEach(value => {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric) || numeric <= 0) {
+                return;
+            }
+            if (!normalized.some(existing => Math.abs(existing - numeric) < 0.0001)) {
+                normalized.push(numeric);
+            }
+        });
+
+        if (!normalized.length) {
+            return DEFAULT_PLAYBACK_RATES.slice();
+        }
+
+        if (!normalized.some(rate => Math.abs(rate - 1.0) < 0.0001)) {
+            normalized.push(1.0);
+        }
+
+        return normalized;
+    }
+
+    const playbackRateOptions = buildPlaybackRateOptions();
+
+    function getNextPlaybackRate(currentRate) {
+        if (!playbackRateOptions.length) {
+            return currentRate;
+        }
+
+        const index = playbackRateOptions.findIndex(rate => Math.abs(rate - currentRate) < 0.0001);
+        if (index === -1) {
+            return playbackRateOptions[0];
+        }
+
+        return playbackRateOptions[(index + 1) % playbackRateOptions.length];
+    }
 
     function togglePlayPauseIntent(payload) {
         return function (dispatch, getState) {
@@ -131,12 +175,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            const requestedRate = Number(payload?.playbackRate);
-            if (Number.isFinite(requestedRate) && requestedRate === audioState.playbackRate) {
+            const providedRate = Number(payload?.playbackRate);
+            let requestedRate = Number.isFinite(providedRate) && providedRate > 0
+                ? providedRate
+                : getNextPlaybackRate(audioState.playbackRate);
+
+            if (!Number.isFinite(requestedRate) || requestedRate <= 0) {
                 return;
             }
 
-            dispatch(actions.audioRateChangeRequest(positionId));
+            if (Math.abs(requestedRate - audioState.playbackRate) < 0.0001) {
+                return;
+            }
+
+            dispatch(actions.audioRateChangeRequest(positionId, requestedRate));
         };
     }
 
