@@ -61,12 +61,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function collectPositionTimestamps(positionId) {
-        console.log("positionId", positionId); //debugging
         if (!positionId) {
             return [];
         }
-        const sources = models?.timeSeriesSources?.[positionId];
-        console.log("sources", sources); //debugging
+        const sources = registry?.models?.timeSeriesSources?.[positionId];
         if (!sources) {
             return [];
         }
@@ -104,12 +102,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!Array.isArray(timestamps) || !timestamps.length) {
             return [];
         }
-        const startAndEndBuffer = parseInt(timestamps.length * 0.002);
-        console.log("startAndEndBuffer", startAndEndBuffer); //debugging
-        const minTimestamp = timestamps[startAndEndBuffer]; //we skip the first 0.2% of timestamps as they are often too loud
-        const maxTimestamp = timestamps[timestamps.length - startAndEndBuffer]; //we skip the last 0.2% of timestamps as they are often too loud
-        console.log("minTimestamp", minTimestamp); //debugging
-        console.log("maxTimestamp", maxTimestamp); //debugging
+        const rawBuffer = Math.ceil(timestamps.length * 0.002);
+        const maxBuffer = Math.floor((timestamps.length - 1) / 2);
+        const startAndEndBuffer = Math.min(Math.max(rawBuffer, 0), maxBuffer);
+        const minIndex = Math.min(startAndEndBuffer, timestamps.length - 1);
+        const maxIndex = Math.max(timestamps.length - 1 - startAndEndBuffer, minIndex);
+        const minTimestamp = timestamps[minIndex]; // skip the first 0.2% of timestamps when possible
+        const maxTimestamp = timestamps[maxIndex]; // skip the last 0.2% of timestamps when possible
         if (!Number.isFinite(minTimestamp) || !Number.isFinite(maxTimestamp)) {
             return [];
         }
@@ -124,14 +123,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (mode === 'nighttime') {
                 const rawStart = day + DAYTIME_END_HOUR * HOUR_MS;
                 const rawEnd = day + DAY_MS + DAYTIME_START_HOUR * HOUR_MS;
-                const interval = clampInterval(rawStart, rawEnd, minTimestamp, maxTimestamp);
+                const extendedMax = Math.max(maxTimestamp, rawEnd);
+                const effectiveMin = Math.min(minTimestamp, rawStart);
+                const interval = clampInterval(rawStart, rawEnd, effectiveMin, extendedMax);
                 if (interval) {
                     intervals.push(interval);
                 }
             } else {
                 const rawStart = day + DAYTIME_START_HOUR * HOUR_MS;
                 const rawEnd = day + DAYTIME_END_HOUR * HOUR_MS;
-                const interval = clampInterval(rawStart, rawEnd, minTimestamp, maxTimestamp);
+                const extendedMax = Math.max(maxTimestamp, rawEnd);
+                const effectiveMin = Math.min(minTimestamp, rawStart);
+                const interval = clampInterval(rawStart, rawEnd, effectiveMin, extendedMax);
                 if (interval) {
                     intervals.push(interval);
                 }
@@ -350,6 +353,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 });
                 return result.length ? result : Object.keys(AUTO_REGION_MODES);
             })();
+            const shouldAggregate = requestedModes.length === 1;
 
             const generated = [];
             positions.forEach(positionId => {
@@ -368,15 +372,29 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     const intervals = buildDailyIntervals(timestamps, modeName);
                     
                     if (intervals.length > 0) {
-                        const title = `${modeName.charAt(0).toUpperCase() + modeName.slice(1)} - ${positionId}`;
-                        generated.push({
-                            positionId,
-                            start: intervals[0].start,
-                            end: intervals[intervals.length - 1].end,
-                            areas: intervals,
-                            color: config.color,
-                            note: title
-                        });
+                        const baseTitle = `${modeName.charAt(0).toUpperCase() + modeName.slice(1)} - ${positionId}`;
+                        if (shouldAggregate) {
+                            generated.push({
+                                positionId,
+                                start: intervals[0].start,
+                                end: intervals[intervals.length - 1].end,
+                                areas: intervals,
+                                color: config.color,
+                                note: baseTitle
+                            });
+                        } else {
+                            intervals.forEach((interval, index) => {
+                                const titleSuffix = intervals.length > 1 ? ` (${index + 1})` : '';
+                                generated.push({
+                                    positionId,
+                                    start: interval.start,
+                                    end: interval.end,
+                                    areas: [interval],
+                                    color: config.color,
+                                    note: `${baseTitle}${titleSuffix}`
+                                });
+                            });
+                        }
                     }
                 });
             });

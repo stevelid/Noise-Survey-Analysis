@@ -220,10 +220,18 @@ class RegionPanelComponent:
             disabled=True,
         )
 
+        region_message_html = (
+            "<div>"
+            "<strong>Region tips:</strong> Click on a chart to place the tap line, then press "
+            "<kbd>R</kbd> to start make region mode. Hold <kbd>Shift</kbd> and click to span from "
+            "the previous tap, and <kbd>Ctrl</kbd> + click inside a region to remove it."
+            "</div>"
+        )
         self.message_div = Div(
-            text="<p class='region-panel-empty'>No regions defined.</p>",
+            text=region_message_html,
             width=panel_width,
             name="region_panel_message_div",
+            styles={"font-size": "12px", "line-height": "1.45", "margin-bottom": "8px"},
         )
 
         self.copy_button = Button(
