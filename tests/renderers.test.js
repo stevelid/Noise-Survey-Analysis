@@ -73,6 +73,7 @@ describe('NoiseSurveyApp.renderers', () => {
                     positions: {
                         P1: {
                             updateAllCharts: mockUpdateAllCharts,
+                            setDisplayName: vi.fn(),
                             timeSeriesChart: { setVisible: mockSetVisible, model: { title: { text: '' }, background_fill_color: '' }, lastDisplayDetails: { reason: '' } },
                             spectrogramChart: { setVisible: mockSetVisible, hoverDivModel: { visible: true }, model: { title: { text: '' }, background_fill_color: '' }, lastDisplayDetails: { reason: '' } }
                         }
@@ -295,6 +296,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(mockSetVisible).toHaveBeenCalledWith(true);
             expect(mockSetVisible).toHaveBeenCalledWith(false);
             expect(mockUpdateAllCharts).toHaveBeenCalledWith(mockState, mockDataCache, displayDetails.P1);
+            expect(window.NoiseSurveyApp.registry.controllers.positions.P1.setDisplayName).toHaveBeenCalledWith('P1');
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.spectrogramChart.hoverDivModel.visible).toBe(false);
         });
     });
@@ -831,6 +833,23 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.timeSeriesChart.model.background_fill_color).toBe('#e6f0ff');
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.spectrogramChart.model.title.text).toContain('(▶ PLAYING)');
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.spectrogramChart.model.background_fill_color).toBe('#e6f0ff');
+        });
+
+        it('should honor custom display titles when provided', () => {
+            const mockState = {
+                audio: { isPlaying: false, activePositionId: null, playbackRate: 1.0, volumeBoost: false },
+                view: {
+                    availablePositions: ['P1'],
+                    selectedParameter: 'LAeq',
+                    positionDisplayTitles: { P1: 'Roof Deck' }
+                }
+            };
+            const displayDetails = { P1: { line: { reason: ' (Overview)' }, spec: { reason: ' (Overview)' } } };
+            renderers.renderControlWidgets(mockState, displayDetails);
+            expect(window.NoiseSurveyApp.registry.controllers.positions.P1.timeSeriesChart.model.title.text)
+                .toContain('Roof Deck - Time History');
+            expect(window.NoiseSurveyApp.registry.controllers.positions.P1.spectrogramChart.model.title.text)
+                .toContain('Roof Deck - LAeq Spectrogram');
         });
 
         it('should update control widget visuals', () => {

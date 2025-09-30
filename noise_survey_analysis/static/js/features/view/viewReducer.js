@@ -27,6 +27,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         positionChartOffsets: {},
         positionAudioOffsets: {},
         positionEffectiveOffsets: {},
+        positionDisplayTitles: {},
         chartVisibility: {},
         viewport: { min: null, max: null },
         globalViewType: 'log',
@@ -48,6 +49,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function ensureAvailablePositions(availablePositions) {
         return Array.isArray(availablePositions) ? [...availablePositions] : [];
+    }
+
+    function sanitizeDisplayTitle(rawTitle, fallback) {
+        if (typeof rawTitle !== 'string') {
+            return fallback;
+        }
+        const trimmed = rawTitle.trim();
+        return trimmed.length ? trimmed : fallback;
+    }
+
+    function normalizeDisplayTitles(rawTitles, positions) {
+        const normalized = {};
+        const source = rawTitles && typeof rawTitles === 'object' ? rawTitles : {};
+        positions.forEach(pos => {
+            normalized[pos] = sanitizeDisplayTitle(source[pos], pos);
+        });
+        return normalized;
     }
 
     const MAX_OFFSET_MS = 3600000;
@@ -103,6 +121,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     initialAudioOffsets,
                     availablePositions
                 );
+                const initialDisplayTitles = normalizeDisplayTitles(
+                    action.payload?.positionDisplayTitles,
+                    availablePositions
+                );
 
                 return {
                     ...state,
@@ -113,6 +135,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     positionChartOffsets: initialChartOffsets,
                     positionAudioOffsets: initialAudioOffsets,
                     positionEffectiveOffsets: initialEffectiveOffsets,
+                    positionDisplayTitles: initialDisplayTitles,
                     activeSidePanelTab: normalizeTabIndex(action.payload?.activeSidePanelTab, state.activeSidePanelTab),
                     mode: 'normal',
                     comparison: {
@@ -214,6 +237,41 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     ...state,
                     hoverEnabled: action.payload?.isActive ?? state.hoverEnabled
                 };
+
+            case actionTypes.POSITION_DISPLAY_TITLES_SET: {
+                const incoming = action.payload?.titles;
+                if (!incoming || typeof incoming !== 'object') {
+                    return state;
+                }
+
+                const availablePositions = ensureAvailablePositions(state.availablePositions);
+                if (!availablePositions.length) {
+                    return state;
+                }
+
+                const nextTitles = { ...state.positionDisplayTitles };
+                let didUpdate = false;
+
+                availablePositions.forEach(pos => {
+                    if (!Object.prototype.hasOwnProperty.call(incoming, pos)) {
+                        return;
+                    }
+                    const sanitized = sanitizeDisplayTitle(incoming[pos], pos);
+                    if (nextTitles[pos] !== sanitized) {
+                        nextTitles[pos] = sanitized;
+                        didUpdate = true;
+                    }
+                });
+
+                if (!didUpdate) {
+                    return state;
+                }
+
+                return {
+                    ...state,
+                    positionDisplayTitles: nextTitles
+                };
+            }
 
             case actionTypes.VIEW_ACTIVE_SIDE_PANEL_TAB_SET: {
                 console.log('[VIEW_ACTIVE_SIDE_PANEL_TAB_SET] action.payload', action.payload); // DEBUG

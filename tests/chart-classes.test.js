@@ -62,6 +62,15 @@ describe('NoiseSurveyApp.classes', () => {
     expect(ts.render).toHaveBeenCalled();
   });
 
+  it('TimeSeriesChart.update should honor a custom display name', () => {
+    const chartModel = { name: 'figure_P1_timeseries', title: { text: '' }, x_range: { start: 0, end: 100 }, y_range: { start: 0, end: 1 } };
+    const sourceModel = { data: {}, change: { emit: vi.fn() } };
+    const ts = new classes.TimeSeriesChart(chartModel, sourceModel, {}, {}, 'P1');
+    ts.setDisplayName('Living Room');
+    ts.update({ Datetime: [0], LAeq: [50] }, { reason: ' (Overview)' });
+    expect(chartModel.title.text).toBe('Living Room - Time History (Overview)');
+  });
+
   it('TimeSeriesChart.getLabelText should format values at index', () => {
     // Mock util used by getLabelText
     window.NoiseSurveyApp.utils = {
@@ -122,6 +131,24 @@ describe('NoiseSurveyApp.classes', () => {
     expect(chartModel.y_range.start).toBe(1.5);
     expect(chartModel.y_range.end).toBe(2.5);
     expect(spec.render).toHaveBeenCalled();
+  });
+
+  it('SpectrogramChart.update should honor a custom display name', () => {
+    const imageRenderer = {
+      glyph: { type: 'Image', x: 0, y: 0, dw: 0, dh: 0 },
+      data_source: { data: { image: [new Float32Array(4)] }, change: { emit: vi.fn() } },
+    };
+    const chartModel = {
+      name: 'figure_P1_spectrogram',
+      title: { text: '' },
+      renderers: [imageRenderer],
+      yaxis: { ticker: {}, major_label_overrides: {} },
+      y_range: { start: 0, end: 3 },
+    };
+    const spec = new classes.SpectrogramChart(chartModel, {}, {}, { text: '' }, 'P1');
+    spec.setDisplayName('Conference Room');
+    spec.update({ source_replacement: { image: [new Float32Array([1, 2, 3, 4])], x: [0], dw: [1], y: [0], dh: [1] } }, { reason: '' }, 'LAeq');
+    expect(chartModel.title.text.startsWith('Conference Room - LAeq Spectrogram')).toBe(true);
   });
 
   it('Chart.syncMarkers should add, update styling, and remove markers correctly', () => {
@@ -283,6 +310,9 @@ describe('NoiseSurveyApp.classes', () => {
     expect(pc.spectrogramChart).toBeTruthy();
     // Spectrogram should have its time series companion set
     expect(pc.spectrogramChart.timeSeriesCompanion).toBe(pc.timeSeriesChart);
+    pc.setDisplayName('Lobby');
+    expect(pc.timeSeriesChart.displayName).toBe('Lobby');
+    expect(pc.spectrogramChart.displayName).toBe('Lobby');
   });
 
   it('SpectrogramChart.update should update y-axis ticks when visible info provided', () => {

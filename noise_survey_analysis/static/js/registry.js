@@ -38,6 +38,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         models.sourceConfigs = Array.isArray(bokehModels?.sourceConfigs)
             ? bokehModels.sourceConfigs
             : [];
+        models.positionDisplayTitles = bokehModels?.positionDisplayTitles || {};
         models.savedWorkspaceState = bokehModels?.savedWorkspaceState || null;
         if (bokehModels?.sessionMenu) {
             models.sessionMenu = bokehModels.sessionMenu;
@@ -98,6 +99,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             viewport: { min: models.charts[0].x_range.start, max: models.charts[0].x_range.end },
             chartVisibility: chartVisibility,
             hoverEnabled: true,
+            positionDisplayTitles: models.positionDisplayTitles,
         };
 
         console.info('[Registry]', 'Registry initialized successfully.');

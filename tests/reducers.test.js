@@ -95,6 +95,22 @@ describe('rootReducer', () => {
             expect(state.view.positionEffectiveOffsets.P1).toBe(500);
         });
 
+        it('should update position display titles with sanitization', () => {
+            const baseState = {
+                ...initialState,
+                view: {
+                    ...initialState.view,
+                    availablePositions: ['P1', 'P2'],
+                    positionDisplayTitles: { P1: 'P1', P2: 'P2' }
+                }
+            };
+            const state = rootReducer(baseState, actions.positionDisplayTitlesSet({ P1: 'Main Hall', P2: '   ', PX: 'Ignored' }));
+            expect(state.view.positionDisplayTitles).toEqual({ P1: 'Main Hall', P2: 'P2' });
+
+            const singleUpdate = rootReducer(state, actions.positionDisplayTitleSet('P2', 'Garden'));
+            expect(singleUpdate.view.positionDisplayTitles).toEqual({ P1: 'Main Hall', P2: 'Garden' });
+        });
+
     });
 
     describe('Comparison Mode actions', () => {

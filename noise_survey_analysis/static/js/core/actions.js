@@ -31,6 +31,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         VIEW_TOGGLE: 'view/VIEW_TOGGLE',
         VISIBILITY_CHANGE: 'VISIBILITY_CHANGE',
         HOVER_TOGGLE: 'HOVER_TOGGLE',
+        POSITION_DISPLAY_TITLES_SET: 'view/positionDisplayTitlesSet',
         POSITION_CHART_OFFSET_SET: 'view/positionChartOffsetSet',
         POSITION_AUDIO_OFFSET_SET: 'view/positionAudioOffsetSet',
         STEP_SIZE_CALCULATED: 'view/STEP_SIZE_CALCULATED',
@@ -125,6 +126,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         hoverToggle: (isActive) => ({ type: actionTypes.HOVER_TOGGLE, payload: { isActive } }),
 
         stepSizeCalculated: (stepSizeMs) => ({ type: actionTypes.STEP_SIZE_CALCULATED, payload: { stepSizeMs } }),
+
+        positionDisplayTitlesSet: (titles) => ({
+            type: actionTypes.POSITION_DISPLAY_TITLES_SET,
+            payload: { titles }
+        }),
+
+        positionDisplayTitleSet: (positionId, title) => ({
+            type: actionTypes.POSITION_DISPLAY_TITLES_SET,
+            payload: {
+                titles: { [positionId]: title }
+            }
+        }),
 
         comparisonModeEntered: () => ({ type: actionTypes.COMPARISON_MODE_ENTERED }),
 

@@ -128,8 +128,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didRegionsChange = state.regions !== previousState.regions;
         const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
         const didActiveSidePanelTabChange = state.view.activeSidePanelTab !== previousState.view.activeSidePanelTab;
+        const didDisplayTitlesChange = state.view.positionDisplayTitles !== previousState.view.positionDisplayTitles;
 
-        const isHeavyUpdate = isInitialLoad || didViewportChange || didParamChange || didViewToggleChange || didVisibilityChange || didChartOffsetsChange;
+        const isHeavyUpdate = isInitialLoad
+            || didViewportChange
+            || didParamChange
+            || didViewToggleChange
+            || didVisibilityChange
+            || didChartOffsetsChange
+            || didDisplayTitlesChange;
 
         
         //debug
@@ -303,9 +310,45 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
+    function normalizeTitleUpdates(titles) {
+        if (!titles || typeof titles !== 'object') {
+            return {};
+        }
+        const normalized = {};
+        Object.keys(titles).forEach(key => {
+            if (typeof titles[key] === 'string') {
+                normalized[key] = titles[key];
+            }
+        });
+        return normalized;
+    }
+
+    function setPositionDisplayTitles(titlesById) {
+        const normalized = normalizeTitleUpdates(titlesById);
+        if (!Object.keys(normalized).length) {
+            return false;
+        }
+        if (!app.store || !app.actions?.positionDisplayTitlesSet) {
+            console.error('[App] Cannot set display titles because store or action is unavailable.');
+            return false;
+        }
+        app.store.dispatch(app.actions.positionDisplayTitlesSet(normalized));
+        return true;
+    }
+
+    function setPositionDisplayTitle(positionId, title) {
+        if (typeof positionId !== 'string') {
+            console.error('[App] positionId must be a string when setting a display title.');
+            return false;
+        }
+        return setPositionDisplayTitles({ [positionId]: title });
+    }
+
 
     // Expose side-effect handlers for orchestrator in init.js
     app.handleAudioSideEffects = handleAudioSideEffects;
+    app.setPositionDisplayTitles = setPositionDisplayTitles;
+    app.setPositionDisplayTitle = setPositionDisplayTitle;
 
 
     // Attach the public initialization function (legacy path)
