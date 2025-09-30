@@ -36,11 +36,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             .region-panel-pending { background: #fff3cd; border-left: 4px solid #ffa000; padding: 6px 8px; margin: 0 0 8px 0; color: #5f4200; font-size: 12px; line-height: 1.4; border-radius: 4px; }
             .region-panel-pending strong { font-weight: 600; }
             .region-panel-pending kbd { display: inline-block; padding: 1px 4px; border-radius: 3px; border: 1px solid #d7ccc8; background: #fff; font-size: 11px; font-family: 'Segoe UI', sans-serif; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1); }
+            .region-panel-info { background: #f8fafc; border-radius: 6px; border-left: 4px solid #3b82f6; color: #1f2937; font-size: 12px; line-height: 1.45; margin: 0 0 8px 0; padding: 8px 10px; }
+            .region-panel-info--pending { background: #fff7ed; border-color: #fb923c; color: #5f3700; }
+            .region-panel-info__title { font-weight: 600; margin: 0 0 4px 0; font-size: 12px; }
+            .region-panel-info p { margin: 4px 0; }
+            .region-panel-hints { margin: 6px 0 0 18px; padding: 0; color: inherit; }
+            .region-panel-hints li { margin-bottom: 4px; }
+            .region-panel-hints kbd, .region-panel-info kbd { display: inline-block; padding: 1px 4px; border-radius: 3px; border: 1px solid #d7ccc8; background: #fff; font-size: 11px; font-family: 'Segoe UI', sans-serif; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1); color: inherit; }
         </style>
     `;
 
     const DEFAULT_REGION_COLOR = '#1e88e5';
     const NOTE_PREVIEW_MAX_LENGTH = 40;
+
+    const REGION_TIPS_HTML = `
+        <ul class="region-panel-hints">
+            <li>Click and drag on a chart to draw a new region instantly.</li>
+            <li>Press <kbd>R</kbd> while a tap line is active to toggle make region mode; <kbd>Esc</kbd> cancels it.</li>
+            <li>Hold <kbd>Shift</kbd> and click to span a region between the previous tap and your new click.</li>
+            <li>Use <kbd>Ctrl</kbd> + click inside a region to remove it, or <kbd>Ctrl</kbd>/<kbd>Alt</kbd> + <kbd>←</kbd>/<kbd>→</kbd> to resize the selected region's edges.</li>
+        </ul>
+    `;
 
     function normalizeColor(color) {
         if (typeof color === 'string') {
@@ -370,7 +386,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function updateMessage(messageDiv, detailLayout, hasRegions, panelVisible, pendingRegionStart) {
         if (!messageDiv || !detailLayout) return;
         const hasPending = Number.isFinite(pendingRegionStart?.timestamp) && typeof pendingRegionStart?.positionId === 'string';
-        const shouldShowMessage = panelVisible && (!hasRegions || hasPending);
+        const shouldShowMessage = panelVisible;
         const shouldShowDetail = panelVisible && hasRegions;
         messageDiv.visible = shouldShowMessage;
         detailLayout.visible = shouldShowDetail;
@@ -383,16 +399,40 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const positionLabel = pendingRegionStart.positionId
                 ? ` for <strong>${escapeHtml(String(pendingRegionStart.positionId))}</strong>`
                 : '';
-            const text = `${PANEL_STYLE}<div class="region-panel-pending">Region start pinned at <strong>${formattedTimestamp}</strong>${positionLabel}. Press <kbd>R</kbd> to set the end point or <kbd>Esc</kbd> to cancel.</div>`;
-            if (messageDiv.text !== text) {
-                messageDiv.text = text;
+            const pendingText = `${PANEL_STYLE}
+                <div class="region-panel-info region-panel-info--pending">
+                    <div class="region-panel-info__title">Make Region mode active</div>
+                    <p>Region start pinned at <strong>${formattedTimestamp}</strong>${positionLabel}. Press <kbd>R</kbd> again to set the end point or <kbd>Esc</kbd> to cancel.</p>
+                    <p>You can nudge the tap line with the arrow keys before finishing the region.</p>
+                    ${REGION_TIPS_HTML}
+                </div>`;
+            if (messageDiv.text !== pendingText) {
+                messageDiv.text = pendingText;
             }
             return;
         }
 
-        const emptyText = `${PANEL_STYLE}<div class='region-panel-empty'>No regions defined.</div>`;
-        if (messageDiv.text !== emptyText) {
-            messageDiv.text = emptyText;
+        if (!hasRegions) {
+            const emptyText = `${PANEL_STYLE}
+                <div class="region-panel-info">
+                    <div class="region-panel-info__title">No regions yet</div>
+                    <p>Click on a chart to place the tap line, then press <kbd>R</kbd> to pin the start time. Press <kbd>R</kbd> again at the end time or drag to draw a region.</p>
+                    ${REGION_TIPS_HTML}
+                </div>`;
+            if (messageDiv.text !== emptyText) {
+                messageDiv.text = emptyText;
+            }
+            return;
+        }
+
+        const infoText = `${PANEL_STYLE}
+            <div class="region-panel-info">
+                <div class="region-panel-info__title">Region tips</div>
+                <p>Use these shortcuts to refine the selected region.</p>
+                ${REGION_TIPS_HTML}
+            </div>`;
+        if (messageDiv.text !== infoText) {
+            messageDiv.text = infoText;
         }
     }
 

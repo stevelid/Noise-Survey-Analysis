@@ -464,6 +464,8 @@ describe('NoiseSurveyApp.renderers', () => {
 
             renderers.renderRegions(emptyState, {});
             expect(models.regionPanelMessageDiv.visible).toBe(true);
+            expect(models.regionPanelMessageDiv.text).toContain('No regions yet');
+            expect(models.regionPanelMessageDiv.text).toContain('Press <kbd>R</kbd>');
             expect(models.regionPanelDetail.visible).toBe(false);
             expect(models.regionPanelTable.disabled).toBe(true);
             expect(models.regionPanelCopyButton.disabled).toBe(true);
@@ -514,7 +516,8 @@ describe('NoiseSurveyApp.renderers', () => {
             };
 
             renderers.renderRegions(populatedState, {});
-            expect(models.regionPanelMessageDiv.visible).toBe(false);
+            expect(models.regionPanelMessageDiv.visible).toBe(true);
+            expect(models.regionPanelMessageDiv.text).toContain('Region tips');
             expect(models.regionPanelDetail.visible).toBe(true);
             expect(models.regionPanelTable.disabled).toBe(false);
             expect(models.regionPanelSource.data.title[0]).toBe('hello');
@@ -547,6 +550,7 @@ describe('NoiseSurveyApp.renderers', () => {
 
             renderers.renderRegions(pendingState, {});
             expect(models.regionPanelMessageDiv.visible).toBe(true);
+            expect(models.regionPanelMessageDiv.text).toContain('Make Region mode active');
             expect(models.regionPanelMessageDiv.text).toContain('Region start pinned');
             expect(models.regionPanelMessageDiv.text).toContain('P9');
             expect(models.regionPanelDetail.visible).toBe(true);
