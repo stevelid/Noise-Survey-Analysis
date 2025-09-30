@@ -79,8 +79,14 @@ def load_config_and_prepare_sources(config_path='config.json'):
             grouped_sources[position] = {
                 "position_name": position,
                 "file_paths": set(),
-                "parser_type": source.get("parser_type", "auto") # Assume parser is consistent per position
+                "parser_type": source.get("parser_type", "auto"), # Assume parser is consistent per position
             }
+
+        display_title = source.get("display_title") or source.get("display_name")
+        if isinstance(display_title, str):
+            stripped = display_title.strip()
+            if stripped:
+                grouped_sources[position].setdefault("display_title", stripped)
 
         # Resolve the relative path from the config file's location
         relative_path = source.get("path")

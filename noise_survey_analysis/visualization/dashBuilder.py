@@ -87,6 +87,7 @@ class DashBuilder:
         self.components: Dict[str, Dict[str, Any]] = {}
         self.shared_components: Dict[str, Any] = {}
         self.prepared_glyph_data: Dict[str, Dict[str, Any]] = {}
+        self.position_display_titles: Dict[str, str] = {}
 
     def build_layout(self, doc, app_data: DataManager, chart_settings: dict,
                      source_configs=None,
@@ -107,6 +108,7 @@ class DashBuilder:
 
         self.prepared_glyph_data = prepared_glyph_data
         self.source_configs = source_configs or []
+        self.position_display_titles = self._extract_position_display_titles(self.source_configs)
         self.saved_workspace_state = saved_workspace_state
         self._create_components(app_data, prepared_glyph_data, available_params, chart_settings)
         self._wire_up_interactions()
@@ -136,6 +138,25 @@ class DashBuilder:
 
         # Convert back to a list when returning if needed
         return all_prepared_glyph_data, list(available_params)
+
+    def _extract_position_display_titles(self, source_configs: Optional[list]) -> Dict[str, str]:
+        titles: Dict[str, str] = {}
+        if not source_configs:
+            return titles
+
+        for config in source_configs:
+            if not isinstance(config, dict):
+                continue
+            position = config.get('position_name') or config.get('position')
+            raw_title = config.get('display_title') or config.get('display_name')
+            if not position or not isinstance(raw_title, str):
+                continue
+            stripped = raw_title.strip()
+            if not stripped:
+                continue
+            titles.setdefault(position, stripped)
+
+        return titles
     
     
     def _create_components(self, app_data: DataManager, prepared_glyph_data: dict, available_params: list, chart_settings: dict):
@@ -453,6 +474,7 @@ class DashBuilder:
                 'freq_table_freq_range_hz': CHART_SETTINGS.get('freq_table_freq_range_hz'),
             },
             'sourceConfigs': getattr(self, 'source_configs', []),
+            'positionDisplayTitles': getattr(self, 'position_display_titles', {}),
             'savedWorkspaceState': getattr(self, 'saved_workspace_state', None),
             'uiPositionElements': {},
             'clickLines': [],

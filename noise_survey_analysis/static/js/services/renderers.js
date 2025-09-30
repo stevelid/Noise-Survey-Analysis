@@ -350,12 +350,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!controllers?.positions) return;
 
         const safeDisplayDetails = displayDetailsByPosition || {};
+        const viewState = state?.view || {};
+        const displayTitles = viewState.positionDisplayTitles || {};
 
         for (const posId in controllers.positions) {
             const controller = controllers.positions[posId];
             const tsChartName = `figure_${posId}_timeseries`;
             const specChartName = `figure_${posId}_spectrogram`;
             const positionDisplayDetails = safeDisplayDetails[posId] || {};
+            const displayName = typeof displayTitles[posId] === 'string' && displayTitles[posId].trim()
+                ? displayTitles[posId]
+                : posId;
+
+            if (typeof controller?.setDisplayName === 'function') {
+                controller.setDisplayName(displayName);
+            }
 
             // Explicitly set visibility for each chart based on the state
             if (controller.timeSeriesChart) {
@@ -611,6 +620,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const positionChartOffsets = viewState.positionChartOffsets || {};
         const positionAudioOffsets = viewState.positionAudioOffsets || {};
         const positionEffectiveOffsets = viewState.positionEffectiveOffsets || {};
+        const displayTitles = viewState.positionDisplayTitles || {};
 
         const viewToggleModel = models.viewToggle;
         if (viewToggleModel) {
@@ -646,6 +656,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const timeSeriesChartName = `figure_${pos}_timeseries`;
             const spectrogramChartName = `figure_${pos}_spectrogram`;
             const shouldShowControls = isChartVisible(timeSeriesChartName) || isChartVisible(spectrogramChartName);
+            const displayName = typeof displayTitles[pos] === 'string' && displayTitles[pos].trim()
+                ? displayTitles[pos]
+                : pos;
 
             if (controls?.layout && controls.layout.visible !== shouldShowControls) {
                 controls.layout.visible = shouldShowControls;
@@ -659,7 +672,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     tsChart.lastDisplayDetails = transientLineDetails;
                 }
                 const baseDetails = tsChart.lastDisplayDetails || { reason: '' };
-                const baseTitle = `${pos} - Time History${baseDetails.reason || ''}`;
+                const baseTitle = `${displayName} - Time History${baseDetails.reason || ''}`;
                 tsChart.model.title.text = isThisPositionActive ? `${baseTitle} (▶ PLAYING)` : baseTitle;
                 tsChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }
@@ -670,7 +683,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     specChart.lastDisplayDetails = transientSpecDetails;
                 }
                 const baseDetails = specChart.lastDisplayDetails || { reason: '' };
-                const baseTitle = `${pos} - ${selectedParameter} Spectrogram${baseDetails.reason || ''}`;
+                const baseTitle = `${displayName} - ${selectedParameter} Spectrogram${baseDetails.reason || ''}`;
                 specChart.model.title.text = isThisPositionActive ? `${baseTitle} (▶ PLAYING)` : baseTitle;
                 specChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }
