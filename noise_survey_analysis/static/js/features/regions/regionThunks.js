@@ -50,8 +50,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
         const raw = data.Datetime;
         const timestamps = [];
-        for (let index = 0; index < raw.length; index++) {
-            const value = Number(raw[index]);
+        const rawArray = Array.from(raw);
+        for (let index = 0; index < rawArray.length; index++) {
+            const value = Number(rawArray[index]);
             if (Number.isFinite(value)) {
                 timestamps.push(value);
             }
@@ -60,10 +61,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function collectPositionTimestamps(positionId) {
+        console.log("positionId", positionId); //debugging
         if (!positionId) {
             return [];
         }
-        const sources = registry.models?.timeSeriesSources?.[positionId];
+        const sources = models?.timeSeriesSources?.[positionId];
+        console.log("sources", sources); //debugging
         if (!sources) {
             return [];
         }
@@ -101,8 +104,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!Array.isArray(timestamps) || !timestamps.length) {
             return [];
         }
-        const minTimestamp = timestamps[0];
-        const maxTimestamp = timestamps[timestamps.length - 1];
+        const startAndEndBuffer = parseInt(timestamps.length * 0.002);
+        console.log("startAndEndBuffer", startAndEndBuffer); //debugging
+        const minTimestamp = timestamps[startAndEndBuffer]; //we skip the first 0.2% of timestamps as they are often too loud
+        const maxTimestamp = timestamps[timestamps.length - startAndEndBuffer]; //we skip the last 0.2% of timestamps as they are often too loud
+        console.log("minTimestamp", minTimestamp); //debugging
+        console.log("maxTimestamp", maxTimestamp); //debugging
         if (!Number.isFinite(minTimestamp) || !Number.isFinite(maxTimestamp)) {
             return [];
         }
@@ -359,14 +366,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         return;
                     }
                     const intervals = buildDailyIntervals(timestamps, modeName);
-                    intervals.forEach(interval => {
+                    
+                    if (intervals.length > 0) {
+                        const title = `${modeName.charAt(0).toUpperCase() + modeName.slice(1)} - ${positionId}`;
                         generated.push({
                             positionId,
-                            start: interval.start,
-                            end: interval.end,
-                            color: config.color
+                            start: intervals[0].start,
+                            end: intervals[intervals.length - 1].end,
+                            areas: intervals,
+                            color: config.color,
+                            note: title
                         });
-                    });
+                    }
                 });
             });
 
@@ -377,6 +388,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             dispatch(actions.regionsAdded(generated));
         };
     }
+
 
      /**
      * A stateful thunk that manages the two-step region creation process via keyboard.

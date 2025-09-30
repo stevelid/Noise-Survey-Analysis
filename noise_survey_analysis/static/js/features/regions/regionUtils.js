@@ -219,10 +219,18 @@ function calcLAeq(values) {
         if (logData?.Datetime && logData.LAeq) {
             const laeqLog = sliceTimeSeriesForAreas(logData.Datetime, logData.LAeq, areas);
             if (laeqLog.length) {
+                let la90Log = null;
+                if (logData.LAF90) {
+                    const slicedLA90 = sliceTimeSeriesForAreas(logData.Datetime, logData.LAF90, areas);
+                    if (slicedLA90.length) {
+                        la90Log = slicedLA90;
+                    }
+                }
                 return {
                     dataset: 'log',
                     data: logData,
-                    laeqValues: laeqLog
+                    laeqValues: laeqLog,
+                    la90Values: la90Log
                 };
             }
         }
@@ -231,10 +239,18 @@ function calcLAeq(values) {
         if (overviewData?.Datetime && overviewData.LAeq) {
             const laeqOverview = sliceTimeSeriesForAreas(overviewData.Datetime, overviewData.LAeq, areas);
             if (laeqOverview.length) {
+                let la90Overview = null;
+                if (overviewData.LAF90) {
+                    const slicedLA90 = sliceTimeSeriesForAreas(overviewData.Datetime, overviewData.LAF90, areas);
+                    if (slicedLA90.length) {
+                        la90Overview = slicedLA90;
+                    }
+                }
                 return {
                     dataset: 'overview',
                     data: overviewData,
-                    laeqValues: laeqOverview
+                    laeqValues: laeqOverview,
+                    la90Values: la90Overview
                 };
             }
         }
@@ -271,7 +287,25 @@ function calcLAeq(values) {
             }
         }
         const lafmax = calcLAMax(lafmaxValues);
-        const la90 = selection.dataset === 'log' ? calcLA90(selection.laeqValues) : null;
+        
+        let la90 = null;
+        if (selection.dataset === 'log') {
+            if (Array.isArray(selection.la90Values) && selection.la90Values.length > 0) {
+                console.log("[computeRegionMetrics] calculating LA90 from log LA90 values"); //debugging
+                la90 = calcLA90(selection.la90Values);
+            } else {
+                console.log("[computeRegionMetrics] calculating LA90 from log LAeq values"); //debugging
+                la90 = calcLA90(selection.laeqValues);
+            }
+        } else if (selection.dataset === 'overview') {
+            if (Array.isArray(selection.la90Values) && selection.la90Values.length > 0) {
+                console.log("[computeRegionMetrics] calculating LA90 from overview LA90 values"); //debugging
+                la90 = calcLA90(selection.la90Values);
+            } else {
+                console.log("[computeRegionMetrics] calculating LA90 from overview LAeq values"); //debugging
+                la90 = calcLA90(selection.laeqValues);
+            }
+        }
 
         const selectedParam = state?.view?.selectedParameter;
         const prepared = models?.preparedGlyphData?.[region.positionId];

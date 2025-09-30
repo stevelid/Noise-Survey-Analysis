@@ -1641,7 +1641,7 @@ class ControlsComponent:
             active=True
         )
         
-        toggle.js_on_change("active", CustomJS(code="""if (window.NoiseSurveyApp and window.NoiseSurveyApp.eventHandlers.handleViewToggle) {
+        toggle.js_on_change("active", CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleViewToggle) {
                 window.NoiseSurveyApp.eventHandlers.handleViewToggle(cb_obj.active);
             } else {
                 console.error('window.NoiseSurveyApp.eventHandlers.handleViewToggle function not found!');
@@ -1689,7 +1689,7 @@ class ControlsComponent:
             height=30,
             name="global_parameter_selector"
         )
-        select.js_on_change("value", CustomJS(args={"select_widget": select}, code="""if (window.NoiseSurveyApp and window.NoiseSurveyApp.eventHandlers.handleParameterChange) {
+        select.js_on_change("value", CustomJS(args={"select_widget": select}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleParameterChange) {
                 window.NoiseSurveyApp.eventHandlers.handleParameterChange(cb_obj.value, select_widget); // Pass the select widget itself
             } else {
                 console.error('window.NoiseSurveyApp.eventHandlers.handleParameterChange function not found!');
@@ -1770,7 +1770,7 @@ class ControlsComponent:
             self.param_select,
             self.view_toggle,
             self.hover_toggle,
-            self.clear_markers_button,
+            #self.clear_markers_button,
             sizing_mode="scale_width",
             name="primary_controls_row",
             styles={

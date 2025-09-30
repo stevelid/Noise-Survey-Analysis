@@ -995,19 +995,24 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const viewState = state?.view || {};
         const sidePanelTabsModel = models.sidePanelTabs;
         if (sidePanelTabsModel) {
-            if (viewState.mode === 'comparison') {
-                if (sidePanelTabsModel.active !== SIDE_PANEL_TAB_REGIONS) {
-                    sidePanelTabsModel.active = SIDE_PANEL_TAB_REGIONS;
+            try {
+                if (viewState.mode === 'comparison') {
+                    if (sidePanelTabsModel.active !== SIDE_PANEL_TAB_REGIONS) {
+                        sidePanelTabsModel.active = SIDE_PANEL_TAB_REGIONS;
+                    }
+                } else {
+                    const desiredIndex = Number(viewState.activeSidePanelTab);
+                    console.log('[renderControlWidgets] desiredIndex', desiredIndex); // DEBUG
+                    const normalizedIndex = Number.isFinite(desiredIndex) && desiredIndex >= 0
+                        ? Math.floor(desiredIndex)
+                        : SIDE_PANEL_TAB_REGIONS;
+                    if (sidePanelTabsModel.active !== normalizedIndex) {
+                        sidePanelTabsModel.active = normalizedIndex;
+                    }
                 }
-            } else {
-                const desiredIndex = Number(viewState.activeSidePanelTab);
-                console.log('[renderControlWidgets] desiredIndex', desiredIndex); // DEBUG
-                const normalizedIndex = Number.isFinite(desiredIndex) && desiredIndex >= 0
-                    ? Math.floor(desiredIndex)
-                    : SIDE_PANEL_TAB_REGIONS;
-                if (sidePanelTabsModel.active !== normalizedIndex) {
-                    sidePanelTabsModel.active = normalizedIndex;
-                }
+            } catch (error) {
+                // In static mode, Bokeh tab updates may fail with update_layout errors
+                console.warn('[renderSidePanel] Failed to update side panel tab (expected in static mode):', error.message);
             }
         }
     }

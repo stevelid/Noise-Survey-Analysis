@@ -413,13 +413,24 @@ class DashBuilder:
         is_live_server = doc.session_context is not None
 
         if is_live_server:
-            # For the live server, the next_tick callback ensures the DOM is ready.
-            logger.debug("Initializing JS for LIVE SERVER using next_tick_callback.")
+            # For live server, use a more reliable initialization approach:
+            # Attach the callback to DocumentReady AND use a timeout as fallback
+            logger.debug("Initializing JS for LIVE SERVER using DocumentReady + nextTick fallback.")
+            
+            # Primary: DocumentReady event (works when loading from workspace)
+            doc.js_on_event(DocumentReady, CustomJS(args=js_args, code=f"""
+                if (!window.__bokeh_app_initialized) {{
+                    window.__bokeh_app_initialized = true;
+                    {init_js_code}
+                }}
+            """))
+            
+            # Fallback: Direct execution on nextTick (works for fresh loads)
+
             self.js_init_trigger.js_on_change('visible', CustomJS(args=js_args, code=init_js_code))
             doc.add_next_tick_callback(lambda: setattr(self.js_init_trigger, 'visible', True))
         else:
-            # For static HTML, the DocumentReady event is the correct trigger.
-            # It fires after all Bokeh models are rendered in the browser.
+            # For static HTML, DocumentReady is the correct and only trigger
             logger.debug("Initializing JS for STATIC HTML using DocumentReady event.")
             doc.js_on_event(DocumentReady, CustomJS(args=js_args, code=init_js_code))
 

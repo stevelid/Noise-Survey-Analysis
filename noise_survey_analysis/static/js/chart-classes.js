@@ -174,13 +174,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         visible: true,
                         name: `marker_${this.name}_${timestamp}`
                     });
-                    try { // Try-catch block added to handle potential errors when span has not been created before execution. 
+                    // Only add to document root if in live mode (static reports don't have sessions)
+                    if (doc.session) {
                         doc.add_root(marker);
-                        this.model.add_layout(marker);
-                    } catch (error) {
-                        console.warn('[Chart] Failed to attach marker span', { markerId, timestamp }, error);
-                        return;
                     }
+                    this.model.add_layout(marker);
                 } else {
                     marker.location = timestamp;
                     marker.visible = true;
@@ -197,7 +195,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     if (this.model && typeof this.model.remove_layout === 'function') {
                         this.model.remove_layout(marker);
                     }
-                    if (doc && typeof doc.remove_root === 'function') {
+                    if (doc && doc.session && typeof doc.remove_root === 'function') {
                         doc.remove_root(marker);
                     }
                 }
@@ -248,7 +246,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         try {
                             if (typeof this.model.remove_layout === 'function') {
                                 this.model.remove_layout(annotations);
-                            } else if (doc && typeof doc.remove_root === 'function') {
+                            } else if (doc && doc.session && typeof doc.remove_root === 'function') {
                                 doc.remove_root(annotations);
                             }
                         } catch (error) {
@@ -283,7 +281,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             name: `region_${this.name}_${region.id}_${index}`
                         });
                         annotations[index] = annotation;
-                        if (doc) doc.add_root(annotation);
+                        if (doc && doc.session) doc.add_root(annotation);
                         this.model.add_layout(annotation);
                         didMutate = true;
                     }
@@ -305,7 +303,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             if (typeof this.model.remove_layout === 'function') {
                                 this.model.remove_layout(annotation);
                             } 
-                            if (doc && typeof doc.remove_root === 'function') {
+                            if (doc && doc.session && typeof doc.remove_root === 'function') {
                                 doc.remove_root(annotation);
                             }
                         } catch (error) {
@@ -329,7 +327,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             if (typeof this.model.remove_layout === 'function') {
                                 this.model.remove_layout(annotation);
                             }
-                            if (doc && typeof doc.remove_root === 'function') {
+                            if (doc && doc.session && typeof doc.remove_root === 'function') {
                                 doc.remove_root(annotation);
                             }
                         } catch (error) {

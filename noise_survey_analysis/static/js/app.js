@@ -173,18 +173,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // render the side panel
         if (didMarkersChange || didRegionsChange || didActiveSidePanelTabChange) {
-            console.log('Rendering markers');//debug
+            console.log('Rendering side panel');//debug
             app.renderers.renderSidePanel(state);
         }
 
         // Always sync markers
         if (isInitialLoad || didMarkersChange) {
-            console.log('Rendering markers');//debug
             app.renderers.renderMarkers(state);
         }
 
         if (isInitialLoad || didRegionsChange) {
-            console.log('Rendering regions');//debug
             app.renderers.renderRegions(state, dataCache);
         }
 
