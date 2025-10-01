@@ -854,6 +854,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         warnOnSourceMismatch(payload.sourceConfigs);
         app.store.dispatch(app.actions.rehydrateState(nextState));
+        if (app.regions?.invalidateMetricsCache) {
+            app.regions.invalidateMetricsCache();
+        }
         return true;
     }
 
