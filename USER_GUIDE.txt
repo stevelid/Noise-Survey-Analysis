@@ -1,0 +1,301 @@
+================================================================================
+                    NOISE SURVEY ANALYSIS - USER GUIDE
+================================================================================
+
+Version: 1.2
+Last Updated: [TO BE COMPLETED]
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. Introduction
+2. Getting Started
+3. Creating a Dashboard
+4. Understanding the Interface
+5. Working with Charts
+6. Managing Regions
+7. Managing Markers
+8. Audio Playback
+9. Comparison Mode
+10. Exporting Data
+11. Keyboard Shortcuts
+12. Troubleshooting
+13. Support
+
+================================================================================
+1. INTRODUCTION
+================================================================================
+
+[TO BE WRITTEN]
+
+Overview of the Noise Survey Analysis application and its purpose.
+
+Key Features:
+- Interactive time-series visualization of noise data
+- Support for multiple measurement positions
+- Region and marker annotation tools
+- Audio playback synchronized with data
+- Spectral analysis and spectrogram views
+- Export capabilities for reports
+
+================================================================================
+2. GETTING STARTED
+================================================================================
+
+[TO BE WRITTEN]
+
+System Requirements:
+- Python 3.x
+- Required packages (see requirements.txt)
+- Web browser (Chrome, Firefox, Edge recommended)
+
+Installation:
+[Installation steps to be documented]
+
+First-Time Setup:
+[Configuration steps to be documented]
+
+================================================================================
+3. CREATING A DASHBOARD
+================================================================================
+
+[TO BE WRITTEN]
+
+Preparing Your Data:
+[Data format requirements and preparation steps]
+
+Creating a Configuration File:
+[config.json structure and examples]
+
+Running the Application:
+[Command-line usage and options]
+
+Opening the Generated Dashboard:
+[How to open and view the HTML output]
+
+================================================================================
+4. UNDERSTANDING THE INTERFACE
+================================================================================
+
+[TO BE WRITTEN]
+
+Main Components:
+- Time-series charts (top section)
+- Spectrogram view
+- Control panel (left side)
+- Region panel (right side)
+- Marker panel (right side)
+- Audio controls (bottom)
+- Range selector (bottom)
+
+Navigation:
+[How to pan, zoom, and navigate through data]
+
+================================================================================
+5. WORKING WITH CHARTS
+================================================================================
+
+[TO BE WRITTEN]
+
+Chart Interactions:
+- Single click (tap) - Place tap line and show values
+- Double-click - Create marker at location
+- Shift + Click - Select region boundary
+- Ctrl + Click - Delete region or marker
+- Box select - Select time range
+- Hover - Show hover line and labels
+
+Parameter Selection:
+[How to switch between LAeq, LAmax, LAmin, etc.]
+
+Log View:
+[How to toggle logarithmic view for spectral data]
+
+Chart Visibility:
+[How to show/hide individual position charts]
+
+================================================================================
+6. MANAGING REGIONS
+================================================================================
+
+[TO BE WRITTEN]
+
+What are Regions?
+[Explanation of time-based regions for analysis]
+
+Creating Regions:
+- Using Shift + Click on charts
+- Using box select tool
+- Auto day/night region creation
+
+Editing Regions:
+- Selecting regions
+- Changing colors
+- Adding notes
+- Adjusting boundaries
+- Adding/removing areas (multi-area regions)
+
+Region Operations:
+- Copy region data
+- Delete regions
+- Merge regions
+- Split regions
+- Copy spectrum data
+
+Region Visibility:
+[How to show/hide regions]
+
+================================================================================
+7. MANAGING MARKERS
+================================================================================
+
+[TO BE WRITTEN]
+
+What are Markers?
+[Explanation of point-in-time markers]
+
+Creating Markers:
+- Double-click on chart
+- Using keyboard shortcut (M)
+- Add marker at tap line
+
+Editing Markers:
+- Selecting markers
+- Changing colors
+- Adding notes
+
+Marker Operations:
+- Copy marker data
+- Delete markers
+
+Marker Visibility:
+[How to show/hide markers]
+
+================================================================================
+8. AUDIO PLAYBACK
+================================================================================
+
+[TO BE WRITTEN]
+
+Audio Requirements:
+[Supported audio formats and setup]
+
+Playback Controls:
+- Play/Pause (Spacebar)
+- Playback rate adjustment
+- Audio boost
+- Chart time offset
+- Audio time offset
+
+Synchronized Playback:
+[How audio syncs with chart position]
+
+================================================================================
+9. COMPARISON MODE
+================================================================================
+
+[TO BE WRITTEN]
+
+What is Comparison Mode?
+[Explanation of comparing different time periods]
+
+Entering Comparison Mode:
+[How to activate comparison view]
+
+Selecting Positions:
+[How to choose which positions to compare]
+
+Creating Regions from Comparison:
+[How to mark regions based on comparison]
+
+Exiting Comparison Mode:
+[How to return to normal view]
+
+================================================================================
+10. EXPORTING DATA
+================================================================================
+
+[TO BE WRITTEN]
+
+Export Options:
+- Region data export
+- Marker data export
+- Spectrum data export
+- Screenshot/image export
+
+Export Formats:
+[Available formats and their uses]
+
+Using Exported Data:
+[How to use exported data in reports]
+
+================================================================================
+11. KEYBOARD SHORTCUTS
+================================================================================
+
+[TO BE WRITTEN]
+
+Global Shortcuts:
+- Spacebar         : Play/Pause audio
+- M                : Add marker at tap line
+- R                : Add region at tap line
+- Escape           : Clear selection / Exit comparison mode
+- Arrow Left/Right : Navigate between regions/markers
+
+Modifier Keys:
+- Shift + Click    : Select region boundary
+- Ctrl + Click     : Delete region or marker
+- Shift (hold)     : Enable region selection mode
+- Shift (release)  : Finalize region selection
+
+Chart Shortcuts:
+[Additional shortcuts to be documented]
+
+================================================================================
+12. TROUBLESHOOTING
+================================================================================
+
+[TO BE WRITTEN]
+
+Common Issues:
+
+Issue: Dashboard doesn't load or displays errors
+Solution: [To be documented]
+
+Issue: Audio doesn't play
+Solution: [To be documented]
+
+Issue: Charts are empty or show no data
+Solution: [To be documented]
+
+Issue: Performance is slow with large datasets
+Solution: [To be documented]
+
+Issue: Regions or markers don't appear
+Solution: [To be documented]
+
+================================================================================
+13. SUPPORT
+================================================================================
+
+[TO BE WRITTEN]
+
+For technical support or questions:
+- Contact: [Contact information to be added]
+- Email: [Email to be added]
+- Documentation: [Link to be added]
+
+Reporting Bugs:
+[How to report issues]
+
+Feature Requests:
+[How to suggest improvements]
+
+================================================================================
+END OF USER GUIDE
+================================================================================
+
+Note: This is a placeholder document. Sections marked [TO BE WRITTEN] or
+[TO BE COMPLETED] require content to be added based on the final application
+features and user feedback.

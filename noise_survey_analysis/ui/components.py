@@ -361,8 +361,8 @@ class RegionPanelComponent:
         self.container = column(
             self.visibility_toggle,
             self.auto_buttons,
-            self.message_div,
             self.detail_layout,
+            self.message_div,
             name="region_panel_container",
             styles={
                 "border": "1px solid rgba(148, 163, 184, 0.25)",
@@ -695,6 +695,7 @@ class RegionPanelComponent:
 class MarkerPanelComponent:
     """Bokeh widget-based panel for managing point-in-time markers."""
 
+    #Todo: tool tips for shortcuts under markers
     def __init__(self) -> None:
         panel_width = SIDE_PANEL_WIDTH
 
@@ -872,8 +873,8 @@ class MarkerPanelComponent:
 
         self.container = column(
             self.visibility_toggle,
-            self.message_div,
             self.detail_layout,
+            self.message_div,
             name="marker_panel_container",
             styles={
                 "border": "1px solid rgba(148, 163, 184, 0.25)",

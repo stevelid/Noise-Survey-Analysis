@@ -430,6 +430,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     timestamp: tapState.timestamp,
                     positionId: tapState.position
                 }));
+                //set region to be displayed in the UI
+                dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
                 return;
             }
 

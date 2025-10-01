@@ -119,4 +119,104 @@ Follow consistent naming to make intent obvious:
 - Avoid hardcoding strings, numbers, or colors that are used in multiple places or represent configuration.
 - Define these as constants at the top of the file. For values used across multiple files (e.g., UI colors, enum-like state strings), create a dedicated constants module (e.g., static/js/core/constants.js).
 
-By following this handbook, contributors maintain a clean, scalable, and predictable codebase that respects the project’s performance constraints and architectural conventions.
+## 10. Testing Strategy & Manual Test Maintenance
+
+### Testing Philosophy
+Due to the Bokeh environment constraints, the project uses a hybrid testing approach:
+- **Unit Tests (80% coverage target):** Pure JavaScript logic (selectors, reducers, actions, utilities)
+- **Integration Tests (50% coverage target):** Thunks and business logic with mocked dependencies
+- **Manual Tests (100% coverage required):** All user interactions and Bokeh-specific behaviors
+
+### Manual Test Checklist Maintenance
+**Location:** `tests/MANUAL_TEST_CHECKLIST.md`
+
+**CRITICAL: This checklist MUST be kept up-to-date with all user interactions.** When making changes to the codebase, contributors (including LLMs) must update the manual test checklist according to these rules:
+
+#### When to Update the Checklist
+1. **Adding New Interactions:** When adding any new user interaction (click, keyboard shortcut, widget, etc.), add corresponding test cases to the checklist immediately in the same commit.
+2. **Modifying Existing Interactions:** When changing how an interaction behaves, update the expected results in the relevant test cases.
+3. **Adding New UI Components:** When adding new buttons, panels, controls, or widgets, add test cases for all their interactions.
+4. **Fixing Interaction Bugs:** When fixing a bug related to user interaction, add a test case to prevent regression.
+5. **Removing Features:** When removing interactions or UI elements, remove the corresponding test cases.
+
+#### How to Update the Checklist
+1. **Locate the appropriate section** in `tests/MANUAL_TEST_CHECKLIST.md` (Chart Interactions, Keyboard Shortcuts, Control Panel, etc.)
+2. **Add new test cases** following the existing format:
+   ```markdown
+   - [ ] **Action:** [What the user does]
+   - [ ] **Expected:** [What should happen]
+   - [ ] **Test:** [Additional test variations, if any]
+   ```
+3. **Update section numbering** if adding new major sections
+4. **Update the "Last Updated" date** at the top of the file
+5. **Increment the version number** (major.minor.patch)
+6. **Document the change** in your git commit message (e.g., "Add manual test for new export feature")
+
+#### Test Case Format Standards
+- **Action:** Describe the user action clearly and concisely (e.g., "Click on chart to place tap line")
+- **Expected:** Describe the expected outcome in observable terms (e.g., "Red tap line appears at clicked timestamp")
+- **Test:** Include edge cases or variations (e.g., "Try with empty data set")
+- Use checkboxes `- [ ]` for all test items
+- Group related tests under subsections (e.g., "6.1 Play/Pause Toggle")
+
+#### Examples of Required Updates
+
+**Example 1: Adding a New Button**
+```markdown
+# In your code commit, you add a "Clear All Regions" button
+
+# You MUST also add to MANUAL_TEST_CHECKLIST.md:
+### 3.X Clear All Regions Button
+- [ ] **Action:** Create 2-3 regions, click "Clear All Regions"
+- [ ] **Expected:** All regions disappear from charts
+- [ ] **Expected:** Regions panel table becomes empty
+- [ ] **Expected:** Confirmation prompt appears
+- [ ] **Test:** Try with no regions - button should be disabled
+```
+
+**Example 2: Modifying Keyboard Shortcut**
+```markdown
+# In your code commit, you change Space bar to toggle region mode instead of audio
+
+# You MUST update in MANUAL_TEST_CHECKLIST.md:
+### 2.1 Space Bar (Toggle Region Mode)  # Changed from "Play/Pause Audio"
+- [ ] **Action:** Press Space
+- [ ] **Expected:** Region make mode toggles on/off  # Updated expectation
+- [ ] **Expected:** Visual indicator shows mode state  # New expectation
+```
+
+**Example 3: Adding Edge Case Test**
+```markdown
+# In your bug fix commit, you fix a crash when clicking on empty chart
+
+# You MUST add to MANUAL_TEST_CHECKLIST.md under "9. Edge Cases":
+### 9.X Empty Chart Click
+- [ ] **Test:** Load position with no data, click on empty chart
+- [ ] **Expected:** No console errors
+- [ ] **Expected:** Graceful message or no-op behavior
+```
+
+#### Validation Checklist for Contributors
+Before submitting any code that affects user interactions:
+- [ ] I have identified all new or modified user interactions
+- [ ] I have added/updated test cases in `MANUAL_TEST_CHECKLIST.md`
+- [ ] I have updated the "Last Updated" date
+- [ ] I have incremented the version number
+- [ ] I have documented the checklist changes in my commit message
+- [ ] I have verified the test case format matches existing standards
+
+#### For LLM Contributors
+When you add or modify any code that creates user interactions:
+1. **Immediately** identify what manual testing is required
+2. **Always** update `tests/MANUAL_TEST_CHECKLIST.md` in the same response/commit
+3. **Never** defer checklist updates to "later" or assume someone else will do it
+4. **Explicitly state** in your response: "I have updated the manual test checklist with [X] new test cases"
+
+### Automated Testing Guidelines
+- **Unit tests** should cover all pure functions (selectors, reducers, utilities)
+- **Integration tests** should mock Bokeh dependencies (`app.registry.models`)
+- **E2E tests** should be limited to critical smoke tests due to high maintenance cost
+- Run `npm test` before committing to ensure no regressions in automated tests
+- Automated tests complement but do not replace manual testing for Bokeh interactions
+
+By following this handbook, contributors maintain a clean, scalable, and predictable codebase that respects the project's performance constraints and architectural conventions.
