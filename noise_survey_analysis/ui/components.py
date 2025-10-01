@@ -460,6 +460,10 @@ class RegionPanelComponent:
             const store = window.NoiseSurveyApp?.store;
             if (actions?.regionRemove && typeof store?.dispatch === 'function') {
                 store.dispatch(actions.regionRemove(regionId));
+                const utils = window.NoiseSurveyApp?.features?.regions?.utils;
+                if (utils?.invalidateRegionMetrics) {
+                    utils.invalidateRegionMetrics(regionId);
+                }
             }
         """)
         self.delete_button.js_on_event('button_click', delete_callback)
@@ -485,7 +489,11 @@ class RegionPanelComponent:
             if (!region) {
                 return;
             }
-            const text = utils.formatRegionSummary(region, region.metrics, region.positionId);
+            const models = window.NoiseSurveyApp?.registry?.models;
+            const metrics = utils?.getRegionMetrics
+                ? utils.getRegionMetrics(region, state, window.NoiseSurveyApp?.dataCache, models)
+                : null;
+            const text = utils.formatRegionSummary(region, metrics, region.positionId);
             if (navigator?.clipboard?.writeText) {
                 navigator.clipboard.writeText(text).catch(err => {
                     console.error('[Regions] Failed to copy summary:', err);
@@ -526,7 +534,11 @@ class RegionPanelComponent:
             }
             const state = store.getState();
             const region = state?.regions?.byId?.[regionId];
-            const spectrum = region?.metrics?.spectrum;
+            const models = window.NoiseSurveyApp?.registry?.models;
+            const metrics = utils?.getRegionMetrics
+                ? utils.getRegionMetrics(region, state, window.NoiseSurveyApp?.dataCache, models)
+                : null;
+            const spectrum = metrics?.spectrum;
             const text = utils.formatSpectrumClipboardText(spectrum);
             if (!text) {
                 return;

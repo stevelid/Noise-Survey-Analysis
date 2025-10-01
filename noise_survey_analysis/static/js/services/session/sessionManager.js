@@ -243,8 +243,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return { labels, values };
     }
 
-    function extractRegionSpectrum(region) {
-        const spectrum = region?.metrics?.spectrum || {};
+    function resolveRegionMetrics(region, state, dataCache, models) {
+        const utils = app.features?.regions?.utils || {};
+        if (!state && region?.metrics) {
+            return region.metrics;
+        }
+        if (utils.getRegionMetrics && state) {
+            return utils.getRegionMetrics(region, state, dataCache, models);
+        }
+        return region?.metrics || null;
+    }
+
+    function extractRegionSpectrum(region, state, dataCache, models) {
+        const spectrum = resolveRegionMetrics(region, state, dataCache, models)?.spectrum || {};
         const labels = Array.isArray(spectrum.labels)
             ? spectrum.labels
             : Array.isArray(spectrum.bands)
@@ -261,7 +272,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
-    function collectBandColumns(markers, regions) {
+    function collectBandColumns(markers, regions, state, dataCache, models) {
         const labelSet = new Map();
 
         function addLabels(labels) {
@@ -282,7 +293,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             addLabels(spectrum.labels);
         });
         regions.forEach(region => {
-            const spectrum = extractRegionSpectrum(region);
+            const spectrum = extractRegionSpectrum(region, state, dataCache, models);
             addLabels(spectrum.labels);
         });
 
@@ -314,10 +325,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
-    function buildAnnotationsCsv(markersInput, regionsInput) {
+    function buildAnnotationsCsv(markersInput, regionsInput, state, options = {}) {
         const markers = Array.isArray(markersInput) ? markersInput : [];
         const regions = Array.isArray(regionsInput) ? regionsInput : [];
-        const bandColumns = collectBandColumns(markers, regions);
+        const resolvedState = state || null;
+        const dataCache = options?.dataCache ?? app.dataCache;
+        const models = options?.models ?? app.registry?.models;
+        const bandColumns = collectBandColumns(markers, regions, resolvedState, dataCache, models);
         const bandLookup = new Map(bandColumns.map(entry => [entry.key, entry.column]));
         const header = CSV_HEADER.concat(METRIC_COLUMNS, bandColumns.map(entry => entry.column));
 
@@ -395,7 +409,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 : JSON.stringify([{ startUtc: formattedStart, endUtc: formattedEnd }]);
             rowData.areas = areasValue;
 
-            const metrics = region?.metrics || null;
+            const metrics = resolveRegionMetrics(region, resolvedState, dataCache, models);
             if (metrics) {
                 rowData.metrics_parameter = metrics.parameter ?? '';
                 rowData.metrics_data_resolution = metrics.dataResolution ?? '';
@@ -405,7 +419,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 rowData.metrics_lafmax = formatNumberValue(metrics.lafmax);
                 rowData.metrics_la90 = formatNumberValue(metrics.la90);
                 rowData.metrics_la90_available = metrics.la90Available ? 'true' : '';
-                const spectrum = extractRegionSpectrum(region);
+                const spectrum = extractRegionSpectrum(region, resolvedState, dataCache, models);
                 assignSpectrumValues(rowData, spectrum, bandLookup);
                 if (metrics.spectrum && typeof metrics.spectrum.source === 'string') {
                     rowData.metrics_spectrum_source = metrics.spectrum.source;
@@ -705,6 +719,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return false;
             }
             app.store.dispatch(app.actions.regionsAdded(payload));
+            const utils = app.features?.regions?.utils;
+            if (utils?.invalidateMetricsCache) {
+                utils.invalidateMetricsCache();
+            }
             return true;
         } catch (error) {
             console.error('[Session] Failed to import regions from JSON:', error);
@@ -904,7 +922,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const regions = selectAllRegions(state) || [];
         const markers = selectAllMarkers(state) || [];
-        const csvText = buildAnnotationsCsv(markers, regions);
+        const csvText = buildAnnotationsCsv(markers, regions, state);
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const filename = `annotations-${timestamp}.csv`;
         triggerCsvDownload(filename, csvText);

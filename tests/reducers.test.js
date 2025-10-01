@@ -258,13 +258,12 @@ describe('rootReducer', () => {
             expect(state.regions.selectedId).toBe(1);
         });
 
-        it('should update region bounds and reset metrics', () => {
+        it('should update region bounds without storing metrics', () => {
             let state = rootReducer(initialState, actions.regionAdd('P1', 1000, 2000));
-            state = rootReducer(state, actions.regionSetMetrics(1, { laeq: 50 }));
             state = rootReducer(state, actions.regionUpdate(1, { end: 4000 }));
             const region = state.regions.byId[1];
             expect(region.end).toBe(4000);
-            expect(region.metrics).toBeNull();
+            expect(region.metrics).toBeUndefined();
         });
 
         it('should remove a region and clear selection', () => {

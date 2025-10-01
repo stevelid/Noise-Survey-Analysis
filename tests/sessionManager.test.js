@@ -55,7 +55,8 @@ describe('Annotation CSV helpers', () => {
                     parameter: 'LAeq',
                     spectrum: { labels: ['63', '125'], values: [32.1, 28.9], source: 'log' }
                 }
-            }]
+            }],
+            null
         );
 
         const lines = csv.split('\n');
@@ -109,7 +110,7 @@ describe('Annotation CSV helpers', () => {
             ],
             note: 'Multi area',
             color: '#abcdef'
-        }]);
+        }], null);
 
         const { regions } = helpers.parseAnnotationsCsv(csv);
         expect(regions).toHaveLength(1);

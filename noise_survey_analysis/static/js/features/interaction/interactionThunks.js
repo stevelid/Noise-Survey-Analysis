@@ -64,7 +64,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const end = Math.max(previousTap, timestamp);
                 if (Math.abs(end - start) < MIN_REGION_WIDTH_MS) return;
 
+                const predictedId = Number.isFinite(state?.regions?.counter)
+                    ? state.regions.counter
+                    : null;
                 dispatch(actions.regionAdd(positionId, start, end));
+                if (app.regions?.invalidateRegionMetrics && Number.isFinite(predictedId)) {
+                    app.regions.invalidateRegionMetrics(predictedId);
+                }
             }
 
             if (isCtrl && regionHit) {
@@ -81,9 +87,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
                 if (areas.length <= 1 || targetIndex === -1) {
                     dispatch(actions.regionRemove(regionHit.id));
+                    if (app.regions?.invalidateRegionMetrics) {
+                        app.regions.invalidateRegionMetrics(regionHit.id);
+                    }
                 } else {
                     const nextAreas = areas.filter((_, index) => index !== targetIndex);
                     dispatch(actions.regionUpdate(regionHit.id, { areas: nextAreas }));
+                    if (app.regions?.invalidateRegionMetrics) {
+                        app.regions.invalidateRegionMetrics(regionHit.id);
+                    }
                 }
                 return;
             }

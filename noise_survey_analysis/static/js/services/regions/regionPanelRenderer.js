@@ -212,23 +212,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return `${PANEL_STYLE}<div class="region-frequency"><div class="region-frequency__header"><span>Frequency Bands</span><span class="region-frequency__source">${escapeHtml(sourceLabel)}</span></div><table class="region-frequency__table"><tr><th>Band</th><th>LAeq</th></tr>${rows}</table></div>`;
     }
 
-    function buildMetricsHtml(region) {
+    function buildMetricsHtml(region, metrics) {
         if (!region) {
             return `${PANEL_STYLE}<p class="region-panel-placeholder">Select a region to view metrics.</p>`;
         }
-        const metrics = region.metrics || {};
+        const safeMetrics = metrics || {};
         const areas = getRegionAreas(region);
-        
-        const laeq = Number.isFinite(metrics.laeq) ? `${metrics.laeq.toFixed(1)} dB` : 'N/A';
-        const lafmax = Number.isFinite(metrics.lafmax) ? `${metrics.lafmax.toFixed(1)} dB` : 'N/A';
-        const la90 = metrics.la90Available && Number.isFinite(metrics.la90)
-            ? `${metrics.la90.toFixed(1)} dB`
-            : 'N/A';
-        const la90Class = metrics.la90Available && Number.isFinite(metrics.la90) ? '' : 'metric-disabled';
 
-        const totalDuration = formatDuration(metrics.durationMs ?? sumAreaDurations(areas));
-        const dataSourceLabel = metrics.dataResolution === 'log' ? 'Log data'
-            : metrics.dataResolution === 'overview' ? 'Overview data' : 'No data';
+        const laeq = Number.isFinite(safeMetrics.laeq) ? `${safeMetrics.laeq.toFixed(1)} dB` : 'N/A';
+        const lafmax = Number.isFinite(safeMetrics.lafmax) ? `${safeMetrics.lafmax.toFixed(1)} dB` : 'N/A';
+        const la90 = safeMetrics.la90Available && Number.isFinite(safeMetrics.la90)
+            ? `${safeMetrics.la90.toFixed(1)} dB`
+            : 'N/A';
+        const la90Class = safeMetrics.la90Available && Number.isFinite(safeMetrics.la90) ? '' : 'metric-disabled';
+
+        const totalDuration = formatDuration(safeMetrics.durationMs ?? sumAreaDurations(areas));
+        const dataSourceLabel = safeMetrics.dataResolution === 'log' ? 'Log data'
+            : safeMetrics.dataResolution === 'overview' ? 'Overview data' : 'No data';
         
         const segmentItems = areas.map((area, idx) => {
             const spanMs = Math.max(0, Number(area?.end) - Number(area?.start));
@@ -569,13 +569,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
-    function updateDetailWidgets(panelModels, region) {
+    function updateDetailWidgets(panelModels, region, metrics) {
         const { metricsDiv, spectrumDiv, frequencyTableDiv, frequencyCopyButton } = panelModels;
-        const metricsHtml = buildMetricsHtml(region);
+        const metricsHtml = buildMetricsHtml(region, metrics);
         if (metricsDiv && metricsDiv.text !== metricsHtml) {
             metricsDiv.text = metricsHtml;
         }
-        const spectrumHtml = buildSpectrumHtml(region?.metrics?.spectrum);
+        const spectrumHtml = buildSpectrumHtml(metrics?.spectrum);
         if (spectrumDiv) {
             spectrumDiv.visible = !!region;
             if (spectrumDiv.text !== spectrumHtml) {
@@ -586,14 +586,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             metricsDiv.visible = !!region;
         }
         if (frequencyTableDiv) {
-            const frequencyHtml = buildFrequencyTableHtml(region?.metrics);
+            const frequencyHtml = buildFrequencyTableHtml(metrics);
             frequencyTableDiv.visible = !!region;
             if (frequencyTableDiv.text !== frequencyHtml) {
                 frequencyTableDiv.text = frequencyHtml;
             }
         }
         if (frequencyCopyButton) {
-            const hasValues = !!region && hasSpectrumValues(region?.metrics?.spectrum);
+            const hasValues = !!region && hasSpectrumValues(metrics?.spectrum);
             frequencyCopyButton.visible = !!region;
             frequencyCopyButton.disabled = !hasValues;
         }
@@ -642,7 +642,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateNoteInput(noteInput, selectedRegion);
 
         updateColorPicker(colorPicker, selectedRegion);
-        updateDetailWidgets({ metricsDiv, spectrumDiv, frequencyTableDiv, frequencyCopyButton }, selectedRegion);
+        const metrics = selectedRegion && app.regions?.getRegionMetrics
+            ? app.regions.getRegionMetrics(selectedRegion, state, app.dataCache, app.registry?.models)
+            : null;
+        updateDetailWidgets({ metricsDiv, spectrumDiv, frequencyTableDiv, frequencyCopyButton }, selectedRegion, metrics);
     }
     
     app.services = app.services || {};
