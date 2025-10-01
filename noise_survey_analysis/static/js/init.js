@@ -15,9 +15,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     if (app.createStore && app.rootReducer) {
         app.store = app.createStore(app.rootReducer);
         console.info('[Init]', 'Store created.');
-        
+        if (app.regions?.__ensureMetricsSubscription) {
+            app.regions.__ensureMetricsSubscription();
+        }
+
         function reInitializeStore() {
             app.store = app.createStore(app.rootReducer);
+            if (app.regions?.__ensureMetricsSubscription) {
+                app.regions.__ensureMetricsSubscription();
+            }
         }
 
         app.init = {
