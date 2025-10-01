@@ -148,30 +148,58 @@ class RegionPanelComponent:
                 background: transparent;
             }
             .region-panel-table .slick-row {
-                border: none !important;
-                margin: 6px 4px;
-                border-radius: 12px;
-                background: rgba(255, 255, 255, 0.85);
-                box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-                transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+                border: 1px solid #e2e8f0 !important;
+                margin: 3px 4px;
+                border-radius: 6px;
+                background: #ffffff !important;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+                transition: all 0.12s ease;
+                cursor: pointer;
+            }
+            .region-panel-table .slick-row.odd {
+                background: #ffffff !important;
+            }
+            .region-panel-table .slick-row.even {
+                background: #ffffff !important;
             }
             .region-panel-table .slick-row:hover {
+                border-color: #cbd5e1;
+                background: #f8fafc !important;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
                 transform: translateY(-1px);
-                box-shadow: 0 6px 12px rgba(15, 23, 42, 0.12);
-                background: rgba(30, 136, 229, 0.12);
             }
             .region-panel-table .slick-row.active, .region-panel-table .slick-row.selected {
-                background: #1e88e5 !important;
-                box-shadow: 0 8px 16px rgba(30, 136, 229, 0.25);
+                background: #1e40af !important;
+                border-color: #1e3a8a !important;
+                box-shadow: 0 4px 12px rgba(30, 64, 175, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+                transform: translateY(0);
             }
             .region-panel-table .slick-row .slick-cell {
                 border: none !important;
                 background: transparent !important;
                 color: #1f2937;
                 font-size: 13px;
+                outline: none !important;
             }
             .region-panel-table .slick-row.selected .slick-cell {
                 color: #ffffff;
+                font-weight: 500;
+            }
+            .region-panel-table .slick-cell.active {
+                border: none !important;
+                outline: none !important;
+                box-shadow: none !important;
+            }
+            .region-panel-table .slick-cell:focus {
+                outline: none !important;
+                border: none !important;
+            }
+            .region-panel-table .slick-row.active {
+                outline: none !important;
+                border: 1px solid rgba(15, 23, 42, 0.12) !important;
+            }
+            .region-panel-table .slick-row.active.selected {
+                border-color: #1565c0 !important;
             }
             .region-panel-table .bk-cell-index {
                 display: none;

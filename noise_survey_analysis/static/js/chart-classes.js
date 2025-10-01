@@ -277,7 +277,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             fill_color: regionColor,
                             line_color: regionColor,
                             line_alpha: 0.6,
-                            line_width: isSelected ? 3 : 1,
+                            line_width: isSelected ? 1 : 1,
                             level: 'underlay',
                             visible: true,
                             name: `region_${this.name}_${region.id}_${index}`
@@ -294,7 +294,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         annotation.left = start;
                         annotation.right = end;
                         annotation.fill_alpha = isSelected ? 0.2 : 0.08;
-                        annotation.line_width = isSelected ? 3 : 1;
                         annotation.fill_color = regionColor;
                         annotation.line_color = regionColor;
                         annotation.visible = true;

@@ -112,13 +112,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!Array.isArray(timestamps) || !timestamps.length) {
             return [];
         }
-        const rawBuffer = Math.ceil(timestamps.length * 0.002);
-        const maxBuffer = Math.floor((timestamps.length - 1) / 2);
-        const startAndEndBuffer = Math.min(Math.max(rawBuffer, 0), maxBuffer);
-        const minIndex = Math.min(startAndEndBuffer, timestamps.length - 1);
-        const maxIndex = Math.max(timestamps.length - 1 - startAndEndBuffer, minIndex);
-        const minTimestamp = timestamps[minIndex]; // skip the first 0.2% of timestamps when possible
-        const maxTimestamp = timestamps[maxIndex]; // skip the last 0.2% of timestamps when possible
+        
+        // Exclude first and last 0.15% of timestamps to avoid spurious noise from equipment installation/retrieval
+        const bufferPercent = 0.0015;
+        const bufferCount = Math.ceil(timestamps.length * bufferPercent);
+        const startIndex = Math.min(bufferCount, Math.floor(timestamps.length / 2));
+        const endIndex = Math.max(timestamps.length - 1 - bufferCount, startIndex);
+        
+        const minTimestamp = timestamps[startIndex];
+        const maxTimestamp = timestamps[endIndex];
+        
         if (!Number.isFinite(minTimestamp) || !Number.isFinite(maxTimestamp)) {
             return [];
         }
@@ -133,18 +136,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (mode === 'nighttime') {
                 const rawStart = day + DAYTIME_END_HOUR * HOUR_MS;
                 const rawEnd = day + DAY_MS + DAYTIME_START_HOUR * HOUR_MS;
-                const extendedMax = Math.max(maxTimestamp, rawEnd);
-                const effectiveMin = Math.min(minTimestamp, rawStart);
-                const interval = clampInterval(rawStart, rawEnd, effectiveMin, extendedMax);
+                const interval = clampInterval(rawStart, rawEnd, minTimestamp, maxTimestamp);
                 if (interval) {
                     intervals.push(interval);
                 }
             } else {
                 const rawStart = day + DAYTIME_START_HOUR * HOUR_MS;
                 const rawEnd = day + DAYTIME_END_HOUR * HOUR_MS;
-                const extendedMax = Math.max(maxTimestamp, rawEnd);
-                const effectiveMin = Math.min(minTimestamp, rawStart);
-                const interval = clampInterval(rawStart, rawEnd, effectiveMin, extendedMax);
+                const interval = clampInterval(rawStart, rawEnd, minTimestamp, maxTimestamp);
                 if (interval) {
                     intervals.push(interval);
                 }
@@ -244,9 +243,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             dispatch(actions.regionsAdded(regions));
-            if (app.regions?.invalidateMetricsCache) {
-                app.regions.invalidateMetricsCache();
-            }
+            app.regions?.invalidateMetricsCache?.();
             dispatch(actions.comparisonModeExited());
             console.log('[RegionThunk] dispatching setActiveSidePanelTab'); // DEBUG
             dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
@@ -307,9 +304,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const existingAreas = getRegionAreas(targetRegion);
                 const nextAreas = [...existingAreas, { start, end }];
                 dispatch(actions.regionUpdate(targetRegion.id, { areas: nextAreas }));
-                if (app.regions?.invalidateRegionMetrics) {
-                    app.regions.invalidateRegionMetrics(targetRegion.id);
-                }
+                app.regions?.invalidateRegionMetrics?.(targetRegion.id);
                 if (regionsState?.selectedId !== targetRegion.id) {
                     dispatch(selectRegionIntent(targetRegion.id));
                 }
@@ -326,9 +321,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             console.log('[regionAdd] Adding region:', { positionId, start, end });
             dispatch(actions.regionAdd(positionId, start, end));
-            if (app.regions?.invalidateRegionMetrics && Number.isFinite(nextRegionId)) {
-                app.regions.invalidateRegionMetrics(nextRegionId);
-            }
 
             const newState = getState();
             const newRegionId = newState.regions.selectedId; // The reducer sets the new region as selected
@@ -382,7 +374,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return result.length ? result : Object.keys(AUTO_REGION_MODES);
             })();
             console.log('[AutoRegions] Requested modes:', requestedModes);
-            const shouldAggregate = requestedModes.length === 1;
+            const shouldAggregate = requestedModes.length >= 2;
 
             const generated = [];
             positions.forEach(positionId => {
@@ -397,6 +389,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     console.warn('[AutoRegions] No timestamps for position:', positionId);
                     return;
                 }
+                
                 requestedModes.forEach(modeName => {
                     console.log('[AutoRegions] Processing mode:', modeName, 'for position:', positionId);
                     const config = AUTO_REGION_MODES[modeName];
@@ -410,14 +403,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     if (intervals.length > 0) {
                         const baseTitle = `${modeName.charAt(0).toUpperCase() + modeName.slice(1)} - ${positionId}`;
                         if (shouldAggregate) {
-                            const region = {
-                                positionId,
-                                start: intervals[0].start,
-                                end: intervals[intervals.length - 1].end,
-                                areas: intervals,
-                                color: config.color,
-                                note: baseTitle
-                            };
+                        const region = {
+                            positionId,
+                            start: intervals[0].start,
+                            end: intervals[intervals.length - 1].end,
+                            areas: intervals,
+                            color: config.color,
+                            note: baseTitle
+                        };
                             console.log('[AutoRegions] Generated aggregated region:', region);
                             generated.push(region);
                         } else {
@@ -432,7 +425,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                                     note: `${baseTitle}${titleSuffix}`
                                 };
                                 console.log('[AutoRegions] Generated individual region:', region);
-                                generated.push(region);
+                        generated.push(region);
                             });
                         }
                     } else {
@@ -449,9 +442,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             console.log('[AutoRegions] Dispatching regionsAdded with', generated.length, 'regions');
             dispatch(actions.regionsAdded(generated));
-            if (app.regions?.invalidateMetricsCache) {
-                app.regions.invalidateMetricsCache();
-            }
+            app.regions?.invalidateMetricsCache?.();
             console.log('[AutoRegions] Dispatch complete');
         };
     }
@@ -532,13 +523,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
             const combinedAreas = [...getRegionAreas(targetRegion), ...getRegionAreas(sourceRegion)];
             dispatch(actions.regionUpdate(targetId, { areas: combinedAreas }));
-            if (app.regions?.invalidateRegionMetrics) {
-                app.regions.invalidateRegionMetrics(targetId);
-            }
+            app.regions?.invalidateRegionMetrics?.(targetId);
             dispatch(actions.regionRemove(sourceNumericId));
-            if (app.regions?.invalidateRegionMetrics) {
-                app.regions.invalidateRegionMetrics(sourceNumericId);
-            }
+            app.regions?.invalidateRegionMetrics?.(sourceNumericId);
             if (regionsState?.addAreaTargetId === sourceNumericId) {
                 dispatch(actions.regionSetAddAreaMode(null));
             }
@@ -637,9 +624,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             if (mutated) {
                 dispatch(actions.regionUpdate(region.id, { areas: nextAreas }));
-                if (app.regions?.invalidateRegionMetrics) {
-                    app.regions.invalidateRegionMetrics(region.id);
-                }
+                app.regions?.invalidateRegionMetrics?.(region.id);
             }
         };
     }
@@ -674,16 +659,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }));
 
             dispatch(actions.regionRemove(region.id));
-            if (app.regions?.invalidateRegionMetrics) {
-                app.regions.invalidateRegionMetrics(region.id);
-            }
+            app.regions?.invalidateRegionMetrics?.(region.id);
             if (regionsState?.addAreaTargetId === region.id && actions.regionSetAddAreaMode) {
                 dispatch(actions.regionSetAddAreaMode(null));
             }
             dispatch(actions.regionsAdded(newRegions));
-            if (app.regions?.invalidateMetricsCache) {
-                app.regions.invalidateMetricsCache();
-            }
+            app.regions?.invalidateMetricsCache?.();
         };
     }
 

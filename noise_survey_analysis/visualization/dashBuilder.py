@@ -246,6 +246,29 @@ class DashBuilder:
         print("INFO: DashboardBuilder: Wiring up interactions between components...")
 
         master_x_range = None
+        
+        # Compute global min/max time across all positions to set initial viewport
+        global_min_time = None
+        global_max_time = None
+        
+        for position_name, comp_dict in self.components.items():
+            ts_comp = comp_dict['timeseries']
+            
+            # Extract time range from overview and log sources
+            for source in [ts_comp.overview_source, ts_comp.log_source]:
+                if source and source.data and 'Datetime' in source.data:
+                    datetime_data = source.data['Datetime']
+                    if len(datetime_data) > 0:
+                        source_min = min(datetime_data)
+                        source_max = max(datetime_data)
+                        
+                        if global_min_time is None or source_min < global_min_time:
+                            global_min_time = source_min
+                        if global_max_time is None or source_max > global_max_time:
+                            global_max_time = source_max
+        
+        
+        # Wire up all charts to share the same x_range
         for position_name, comp_dict in self.components.items():
             ts_comp = comp_dict['timeseries']
             spec_comp = comp_dict['spectrogram']
@@ -254,6 +277,14 @@ class DashBuilder:
 
             if master_x_range is None:
                 master_x_range = ts_comp.figure.x_range
+                
+                # Set initial viewport to actual data range if we computed valid bounds
+                if global_min_time is not None and global_max_time is not None:
+                    logger.info(f"Setting master_x_range: start={global_min_time}, end={global_max_time}")
+                    master_x_range.start = global_min_time
+                    master_x_range.end = global_max_time
+                else:
+                    logger.warning("Using default Bokeh auto-range for initial viewport")
             
             ts_comp.figure.x_range = master_x_range
             spec_comp.figure.x_range = master_x_range

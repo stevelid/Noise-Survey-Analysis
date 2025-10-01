@@ -9,99 +9,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     // Module-level cache for computed metrics (outside Redux state)
-    const { actionTypes } = app || {};
     const _metricsCache = new Map(); // key: `${regionId}_${parameter}`, value: metrics object
-
-    let subscribedStore = null;
-
-    function hasBoundaryChanges(changes) {
-        if (!changes || typeof changes !== 'object') {
-            return false;
-        }
-        if (Object.prototype.hasOwnProperty.call(changes, 'areas')) {
-            return true;
-        }
-        if (Object.prototype.hasOwnProperty.call(changes, 'start')) {
-            return true;
-        }
-        if (Object.prototype.hasOwnProperty.call(changes, 'end')) {
-            return true;
-        }
-        return false;
-    }
-
-    function callInvalidateRegionMetrics(regionId) {
-        const fn = typeof app?.regions?.invalidateRegionMetrics === 'function'
-            ? app.regions.invalidateRegionMetrics
-            : invalidateRegionMetrics;
-        fn(regionId);
-    }
-
-    function callInvalidateMetricsCache() {
-        const fn = typeof app?.regions?.invalidateMetricsCache === 'function'
-            ? app.regions.invalidateMetricsCache
-            : invalidateMetricsCache;
-        fn();
-    }
-
-    function subscribeToStore(store) {
-        if (!store || store === subscribedStore) {
-            return;
-        }
-        if (typeof store.subscribe !== 'function' || typeof store.getState !== 'function') {
-            return;
-        }
-
-        subscribedStore = store;
-        let lastProcessedAction = null;
-
-        store.subscribe(() => {
-            if (!actionTypes) {
-                return;
-            }
-
-            const state = store.getState();
-            const lastAction = state?.system?.lastAction;
-            if (!lastAction || lastAction === lastProcessedAction) {
-                return;
-            }
-            lastProcessedAction = lastAction;
-
-            switch (lastAction.type) {
-                case actionTypes.REGION_UPDATED: {
-                    const regionId = Number(lastAction?.payload?.id);
-                    const changes = lastAction?.payload?.changes;
-                    if (Number.isFinite(regionId) && hasBoundaryChanges(changes)) {
-                        callInvalidateRegionMetrics(regionId);
-                    }
-                    break;
-                }
-                case actionTypes.REGION_REMOVED: {
-                    const regionId = Number(lastAction?.payload?.id);
-                    if (Number.isFinite(regionId)) {
-                        callInvalidateRegionMetrics(regionId);
-                    }
-                    break;
-                }
-                case actionTypes.REGION_ADDED:
-                case actionTypes.REGIONS_ADDED:
-                case actionTypes.REGIONS_REPLACED:
-                case actionTypes.STATE_REHYDRATED: {
-                    callInvalidateMetricsCache();
-                    break;
-                }
-                default:
-                    break;
-            }
-        });
-    }
-
-    function ensureStoreSubscription() {
-        if (!app || !app.store) {
-            return;
-        }
-        subscribeToStore(app.store);
-    }
 
     function toFiniteArray(values) {
         if (!values) return [];
@@ -671,14 +579,6 @@ function calcLAeq(values) {
 
     app.calcMetrics = metrics;
     app.regions = utils;
-
-    Object.defineProperty(app.regions, '__ensureMetricsSubscription', {
-        value: ensureStoreSubscription,
-        enumerable: false,
-        configurable: true
-    });
-
-    ensureStoreSubscription();
 })(window.NoiseSurveyApp);
 
 

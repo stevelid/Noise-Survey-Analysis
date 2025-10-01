@@ -17,9 +17,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
             dispatch(actions.paramChange(parameter));
-            if (app.regions?.invalidateMetricsCache) {
-                app.regions.invalidateMetricsCache();
-            }
+            app.regions?.invalidateMetricsCache?.();
         };
     }
 
