@@ -58,15 +58,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return function (dispatch, getState) {
             if (!actions || typeof dispatch !== 'function' || typeof getState !== 'function') return;
 
-            const positionId = typeof payload?.positionId === 'string' ? payload.positionId : null;
-            const isActive = typeof payload?.isActive === 'boolean' ? payload.isActive : null;
-            if (!positionId || isActive === null) {
+            const state = getState();
+            const audioState = state?.audio;
+            const tapState = state?.interaction?.tap;
+            
+            if (!audioState) {
                 return;
             }
 
-            const state = getState();
-            const audioState = state?.audio;
-            if (!audioState) {
+            // If positionId is null, use the active position from tap state (global controls)
+            let positionId = typeof payload?.positionId === 'string' ? payload.positionId : null;
+            if (!positionId && tapState?.isActive && tapState?.position) {
+                positionId = tapState.position;
+            }
+            
+            const isActive = typeof payload?.isActive === 'boolean' ? payload.isActive : null;
+            if (!positionId || isActive === null) {
                 return;
             }
 
@@ -164,14 +171,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return function (dispatch, getState) {
             if (!actions || typeof dispatch !== 'function' || typeof getState !== 'function') return;
 
-            const positionId = typeof payload?.positionId === 'string' ? payload.positionId : null;
-            if (!positionId) {
+            const state = getState();
+            const audioState = state?.audio;
+            const tapState = state?.interaction?.tap;
+            
+            if (!audioState) {
                 return;
             }
 
-            const state = getState();
-            const audioState = state?.audio;
-            if (!audioState || audioState.activePositionId !== positionId) {
+            // If positionId is null, use the active position from audio state or tap state (global controls)
+            let positionId = typeof payload?.positionId === 'string' ? payload.positionId : null;
+            if (!positionId) {
+                // Try active audio position first, then tap position
+                positionId = audioState.activePositionId || (tapState?.isActive && tapState?.position) || null;
+            }
+            
+            if (!positionId || audioState.activePositionId !== positionId) {
                 return;
             }
 
@@ -196,15 +211,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return function (dispatch, getState) {
             if (!actions || typeof dispatch !== 'function' || typeof getState !== 'function') return;
 
-            const positionId = typeof payload?.positionId === 'string' ? payload.positionId : null;
-            const isBoostActive = typeof payload?.isBoostActive === 'boolean' ? payload.isBoostActive : null;
-            if (!positionId || isBoostActive === null) {
+            const state = getState();
+            const audioState = state?.audio;
+            const tapState = state?.interaction?.tap;
+            
+            if (!audioState) {
                 return;
             }
 
-            const state = getState();
-            const audioState = state?.audio;
-            if (!audioState || audioState.activePositionId !== positionId) {
+            // If positionId is null, use the active position from audio state or tap state (global controls)
+            let positionId = typeof payload?.positionId === 'string' ? payload.positionId : null;
+            if (!positionId) {
+                // Try active audio position first, then tap position
+                positionId = audioState.activePositionId || (tapState?.isActive && tapState?.position) || null;
+            }
+            
+            const isBoostActive = typeof payload?.isBoostActive === 'boolean' ? payload.isBoostActive : null;
+            if (!positionId || isBoostActive === null || audioState.activePositionId !== positionId) {
                 return;
             }
 

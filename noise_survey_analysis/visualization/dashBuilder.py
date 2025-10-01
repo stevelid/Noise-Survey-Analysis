@@ -29,6 +29,7 @@ from noise_survey_analysis.ui.components import (
     SummaryTableComponent,
     ComparisonPanelComponent,
     create_audio_controls_for_position,
+    create_position_title_and_offsets,
     RegionPanelComponent,
     MarkerPanelComponent,
     SidePanelComponent,
@@ -201,15 +202,17 @@ class DashBuilder:
                 initial_param=initial_param_spectrogram
             )
 
-            # Create audio controls if audio is available for this position
-            audio_controls = None
-            if position_data_obj.has_audio:
-                audio_controls = create_audio_controls_for_position(position_name)
+            # Create position title and offset controls for all positions
+            # (Audio playback buttons are now global)
+            position_controls = create_position_title_and_offsets(
+                position_id=position_name,
+                display_title=position_name  # Could use custom titles from config if available
+            )
 
             self.components[position_name] = {
                 'timeseries': ts_component,
                 'spectrogram': spec_component,
-                'audio_controls': audio_controls
+                'position_controls': position_controls
             }
 
             controls_comp.add_visibility_checkbox(
@@ -272,14 +275,12 @@ class DashBuilder:
         
         position_layouts = []
         for position_name, comp_dict in self.components.items():
-            # Add audio controls to the timeseries layout if they exist
+            # Add position title and offset controls above the timeseries
             ts_layout = comp_dict['timeseries'].layout()
-            ts_layout_with_controls = ts_layout
-            if comp_dict.get('audio_controls'):
-                ts_layout_with_controls = column(
-                    comp_dict['audio_controls']['layout'],
-                    ts_layout
-                )
+            ts_layout_with_controls = column(
+                comp_dict['position_controls']['layout'],
+                ts_layout
+            )
 
             pos_layout = column(
                 ts_layout_with_controls,
@@ -308,9 +309,9 @@ class DashBuilder:
             controls_layout,
             range_selector_layout,
             *position_layouts,
-            #freq_bar_layout,
-            #comparison_frequency_layout,
-            #self.shared_components['summary_table'].layout(),
+            freq_bar_layout,
+            comparison_frequency_layout,
+            self.shared_components['summary_table'].layout(),
             self.js_init_trigger,
             name="main_layout",
         )
@@ -492,7 +493,8 @@ class DashBuilder:
             'sessionMenu': self.shared_components['controls'].session_menu,
             #'audio_control_source': self.audio_control_source,
             #'audio_status_source': self.audio_status_source,
-            'audio_controls': {},
+            'globalAudioControls': self.shared_components['controls'].global_audio_controls,
+            'positionControls': {},
             'components': {},
             'frequencyBarLayout': self.shared_components.get('freq_bar_layout'),
             'regionPanelLayout': self.shared_components.get('region_panel_layout'),
@@ -562,10 +564,10 @@ class DashBuilder:
             # Note: Only timeseries has labels, spectrogram doesn't
             js_models['labels'].append(ts_comp.label)
             js_models['hoverDivs'].append(spec_comp.hover_div)
-            if comp_dict.get('audio_controls'):
-                js_models['audio_controls'][pos] = comp_dict['audio_controls']
-            if comp_dict.get('audio_status_source'):
-                js_models['audio_status_source'][pos] = comp_dict['audio_status_source']
+            
+            # Add position-specific controls (title and offsets)
+            if comp_dict.get('position_controls'):
+                js_models['positionControls'][pos] = comp_dict['position_controls']
             
             js_models['components'][ts_comp.name_id] = {'marker_lines': ts_comp.marker_lines}
             js_models['components'][spec_comp.name_id] = {'marker_lines': spec_comp.marker_lines}

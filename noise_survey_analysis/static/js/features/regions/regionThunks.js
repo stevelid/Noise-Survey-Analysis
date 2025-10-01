@@ -9,8 +9,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     const { actions } = app;
-    app.registry = app.registry || {};
-    const registry = app.registry;
+
     const MIN_REGION_WIDTH_MS = 1;
     const HOUR_MS = 60 * 60 * 1000;
     const DAY_MS = 24 * HOUR_MS;
@@ -61,16 +60,25 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function collectPositionTimestamps(positionId) {
+        console.log('[collectPositionTimestamps] Called for position:', positionId);
         if (!positionId) {
+            console.warn('[collectPositionTimestamps] No positionId provided');
             return [];
         }
-        const sources = registry?.models?.timeSeriesSources?.[positionId];
+        const sources = models?.timeSeriesSources?.[positionId];
+        console.log('[collectPositionTimestamps] sources:', sources);
+        console.log('[collectPositionTimestamps] sources.overview:', sources?.overview);
+        console.log('[collectPositionTimestamps] sources.log:', sources?.log);
         if (!sources) {
+            console.warn('[collectPositionTimestamps] No sources found for position:', positionId);
             return [];
         }
         const overviewTimes = collectTimestampsFromSource(sources.overview);
         const logTimes = collectTimestampsFromSource(sources.log);
+        console.log('[collectPositionTimestamps] overviewTimes count:', overviewTimes.length);
+        console.log('[collectPositionTimestamps] logTimes count:', logTimes.length);
         if (!overviewTimes.length && !logTimes.length) {
+            console.warn('[collectPositionTimestamps] No timestamps found in either source');
             return [];
         }
         const combined = [...overviewTimes, ...logTimes];
@@ -83,6 +91,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 previous = timestamp;
             }
         });
+        console.log('[collectPositionTimestamps] Returning', deduped.length, 'deduplicated timestamps');
         return deduped;
     }
 
@@ -294,6 +303,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const existingAreas = getRegionAreas(targetRegion);
                 const nextAreas = [...existingAreas, { start, end }];
                 dispatch(actions.regionUpdate(targetRegion.id, { areas: nextAreas }));
+                dispatch(updateRegionMetricsIntent());
                 if (regionsState?.selectedId !== targetRegion.id) {
                     dispatch(selectRegionIntent(targetRegion.id));
                 }
@@ -310,6 +320,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             console.log('[regionAdd] Adding region:', { positionId, start, end });
             dispatch(actions.regionAdd(positionId, start, end));
+            dispatch(updateRegionMetricsIntent());
 
             const newState = getState();
             const newRegionId = newState.regions.selectedId; // The reducer sets the new region as selected
@@ -324,18 +335,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function createAutoRegionsIntent(payload) {
         return function (dispatch, getState) {
+            console.log('[AutoRegions] Starting createAutoRegionsIntent');
+            console.log('[AutoRegions] actions available:', !!actions);
+            console.log('[AutoRegions] dispatch type:', typeof dispatch);
+            
             if (!actions || typeof dispatch !== 'function') {
+                console.error('[AutoRegions] Early return: actions or dispatch not available');
                 return;
             }
             const state = typeof getState === 'function' ? getState() : null;
             const availablePositions = Array.isArray(state?.view?.availablePositions)
                 ? state.view.availablePositions
                 : [];
-            const fallbackPositions = registry.models?.timeSeriesSources
-                ? Object.keys(registry.models.timeSeriesSources)
+            const fallbackPositions = models?.timeSeriesSources
+                ? Object.keys(models.timeSeriesSources)
                 : [];
             const positions = availablePositions.length ? availablePositions : fallbackPositions;
+            console.log('[AutoRegions] Positions to process:', positions);
+            
             if (!positions.length) {
+                console.error('[AutoRegions] No positions found, returning');
                 return;
             }
 
@@ -353,57 +372,76 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 });
                 return result.length ? result : Object.keys(AUTO_REGION_MODES);
             })();
+            console.log('[AutoRegions] Requested modes:', requestedModes);
             const shouldAggregate = requestedModes.length === 1;
 
             const generated = [];
             positions.forEach(positionId => {
+                console.log('[AutoRegions] Processing position:', positionId);
                 if (!positionId) {
+                    console.warn('[AutoRegions] Skipping null/undefined position');
                     return;
                 }
                 const timestamps = collectPositionTimestamps(positionId);
+                console.log('[AutoRegions] Collected', timestamps.length, 'timestamps for', positionId);
                 if (!timestamps.length) {
+                    console.warn('[AutoRegions] No timestamps for position:', positionId);
                     return;
                 }
                 requestedModes.forEach(modeName => {
+                    console.log('[AutoRegions] Processing mode:', modeName, 'for position:', positionId);
                     const config = AUTO_REGION_MODES[modeName];
                     if (!config) {
+                        console.warn('[AutoRegions] No config for mode:', modeName);
                         return;
                     }
                     const intervals = buildDailyIntervals(timestamps, modeName);
+                    console.log('[AutoRegions] Built', intervals.length, 'intervals for', modeName);
                     
                     if (intervals.length > 0) {
                         const baseTitle = `${modeName.charAt(0).toUpperCase() + modeName.slice(1)} - ${positionId}`;
                         if (shouldAggregate) {
-                            generated.push({
+                            const region = {
                                 positionId,
                                 start: intervals[0].start,
                                 end: intervals[intervals.length - 1].end,
                                 areas: intervals,
                                 color: config.color,
                                 note: baseTitle
-                            });
+                            };
+                            console.log('[AutoRegions] Generated aggregated region:', region);
+                            generated.push(region);
                         } else {
                             intervals.forEach((interval, index) => {
                                 const titleSuffix = intervals.length > 1 ? ` (${index + 1})` : '';
-                                generated.push({
+                                const region = {
                                     positionId,
                                     start: interval.start,
                                     end: interval.end,
                                     areas: [interval],
                                     color: config.color,
                                     note: `${baseTitle}${titleSuffix}`
-                                });
+                                };
+                                console.log('[AutoRegions] Generated individual region:', region);
+                                generated.push(region);
                             });
                         }
+                    } else {
+                        console.warn('[AutoRegions] No intervals generated for', modeName);
                     }
                 });
             });
 
+            console.log('[AutoRegions] Total generated regions:', generated.length);
             if (!generated.length) {
+                console.error('[AutoRegions] No regions generated, returning');
                 return;
             }
 
+            console.log('[AutoRegions] Dispatching regionsAdded with', generated.length, 'regions');
             dispatch(actions.regionsAdded(generated));
+            dispatch(updateRegionMetricsIntent());
+            console.log('[AutoRegions] Dispatch complete');
         };
     }
 
@@ -623,6 +661,30 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    /**
+     * Updates region metrics when regions change or parameters change.
+     * This thunk computes metrics for regions that need updates and dispatches
+     * a single batch action to update all metrics at once.
+     */
+    function updateRegionMetricsIntent() {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') return;
+            
+            const state = getState();
+            const { models } = app.registry;
+            const dataCache = app.dataCache;
+            
+            if (!app.regions?.prepareMetricsUpdates) {
+                return;
+            }
+            
+            const updates = app.regions.prepareMetricsUpdates(state, dataCache, models) || [];
+            if (updates.length > 0) {
+                dispatch(actions.regionSetMetricsBatch(updates));
+            }
+        };
+    }
+
     app.features = app.features || {};
     app.features.regions = app.features.regions || {};
     app.features.regions.thunks = {
@@ -637,7 +699,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         mergeRegionIntoSelectedIntent,
         resizeSelectedRegionIntent,
         splitSelectedRegionIntent,
-        toggleRegionCreationIntent
+        toggleRegionCreationIntent,
+        updateRegionMetricsIntent
     };
 })(window.NoiseSurveyApp);
 

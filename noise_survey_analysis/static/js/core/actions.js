@@ -63,6 +63,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REGION_NOTE_SET: 'regions/regionNoteSet',
         REGION_COLOR_SET: 'regions/regionColorSet',
         REGION_METRICS_SET: 'regions/regionMetricsSet',
+        REGION_METRICS_BATCH_SET: 'regions/regionMetricsBatchSet',
         REGION_ADD_AREA_MODE_SET: 'regions/regionAddAreaModeSet',
         REGION_MERGE_MODE_SET: 'regions/regionMergeModeSet',
         REGIONS_REPLACED: 'regions/regionsReplaced',
@@ -216,6 +217,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         regionSetColor: (id, color) => ({ type: actionTypes.REGION_COLOR_SET, payload: { id, color } }),
 
         regionSetMetrics: (id, metrics) => ({ type: actionTypes.REGION_METRICS_SET, payload: { id, metrics } }),
+
+        regionSetMetricsBatch: (updates) => ({ type: actionTypes.REGION_METRICS_BATCH_SET, payload: { updates } }),
 
         regionReplaceAll: (regions) => ({ type: actionTypes.REGIONS_REPLACED, payload: { regions } }),
 

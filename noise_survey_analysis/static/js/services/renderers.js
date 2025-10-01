@@ -639,6 +639,47 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
             hoverToggleModel.label = isHoverActive ? 'Hover Enabled' : 'Hover Disabled';
         }
+
+        // --- Update Global Audio Controls ---
+        const globalAudioControls = models.globalAudioControls;
+        if (globalAudioControls) {
+            // Update Play/Pause button
+            if (globalAudioControls.play_toggle) {
+                if (globalAudioControls.play_toggle.active !== isPlaying) {
+                    globalAudioControls.play_toggle.active = isPlaying;
+                }
+                globalAudioControls.play_toggle.label = isPlaying ? "Pause" : "Play";
+                globalAudioControls.play_toggle.button_type = isPlaying ? 'primary' : 'success';
+            }
+
+            // Update Playback Rate button
+            if (globalAudioControls.playback_rate_button) {
+                globalAudioControls.playback_rate_button.label = `${playbackRate.toFixed(1)}x`;
+            }
+
+            // Update Volume Boost toggle
+            if (globalAudioControls.volume_boost_button) {
+                const isBoostActive = isPlaying && volumeBoost;
+                if (globalAudioControls.volume_boost_button.active !== isBoostActive) {
+                    globalAudioControls.volume_boost_button.active = isBoostActive;
+                }
+                globalAudioControls.volume_boost_button.button_type = isBoostActive ? 'warning' : 'light';
+            }
+
+            // Update Active Position Display
+            if (globalAudioControls.active_position_display) {
+                let displayText = "<span style='font-size: 11px; color: #666;'>No audio</span>";
+                if (isPlaying && activePositionId) {
+                    const displayName = typeof displayTitles[activePositionId] === 'string' && displayTitles[activePositionId].trim()
+                        ? displayTitles[activePositionId]
+                        : activePositionId;
+                    displayText = `<span style='font-size: 11px; color: #2c7bb6; font-weight: 600;'>▶ ${displayName}</span>`;
+                }
+                if (globalAudioControls.active_position_display.text !== displayText) {
+                    globalAudioControls.active_position_display.text = displayText;
+                }
+            }
+        }
         const isChartVisible = chartName => {
             if (!chartName) {
                 return true;
@@ -651,7 +692,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         availablePositions.forEach(pos => {
             const controller = controllers.positions[pos];
-            const controls = models.audio_controls[pos];
+            const positionControls = models.positionControls?.[pos];
             const isThisPositionActive = isPlaying && activePositionId === pos;
             const timeSeriesChartName = `figure_${pos}_timeseries`;
             const spectrogramChartName = `figure_${pos}_spectrogram`;
@@ -660,8 +701,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ? displayTitles[pos]
                 : pos;
 
-            if (controls?.layout && controls.layout.visible !== shouldShowControls) {
-                controls.layout.visible = shouldShowControls;
+            if (positionControls?.layout && positionControls.layout.visible !== shouldShowControls) {
+                positionControls.layout.visible = shouldShowControls;
             }
 
             // --- Update Chart Visuals (Title and Background) ---
@@ -688,50 +729,45 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 specChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
             }
 
-            // --- Update Control Widget Visuals ---
-            if (controls) {
-                // Update Play/Pause button state, label, and color
-                if (controls.playToggle.active !== isThisPositionActive) {
-                    controls.playToggle.active = isThisPositionActive;
-                }
-                controls.playToggle.label = isThisPositionActive ? "Pause" : "Play";
-                controls.playToggle.button_type = isThisPositionActive ? 'primary' : 'success'; // Blue when playing, green when ready
-
-                // Update playback rate button label (always reflects current rate)
-                controls.playbackRateButton.label = `${playbackRate.toFixed(1)}x`;
-
-                // Update volume boost toggle and color
-                const isBoostActiveForThisPos = isThisPositionActive && volumeBoost;
-                controls.volumeBoostButton.active = isBoostActiveForThisPos;
-                controls.volumeBoostButton.button_type = isBoostActiveForThisPos ? 'warning' : 'light'; // 'warning' (orange) when active, 'light' (grey) otherwise
-
+            // --- Update Position Control Widget Visuals (Offsets) ---
+            if (positionControls) {
                 const chartOffsetMs = Number(positionChartOffsets?.[pos]);
                 const audioOffsetMs = Number(positionAudioOffsets?.[pos]);
                 const effectiveOffsetMs = Number(positionEffectiveOffsets?.[pos]);
 
-                if (controls.chartOffsetSpinner) {
+                // Update position title to show playing indicator
+                if (positionControls.title_div) {
+                    const titleText = isThisPositionActive 
+                        ? `<strong style='font-size: 12px; color: #2c7bb6;'>▶ ${displayName}</strong>`
+                        : `<strong style='font-size: 12px;'>${displayName}</strong>`;
+                    if (positionControls.title_div.text !== titleText) {
+                        positionControls.title_div.text = titleText;
+                    }
+                }
+
+                if (positionControls.chart_offset_spinner) {
                     const offsetSeconds = Number.isFinite(chartOffsetMs) ? Math.round(chartOffsetMs / 100) / 10 : 0;
-                    if (typeof controls.chartOffsetSpinner.value !== 'number'
-                        || Math.abs(controls.chartOffsetSpinner.value - offsetSeconds) > 0.0001) {
-                        controls.chartOffsetSpinner.value = offsetSeconds;
+                    if (typeof positionControls.chart_offset_spinner.value !== 'number'
+                        || Math.abs(positionControls.chart_offset_spinner.value - offsetSeconds) > 0.0001) {
+                        positionControls.chart_offset_spinner.value = offsetSeconds;
                     }
                 }
 
-                if (controls.audioOffsetSpinner) {
+                if (positionControls.audio_offset_spinner) {
                     const offsetSeconds = Number.isFinite(audioOffsetMs) ? Math.round(audioOffsetMs / 100) / 10 : 0;
-                    if (typeof controls.audioOffsetSpinner.value !== 'number'
-                        || Math.abs(controls.audioOffsetSpinner.value - offsetSeconds) > 0.0001) {
-                        controls.audioOffsetSpinner.value = offsetSeconds;
+                    if (typeof positionControls.audio_offset_spinner.value !== 'number'
+                        || Math.abs(positionControls.audio_offset_spinner.value - offsetSeconds) > 0.0001) {
+                        positionControls.audio_offset_spinner.value = offsetSeconds;
                     }
                 }
 
-                if (controls.effectiveOffsetDisplay) {
+                if (positionControls.effective_offset_display) {
                     const offsetSeconds = Number.isFinite(effectiveOffsetMs) ? effectiveOffsetMs / 1000 : 0;
                     const formatted = offsetSeconds >= 0
-                        ? `Effective: +${offsetSeconds.toFixed(2)} s`
-                        : `Effective: ${offsetSeconds.toFixed(2)} s`;
-                    if (controls.effectiveOffsetDisplay.text !== formatted) {
-                        controls.effectiveOffsetDisplay.text = formatted;
+                        ? `<span style='font-size: 10px; color: #666; font-weight: 500;'>Effective: +${offsetSeconds.toFixed(2)} s</span>`
+                        : `<span style='font-size: 10px; color: #666; font-weight: 500;'>Effective: ${offsetSeconds.toFixed(2)} s</span>`;
+                    if (positionControls.effective_offset_display.text !== formatted) {
+                        positionControls.effective_offset_display.text = formatted;
                     }
                 }
             }

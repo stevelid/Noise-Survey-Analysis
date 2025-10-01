@@ -422,12 +422,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return updateRegion(state, id, { metrics });
             }
 
-            case actionTypes.REGION_COLOR_SET: {
-                const { id, color } = action.payload || {};
-                if (!Number.isFinite(id)) {
+            case actionTypes.REGION_METRICS_BATCH_SET: {
+                const updates = action.payload?.updates;
+                if (!Array.isArray(updates) || !updates.length) {
                     return state;
                 }
-                return updateRegion(state, id, { color });
+                let nextState = state;
+                updates.forEach(update => {
+                    const { id, metrics } = update || {};
+                    if (Number.isFinite(id)) {
+                        nextState = updateRegion(nextState, id, { metrics });
+                    }
+                });
+                return nextState;
             }
 
             case actionTypes.REGION_VISIBILITY_SET: {

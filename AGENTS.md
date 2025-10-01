@@ -67,6 +67,12 @@ Follow consistent naming to make intent obvious:
 - **Management:** A single mutable JavaScript object initialized and owned by `app.js`, passed by reference to `data-processors.js` (which mutates it with new slices) and `renderers.js` (which reads it to update charts).
 - **Key Principle:** The cache stays mutable to avoid copying large arrays on every state change, ensuring high performance and responsiveness.
 
+### Bokeh Models Registry (`app.registry.models`)
+- **Purpose:** Central registry for Bokeh models and data sources passed from Python.
+- **Access Pattern:** Always use `models?.timeSeriesSources?.[positionId]` to access time series data sources. **NEVER use `registry.models` directly in thunks or business logic.**
+- **Structure:** `models.timeSeriesSources[positionId]` contains `{ overview: ColumnDataSource, log: ColumnDataSource }` for each position.
+- **Key Principle:** The `models` object is a global reference populated at initialization from `bokehModels` passed by Python. It is accessed via `app.registry.models` in `app.js` but should be referenced as `models` (available in global scope) in other JavaScript modules.
+
 ## 5. Application Loop (`app.js: onStateChange`)
 1. A user interaction dispatches an action.
 2. Reducers create a new, lightweight UI state reflecting the change.
@@ -218,5 +224,9 @@ When you add or modify any code that creates user interactions:
 - **E2E tests** should be limited to critical smoke tests due to high maintenance cost
 - Run `npm test` before committing to ensure no regressions in automated tests
 - Automated tests complement but do not replace manual testing for Bokeh interactions
+
+### Manual Testing. 
+- use use python noise_survey_analysis --generate-static .\config.json to generate static files
+- use playwright mcp to test
 
 By following this handbook, contributors maintain a clean, scalable, and predictable codebase that respects the project's performance constraints and architectural conventions.

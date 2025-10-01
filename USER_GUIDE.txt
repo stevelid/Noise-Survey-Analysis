@@ -3,7 +3,7 @@
 ================================================================================
 
 Version: 1.2
-Last Updated: [TO BE COMPLETED]
+Last Updated: 2025-10-01
 
 ================================================================================
 TABLE OF CONTENTS
@@ -27,275 +27,1801 @@ TABLE OF CONTENTS
 1. INTRODUCTION
 ================================================================================
 
-[TO BE WRITTEN]
+The Noise Survey Analysis application is an interactive Bokeh-based tool designed
+for acoustic consultants and environmental noise professionals. It provides a
+powerful, unified dashboard for analyzing noise survey data from multiple
+measurement positions and file formats simultaneously.
 
-Overview of the Noise Survey Analysis application and its purpose.
+The application is optimized for performance and interactivity, even with large
+datasets spanning weeks or months. It supports data from major sound level meter
+manufacturers including Svan, NTi Audio, and Noise Sentry.
 
 Key Features:
 - Interactive time-series visualization of noise data
-- Support for multiple measurement positions
-- Region and marker annotation tools
-- Audio playback synchronized with data
-- Spectral analysis and spectrogram views
-- Export capabilities for reports
+- Support for multiple measurement positions in a single view
+- Region and marker annotation tools for detailed analysis
+- Synchronized audio playback with visual timeline
+- Real-time spectral analysis and spectrogram views
+- Multi-area regions for complex measurement scenarios
+- Export capabilities for reports and data sharing
+- Static HTML generation for easy distribution
+- Keyboard shortcuts for efficient workflow
 
 ================================================================================
 2. GETTING STARTED
 ================================================================================
 
-[TO BE WRITTEN]
-
 System Requirements:
-- Python 3.x
-- Required packages (see requirements.txt)
-- Web browser (Chrome, Firefox, Edge recommended)
+- Python 3.8 or higher
+- VLC Media Player (required for audio playback)
+- Modern web browser (Chrome, Firefox, or Edge recommended)
+- Minimum 4GB RAM (8GB+ recommended for large datasets)
+- Display resolution: 1920x1080 or higher recommended
 
 Installation:
-[Installation steps to be documented]
+
+1. Ensure Python 3.8+ is installed on your system
+   - Check version: python --version
+
+2. Install VLC Media Player from https://www.videolan.org/vlc/
+   - This is required for synchronized audio playback
+
+3. Clone or download the Noise Survey Analysis repository
+
+4. Open a terminal/command prompt in the application directory
+
+5. Install required Python packages:
+   pip install -r requirements.txt
+
+6. Verify installation by running:
+   bokeh serve noise_survey_analysis --show
 
 First-Time Setup:
-[Configuration steps to be documented]
+
+1. Organize your data files in a logical directory structure:
+   - Keep log files, audio files, and related data together
+   - Use consistent naming conventions for measurement positions
+
+2. Launch the application using one of the methods in Section 3
+
+3. Use the Data Source Selector to choose your files:
+   - Drag and drop files or folders onto the window
+   - Or use the "Scan Job Directory" feature for organized projects
+
+4. Assign position names (e.g., "North", "East", "West")
+
+5. Save your configuration as a .json file for future use
+
+6. The dashboard will load with your data ready for analysis
 
 ================================================================================
 3. CREATING A DASHBOARD
 ================================================================================
 
-[TO BE WRITTEN]
-
 Preparing Your Data:
-[Data format requirements and preparation steps]
+
+The application supports multiple file formats from common sound level meters:
+
+- NTi Audio: .txt log files with spectral data
+- Svan: .csv and .xlsx files (both log and summary formats)
+- Noise Sentry: .csv files with resampled data
+- Audio: .wav files (other formats supported with soundfile library)
+
+Data Preparation Tips:
+- Keep all files for a measurement position in the same directory
+- Ensure audio files have timestamps in their filenames or metadata
+- Use consistent date/time formats across all data sources
+- Remove any corrupted or incomplete files before loading
 
 Creating a Configuration File:
-[config.json structure and examples]
+
+Configuration files (.json) define which data files to load and how to
+organize them. They can be created in two ways:
+
+Method 1: Using the Data Source Selector (Recommended)
+1. Run: bokeh serve noise_survey_analysis --show
+2. Use the interactive selector to choose files
+3. Click "Save Config" to generate a .json file
+4. The file is portable - move it with your data
+
+Method 2: Manual Creation
+Create a JSON file with this structure:
+
+{
+  "version": "1.2",
+  "created_at": "2025-10-01T10:00:00.000000",
+  "config_base_path": "C:/Projects/NoiseData/Job1234",
+  "sources": [
+    {
+      "path": "Position1/log_data.csv",
+      "position": "North",
+      "type": "svan_log",
+      "parser_type": "svan"
+    },
+    {
+      "path": "Position1/Audio/",
+      "position": "North",
+      "type": "audio_dir",
+      "parser_type": "audio"
+    }
+  ]
+}
+
+Key fields:
+- config_base_path: Root directory for all relative paths
+- path: File or directory path relative to config_base_path
+- position: Display name for the measurement location
+- parser_type: svan, nti, sentry, or audio
 
 Running the Application:
-[Command-line usage and options]
+
+There are three ways to run the application:
+
+A) Interactive Server Mode (Full Features)
+   bokeh serve noise_survey_analysis --show
+   
+   - Opens the Data Source Selector
+   - Full audio playback support
+   - Real-time interaction with Python backend
+   - Best for active analysis work
+
+B) Server Mode with Configuration
+   bokeh serve noise_survey_analysis --show --args --config path/to/config.json
+   
+   - Loads data directly from saved configuration
+   - Bypasses the file selector
+   - Ideal for returning to previous work
+   - Can also load saved workspace state:
+     --args --config config.json --state workspace.json
+
+C) Static HTML Generation (For Sharing)
+   python -m noise_survey_analysis.main --generate-static path/to/config.json
+   
+   - Creates a single .html file
+   - No Python server required to view
+   - Audio playback disabled
+   - Perfect for reports and email distribution
+   - Output file saved in same directory as config
 
 Opening the Generated Dashboard:
-[How to open and view the HTML output]
+
+- Server Mode: Browser opens automatically at http://localhost:5006
+- Static HTML: Double-click the generated .html file
+  - Or open it in any web browser
+  - File is self-contained and portable
+  - Can be viewed offline
 
 ================================================================================
 4. UNDERSTANDING THE INTERFACE
 ================================================================================
 
-[TO BE WRITTEN]
+The dashboard is organized into several key areas:
 
 Main Components:
-- Time-series charts (top section)
-- Spectrogram view
-- Control panel (left side)
-- Region panel (right side)
-- Marker panel (right side)
-- Audio controls (bottom)
-- Range selector (bottom)
+
+1. Time-Series Charts (Top Section)
+   - One chart per measurement position (e.g., North, East, West)
+   - Displays selected parameter (LAeq, LAFmax, LAFmin, etc.)
+   - Shows regions as colored overlays
+   - Shows markers as vertical lines
+   - Red tap line indicates current selection
+   - Gray dashed hover line follows mouse (when enabled)
+
+2. Spectrogram Views (Middle Section)
+   - One spectrogram per position
+   - Color-coded frequency content over time
+   - Synchronized with time-series charts
+   - Toggle between log and overview data
+
+3. Summary Table (Below Control Panel)
+   - Shows parameter values at tap line location
+   - Updates in real-time as you click on charts
+   - Displays data for all visible positions
+
+4. Frequency Bar Chart (Below Summary Table)
+   - Shows spectral data at tap line or hover position
+   - Displays 1/3 octave band levels
+   - Updates dynamically as you move through data
+
+5. Control Panel (Left Side)
+   - Parameter selector (LAeq, LAFmax, etc.)
+   - Log View toggle (switches between log and overview data)
+   - Hover Enabled toggle (enables/disables hover line)
+   - Clear All Markers button
+   - Chart visibility checkboxes
+   - Session menu (Save/Load workspace, Export/Import annotations)
+
+6. Side Panel (Right Side) - Two Tabs:
+   
+   Regions Tab:
+   - List of all regions with timestamps
+   - Region details (duration, metrics, notes)
+   - Color picker for selected region
+   - Notes text area
+   - Action buttons: Auto Day & Night, Add Area, Merge Regions,
+     Split Areas, Copy Summary, Copy Spectrum, Delete Region
+   
+   Markers Tab:
+   - List of all markers with timestamps
+   - Marker details (timestamp, position, metrics)
+   - Color picker for selected marker
+   - Notes text area
+   - Action buttons: Add Marker at Tap, Copy Details, Delete Marker
+
+7. Audio Controls (Bottom Section)
+   - Play/Pause toggle for each position
+   - Playback rate button (cycles: 1.0x, 1.5x, 2.0x, 0.5x)
+   - Volume boost toggle (+20dB)
+   - Chart time offset spinner
+   - Audio time offset spinner
+   - Effective offset display
+
+8. Range Selector (Bottom)
+   - Shows full dataset timeline
+   - Drag handles to zoom main charts
+   - Drag center to pan without zooming
+   - Provides overview of entire survey period
 
 Navigation:
-[How to pan, zoom, and navigate through data]
+
+Panning:
+- Click and drag on any chart to pan left/right
+- All time-based charts pan together
+- Use mouse wheel to zoom in/out
+
+Zooming:
+- Scroll wheel up to zoom in
+- Scroll wheel down to zoom out
+- Use range selector handles for precise zoom control
+- Double-click on range selector to reset to full view
+
+Time Selection:
+- Single click on chart to place tap line
+- Tap line appears on all charts at same timestamp
+- Summary table and frequency bar update automatically
+
+Keyboard Navigation:
+- Left/Right arrows: Move tap line to previous/next data point
+- Shift + Left/Right: Adjust right edge of selected region
+- Alt + Left/Right: Adjust left edge of selected region
+- See Section 11 for complete keyboard shortcuts
 
 ================================================================================
 5. WORKING WITH CHARTS
 ================================================================================
 
-[TO BE WRITTEN]
-
 Chart Interactions:
-- Single click (tap) - Place tap line and show values
-- Double-click - Create marker at location
-- Shift + Click - Select region boundary
-- Ctrl + Click - Delete region or marker
-- Box select - Select time range
-- Hover - Show hover line and labels
+
+Single Click (Tap)
+- Click anywhere on a time-series or spectrogram chart
+- Red tap line appears at clicked timestamp
+- Summary table updates with values at that location
+- Frequency bar shows spectral data at that point
+- Tap line appears on all charts simultaneously
+- Use for examining specific moments in time
+
+Double-Click
+- Double-click on any chart to create a marker
+- Marker appears as a vertical line (default: green)
+- Marker is added to the Markers panel
+- Useful for flagging important events quickly
+
+Shift + Click (Create Region)
+- Click once to place tap line
+- Hold Shift and click at a different location
+- Region is created spanning the two points
+- Works in both directions (left-to-right or right-to-left)
+- Region appears as colored overlay on all charts
+- Region is added to the Regions panel
+
+Shift + Drag (Box Select)
+- Hold Shift key
+- Click and drag horizontally on chart
+- Selection box appears during drag
+- Release mouse to create region
+- Ideal for selecting precise time ranges
+
+Ctrl + Click (Delete)
+- Hold Ctrl and click inside a region to delete it
+- Hold Ctrl and click near a marker to delete it
+- Deletion is immediate (no confirmation)
+- Deleted items are removed from all charts and panels
+
+Hover
+- Move mouse over chart (with Hover Enabled)
+- Gray dashed line appears on all charts
+- Value labels show data at hover position
+- Frequency bar updates to show spectrum at hover point
+- Hover line disappears when mouse leaves chart
+- Toggle off with "Hover Enabled" button if distracting
 
 Parameter Selection:
-[How to switch between LAeq, LAmax, LAmin, etc.]
 
-Log View:
-[How to toggle logarithmic view for spectral data]
+The Parameter Selector dropdown (in Control Panel) lets you choose which
+acoustic parameter to display on the time-series charts:
+
+- LZeq: Z-weighted equivalent continuous sound level
+- LAeq: A-weighted equivalent continuous sound level
+- LAFmax: A-weighted fast maximum level
+- LAFmin: A-weighted fast minimum level
+- LAF90: A-weighted fast 90th percentile level
+- (Additional parameters depending on your data)
+
+To change parameter:
+1. Click the Parameter Selector dropdown
+2. Choose desired parameter
+3. All time-series charts update immediately
+4. Spectrograms also update to show selected parameter
+5. Summary table reflects new parameter values
+
+Log View Toggle:
+
+The "Log View Enabled" button switches between two data resolution modes:
+
+Log View (Enabled - Default):
+- Shows high-resolution data from log files
+- Typically 1-second or faster resolution
+- Best for detailed analysis
+- More granular spectrograms
+- Larger file sizes in static HTML
+
+Overview (Disabled):
+- Shows lower-resolution summary data
+- Typically 1-minute or longer resolution
+- Faster rendering for long time periods
+- Less detailed but better performance
+- Smaller file sizes
+
+To toggle:
+1. Click "Log View Enabled" button in Control Panel
+2. Button turns gray when disabled
+3. All charts update to show overview data
+4. Click again to re-enable log view
 
 Chart Visibility:
-[How to show/hide individual position charts]
+
+Control which charts are displayed using the visibility checkboxes:
+
+Time-Series Charts:
+- Each position has a checkbox (e.g., "North", "East", "West")
+- Uncheck to hide that position's time-series chart
+- Hidden charts are collapsed to save screen space
+- Regions and markers for that position remain in panels
+
+Spectrogram Charts:
+- Each position has a spectrogram visibility checkbox
+- Uncheck to hide spectrogram for that position
+- Time-series chart remains visible
+- Useful for focusing on specific data types
+
+To toggle visibility:
+1. Locate visibility checkboxes in Control Panel
+2. Click checkbox to hide/show chart
+3. Chart collapses or expands immediately
+4. Settings persist during session
+5. Saved in workspace files for future sessions
 
 ================================================================================
 6. MANAGING REGIONS
 ================================================================================
 
-[TO BE WRITTEN]
-
 What are Regions?
-[Explanation of time-based regions for analysis]
+
+Regions are time spans that you define for detailed analysis. They appear as
+colored overlays on all charts and drive the metrics displayed in the side
+panel. Regions are essential for:
+
+- Analyzing specific time periods (e.g., daytime, nighttime)
+- Calculating LAeq, LAFmax, LAF90 for defined periods
+- Comparing noise levels across different time windows
+- Documenting events or conditions in your survey
+- Generating reports with specific measurement periods
+
+Each region can contain multiple non-contiguous areas, allowing you to analyze
+combined time periods (e.g., all daytime periods across multiple days).
 
 Creating Regions:
-- Using Shift + Click on charts
-- Using box select tool
-- Auto day/night region creation
+
+Method 1: Shift + Click
+1. Click on a chart to place the tap line (first boundary)
+2. Hold Shift and click at another location (second boundary)
+3. Region is created spanning the two points
+4. Works in either direction (left-to-right or right-to-left)
+5. Region appears on all charts for that position
+
+Method 2: Shift + Drag (Box Select)
+1. Hold Shift key
+2. Click and drag horizontally on any chart
+3. Selection box appears during drag
+4. Release mouse to create region
+5. More precise than Shift + Click method
+
+Method 3: Auto Day & Night
+1. Click "Auto Day & Night" button in Regions panel
+2. Application automatically creates regions for:
+   - Day periods: 7:00 AM to 11:00 PM (green color)
+   - Night periods: 11:00 PM to 7:00 AM (purple color)
+3. Regions span entire dataset
+4. Useful for standard environmental noise assessments
+5. Can be customized or deleted after creation
+
+Method 4: From Markers (R Key)
+1. Create two markers at desired boundaries
+2. Press R key
+3. Region is created between the two most recent markers
+4. Markers remain after region creation
 
 Editing Regions:
-- Selecting regions
-- Changing colors
-- Adding notes
-- Adjusting boundaries
-- Adding/removing areas (multi-area regions)
+
+Selecting Regions:
+- Click on region overlay in any chart
+- Or click region row in Regions panel table
+- Selected region is highlighted in panel
+- Only one region can be selected at a time
+- Region details appear in side panel
+
+Changing Colors:
+1. Select a region
+2. Click the color picker in Region Details section
+3. Choose new color from palette
+4. Region color updates immediately on all charts
+5. Color is saved with region data
+
+Adding Notes:
+1. Select a region
+2. Type in the Notes text area in Region Details
+3. Notes save automatically as you type
+4. Notes persist when switching between regions
+5. Notes are included in exported data
+6. Use notes to document:
+   - Weather conditions
+   - Observed events
+   - Measurement context
+   - Analysis decisions
+
+Adjusting Boundaries:
+
+Keyboard Method:
+- Shift + Left Arrow: Move right boundary left
+- Shift + Right Arrow: Move right boundary right
+- Alt + Left Arrow: Move left boundary left
+- Alt + Right Arrow: Move left boundary right
+- Each press nudges by ~10% of current step size
+
+Mouse Method (if implemented):
+- Hover over region edge until cursor changes
+- Click and drag to adjust boundary
+- Release to set new boundary
+
+Adding/Removing Areas (Multi-Area Regions):
+
+Adding Areas:
+1. Select a region
+2. Click "Add Area" button in Region Details
+3. Add Area mode activates
+4. Use Shift + Click or Shift + Drag to create additional areas
+5. New areas are added to the same region
+6. Metrics update to include all areas
+7. Click "Add Area" again to exit mode
+
+Example Use Case:
+- Create region for "Morning Rush Hour"
+- Add areas for 7-9 AM on Monday, Tuesday, Wednesday
+- Single region now spans three separate time periods
+- Metrics show combined analysis of all three periods
+
+Removing Areas:
+- Hold Ctrl and click inside the area to remove
+- Area is deleted from the region
+- If region has only one area, entire region is deleted
+- Metrics update automatically
 
 Region Operations:
-- Copy region data
-- Delete regions
-- Merge regions
-- Split regions
-- Copy spectrum data
+
+Copy Summary:
+1. Select a region
+2. Click "Copy Summary" button
+3. Region data is copied to clipboard in text format
+4. Paste into reports, emails, or documents
+5. Includes: name, timestamps, duration, LAeq, LAFmax, LAF90, notes
+
+Copy Spectrum Values:
+1. Select a region
+2. Click "Copy Spectrum Values" button
+3. Spectral data copied to clipboard in tab-separated format
+4. Paste directly into Excel or other spreadsheet
+5. Includes frequency bands and average levels for region
+
+Merge Regions:
+1. Select the first region (source)
+2. Click "Merge Regions" button
+3. Dropdown appears with other regions
+4. Select target region from dropdown
+5. Click "Merge Regions" again to confirm
+6. Two regions combine into one multi-area region
+7. Notes from both regions are preserved
+8. Metrics update to include all areas
+
+Split Areas:
+1. Select a multi-area region
+2. Click "Split Areas" button
+3. Region splits into separate regions (one per area)
+4. Each new region appears in table
+5. Original region is deleted
+6. Useful for analyzing areas individually after grouping
+
+Delete Region:
+1. Select a region
+2. Click "Delete Region" button in panel
+3. Or hold Ctrl and click inside region on chart
+4. Region is deleted immediately (no confirmation)
+5. Region disappears from all charts and panel
 
 Region Visibility:
-[How to show/hide regions]
+
+Global Toggle:
+1. Click "Regions" toggle button in side panel header
+2. All region overlays hide/show on charts
+3. Region panel details hide/show
+4. Regions remain in memory (not deleted)
+5. Useful for viewing raw data without annotations
+
+Per-Region Visibility (if implemented):
+- Use checkbox next to region in table
+- Hide specific regions while keeping others visible
+- Hidden regions remain selectable in panel
 
 ================================================================================
 7. MANAGING MARKERS
 ================================================================================
 
-[TO BE WRITTEN]
-
 What are Markers?
-[Explanation of point-in-time markers]
+
+Markers are point-in-time annotations that flag specific moments in your data.
+Unlike regions (which span time periods), markers identify single timestamps.
+Markers are useful for:
+
+- Flagging noise complaints or events
+- Marking interesting acoustic phenomena
+- Noting measurement conditions or changes
+- Creating reference points for analysis
+- Building regions (two markers can become a region)
+
+Markers appear as vertical lines on all charts and are listed in the Markers
+panel with their timestamp, position, and any notes you've added.
 
 Creating Markers:
-- Double-click on chart
-- Using keyboard shortcut (M)
-- Add marker at tap line
+
+Method 1: Double-Click
+1. Double-click on any time-series or spectrogram chart
+2. Marker is created at clicked timestamp
+3. Marker appears as vertical line (default: green)
+4. Marker is added to Markers panel
+5. Fastest method for quick annotations
+
+Method 2: M Key
+1. Click on chart to place tap line at desired timestamp
+2. Press M key
+3. Marker is created at tap line position
+4. More precise than double-clicking
+5. Useful when you need exact timestamp alignment
+
+Method 3: Add Marker at Tap Button
+1. Click on chart to place tap line
+2. Switch to Markers tab in side panel
+3. Click "Add Marker at Tap" button
+4. Marker is created at tap line position
+5. Same result as M key method
 
 Editing Markers:
-- Selecting markers
-- Changing colors
-- Adding notes
+
+Selecting Markers:
+- Click marker line on any chart
+- Or click marker row in Markers panel table
+- Selected marker is highlighted in panel
+- Tap line jumps to marker timestamp
+- Marker details appear in side panel
+
+Changing Colors:
+1. Select a marker
+2. Click the color picker in Marker Details section
+3. Choose new color from palette
+4. Marker color updates immediately on all charts
+5. Use colors to categorize markers:
+   - Red: Complaints or issues
+   - Yellow: Weather events
+   - Blue: Measurement notes
+   - Green: Normal events (default)
+
+Adding Notes:
+1. Select a marker
+2. Type in the Notes text area in Marker Details
+3. Notes save automatically as you type
+4. Notes persist when switching between markers
+5. Notes are included in exported data
+6. Use notes to document:
+   - What event occurred
+   - Source of noise
+   - Weather conditions
+   - Observer comments
+   - Complaint details
+
+Fine-Tuning Position (if implemented):
+- Ctrl + Left Arrow: Move marker to previous data point
+- Ctrl + Right Arrow: Move marker to next data point
+- Useful for aligning marker with exact event peak
 
 Marker Operations:
-- Copy marker data
-- Delete markers
+
+Copy Details:
+1. Select a marker
+2. Click "Copy Details" button
+3. Marker data is copied to clipboard in text format
+4. Paste into reports, emails, or documents
+5. Includes: timestamp, position, LAeq, LAFmax, notes
+
+Delete Marker:
+1. Select a marker
+2. Click "Delete Marker" button in panel
+3. Or hold Ctrl and click near marker on chart
+4. Marker is deleted immediately (no confirmation)
+5. Marker disappears from all charts and panel
+
+Clear All Markers:
+1. Click "Clear All Markers" button in Control Panel
+2. All markers are deleted immediately
+3. Use when starting fresh analysis
+4. Cannot be undone - save workspace first if needed
+
+Navigate Between Markers:
+- Left Arrow: Jump to previous marker (when marker selected)
+- Right Arrow: Jump to next marker (when marker selected)
+- Tap line moves to marker timestamp
+- Useful for reviewing flagged events sequentially
 
 Marker Visibility:
-[How to show/hide markers]
+
+Global Toggle:
+1. Click "Markers" toggle button in side panel header
+2. All marker lines hide/show on charts
+3. Markers remain in memory (not deleted)
+4. Useful for viewing data without marker clutter
+5. Markers panel remains accessible
+
+Per-Marker Visibility (if implemented):
+- Use checkbox next to marker in table
+- Hide specific markers while keeping others visible
+- Hidden markers remain selectable in panel
 
 ================================================================================
 8. AUDIO PLAYBACK
 ================================================================================
 
-[TO BE WRITTEN]
-
 Audio Requirements:
-[Supported audio formats and setup]
+
+The application supports synchronized audio playback in Server Mode only.
+Static HTML exports do not support audio playback.
+
+Required Software:
+- VLC Media Player must be installed on your system
+- Download from: https://www.videolan.org/vlc/
+
+Supported Audio Formats:
+- WAV (primary format, always supported)
+- FLAC, OGG, and other formats (requires soundfile library)
+- Audio files must have timestamps in filenames or metadata
+- Files should be organized in directories by position
+
+Audio File Organization:
+- Place audio files in directories matching measurement positions
+- Use consistent naming with timestamps
+- Example: "Position1_2025-01-15_10-30-00.wav"
+- Application scans directories and matches audio to chart data
 
 Playback Controls:
-- Play/Pause (Spacebar)
-- Playback rate adjustment
-- Audio boost
-- Chart time offset
-- Audio time offset
+
+Play/Pause:
+- Click Play toggle button for desired position
+- Or press Spacebar to play/pause audio
+- Audio starts from current tap line position
+- Button shows "Pause" state when playing
+- Click again or press Spacebar to pause
+- Multiple positions can play simultaneously
+
+Playback Rate:
+- Click Playback Rate button to cycle through speeds
+- Available rates: 1.0x → 1.5x → 2.0x → 0.5x → 1.0x
+- Button label shows current rate (e.g., "1.5x")
+- Audio speed changes immediately
+- Pitch remains constant (time-stretching applied)
+- Useful for:
+  - 0.5x: Detailed listening to fast events
+  - 1.0x: Normal playback
+  - 1.5x/2.0x: Quick review of long periods
+
+Volume Boost:
+- Click Volume Boost toggle button
+- Applies +20dB gain to audio
+- Useful for quiet recordings or background noise
+- Toggle button shows active state when enabled
+- Click again to return to normal volume
+- Warning: May cause distortion on loud recordings
+
+Chart Time Offset:
+- Use spinner to adjust chart data timing
+- Positive values: Shift chart data forward in time
+- Negative values: Shift chart data backward in time
+- Range: Typically ±300 seconds
+- Use when:
+  - Sound level meter clock was incorrect
+  - Data needs alignment with audio
+  - Compensating for known time errors
+- Effective offset display shows combined offset
+
+Audio Time Offset:
+- Use spinner to adjust audio timing
+- Positive values: Audio plays later (delayed)
+- Negative values: Audio plays earlier (advanced)
+- Range: Typically ±300 seconds
+- Use when:
+  - Audio recorder clock was incorrect
+  - Audio needs alignment with chart data
+  - Fine-tuning synchronization
+- Effective offset display shows combined offset
+
+Effective Offset Display:
+- Shows net time offset between chart and audio
+- Calculation: Chart Offset - Audio Offset
+- Example: Chart +5s, Audio -3s = Effective +8s
+- Updates automatically when either spinner changes
+- Helps understand total synchronization adjustment
 
 Synchronized Playback:
-[How audio syncs with chart position]
+
+How Synchronization Works:
+- Audio playback is synchronized with chart timeline
+- When you click on a chart, audio seeks to that timestamp
+- Tap line shows current playback position
+- Audio advances in real-time with chart data
+- All positions maintain independent playback states
+
+Using Synchronized Playback:
+
+1. Basic Playback:
+   - Click on chart to set starting position
+   - Press Spacebar or click Play toggle
+   - Audio plays from that timestamp
+   - Tap line remains at playback position
+
+2. Seeking During Playback:
+   - Click anywhere on chart while audio is playing
+   - Audio immediately seeks to new position
+   - Playback continues from new location
+   - No need to pause first
+
+3. Reviewing Specific Events:
+   - Create marker at event of interest
+   - Click marker to jump to that timestamp
+   - Press Spacebar to play audio from marker
+   - Use arrow keys to step through data points
+
+4. Comparing Multiple Positions:
+   - Start playback on first position
+   - Start playback on second position
+   - Both play simultaneously from same timestamp
+   - Compare noise sources across locations
+   - Adjust volume boost independently if needed
+
+5. Fine-Tuning Synchronization:
+   - Play audio and watch chart data
+   - If audio seems early/late, adjust offsets
+   - Use Audio Offset spinner for small adjustments
+   - Test synchronization at multiple points
+   - Save workspace to preserve offset settings
+
+Troubleshooting Audio:
+- If audio doesn't play, verify VLC is installed
+- Check that audio files are in correct directories
+- Ensure audio filenames contain valid timestamps
+- Try adjusting time offsets if sync is off
+- Check browser console for error messages
+- Audio only works in Server Mode, not Static HTML
 
 ================================================================================
 9. COMPARISON MODE
 ================================================================================
 
-[TO BE WRITTEN]
-
 What is Comparison Mode?
-[Explanation of comparing different time periods]
+
+Comparison Mode is a specialized view for analyzing and comparing noise levels
+across multiple measurement positions for specific time slices. It allows you to:
+
+- Select a time range and see metrics for all positions simultaneously
+- Compare LAeq, LAFmax, and LA90 values across positions
+- View spectral data for all positions in a single chart
+- Create regions for multiple positions at once
+- Identify which positions are most/least affected by noise
+
+Comparison Mode is ideal for:
+- Finding the noisiest position during specific events
+- Comparing daytime vs nighttime across all positions
+- Analyzing spatial distribution of noise sources
+- Creating matched regions for multi-position analysis
 
 Entering Comparison Mode:
-[How to activate comparison view]
+
+1. Locate the Comparison Mode button (typically in Control Panel or toolbar)
+2. Click "Enter Comparison Mode" or similar button
+3. Interface changes:
+   - Normal side panel (Regions/Markers) hides
+   - Comparison panel appears on right side
+   - Box select tool becomes active automatically
+   - Instructions appear in comparison panel
+4. Charts remain visible and interactive
+5. You are now ready to select time slices for comparison
 
 Selecting Positions:
-[How to choose which positions to compare]
+
+Position Selector Checkboxes:
+- Comparison panel shows checkbox for each position
+- All positions are included by default
+- Uncheck positions to exclude them from comparison
+- Metrics table updates to show only selected positions
+- Spectral comparison chart updates accordingly
+- Use to focus on specific positions of interest
+
+Example Use Cases:
+- Compare only North and South positions
+- Exclude a position with missing data
+- Focus on positions closest to noise source
+
+Selecting Time Slices:
+
+1. Hold Shift and drag on any chart to select time range
+2. Or use Shift + Click method (two clicks)
+3. Selection box appears during drag
+4. Release mouse to finalize selection
+5. Comparison panel updates with:
+   - Selected time range (start and end timestamps)
+   - Duration of selection
+   - Metrics table for all included positions
+   - Spectral comparison chart
+
+Metrics Table:
+- One row per included position
+- Columns: Position, Duration, LAeq, LAFmax, LA90
+- Values calculated for selected time slice only
+- Updates immediately when you select new time range
+- Sortable by clicking column headers (if implemented)
+- Use to identify:
+  - Which position has highest LAeq
+  - Which position has highest LAFmax
+  - Differences in LA90 (background noise)
+
+Spectral Comparison Chart:
+- Shows frequency spectrum for all included positions
+- One line per position (color-coded)
+- Displays average spectrum for selected time slice
+- Legend identifies each position
+- Use to:
+  - Compare frequency content across positions
+  - Identify dominant frequency bands
+  - Understand spatial variation of spectral characteristics
 
 Creating Regions from Comparison:
-[How to mark regions based on comparison]
+
+Make Region(s) Button:
+1. Select desired time slice using Shift + Drag
+2. Review metrics to confirm correct time range
+3. Click "Make Region(s)" button in comparison panel
+4. Application creates one region per included position
+5. Each region:
+   - Spans the selected time slice
+   - Is assigned to its respective position
+   - Has default color and auto-generated name
+   - Appears in Regions panel after exiting comparison mode
+6. Regions are immediately visible on charts
+
+Example Workflow:
+- Enter Comparison Mode
+- Select 8:00 AM to 9:00 AM time slice
+- Review metrics - North position has highest LAeq
+- Click "Make Region(s)" to create regions
+- Exit Comparison Mode
+- Regions now available for detailed analysis in Regions panel
+- Add notes, adjust colors, or refine boundaries as needed
+
+Benefits:
+- Quickly create matched regions across all positions
+- Ensures consistent time boundaries
+- Faster than creating regions individually
+- Ideal for standardized reporting periods
 
 Exiting Comparison Mode:
-[How to return to normal view]
+
+1. Click "Finish Comparison" or "Exit Comparison" button
+2. Or press Escape key
+3. Interface returns to normal:
+   - Comparison panel hides
+   - Normal side panel (Regions/Markers) reappears
+   - Pan tool becomes active again
+   - Box select tool deactivates
+4. Any regions created during comparison remain
+5. Charts return to normal interaction mode
+6. You can re-enter Comparison Mode at any time
+
+Tips for Effective Comparison:
+- Use Comparison Mode for initial survey overview
+- Create regions for key time periods (day/night/events)
+- Exit to normal mode for detailed region analysis
+- Re-enter Comparison Mode to create additional regions
+- Combine with Auto Day & Night for comprehensive coverage
 
 ================================================================================
 10. EXPORTING DATA
 ================================================================================
 
-[TO BE WRITTEN]
+The application provides multiple export options for sharing analysis results,
+creating reports, and archiving your work.
 
 Export Options:
-- Region data export
-- Marker data export
-- Spectrum data export
-- Screenshot/image export
+
+1. Export Annotations (CSV)
+   - Exports all regions and markers to CSV file
+   - Accessible via: Menu → Export Annotations (CSV)
+   - File format: Spreadsheet-compatible
+   - Includes:
+     - Type (region or marker)
+     - ID
+     - Position ID
+     - Start timestamp (UTC)
+     - End timestamp (UTC, empty for markers)
+     - Notes
+     - Color
+   - Timestamp format: YYYY-MM-DD HH:mm:ss.sss (Excel-ready)
+   - Use for:
+     - Sharing annotations with colleagues
+     - Archiving analysis decisions
+     - Creating reports in Excel
+     - Backup of annotation work
+
+2. Import Annotations (CSV)
+   - Imports previously exported annotations
+   - Accessible via: Menu → Import Annotations (CSV)
+   - File picker opens to select CSV file
+   - Annotations are loaded and applied to current data
+   - Existing annotations are replaced
+   - Use for:
+     - Restoring previous analysis
+     - Applying annotations from another analyst
+     - Loading standardized region templates
+   - Note: Timestamps must match your data range
+
+3. Save Workspace
+   - Saves complete UI state to JSON file
+   - Accessible via: Menu → Save Workspace
+   - Includes:
+     - All markers and regions
+     - Active parameter selection
+     - Selected regions/markers
+     - Viewport and zoom settings
+     - Chart visibility settings
+     - Audio offset settings
+     - Source configuration references
+   - File naming: workspace-YYYY-MM-DDTHH-mm-ss.json
+   - Use for:
+     - Saving work-in-progress
+     - Creating analysis snapshots
+     - Sharing complete analysis state
+     - Resuming work later
+
+4. Load Workspace
+   - Restores previously saved workspace
+   - Accessible via: Menu → Load Workspace
+   - File picker opens to select workspace JSON
+   - UI state is restored immediately
+   - Warning if source files don't match current data
+   - Use for:
+     - Resuming previous analysis session
+     - Loading colleague's analysis
+     - Switching between different analysis views
+
+5. Copy Region Summary
+   - Copies selected region data to clipboard
+   - Accessible via: Region Details → Copy Summary button
+   - Text format, ready for pasting
+   - Includes:
+     - Region name
+     - Start and end timestamps
+     - Duration
+     - LAeq, LAFmax, LAF90 values
+     - Notes
+   - Use for:
+     - Quick insertion into reports
+     - Email communication
+     - Documentation
+
+6. Copy Spectrum Values
+   - Copies spectral data for selected region
+   - Accessible via: Region Details → Copy Spectrum Values button
+   - Tab-separated format
+   - Includes:
+     - Frequency bands (Hz)
+     - Average levels (dB) for each band
+   - Paste directly into Excel or other spreadsheet
+   - Use for:
+     - Spectral analysis in Excel
+     - Creating custom charts
+     - Detailed frequency reporting
+
+7. Copy Marker Details
+   - Copies selected marker data to clipboard
+   - Accessible via: Marker Details → Copy Details button
+   - Text format, ready for pasting
+   - Includes:
+     - Timestamp
+     - Position
+     - LAeq, LAFmax values
+     - Notes
+   - Use for:
+     - Event logging
+     - Complaint documentation
+     - Quick reference notes
+
+8. Static HTML Export
+   - Generates standalone HTML file of entire dashboard
+   - Command line: python -m noise_survey_analysis.main --generate-static config.json
+   - Output: Single .html file in same directory as config
+   - File is self-contained and portable
+   - No Python server required to view
+   - Limitations:
+     - Audio playback disabled
+     - No server-side features
+     - Larger file size with log data
+   - Use for:
+     - Email distribution
+     - Client reports
+     - Archive of analysis
+     - Offline viewing
 
 Export Formats:
-[Available formats and their uses]
+
+CSV (Comma-Separated Values):
+- Standard spreadsheet format
+- Opens in Excel, Google Sheets, etc.
+- Used for: Annotations export/import
+- Human-readable and editable
+- Compatible with most data analysis tools
+
+JSON (JavaScript Object Notation):
+- Structured data format
+- Used for: Workspace save/load, configuration files
+- Preserves complex data structures
+- Machine-readable
+- Can be edited with text editor (advanced users)
+
+Plain Text:
+- Simple text format
+- Used for: Clipboard exports (regions, markers, spectrum)
+- Easy to paste into documents
+- Human-readable
+- No special software required
+
+HTML (HyperText Markup Language):
+- Web page format
+- Used for: Static dashboard export
+- Self-contained with embedded data
+- Opens in any web browser
+- Includes all charts and interactivity (except audio)
 
 Using Exported Data:
-[How to use exported data in reports]
+
+In Reports:
+1. Export annotations to CSV
+2. Open in Excel
+3. Filter/sort to find relevant regions
+4. Copy data into report template
+5. Add context and analysis
+
+For Client Deliverables:
+1. Complete analysis in application
+2. Add detailed notes to regions and markers
+3. Generate static HTML export
+4. Email HTML file to client
+5. Client opens in browser - no software needed
+6. Include CSV export for raw data
+
+For Collaboration:
+1. Save workspace to JSON file
+2. Export annotations to CSV (backup)
+3. Share both files with colleague
+4. Colleague loads workspace in their application
+5. Analysis state is restored exactly
+6. Continue collaborative analysis
+
+For Archiving:
+1. Save workspace JSON (complete state)
+2. Export annotations CSV (human-readable backup)
+3. Generate static HTML (viewable archive)
+4. Store all three files with project data
+5. Future retrieval: Load workspace or view HTML
+
+For Custom Analysis:
+1. Copy spectrum values for regions of interest
+2. Paste into Excel or MATLAB
+3. Perform custom calculations or visualizations
+4. Export annotations CSV for timestamp reference
+5. Combine with other data sources as needed
+
+Best Practices:
+- Save workspace regularly during analysis
+- Export annotations before major changes
+- Generate static HTML for final deliverables
+- Keep workspace and CSV exports together
+- Use descriptive notes - they appear in exports
+- Test workspace load to verify completeness
 
 ================================================================================
 11. KEYBOARD SHORTCUTS
 ================================================================================
 
-[TO BE WRITTEN]
+Keyboard shortcuts provide efficient navigation and control of the application.
+All shortcuts work when the browser window has focus.
 
 Global Shortcuts:
-- Spacebar         : Play/Pause audio
-- M                : Add marker at tap line
-- R                : Add region at tap line
-- Escape           : Clear selection / Exit comparison mode
-- Arrow Left/Right : Navigate between regions/markers
+
+Spacebar - Play/Pause Audio
+- Toggles audio playback for active position
+- Audio starts from current tap line position
+- Works in Server Mode only
+- Press again to pause
+
+M - Add Marker at Tap Line
+- Creates marker at current tap line position
+- If no tap line, creates marker at viewport center
+- Marker is automatically selected
+- Fastest way to flag events while reviewing data
+
+R - Toggle Region Make Mode
+- Activates region creation mode
+- Alternative: Creates region from two most recent markers
+- Press again to deactivate mode
+- Use with Shift + Click to create regions
+
+Escape - Clear Selection / Exit Modes
+- Clears selected region or marker
+- Exits comparison mode (if active)
+- Exits region make mode (if active)
+- Cancels any active selection operation
+- Universal "cancel" or "back" action
+
+Arrow Keys - Navigation
+
+Left Arrow:
+- Move tap line to previous data point
+- If marker selected: Jump to previous marker
+- If region selected: Move left boundary left (with Alt)
+- Step size depends on data resolution
+
+Right Arrow:
+- Move tap line to next data point
+- If marker selected: Jump to next marker
+- If region selected: Move right boundary right (with Shift)
+- Step size depends on data resolution
 
 Modifier Keys:
-- Shift + Click    : Select region boundary
-- Ctrl + Click     : Delete region or marker
-- Shift (hold)     : Enable region selection mode
-- Shift (release)  : Finalize region selection
 
-Chart Shortcuts:
-[Additional shortcuts to be documented]
+Shift + Click - Create Region Boundary
+- Click once to place tap line (first boundary)
+- Hold Shift and click again (second boundary)
+- Region is created spanning the two points
+- Works in either direction
+
+Shift + Drag - Box Select Region
+- Hold Shift key
+- Click and drag horizontally on chart
+- Selection box appears during drag
+- Release to create region
+- More precise than Shift + Click
+
+Shift + Left Arrow - Adjust Region Right Boundary
+- Region must be selected first
+- Moves right boundary to the left
+- Each press nudges by ~10% of step size
+- Use to shrink region from right side
+
+Shift + Right Arrow - Adjust Region Right Boundary
+- Region must be selected first
+- Moves right boundary to the right
+- Each press nudges by ~10% of step size
+- Use to expand region from right side
+
+Alt + Left Arrow - Adjust Region Left Boundary
+- Region must be selected first
+- Moves left boundary to the left
+- Each press nudges by ~10% of step size
+- Use to expand region from left side
+
+Alt + Right Arrow - Adjust Region Left Boundary
+- Region must be selected first
+- Moves left boundary to the right
+- Each press nudges by ~10% of step size
+- Use to shrink region from left side
+
+Ctrl + Click - Delete
+- Hold Ctrl and click inside region to delete it
+- Hold Ctrl and click near marker to delete it
+- Deletes closest marker within viewport
+- Immediate deletion (no confirmation)
+- For multi-area regions: deletes only clicked area
+
+Shift (Hold) - Enable Box Select Tool
+- Hold Shift key to activate box select
+- Cursor changes to indicate mode
+- Dragging creates selection box
+- Release Shift to return to pan tool
+- Useful for temporary box select access
+
+Shift (Release) - Finalize Region Selection
+- When using Shift + Drag method
+- Release mouse button to finalize selection
+- Region is created immediately
+- Box select tool remains active while Shift held
+
+Ctrl + Left Arrow - Nudge Marker Left (if implemented)
+- Marker must be selected first
+- Moves marker to previous data point
+- Use for fine-tuning marker position
+- Aligns marker with exact event peak
+
+Ctrl + Right Arrow - Nudge Marker Right (if implemented)
+- Marker must be selected first
+- Moves marker to next data point
+- Use for fine-tuning marker position
+- Aligns marker with exact event peak
+
+Chart Interaction Shortcuts:
+
+Mouse Wheel - Zoom
+- Scroll up to zoom in
+- Scroll down to zoom out
+- Zooms around cursor position
+- All time-based charts zoom together
+
+Click + Drag - Pan
+- Click and drag on chart to pan left/right
+- All time-based charts pan together
+- Does not work while Shift is held
+- Returns to original position if dragged outside chart
+
+Double-Click - Create Marker
+- Double-click on any chart
+- Marker created at clicked timestamp
+- Same as M key but at specific location
+- Fastest method for quick annotations
+
+Keyboard Shortcut Tips:
+
+1. Efficient Workflow:
+   - Use arrow keys to step through data
+   - Press M to drop markers at events
+   - Use Shift + Click to create regions
+   - Press Escape to clear selections
+
+2. Region Refinement:
+   - Create rough region with Shift + Drag
+   - Select region
+   - Use Shift/Alt + Arrows to adjust boundaries precisely
+   - Add notes while region is selected
+
+3. Audio Review:
+   - Click on chart to set position
+   - Press Spacebar to start playback
+   - Press M to mark events while listening
+   - Use Left/Right arrows to step through interesting sections
+
+4. Quick Comparison:
+   - Create markers at key timestamps
+   - Use Left/Right arrows to jump between markers
+   - Review notes and metrics for each
+   - Press R to create region from two markers
+
+5. Keyboard-Only Navigation:
+   - Use arrow keys to move tap line
+   - Press M to create markers
+   - Press R for regions (from markers)
+   - Press Escape to clear selections
+   - Minimal mouse usage for efficient workflow
 
 ================================================================================
 12. TROUBLESHOOTING
 ================================================================================
 
-[TO BE WRITTEN]
-
-Common Issues:
+Common Issues and Solutions:
 
 Issue: Dashboard doesn't load or displays errors
-Solution: [To be documented]
+
+Symptoms:
+- Blank page or loading spinner never completes
+- JavaScript errors in browser console
+- "Failed to load" messages
+
+Solutions:
+1. Check browser console (F12) for specific error messages
+2. Verify Python server is running (Server Mode)
+3. Ensure config.json file is valid JSON:
+   - Use JSON validator online
+   - Check for missing commas or quotes
+   - Verify all file paths exist
+4. Clear browser cache and reload (Ctrl+F5)
+5. Try different browser (Chrome, Firefox, Edge)
+6. Check that all required Python packages are installed:
+   pip install -r requirements.txt
+7. Verify Bokeh version matches requirements:
+   bokeh --version
+8. Check file permissions on data files
+9. Look for special characters in file paths
+10. Try loading with minimal config (one position, one file)
 
 Issue: Audio doesn't play
-Solution: [To be documented]
+
+Symptoms:
+- Play button doesn't respond
+- Audio starts but no sound
+- "Audio not available" message
+
+Solutions:
+1. Verify VLC Media Player is installed:
+   - Download from https://www.videolan.org/vlc/
+   - Install with default settings
+2. Check that you're in Server Mode (not Static HTML)
+3. Verify audio files exist in specified directories
+4. Check audio file naming includes timestamps
+5. Ensure audio file format is supported (WAV preferred)
+6. Check browser console for Python errors
+7. Verify audio file paths in config.json are correct
+8. Test with a simple WAV file first
+9. Check system audio settings and volume
+10. Try restarting the Bokeh server
+11. Verify soundfile library is installed:
+    pip install soundfile
+12. Check that audio files are not corrupted
 
 Issue: Charts are empty or show no data
-Solution: [To be documented]
+
+Symptoms:
+- Charts display but no lines or data visible
+- Axes show but plot area is blank
+- "No data available" message
+
+Solutions:
+1. Check that data files contain valid data:
+   - Open files in text editor or Excel
+   - Verify timestamps are present
+   - Check for proper column headers
+2. Verify parser_type in config.json matches file format:
+   - "svan" for Svan files
+   - "nti" for NTi Audio files
+   - "sentry" for Noise Sentry files
+3. Check date range of data:
+   - Data might be outside visible range
+   - Use range selector to zoom out
+   - Check for timezone issues
+4. Verify parameter selection:
+   - Try different parameters (LAeq, LAFmax, etc.)
+   - Check that selected parameter exists in data
+5. Toggle Log View on/off:
+   - Data might be in overview only
+   - Or log data might be missing
+6. Check browser console for parsing errors
+7. Verify file encoding (UTF-8 recommended)
+8. Look for empty or corrupted data files
+9. Check that position names match between files
+10. Try loading a single file to isolate issue
 
 Issue: Performance is slow with large datasets
-Solution: [To be documented]
+
+Symptoms:
+- Slow chart updates when panning/zooming
+- Laggy hover effects
+- Browser becomes unresponsive
+- High memory usage
+
+Solutions:
+1. Disable Log View to use overview data:
+   - Click "Log View Enabled" to disable
+   - Overview data is lower resolution
+   - Faster rendering and smaller memory footprint
+2. Disable hover effects:
+   - Click "Hover Enabled" to disable
+   - Reduces real-time rendering overhead
+3. Hide unnecessary charts:
+   - Uncheck visibility for unused positions
+   - Reduces number of active charts
+4. Close other browser tabs
+5. Increase browser memory limit (advanced)
+6. Use Static HTML export for large datasets:
+   - Pre-renders data for better performance
+   - No server overhead
+7. Consider data downsampling:
+   - Resample data to lower resolution
+   - Use overview files instead of log files
+8. Reduce number of regions and markers:
+   - Delete unnecessary annotations
+   - Export and clear if needed
+9. Use shorter time ranges:
+   - Focus on specific periods
+   - Create multiple configs for different date ranges
+10. Upgrade browser to latest version
+11. Increase system RAM if possible
+12. Close other applications to free memory
 
 Issue: Regions or markers don't appear
-Solution: [To be documented]
+
+Symptoms:
+- Created regions/markers are invisible
+- Regions/markers appear in panel but not on charts
+- Annotations disappear after creation
+
+Solutions:
+1. Check visibility toggles:
+   - Ensure "Regions" toggle is enabled
+   - Ensure "Markers" toggle is enabled
+2. Verify region/marker is within visible time range:
+   - Use range selector to zoom out
+   - Check timestamps in panel
+3. Check region/marker color:
+   - Might blend with background
+   - Try changing color to high contrast
+4. Verify region has valid time span:
+   - Start time must be before end time
+   - Check for zero-duration regions
+5. Check browser console for errors
+6. Try refreshing the page (may lose unsaved work)
+7. Verify position matches visible charts:
+   - Region for "North" won't show on "East" chart
+   - Check position assignment in panel
+8. Check chart visibility:
+   - Chart must be visible to show annotations
+   - Enable chart visibility checkbox
+9. Try creating new region/marker to test
+10. Export and reimport annotations to reset state
+
+Issue: Workspace or annotations won't load
+
+Symptoms:
+- Import fails with error message
+- Workspace loads but data is missing
+- Annotations don't match current data
+
+Solutions:
+1. Verify file format:
+   - Workspace files are JSON
+   - Annotation files are CSV
+   - Check file extension
+2. Check for file corruption:
+   - Open in text editor
+   - Verify valid JSON/CSV format
+3. Ensure timestamps match current data:
+   - Annotations reference specific timestamps
+   - Data must cover those time ranges
+4. Verify source files match workspace:
+   - Workspace references specific config
+   - Load matching config first
+5. Check for version compatibility:
+   - Older workspace files may not be compatible
+   - Try exporting annotations instead
+6. Look for special characters in notes:
+   - May cause parsing issues
+   - Edit file to remove problematic characters
+7. Try importing on fresh session:
+   - Reload page first
+   - Then import annotations
+8. Check browser console for specific errors
+9. Verify file permissions (read access)
+10. Try exporting and reimporting to validate format
+
+Issue: Static HTML export is too large
+
+Symptoms:
+- Generated HTML file is hundreds of MB
+- File is slow to open in browser
+- Email attachment size limits exceeded
+
+Solutions:
+1. Disable Log View before export:
+   - Use overview data only
+   - Significantly reduces file size
+2. Reduce time range:
+   - Create configs for specific date ranges
+   - Export multiple smaller HTML files
+3. Remove unnecessary positions:
+   - Export only positions needed for report
+4. Clear unnecessary markers and regions:
+   - Export annotations first (backup)
+   - Delete unused annotations
+   - Generate HTML
+   - Reimport annotations if needed
+5. Use CSV export instead for raw data:
+   - HTML for visualization
+   - CSV for detailed data
+6. Compress HTML file:
+   - Zip file before emailing
+   - Most email clients support zip attachments
+7. Use file sharing service:
+   - Upload to Google Drive, Dropbox, etc.
+   - Share link instead of attachment
+8. Consider Server Mode for large datasets:
+   - Share access to running server
+   - No file size limitations
+
+General Troubleshooting Steps:
+
+1. Check browser console (F12 → Console tab)
+   - Look for red error messages
+   - Note specific error text for searching
+
+2. Verify Python server output
+   - Check terminal/command prompt
+   - Look for error messages or warnings
+
+3. Test with minimal configuration
+   - Single position
+   - Single file
+   - Short time range
+   - Isolate the problem
+
+4. Clear browser cache
+   - Ctrl+F5 to hard refresh
+   - Or clear cache in browser settings
+
+5. Try different browser
+   - Chrome, Firefox, and Edge recommended
+   - Rules out browser-specific issues
+
+6. Restart Python server
+   - Stop server (Ctrl+C)
+   - Start again
+   - Clears any stuck states
+
+7. Check file paths
+   - Use absolute paths if relative paths fail
+   - Verify no special characters
+   - Check for spaces in paths (use quotes)
+
+8. Verify Python environment
+   - Correct Python version (3.8+)
+   - All packages installed
+   - No conflicting package versions
+
+9. Review config.json carefully
+   - Valid JSON syntax
+   - Correct parser types
+   - Existing file paths
+
+10. Consult documentation
+    - README.md for setup
+    - ANNOTATION_GUIDE.md for workflows
+    - This USER_GUIDE.txt for features
 
 ================================================================================
 13. SUPPORT
 ================================================================================
 
-[TO BE WRITTEN]
-
 For technical support or questions:
-- Contact: [Contact information to be added]
-- Email: [Email to be added]
-- Documentation: [Link to be added]
+
+Documentation:
+- README.md - Installation and quick start guide
+- ANNOTATION_GUIDE.md - Detailed annotation workflows
+- USER_GUIDE.txt - This comprehensive user guide (you are here)
+- AGENTS.md - Developer handbook and architecture guide
+- MANUAL_TEST_CHECKLIST.md - Complete feature testing checklist
+
+Getting Help:
+
+1. Check Documentation First:
+   - Review relevant sections of this guide
+   - Check README.md for installation issues
+   - Consult ANNOTATION_GUIDE.md for workflow questions
+   - Review troubleshooting section (Section 12)
+
+2. Search for Similar Issues:
+   - Check if others have encountered same problem
+   - Review closed issues for solutions
+   - Search documentation for keywords
+
+3. Gather Information:
+   - What were you trying to do?
+   - What did you expect to happen?
+   - What actually happened?
+   - Error messages (exact text)
+   - Browser console output (F12 → Console)
+   - Python server output (terminal)
+   - Browser and version
+   - Operating system
+   - Python version
+   - Config file (if relevant)
+
+4. Try Basic Troubleshooting:
+   - Clear browser cache
+   - Restart Python server
+   - Try different browser
+   - Test with minimal config
+   - Check file paths and permissions
 
 Reporting Bugs:
-[How to report issues]
+
+If you encounter a bug, please report it with the following information:
+
+Required Information:
+1. Bug Description:
+   - Clear, concise description of the issue
+   - Steps to reproduce the problem
+   - Expected behavior
+   - Actual behavior
+
+2. Environment:
+   - Operating system (Windows, macOS, Linux)
+   - Python version (python --version)
+   - Bokeh version (bokeh --version)
+   - Browser and version
+
+3. Error Messages:
+   - Complete error text from browser console
+   - Python server error output
+   - Screenshots if helpful
+
+4. Reproduction:
+   - Minimal steps to reproduce
+   - Sample config file (if relevant)
+   - Sample data files (if possible)
+   - Does it happen every time?
+
+5. Workarounds:
+   - Have you found any temporary solutions?
+   - Does it work in different browser?
+   - Does it work with different data?
+
+Bug Report Template:
+
+**Bug Description:**
+[Clear description of the issue]
+
+**Steps to Reproduce:**
+1. [First step]
+2. [Second step]
+3. [And so on...]
+
+**Expected Behavior:**
+[What should happen]
+
+**Actual Behavior:**
+[What actually happens]
+
+**Environment:**
+- OS: [e.g., Windows 11]
+- Python: [e.g., 3.10.5]
+- Bokeh: [e.g., 3.3.0]
+- Browser: [e.g., Chrome 120.0]
+
+**Error Messages:**
+```
+[Paste error messages here]
+```
+
+**Screenshots:**
+[Attach if helpful]
+
+**Additional Context:**
+[Any other relevant information]
 
 Feature Requests:
-[How to suggest improvements]
+
+To suggest improvements or new features:
+
+1. Check Existing Features:
+   - Review this guide thoroughly
+   - Feature might already exist
+   - Check if it's in development
+
+2. Describe Your Use Case:
+   - What problem are you trying to solve?
+   - How would you use this feature?
+   - What workflow would it improve?
+
+3. Provide Details:
+   - Clear description of desired feature
+   - How it should work
+   - Where it should appear in UI
+   - Any similar features in other tools
+
+4. Consider Alternatives:
+   - Can existing features achieve this?
+   - Are there workarounds?
+   - How critical is this feature?
+
+Feature Request Template:
+
+**Feature Description:**
+[Clear description of the proposed feature]
+
+**Use Case:**
+[Explain the problem this would solve]
+
+**Proposed Solution:**
+[How you envision this working]
+
+**Alternatives Considered:**
+[Other ways to achieve the same goal]
+
+**Additional Context:**
+[Any other relevant information]
+
+**Priority:**
+[Low / Medium / High - How important is this to your workflow?]
+
+Best Practices for Support:
+
+1. Be Specific:
+   - Vague descriptions are hard to address
+   - Provide exact steps and error messages
+   - Include relevant context
+
+2. Be Patient:
+   - Allow time for response
+   - Provide requested information promptly
+   - Follow up if needed
+
+3. Be Respectful:
+   - Remember this is open-source software
+   - Maintainers are often volunteers
+   - Constructive feedback is appreciated
+
+4. Give Back:
+   - Share solutions you discover
+   - Help others with similar issues
+   - Contribute documentation improvements
+   - Report bugs you encounter
+
+5. Stay Updated:
+   - Check for new versions
+   - Review release notes
+   - Update documentation references
+   - Test new features
+
+Community Guidelines:
+
+- Search before asking
+- Provide complete information
+- Follow up on your issues
+- Mark issues as resolved when fixed
+- Share your solutions with others
+- Be constructive in feedback
+- Respect maintainer decisions
+- Contribute where you can
 
 ================================================================================
 END OF USER GUIDE
 ================================================================================
 
-Note: This is a placeholder document. Sections marked [TO BE WRITTEN] or
-[TO BE COMPLETED] require content to be added based on the final application
-features and user feedback.
+Thank you for using the Noise Survey Analysis application!
+
+This guide covers all major features and workflows. For additional information:
+
+- README.md - Quick start and installation
+- ANNOTATION_GUIDE.md - Detailed annotation workflows  
+- AGENTS.md - Developer documentation
+- MANUAL_TEST_CHECKLIST.md - Complete feature list
+
+The application is under active development. Features and interfaces may change
+in future versions. Please refer to the documentation included with your version
+for the most accurate information.
+
+If you find errors in this guide or have suggestions for improvement, please
+report them following the guidelines in Section 13 (Support).
+
+Happy analyzing!
+
+Document Version: 1.2
+Last Updated: 2025-10-01
+Application Version: 1.2+

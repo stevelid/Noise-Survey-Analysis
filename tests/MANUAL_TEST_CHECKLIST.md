@@ -3,7 +3,7 @@
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
 **Last Updated:** 2025-10-01  
-**Version:** 1.1.0
+**Version:** 1.2.0
 
 ---
 
@@ -316,42 +316,63 @@
 
 ## 6. Audio Control Interactions 🔴 SERVER
 
-### 6.1 Play/Pause Toggle 🔴
-- [ ] **Action:** Click play toggle for a position
-- [ ] **Expected:** Audio starts playing from tap line position
-- [ ] **Expected:** Toggle button shows "Pause" state
-- [ ] **Action:** Click toggle again
-- [ ] **Expected:** Audio pauses
-- [ ] **Test:** Play audio for multiple positions simultaneously
+**Note:** Audio controls are now global (at top of dashboard) and work with the currently tapped position. Position title and offset controls appear above each chart.
 
-### 6.2 Playback Rate Button 🔴
-- [ ] **Action:** Start audio playback, click playback rate button
+### 6.1 Global Play/Pause Toggle 🔴
+- [ ] **Action:** Click on a chart to place tap line, then click global Play toggle
+- [ ] **Expected:** Audio starts playing from tap line position for that position
+- [ ] **Expected:** Global toggle button shows "Pause" state (blue)
+- [ ] **Expected:** Active position display shows "▶ [Position Name]" in blue
+- [ ] **Expected:** Position title shows "▶ [Position Name]" in blue
+- [ ] **Expected:** Chart background turns light blue
+- [ ] **Action:** Click global toggle again
+- [ ] **Expected:** Audio pauses
+- [ ] **Expected:** Toggle returns to "Play" state (green)
+- [ ] **Test:** Click on different position chart while audio is playing
+- [ ] **Expected:** Audio switches to new position automatically
+
+### 6.2 Global Playback Rate Button 🔴
+- [ ] **Action:** Start audio playback, click global playback rate button
 - [ ] **Expected:** Rate cycles: 1.0x → 1.5x → 2.0x → 0.5x → 1.0x
 - [ ] **Expected:** Button label updates to show current rate
 - [ ] **Expected:** Audio speed changes immediately
 - [ ] **Test:** Verify audio pitch remains constant (time-stretching)
+- [ ] **Test:** Rate persists when switching between positions
 
-### 6.3 Volume Boost Toggle 🔴
-- [ ] **Action:** Start audio playback, click volume boost toggle
+### 6.3 Global Volume Boost Toggle 🔴
+- [ ] **Action:** Start audio playback, click global volume boost toggle
 - [ ] **Expected:** Audio volume increases significantly
-- [ ] **Expected:** Toggle button shows active state
+- [ ] **Expected:** Toggle button shows active state (orange)
 - [ ] **Action:** Click toggle again
 - [ ] **Expected:** Audio volume returns to normal
+- [ ] **Expected:** Toggle button shows inactive state (gray)
+- [ ] **Test:** Boost persists when switching between positions
 
-### 6.4 Chart Offset Spinner 🟢
-- [ ] **Action:** Change chart offset value (e.g., +5 seconds)
-- [ ] **Expected:** Chart data shifts forward in time by 5 seconds
-- [ ] **Expected:** Effective offset display updates
+### 6.4 Position Title Display 🟢
+- [ ] **Action:** Observe position titles above each chart
+- [ ] **Expected:** All positions show their title (even without audio)
+- [ ] **Action:** Start audio playback for a position
+- [ ] **Expected:** Active position title shows "▶ [Name]" in blue
+- [ ] **Expected:** Other position titles remain black
+- [ ] **Action:** Stop audio
+- [ ] **Expected:** Position title returns to normal (black)
+
+### 6.5 Chart Offset Spinner (Per-Position) 🟢
+- [ ] **Action:** Change chart offset value for a position (e.g., +5 seconds)
+- [ ] **Expected:** Chart data for that position shifts forward in time by 5 seconds
+- [ ] **Expected:** Effective offset display for that position updates
+- [ ] **Expected:** Other positions are not affected
 - [ ] **Test:** Try negative offsets
 - [ ] **Test:** Try large offsets (> 60 seconds)
+- [ ] **Test:** Verify each position can have independent chart offsets
 
-### 6.5 Audio Offset Spinner 🔴
-- [ ] **Action:** Change audio offset value (e.g., -3 seconds)
+### 6.6 Audio Offset Spinner (Per-Position) 🔴
+- [ ] **Action:** Change audio offset value for a position (e.g., -3 seconds)
 - [ ] **Expected:** Audio playback shifts backward by 3 seconds
 - [ ] **Expected:** Effective offset display updates
 - [ ] **Test:** Combine chart and audio offsets
 
-### 6.6 Effective Offset Display 🟢
+### 6.7 Effective Offset Display (Per-Position) 🟢
 - [ ] **Action:** Set chart offset to +5s and audio offset to -3s
 - [ ] **Expected:** Effective offset shows +2s (or appropriate calculation)
 - [ ] **Expected:** Display updates immediately when either spinner changes
@@ -446,12 +467,13 @@
 - [ ] **Test:** Rapidly toggle visibility checkboxes
 - [ ] **Expected:** Charts show/hide without errors
 
-### 9.5 Concurrent Audio Playback 🔴
-- [ ] **Test:** Start audio for 2-3 positions simultaneously
-- [ ] **Expected:** All audio streams play without conflicts
-- [ ] **Expected:** Individual controls work for each position
-- [ ] **Test:** Pause one while others continue
-- [ ] **Expected:** Only selected position pauses
+### 9.5 Position Switching During Playback 🔴
+- [ ] **Test:** Start audio playback for one position
+- [ ] **Action:** Click on a different position's chart
+- [ ] **Expected:** Audio automatically switches to new position
+- [ ] **Expected:** Global controls update to show new position
+- [ ] **Expected:** Previous position's title returns to normal
+- [ ] **Expected:** New position's title shows playing indicator
 
 ### 9.6 Invalid Region Operations 🟢
 - [ ] **Test:** Try to create region with start > end

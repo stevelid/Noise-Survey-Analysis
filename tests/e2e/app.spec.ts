@@ -172,3 +172,32 @@ test('user can create a region using the R key workflow', async ({ page }) => {
 
   await expect(regionCount).toHaveText('1');
 });
+
+test('auto day & night regions button creates regions', async ({ page }) => {
+  // Add the auto day/night button to the harness
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.setAttribute('data-testid', 'auto-daynight-button');
+    button.textContent = 'Auto Day & Night';
+    button.addEventListener('click', () => {
+      const handlers = (window as any).NoiseSurveyApp?.eventHandlers;
+      if (typeof handlers?.handleAutoRegions === 'function') {
+        handlers.handleAutoRegions();
+      }
+    });
+    document.querySelector('.control-panel')?.appendChild(button);
+  });
+
+  const autoDayNightButton = page.getByTestId('auto-daynight-button');
+  const regionCount = page.getByTestId('region-count');
+
+  await expect(regionCount).toHaveText('0');
+  await autoDayNightButton.click();
+
+  // Wait a bit for async operations
+  await page.waitForTimeout(500);
+
+  // Check if regions were created (should be at least 2: one daytime, one nighttime for P1)
+  const count = await regionCount.textContent();
+  expect(parseInt(count || '0')).toBeGreaterThan(0);
+});

@@ -1637,6 +1637,7 @@ class ControlsComponent:
         self.hover_toggle = self.add_hover_toggle()
         self.clear_markers_button = self.add_clear_markers_button()
         self.param_select = self.add_parameter_selector(available_params)
+        self.global_audio_controls = self.add_global_audio_controls()
 
         logger.info("ControlsComponent initialized.")
 
@@ -1689,6 +1690,97 @@ class ControlsComponent:
                 console.error('window.NoiseSurveyApp.eventHandlers.clearAllMarkers function not found!');
             }"""))
         return button
+
+    def add_global_audio_controls(self):
+        """Creates global audio playback controls that work with the active position."""
+        # Play/Pause Toggle Button
+        play_toggle = Toggle(
+            label="Play", 
+            button_type="success", 
+            width=80,
+            height=30,
+            name="global_play_toggle"
+        )
+        play_toggle.js_on_change('active', CustomJS(
+            args=dict(button=play_toggle),
+            code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.togglePlayPause) {
+                    // Global control uses the active position from tap state
+                    window.NoiseSurveyApp.eventHandlers.togglePlayPause({ positionId: null, isActive: button.active });
+                } else {
+                    console.error('NoiseSurveyApp.eventHandlers.togglePlayPause function not found!');
+                }
+            """
+        ))
+
+        # Playback Rate Button
+        playback_rate_button = Button(
+            label="1.0x",
+            width=60,
+            height=30,
+            name="global_playback_rate"
+        )
+        playback_rate_button.js_on_click(CustomJS(
+            code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handlePlaybackRateChange) {
+                    window.NoiseSurveyApp.eventHandlers.handlePlaybackRateChange({ positionId: null });
+                } else {
+                    console.error('NoiseSurveyApp.eventHandlers.handlePlaybackRateChange function not found!');
+                }
+            """
+        ))
+
+        # Volume Boost Toggle Button
+        volume_boost_button = Toggle(
+            label="Boost",
+            width=70,
+            height=30,
+            name="global_volume_boost",
+            active=False
+        )
+        volume_boost_button.js_on_change('active', CustomJS(
+            args=dict(button=volume_boost_button),
+            code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle) {
+                    window.NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle({ positionId: null, isBoostActive: button.active });
+                } else {
+                    console.error('NoiseSurveyApp.eventHandlers.handleVolumeBoostToggle function not found!');
+                }
+            """
+        ))
+
+        # Active position display
+        active_position_display = Div(
+            text="<span style='font-size: 11px; color: #666;'>No audio</span>",
+            width=120,
+            height=30,
+            name="global_active_position_display",
+            styles={"display": "flex", "align-items": "center", "padding-left": "8px"}
+        )
+
+        controls_layout = Row(
+            play_toggle,
+            playback_rate_button,
+            volume_boost_button,
+            active_position_display,
+            name="global_audio_controls",
+            styles={
+                "gap": "4px",
+                "padding": "4px 12px",
+                "border": "1px solid #d0d0d0",
+                "border-radius": "4px",
+                "background-color": "#f8f9fa",
+                "margin-left": "16px"
+            }
+        )
+
+        return {
+            'layout': controls_layout,
+            'play_toggle': play_toggle,
+            'playback_rate_button': playback_rate_button,
+            'volume_boost_button': volume_boost_button,
+            'active_position_display': active_position_display
+        }
 
     def add_parameter_selector(self, available_params: List[str]):
         select = Select(
@@ -1779,13 +1871,14 @@ class ControlsComponent:
             self.param_select,
             self.view_toggle,
             self.hover_toggle,
+            self.global_audio_controls['layout'],
             #self.clear_markers_button,
             sizing_mode="scale_width",
             name="primary_controls_row",
             styles={
                 "flex-wrap": "nowrap",
                 "gap": "8px",
-                "align-items": "left"
+                "align-items": "center"
             }
         )
 
@@ -2673,6 +2766,130 @@ def create_audio_controls_for_position(position_id: str) -> dict:
         "effective_offset_display": effective_offset_display,
         "layout": controls_layout
     }
+
+
+def create_position_title_and_offsets(position_id: str, display_title: str = None) -> dict:
+    """
+    Creates position title display and offset controls (without playback buttons).
+    This is used for all positions to show title and allow offset adjustments.
+    
+    Args:
+        position_id (str): The identifier for the measurement position (e.g., 'SW', 'N').
+        display_title (str): Optional custom display title. If None, uses position_id.
+    
+    Returns:
+        dict: A dictionary containing the Bokeh widgets and their containing 'layout'.
+    """
+    if display_title is None:
+        display_title = position_id
+    
+    # Position title display
+    title_div = Div(
+        text=f"<strong style='font-size: 13px; color: #2c3e50;'>{display_title}</strong>",
+        width=100,
+        height=35,
+        name=f"position_title_{position_id}",
+        styles={"display": "flex", "align-items": "center", "justify-content": "flex-start"}
+    )
+    
+    # Chart Offset controls
+    chart_offset_label = Div(
+        text="<span style='font-size: 10px; color: #555;'>Chart Offset (s):</span>",
+        width=85,
+        height=35,
+        styles={"display": "flex", "align-items": "center", "padding-left": "8px"},
+        name=f"chart_offset_label_{position_id}"
+    )
+    chart_offset_spinner = Spinner(
+        width=55,
+        height=28,
+        low=-6000,
+        high=6000,
+        step=0.1,
+        value=0.0,
+        format="0.0",
+        name=f"chart_offset_spinner_{position_id}"
+    )
+    chart_offset_spinner.js_on_change('value', CustomJS(
+        args=dict(position_id=position_id, spinner=chart_offset_spinner),
+        code="""
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handlePositionChartOffsetChange) {
+                const offset = typeof spinner.value === 'number' ? spinner.value : Number(spinner.value || 0);
+                window.NoiseSurveyApp.eventHandlers.handlePositionChartOffsetChange({ positionId: position_id, offsetSeconds: offset });
+            } else {
+                console.error('NoiseSurveyApp.eventHandlers.handlePositionChartOffsetChange function not found!');
+            }
+        """
+    ))
+
+    # Audio Offset controls
+    audio_offset_label = Div(
+        text="<span style='font-size: 10px; color: #555;'>Audio Offset (s):</span>",
+        width=85,
+        height=35,
+        styles={"display": "flex", "align-items": "center", "padding-left": "8px"},
+        name=f"audio_offset_label_{position_id}"
+    )
+    audio_offset_spinner = Spinner(
+        width=55,
+        height=28,
+        low=-6000,
+        high=6000,
+        step=0.1,
+        value=0.0,
+        format="0.0",
+        name=f"audio_offset_spinner_{position_id}"
+    )
+    audio_offset_spinner.js_on_change('value', CustomJS(
+        args=dict(position_id=position_id, spinner=audio_offset_spinner),
+        code="""
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handlePositionAudioOffsetChange) {
+                const offset = typeof spinner.value === 'number' ? spinner.value : Number(spinner.value || 0);
+                window.NoiseSurveyApp.eventHandlers.handlePositionAudioOffsetChange({ positionId: position_id, offsetSeconds: offset });
+            } else {
+                console.error('NoiseSurveyApp.eventHandlers.handlePositionAudioOffsetChange function not found!');
+            }
+        """
+    ))
+
+    # Effective offset display
+    effective_offset_display = Div(
+        text="<span style='font-size: 10px; color: #666; font-weight: 500;'>Effective: +0.00 s</span>",
+        width=110,
+        height=35,
+        name=f"effective_offset_display_{position_id}",
+        styles={"display": "flex", "align-items": "center", "padding-left": "8px"}
+    )
+
+    controls_layout = Row(
+        title_div,
+        chart_offset_label,
+        chart_offset_spinner,
+        audio_offset_label,
+        audio_offset_spinner,
+        effective_offset_display,
+        name=f"position_controls_{position_id}",
+        sizing_mode="stretch_width",
+        styles={
+            "gap": "2px",
+            "background-color": "#f5f5f5",
+            "border-top": "1px solid #e0e0e0",
+            "border-bottom": "1px solid #e0e0e0",
+            "padding": "4px 12px",
+            "align-items": "center",
+            "height": "35px"
+        }
+    )
+
+    logger.debug(f"Position title and offset controls created for '{position_id}'.")
+    return {
+        "title_div": title_div,
+        "chart_offset_spinner": chart_offset_spinner,
+        "audio_offset_spinner": audio_offset_spinner,
+        "effective_offset_display": effective_offset_display,
+        "layout": controls_layout
+    }
+
 
 class SummaryTableComponent:
     """

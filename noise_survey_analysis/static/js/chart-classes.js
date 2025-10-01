@@ -256,7 +256,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     annotations = [];
                     this.regionAnnotations.set(region.id, annotations);
                 }
-
                 const regionColor = typeof region.color === 'string' && region.color.trim()
                     ? region.color.trim()
                     : DEFAULT_REGION_COLOR;
@@ -268,30 +267,38 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         return;
                     }
                     let annotation = annotations[index];
+                    const isSelected = region.id === selectedId;
                     if (!annotation) {
+                        // Create new annotation with all initial properties set
                         annotation = new BoxAnnotation({
                             left: start,
                             right: end,
-                            fill_alpha: 0.1,
+                            fill_alpha: isSelected ? 0.2 : 0.08,
                             fill_color: regionColor,
                             line_color: regionColor,
                             line_alpha: 0.6,
-                            line_width: 1,
+                            line_width: isSelected ? 3 : 1,
                             level: 'underlay',
+                            visible: true,
                             name: `region_${this.name}_${region.id}_${index}`
                         });
                         annotations[index] = annotation;
-                        if (doc && doc.session) doc.add_root(annotation);
+                        // Only add to document root if in live mode (static reports don't have sessions)
+                        if (doc && doc.session) {
+                            doc.add_root(annotation);
+                        }
                         this.model.add_layout(annotation);
                         didMutate = true;
+                    } else {
+                        // Only update existing annotations
+                        annotation.left = start;
+                        annotation.right = end;
+                        annotation.fill_alpha = isSelected ? 0.2 : 0.08;
+                        annotation.line_width = isSelected ? 3 : 1;
+                        annotation.fill_color = regionColor;
+                        annotation.line_color = regionColor;
+                        annotation.visible = true;
                     }
-                    annotation.left = start;
-                    annotation.right = end;
-                    annotation.fill_alpha = region.id === selectedId ? 0.2 : 0.08;
-                    annotation.line_width = region.id === selectedId ? 3 : 1;
-                    annotation.fill_color = regionColor;
-                    annotation.line_color = regionColor;
-                    annotation.visible = true;
                 });
 
                 if (annotations.length > areas.length) {
@@ -341,11 +348,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             idsToRemove.forEach(id => this.regionAnnotations.delete(id));
 
             if (didMutate) {
-                if (typeof this.model?.request_render === 'function') {
-                    this.model.request_render();
-                } else if (this.model?.change?.emit) {
-                    this.model.change.emit();
-                }
+                    if (typeof this.model?.request_render === 'function') {
+                        this.model.request_render();
+                    } else if (this.model?.change?.emit) {
+                        this.model.change.emit();
+                    }
             }
         }
 
