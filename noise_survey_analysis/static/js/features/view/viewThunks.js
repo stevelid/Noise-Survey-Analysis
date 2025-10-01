@@ -8,7 +8,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
+    const { actions } = app;
     const viewSelectors = app.features?.view?.selectors || {};
+
+    function selectParameterIntent(parameter) {
+        return function (dispatch) {
+            if (typeof dispatch !== 'function' || !actions?.paramChange) {
+                return;
+            }
+            dispatch(actions.paramChange(parameter));
+            if (app.regions?.invalidateMetricsCache) {
+                app.regions.invalidateMetricsCache();
+            }
+        };
+    }
 
     function handleTabSwitchIntent(payload) {
         return function (dispatch, getState) {
@@ -49,6 +62,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.features.view = app.features.view || {};
     app.features.view.thunks = {
         ...(app.features.view.thunks || {}),
-        handleTabSwitchIntent
+        handleTabSwitchIntent,
+        selectParameterIntent
     };
 })(window.NoiseSurveyApp);

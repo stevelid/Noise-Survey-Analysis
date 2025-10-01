@@ -120,6 +120,21 @@ describe('NoiseSurveyApp.renderers', () => {
                             layout: { visible: true }
                         }
                     },
+                    positionControls: {
+                        P1: {
+                            layout: { visible: true },
+                            title_div: { text: '' },
+                            chart_offset_spinner: { value: 0 },
+                            audio_offset_spinner: { value: 0 },
+                            effective_offset_display: { text: '' }
+                        }
+                    },
+                    globalAudioControls: {
+                        play_toggle: { active: false, label: '', button_type: '' },
+                        playback_rate_button: { label: '' },
+                        volume_boost_button: { active: false, button_type: '' },
+                        active_position_display: { text: '' }
+                    },
                     config: { // Add config mock
                         freq_table_freq_range_hz: [200, 300]
                     }
@@ -386,6 +401,12 @@ describe('NoiseSurveyApp.renderers', () => {
                 }
             };
 
+            const utils = window.NoiseSurveyApp.features.regions.utils;
+            const originalGetRegionMetrics = utils.getRegionMetrics;
+            let fallbackMetrics = null;
+            utils.getRegionMetrics = (region) => (region?.metrics ? region.metrics : fallbackMetrics);
+            window.NoiseSurveyApp.regions.getRegionMetrics = utils.getRegionMetrics;
+
             renderers.renderRegions(stateWithMetrics, {});
 
             const models = window.NoiseSurveyApp.registry.models;
@@ -433,6 +454,8 @@ describe('NoiseSurveyApp.renderers', () => {
                 }
             };
 
+            fallbackMetrics = updatedState.regions.byId[1].metrics;
+
             renderers.renderRegions(updatedState, {});
             expect(models.regionPanelMetricsDiv.text).toContain('55.4 dB');
             expect(models.regionPanelMetricsDiv.text).toContain('70.2 dB');
@@ -445,6 +468,9 @@ describe('NoiseSurveyApp.renderers', () => {
             const syncedRegions = lastCall[0];
             expect(Array.isArray(syncedRegions)).toBe(true);
             expect(syncedRegions[0].metrics.laeq).toBeCloseTo(55.44);
+
+            utils.getRegionMetrics = originalGetRegionMetrics;
+            window.NoiseSurveyApp.regions.getRegionMetrics = originalGetRegionMetrics;
         });
     });
 
@@ -859,13 +885,13 @@ describe('NoiseSurveyApp.renderers', () => {
             };
             const displayDetails = { P1: { line: { reason: '' }, spec: { reason: '' } } };
             renderers.renderControlWidgets(mockState, displayDetails);
-            const controls = window.NoiseSurveyApp.registry.models.audio_controls.P1;
-            expect(controls.playToggle.active).toBe(true);
-            expect(controls.playToggle.label).toBe('Pause');
-            expect(controls.playToggle.button_type).toBe('primary');
-            expect(controls.playbackRateButton.label).toBe('1.5x');
-            expect(controls.volumeBoostButton.active).toBe(true);
-            expect(controls.volumeBoostButton.button_type).toBe('warning');
+            const globalControls = window.NoiseSurveyApp.registry.models.globalAudioControls;
+            expect(globalControls.play_toggle.active).toBe(true);
+            expect(globalControls.play_toggle.label).toBe('Pause');
+            expect(globalControls.play_toggle.button_type).toBe('primary');
+            expect(globalControls.playback_rate_button.label).toBe('1.5x');
+            expect(globalControls.volume_boost_button.active).toBe(true);
+            expect(globalControls.volume_boost_button.button_type).toBe('warning');
         });
 
         it('should hide audio controls when all charts for a position are hidden', () => {
@@ -889,8 +915,8 @@ describe('NoiseSurveyApp.renderers', () => {
                 }
             }, displayDetails);
 
-            const controls = window.NoiseSurveyApp.registry.models.audio_controls.P1;
-            expect(controls.layout.visible).toBe(false);
+            const positionControls = window.NoiseSurveyApp.registry.models.positionControls.P1;
+            expect(positionControls.layout.visible).toBe(false);
 
             renderers.renderControlWidgets({
                 ...baseState,
@@ -903,7 +929,7 @@ describe('NoiseSurveyApp.renderers', () => {
                 }
             }, displayDetails);
 
-            expect(controls.layout.visible).toBe(true);
+            expect(positionControls.layout.visible).toBe(true);
         });
     });
 

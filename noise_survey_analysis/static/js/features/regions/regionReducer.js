@@ -136,7 +136,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             start: summary.start,
             end: summary.end,
             note: '',
-            metrics: null,
             color: DEFAULT_REGION_COLOR
         };
         return {
@@ -209,12 +208,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             end: summary.end
         };
 
-        if (areasMutated) {
-            updated.metrics = null;
-        } else if (Object.prototype.hasOwnProperty.call(sanitizedChanges, 'metrics')) {
-            updated.metrics = sanitizedChanges.metrics || null;
-        }
-
         if (Object.prototype.hasOwnProperty.call(sanitizedChanges, 'note')) {
             updated.note = typeof sanitizedChanges.note === 'string' ? sanitizedChanges.note : '';
         }
@@ -285,7 +278,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 start: summary.start,
                 end: summary.end,
                 note: typeof region.note === 'string' ? region.note : '',
-                metrics: region.metrics || null,
                 color: normalizeColor(region.color)
             };
             newAllIds.push(candidateId);
@@ -341,7 +333,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 start: summary.start,
                 end: summary.end,
                 note: typeof region.note === 'string' ? region.note : '',
-                metrics: region.metrics || null,
                 color: normalizeColor(region.color)
             };
             allIds.push(candidateId);
@@ -414,27 +405,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return updateRegion(state, id, { note });
             }
 
-            case actionTypes.REGION_METRICS_SET: {
-                const { id, metrics } = action.payload || {};
+            case actionTypes.REGION_COLOR_SET: {
+                const { id, color } = action.payload || {};
                 if (!Number.isFinite(id)) {
                     return state;
                 }
-                return updateRegion(state, id, { metrics });
-            }
-
-            case actionTypes.REGION_METRICS_BATCH_SET: {
-                const updates = action.payload?.updates;
-                if (!Array.isArray(updates) || !updates.length) {
-                    return state;
-                }
-                let nextState = state;
-                updates.forEach(update => {
-                    const { id, metrics } = update || {};
-                    if (Number.isFinite(id)) {
-                        nextState = updateRegion(nextState, id, { metrics });
-                    }
-                });
-                return nextState;
+                return updateRegion(state, id, { color });
             }
 
             case actionTypes.REGION_VISIBILITY_SET: {

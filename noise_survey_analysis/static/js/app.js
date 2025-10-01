@@ -193,11 +193,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             app.renderers.renderRegions(state, dataCache);
         }
 
-        // Metrics updates are now handled by region thunks themselves
-        // Initial load metrics calculation
-        if (isInitialLoad && app.thunks?.updateRegionMetricsIntent) {
-            app.store.dispatch(app.thunks.updateRegionMetricsIntent());
-        }
 
         if (app.renderers && typeof app.renderers.renderComparisonMode === 'function') {
             app.renderers.renderComparisonMode(state);

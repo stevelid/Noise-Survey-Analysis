@@ -65,7 +65,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             console.warn('[collectPositionTimestamps] No positionId provided');
             return [];
         }
-        const sources = models?.timeSeriesSources?.[positionId];
+        const registryModels = app.registry?.models || {};
+        const sources = registryModels.timeSeriesSources?.[positionId];
         console.log('[collectPositionTimestamps] sources:', sources);
         console.log('[collectPositionTimestamps] sources.overview:', sources?.overview);
         console.log('[collectPositionTimestamps] sources.log:', sources?.log);
@@ -243,6 +244,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             dispatch(actions.regionsAdded(regions));
+            if (app.regions?.invalidateMetricsCache) {
+                app.regions.invalidateMetricsCache();
+            }
             dispatch(actions.comparisonModeExited());
             console.log('[RegionThunk] dispatching setActiveSidePanelTab'); // DEBUG
             dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
@@ -303,7 +307,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const existingAreas = getRegionAreas(targetRegion);
                 const nextAreas = [...existingAreas, { start, end }];
                 dispatch(actions.regionUpdate(targetRegion.id, { areas: nextAreas }));
-                dispatch(updateRegionMetricsIntent());
+                if (app.regions?.invalidateRegionMetrics) {
+                    app.regions.invalidateRegionMetrics(targetRegion.id);
+                }
                 if (regionsState?.selectedId !== targetRegion.id) {
                     dispatch(selectRegionIntent(targetRegion.id));
                 }
@@ -320,7 +326,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             console.log('[regionAdd] Adding region:', { positionId, start, end });
             dispatch(actions.regionAdd(positionId, start, end));
-            dispatch(updateRegionMetricsIntent());
+            if (app.regions?.invalidateRegionMetrics && Number.isFinite(nextRegionId)) {
+                app.regions.invalidateRegionMetrics(nextRegionId);
+            }
 
             const newState = getState();
             const newRegionId = newState.regions.selectedId; // The reducer sets the new region as selected
@@ -347,8 +355,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const availablePositions = Array.isArray(state?.view?.availablePositions)
                 ? state.view.availablePositions
                 : [];
-            const fallbackPositions = models?.timeSeriesSources
-                ? Object.keys(models.timeSeriesSources)
+            const registryModels = app.registry?.models || {};
+            const fallbackPositions = registryModels.timeSeriesSources
+                ? Object.keys(registryModels.timeSeriesSources)
                 : [];
             const positions = availablePositions.length ? availablePositions : fallbackPositions;
             console.log('[AutoRegions] Positions to process:', positions);
@@ -440,7 +449,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             console.log('[AutoRegions] Dispatching regionsAdded with', generated.length, 'regions');
             dispatch(actions.regionsAdded(generated));
-            dispatch(updateRegionMetricsIntent());
+            if (app.regions?.invalidateMetricsCache) {
+                app.regions.invalidateMetricsCache();
+            }
             console.log('[AutoRegions] Dispatch complete');
         };
     }
@@ -521,7 +532,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
             const combinedAreas = [...getRegionAreas(targetRegion), ...getRegionAreas(sourceRegion)];
             dispatch(actions.regionUpdate(targetId, { areas: combinedAreas }));
+            if (app.regions?.invalidateRegionMetrics) {
+                app.regions.invalidateRegionMetrics(targetId);
+            }
             dispatch(actions.regionRemove(sourceNumericId));
+            if (app.regions?.invalidateRegionMetrics) {
+                app.regions.invalidateRegionMetrics(sourceNumericId);
+            }
             if (regionsState?.addAreaTargetId === sourceNumericId) {
                 dispatch(actions.regionSetAddAreaMode(null));
             }
@@ -620,6 +637,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             if (mutated) {
                 dispatch(actions.regionUpdate(region.id, { areas: nextAreas }));
+                if (app.regions?.invalidateRegionMetrics) {
+                    app.regions.invalidateRegionMetrics(region.id);
+                }
             }
         };
     }
@@ -654,33 +674,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }));
 
             dispatch(actions.regionRemove(region.id));
+            if (app.regions?.invalidateRegionMetrics) {
+                app.regions.invalidateRegionMetrics(region.id);
+            }
             if (regionsState?.addAreaTargetId === region.id && actions.regionSetAddAreaMode) {
                 dispatch(actions.regionSetAddAreaMode(null));
             }
             dispatch(actions.regionsAdded(newRegions));
-        };
-    }
-
-    /**
-     * Updates region metrics when regions change or parameters change.
-     * This thunk computes metrics for regions that need updates and dispatches
-     * a single batch action to update all metrics at once.
-     */
-    function updateRegionMetricsIntent() {
-        return function (dispatch, getState) {
-            if (!actions || typeof getState !== 'function') return;
-            
-            const state = getState();
-            const { models } = app.registry;
-            const dataCache = app.dataCache;
-            
-            if (!app.regions?.prepareMetricsUpdates) {
-                return;
-            }
-            
-            const updates = app.regions.prepareMetricsUpdates(state, dataCache, models) || [];
-            if (updates.length > 0) {
-                dispatch(actions.regionSetMetricsBatch(updates));
+            if (app.regions?.invalidateMetricsCache) {
+                app.regions.invalidateMetricsCache();
             }
         };
     }
@@ -699,8 +701,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         mergeRegionIntoSelectedIntent,
         resizeSelectedRegionIntent,
         splitSelectedRegionIntent,
-        toggleRegionCreationIntent,
-        updateRegionMetricsIntent
+        toggleRegionCreationIntent
     };
 })(window.NoiseSurveyApp);
 

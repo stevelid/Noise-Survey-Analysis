@@ -9,6 +9,7 @@ describe('NoiseSurveyApp thunks', () => {
     beforeEach(() => {
         store = createStore(rootReducer);
         window.NoiseSurveyApp.store = store;
+        window.NoiseSurveyApp.registry = window.NoiseSurveyApp.registry || { controllers: {}, models: {} };
     });
 
     it('handleTapIntent clears selection and taps when no region hit', () => {
@@ -209,8 +210,8 @@ describe('NoiseSurveyApp thunks', () => {
         expect(secondRegion.note).toBe('test note');
         expect(firstRegion.color).toBe('#123456');
         expect(secondRegion.color).toBe('#123456');
-        expect(firstRegion.metrics).toBeNull();
-        expect(secondRegion.metrics).toBeNull();
+        expect(firstRegion.metrics).toBeUndefined();
+        expect(secondRegion.metrics).toBeUndefined();
         expect(state.regions.selectedId).toBe(state.regions.allIds[1]);
     });
 

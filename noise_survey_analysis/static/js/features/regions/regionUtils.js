@@ -8,6 +8,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
+    // Module-level cache for computed metrics (outside Redux state)
+    const _metricsCache = new Map(); // key: `${regionId}_${parameter}`, value: metrics object
+
     function toFiniteArray(values) {
         if (!values) return [];
         if (Array.isArray(values) || ArrayBuffer.isView(values)) {
@@ -337,59 +340,72 @@ function calcLAeq(values) {
         };
     }
 
-    function hasSpectralDataForParam(prepared, parameter) {
-        if (!prepared || !parameter) return false;
-        const log = prepared?.log?.prepared_params?.[parameter];
-        if (log) return true;
-        const overview = prepared?.overview?.prepared_params?.[parameter];
-        return Boolean(overview);
+    /**
+     * Gets metrics for a region, using cache if available.
+     * Calculates and caches if not found.
+     */
+    function getRegionMetrics(region, state, dataCache, models) {
+        if (!region) {
+            return null;
+        }
+        const regionId = region.id ?? 'unknown';
+        const parameter = state?.view?.selectedParameter ?? '';
+        const cacheKey = `${regionId}_${parameter}`;
+
+        if (_metricsCache.has(cacheKey)) {
+            return _metricsCache.get(cacheKey);
+        }
+
+        const metrics = computeRegionMetrics(region, state, dataCache, models);
+        _metricsCache.set(cacheKey, metrics);
+        return metrics;
     }
 
-    function hasSpectrumValues(metrics) {
-        if (!metrics?.spectrum) return false;
-        const values = metrics.spectrum.values;
-        if (!Array.isArray(values) || !values.length) return false;
-        return values.some(value => Number.isFinite(value));
+    /**
+     * Invalidates the entire metrics cache.
+     * Call this when parameters change or data reloads.
+     */
+    function invalidateMetricsCache() {
+        _metricsCache.clear();
     }
 
-    function prepareMetricsUpdates(state, dataCache, models) {
-        const regionsState = state?.regions;
-        if (!regionsState) return [];
-        const updates = [];
-        const selectedParam = state?.view?.selectedParameter || null;
-        regionsState.allIds.forEach(id => {
-            const region = regionsState.byId[id];
-            if (!region) return;
-            const prepared = models?.preparedGlyphData?.[region.positionId];
-            const currentMetrics = region.metrics || null;
-            const shouldUpdate =
-                !currentMetrics
-                || currentMetrics.parameter !== selectedParam
-                || (currentMetrics.dataResolution === 'none' && hasSpectralDataForParam(prepared, selectedParam))
-                || (!hasSpectrumValues(currentMetrics) && hasSpectralDataForParam(prepared, selectedParam));
-            if (!shouldUpdate) return;
-            const metrics = computeRegionMetrics(region, state, dataCache, models);
-            updates.push({ id, metrics });
+    /**
+     * Invalidates cache for a specific region.
+     * Call this when a region's boundaries change.
+     */
+    function invalidateRegionMetrics(regionId) {
+        if (regionId === undefined || regionId === null) {
+            return;
+        }
+        const prefix = `${regionId}_`;
+        const keysToDelete = [];
+        _metricsCache.forEach((_, key) => {
+            if (key.startsWith(prefix)) {
+                keysToDelete.push(key);
+            }
         });
-        return updates;
+        keysToDelete.forEach(key => _metricsCache.delete(key));
     }
 
-    function exportRegions(state) {
+    function exportRegions(state, dataCache, models) {
         const regionsState = state?.regions;
         if (!regionsState) return '[]';
         const exportPayload = regionsState.allIds
             .map(id => regionsState.byId[id])
             .filter(Boolean)
-            .map(region => ({
-                id: region.id,
-                positionId: region.positionId,
-                areas: getRegionAreas(region).map(area => ({ start: area.start, end: area.end })),
-                start: region.start,
-                end: region.end,
-                note: region.note || '',
-                metrics: region.metrics || null,
-                color: typeof region.color === 'string' ? region.color : null
-            }));
+            .map(region => {
+                const metrics = getRegionMetrics(region, state, dataCache, models);
+                return {
+                    id: region.id,
+                    positionId: region.positionId,
+                    areas: getRegionAreas(region).map(area => ({ start: area.start, end: area.end })),
+                    start: region.start,
+                    end: region.end,
+                    note: region.note || '',
+                    metrics: metrics,
+                    color: typeof region.color === 'string' ? region.color : null
+                };
+            });
         return JSON.stringify(exportPayload, null, 2);
     }
 
@@ -415,7 +431,6 @@ function calcLAeq(values) {
                     positionId,
                     areas,
                     note: typeof item?.note === 'string' ? item.note : '',
-                    metrics: item?.metrics || null,
                     color: typeof item?.color === 'string' ? item.color : undefined
                 };
             }).filter(Boolean);
@@ -507,7 +522,7 @@ function calcLAeq(values) {
             console.error('[Regions] Store not available for export.');
             return;
         }
-        const json = exportRegions(app.store.getState());
+        const json = exportRegions(app.store.getState(), app.dataCache, app.registry?.models);
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         triggerDownload(`regions-${timestamp}.json`, json);
     }
@@ -528,6 +543,7 @@ function calcLAeq(values) {
                 const regionsArray = importRegions(reader.result);
                 if (regionsArray.length) {
                     app.store.dispatch(app.actions.regionsAdded(regionsArray));
+                    invalidateMetricsCache();
                 }
             };
             reader.readAsText(file);
@@ -545,7 +561,9 @@ function calcLAeq(values) {
 
     const utils = {
         computeRegionMetrics,
-        prepareMetricsUpdates,
+        getRegionMetrics,
+        invalidateMetricsCache,
+        invalidateRegionMetrics,
         exportRegions,
         importRegions,
         formatRegionSummary,

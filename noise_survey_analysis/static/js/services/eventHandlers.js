@@ -175,6 +175,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function handleParameterChange(value) {
+        const thunkCreator = app.thunks && app.thunks.selectParameterIntent;
+        if (typeof thunkCreator === 'function') {
+            app.store.dispatch(thunkCreator(value));
+            return;
+        }
         app.store.dispatch(actions.paramChange(value));
     }
 
