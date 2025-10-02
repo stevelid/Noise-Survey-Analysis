@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2025-10-01  
-**Version:** 1.2.0
+**Last Updated:** 2025-10-02
+**Version:** 1.2.1
 
 ---
 
@@ -109,6 +109,7 @@
 - [ ] **Expected:** Region make mode activates (visual indicator?)
 - [ ] **Action:** Press R again
 - [ ] **Expected:** Region make mode deactivates
+- [ ] **Expected:** Regions panel shows "Create Region mode active" banner near the top while awaiting the second press (disappears after finishing or cancelling).
 
 ### 2.4 Escape Key (Exit Modes) 🟢
 - [ ] **Action:** Enter region make mode, press Escape

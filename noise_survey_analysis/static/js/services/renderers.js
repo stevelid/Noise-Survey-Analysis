@@ -994,6 +994,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     regionSource: models?.regionPanelSource,
                     regionTable: models?.regionPanelTable,
                     messageDiv: models?.regionPanelMessageDiv,
+                    creationIndicatorDiv: models?.regionPanelCreationIndicatorDiv,
                     detail: models?.regionPanelDetail,
                     copyButton: models?.regionPanelCopyButton,
                     deleteButton: models?.regionPanelDeleteButton,
