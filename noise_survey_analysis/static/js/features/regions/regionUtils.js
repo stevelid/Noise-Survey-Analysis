@@ -262,6 +262,7 @@ function calcLAeq(values) {
     }
 
     function computeRegionMetrics(region, state, dataCache, models) {
+        console.log("[computeRegionMetrics] region:", region); //debugging
         const areas = getRegionAreas(region);
         const durationMs = sumAreaDurations(areas);
         const sources = models?.timeSeriesSources?.[region.positionId];
@@ -294,18 +295,14 @@ function calcLAeq(values) {
         let la90 = null;
         if (selection.dataset === 'log') {
             if (Array.isArray(selection.la90Values) && selection.la90Values.length > 0) {
-                console.log("[computeRegionMetrics] calculating LA90 from log LA90 values"); //debugging
                 la90 = calcLA90(selection.la90Values);
             } else {
-                console.log("[computeRegionMetrics] calculating LA90 from log LAeq values"); //debugging
                 la90 = calcLA90(selection.laeqValues);
             }
         } else if (selection.dataset === 'overview') {
             if (Array.isArray(selection.la90Values) && selection.la90Values.length > 0) {
-                console.log("[computeRegionMetrics] calculating LA90 from overview LA90 values"); //debugging
                 la90 = calcLA90(selection.la90Values);
             } else {
-                console.log("[computeRegionMetrics] calculating LA90 from overview LAeq values"); //debugging
                 la90 = calcLA90(selection.laeqValues);
             }
         }

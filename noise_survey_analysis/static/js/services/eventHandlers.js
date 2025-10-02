@@ -424,9 +424,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return fn.apply(this, args);
             } catch (error) {
                 console.error(`[EventHandler Error] Function '${fnName}' failed:`, error);
-                console.error('Arguments:', args);
-                // Re-throw to allow debugging, or handle gracefully
-                throw error;
+                console.error(`[EventHandler Error] Stack trace:`, error.stack);
+                console.error('[EventHandler Error] Arguments:', args);
+                // Don't re-throw - allow the app to continue gracefully
+                // The error has been logged with full context for debugging
             }
         };
     }

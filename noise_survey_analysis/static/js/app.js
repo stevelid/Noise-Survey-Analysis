@@ -137,15 +137,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             || didVisibilityChange
             || didChartOffsetsChange
             || didDisplayTitlesChange;
-
         
-        //debug
-        if (didMarkersChange) {
-            console.log('[App] marker state changed', state.markers); // DEBUG
-        }
-        
-        
-        // --- B. ORCHESTRATE DATA PROCESSING & RENDERING ---
+            // --- B. ORCHESTRATE DATA PROCESSING & RENDERING ---
         let displayDetailsUpdates = null;
 
         if (isHeavyUpdate) {
@@ -180,11 +173,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // render the side panel
         if (didMarkersChange || didRegionsChange || didActiveSidePanelTabChange) {
-            console.log('Rendering side panel');//debug
+            const currentPanelState = {
+                lastActionType: state.system.lastAction?.type,
+                markers: state.markers,
+                regions: state.regions,
+                activeSidePanelTab: state.view.activeSidePanelTab,
+                desiredIndex: state.view.desiredIndex,
+                didMarkersChange: didMarkersChange,
+                didRegionsChange: didRegionsChange,
+                didActiveSidePanelTabChange: didActiveSidePanelTabChange
+            };
+
             app.renderers.renderSidePanel(state);
         }
 
         // Always sync markers
+        
         if (isInitialLoad || didMarkersChange) {
             app.renderers.renderMarkers(state);
         }

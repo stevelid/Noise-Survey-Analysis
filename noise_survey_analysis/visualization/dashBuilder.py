@@ -480,7 +480,12 @@ class DashBuilder:
             
             # Fallback: Direct execution on nextTick (works for fresh loads)
 
-            self.js_init_trigger.js_on_change('visible', CustomJS(args=js_args, code=init_js_code))
+            self.js_init_trigger.js_on_change('visible', CustomJS(args=js_args, code=f"""
+                if (!window.__bokeh_app_initialized) {{
+                    window.__bokeh_app_initialized = true;
+                    {init_js_code}
+                }}
+            """))
             doc.add_next_tick_callback(lambda: setattr(self.js_init_trigger, 'visible', True))
         else:
             # For static HTML, DocumentReady is the correct and only trigger

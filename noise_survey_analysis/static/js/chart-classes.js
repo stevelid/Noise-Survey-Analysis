@@ -154,31 +154,51 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 if (!marker) {
                     const doc = Bokeh.documents[0];
                     if (!doc) {
-                        console.error("Bokeh document not available for creating Span markers");
+                        console.error("[Chart.syncMarkers] Bokeh document not available for creating Span markers");
                         return;
                     }
 
                     const Span = Bokeh.Models.get("Span");
                     if (!Span) {
-                        console.error("Could not retrieve Span model constructor from Bokeh.Models.");
+                        console.error("[Chart.syncMarkers] Could not retrieve Span model constructor from Bokeh.Models.");
                         return;
                     }
 
-                    marker = new Span({
-                        location: timestamp,
-                        dimension: 'height',
-                        line_color: normalizeMarkerColor(markerColor),
-                        line_width: UNSELECTED_MARKER_LINE_WIDTH,
-                        line_alpha: UNSELECTED_MARKER_LINE_ALPHA,
-                        level: 'underlay',
-                        visible: true,
-                        name: `marker_${this.name}_${timestamp}`
-                    });
-                    // Only add to document root if in live mode (static reports don't have sessions)
-                    if (doc.session) {
-                        doc.add_root(marker);
+                    try {
+                        marker = new Span({
+                            location: timestamp,
+                            dimension: 'height',
+                            line_color: normalizeMarkerColor(markerColor),
+                            line_width: UNSELECTED_MARKER_LINE_WIDTH,
+                            line_alpha: UNSELECTED_MARKER_LINE_ALPHA,
+                            level: 'underlay',
+                            visible: true,
+                            name: `marker_${this.name}_${timestamp}`
+                        });
+                        
+                        
+                        // Add to chart layout first
+                        this.model.add_layout(marker);
+
+                        try {
+                            doc.add_root(marker);
+                            console.log("[Chart.syncMarkers] Added marker to document root"); // DEBUG
+                        } catch (error) {
+                            console.error("[Chart.syncMarkers] Failed to add marker to document root:", error);
+                            // Then add to document root if in live mode
+                            // This is needed for Bokeh's view system to work properly
+                            if (doc.session) {
+                                console.log("[Chart.syncMarkers] Adding marker to document root"); // DEBUG
+                                doc.add_root(marker);
+                            } else {
+                                console.log("[Chart.syncMarkers] Document session not available, skipping document root addition"); // DEBUG
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`[Chart.syncMarkers] Failed to create/add marker for chart ${this.name}:`, error);
+                        console.error('[Chart.syncMarkers] Stack trace:', error.stack);
+                        return;
                     }
-                    this.model.add_layout(marker);
                 } else {
                     marker.location = timestamp;
                     marker.visible = true;
@@ -189,14 +209,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 nextMarkers.push(marker);
             });
 
+            // Remove markers that are no longer in state
             const doc = Bokeh.documents[0];
             this.markerModels.forEach(marker => {
                 if (!nextMarkers.includes(marker)) {
-                    if (this.model && typeof this.model.remove_layout === 'function') {
-                        this.model.remove_layout(marker);
-                    }
-                    if (doc && doc.session && typeof doc.remove_root === 'function') {
-                        doc.remove_root(marker);
+                    try {
+                        if (this.model && typeof this.model.remove_layout === 'function') {
+                            this.model.remove_layout(marker);
+                        }
+                        if (doc && doc.session && typeof doc.remove_root === 'function') {
+                            doc.remove_root(marker);
+                        }
+                    } catch (error) {
+                        console.warn(`[Chart.syncMarkers] Failed to remove marker from chart ${this.name}:`, error);
                     }
                 }
             });
@@ -308,7 +333,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         try {
                             if (typeof this.model.remove_layout === 'function') {
                                 this.model.remove_layout(annotation);
-                            } 
+                            }
                             if (doc && doc.session && typeof doc.remove_root === 'function') {
                                 doc.remove_root(annotation);
                             }
@@ -347,11 +372,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             idsToRemove.forEach(id => this.regionAnnotations.delete(id));
 
             if (didMutate) {
-                    if (typeof this.model?.request_render === 'function') {
-                        this.model.request_render();
-                    } else if (this.model?.change?.emit) {
-                        this.model.change.emit();
-                    }
+                if (typeof this.model?.request_render === 'function') {
+                    this.model.request_render();
+                } else if (this.model?.change?.emit) {
+                    this.model.change.emit();
+                }
             }
         }
 

@@ -33,10 +33,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const markerThreshold = Math.max(Math.abs(viewportWidth) * MARKER_HIT_RATIO, MARKER_MIN_THRESHOLD_MS);
 
             if (!isShift && !isCtrl) {
-                //select nearest marker
+                //select nearest marker (search across ALL charts, not just this position)
                 const { marker: closestMarker, distance } =
                     typeof markerSelectors.selectClosestMarkerToTimestamp === 'function'
-                        ? markerSelectors.selectClosestMarkerToTimestamp(state, timestamp, positionId)
+                        ? markerSelectors.selectClosestMarkerToTimestamp(state, timestamp, null)
                         : { marker: null, distance: Infinity };
 
                 if (closestMarker && distance <= markerThreshold) {
@@ -115,14 +115,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             if (isCtrl) {
+                // Search across ALL charts for marker deletion too
                 const { marker, distance } = typeof markerSelectors.selectClosestMarkerToTimestamp === 'function'
-                    ? markerSelectors.selectClosestMarkerToTimestamp(state, timestamp, positionId)
+                    ? markerSelectors.selectClosestMarkerToTimestamp(state, timestamp, null)
                     : { marker: null, distance: Infinity };
 
                 if (marker && distance <= Math.max(markerThreshold, MARKER_MIN_THRESHOLD_MS) && typeof actions.markerRemove === 'function') {
                     dispatch(actions.markerRemove(marker.id));
+                    // Don't dispatch tap after deleting a marker - prevents accessing deleted data
+                    return;
                 }
-                return;
+                // If Ctrl was pressed but no marker was found, fall through to normal tap
             }
 
             dispatch(actions.tap(timestamp, positionId, chartName));

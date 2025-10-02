@@ -938,13 +938,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (charts) {
                 charts.forEach(chart => {
                     try {
-                        try {
                         chart.syncMarkers(markers, enabled, selectedId);
                     } catch (error) {
-                        console.warn('[renderMarkers] Failed to sync markers for chart', chart?.name, error);
-                    }
-                    } catch (error) {
-                        console.warn('[renderMarkers] Failed to sync markers for chart', chart?.name, error);
+                        console.error(`[renderMarkers] Failed to sync markers for chart '${chart?.name}':`, error);
+                        console.error('[renderMarkers] Stack trace:', error.stack);
                     }
                 });
             }

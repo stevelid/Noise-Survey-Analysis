@@ -13,7 +13,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const viewSelectors = app.features?.view?.selectors || {};
     const constants = app.constants || {};
     const sidePanelTabs = constants.sidePanelTabs || {};
-    console.log("[Markers] sidePanelTabs", sidePanelTabs); //debug
     const SIDE_PANEL_TAB_MARKERS = Number.isFinite(sidePanelTabs.markers)
         ? sidePanelTabs.markers
         : 1;
@@ -61,12 +60,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function selectMarkerIntent(markerId) {
         return function (dispatch, getState) {
+            console.log("[Markers] selectMarkerIntent dispatching"); // DEBUG
             if (!actions || typeof dispatch !== 'function') {
+                console.log("[Markers] selectMarkerIntent dispatching failed"); // DEBUG
                 return;
             }
 
             const normalizedId = Number(markerId);
             if (!Number.isFinite(normalizedId)) {
+                console.log("[Markers] selectMarkerIntent dispatching failed"); // DEBUG
                 dispatch(actions.markerSelect(null));
                 return;
             }
@@ -76,16 +78,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ? state.markers.selectedId
                 : null;
 
-            if (currentSelectedId === normalizedId) {
-                return;
+            // Only dispatch markerSelect if the selection actually changed
+            if (currentSelectedId !== normalizedId) {
+                console.log('[markersThunks] dispatching markerSelect'); // DEBUG
+                dispatch(actions.markerSelect(normalizedId));
             }
 
-            console.log('[markersThunks] dispatching markerSelect'); // DEBUG
-            dispatch(actions.markerSelect(normalizedId));
+            console.log("[Markers] getting ready to clear region selection"); // DEBUG
+            
+            // Always clear region selection and switch to markers tab
+            // These are valid side effects even if the marker selection didn't change
             if (typeof actions.regionClearSelection === 'function') {
+                console.log('[markersThunks] dispatching regionClearSelection'); // DEBUG
                 dispatch(actions.regionClearSelection());
             }
             
+            console.log("[Markers] getting ready to switch to markers tab"); // DEBUG
             if (typeof actions.setActiveSidePanelTab === 'function') {
                 console.log('[markersThunks] dispatching setActiveSidePanelTab'); // DEBUG
                 dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_MARKERS));
@@ -256,6 +264,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (typeof payload.color === 'string') extras.color = payload.color;
             if (payload.metrics) extras.metrics = payload.metrics;
 
+            // Predict the ID of the new marker. The reducer uses the counter.
+            const newMarkerId = state.markers.counter;
+
 
             // 3. Dispatch the creation action
             console.log('[markersThunks] 3. Dispatch the creation action'); // DEBUG
@@ -264,12 +275,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // 4. Handle side effects after state update
             setTimeout(() => {
                 console.log('[markersThunks] 4. Handle side effects after state update'); // DEBUG
-                const updatedState = getState();
-                const newMarkerId = updatedState.markers.selectedId; // The reducer sets this
                 if (Number.isFinite(newMarkerId)) {
                     dispatch(selectMarkerIntent(newMarkerId));
                 }
-            }, 0);
+            }, 10);
         };
     }
 

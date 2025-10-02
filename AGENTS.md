@@ -226,7 +226,7 @@ When you add or modify any code that creates user interactions:
 - Automated tests complement but do not replace manual testing for Bokeh interactions
 
 ### Manual Testing. 
-- use use python noise_survey_analysis --generate-static .\config.json to generate static files
+- use python -m noise_survey_analysis.main --generate-static .\config.json to generate static files
 - use playwright mcp to test
 
 By following this handbook, contributors maintain a clean, scalable, and predictable codebase that respects the project's performance constraints and architectural conventions.
