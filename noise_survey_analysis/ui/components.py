@@ -92,6 +92,23 @@ class RegionPanelComponent:
             sizing_mode="stretch_width",
         )
 
+        self.creation_indicator_div = Div(
+            text=(
+                "<div class='region-mode-indicator'>"
+                "<strong>Create Region mode active.</strong> "
+                "Press <kbd>R</kbd> again to finish at the current cursor position or <kbd>Esc</kbd> to cancel."
+                "</div>"
+            ),
+            width=panel_width,
+            name="region_panel_creation_indicator",
+            visible=False,
+            styles={
+                "font-size": "12px",
+                "line-height": "1.45",
+                "margin-bottom": "8px",
+            },
+        )
+
         self.region_source = ColumnDataSource(
             data={
                 "id": [],
@@ -389,6 +406,7 @@ class RegionPanelComponent:
         self.container = column(
             self.visibility_toggle,
             self.auto_buttons,
+            self.creation_indicator_div,
             self.detail_layout,
             self.message_div,
             name="region_panel_container",

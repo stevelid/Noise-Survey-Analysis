@@ -36,6 +36,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             .region-panel-pending { background: #fff3cd; border-left: 4px solid #ffa000; padding: 6px 8px; margin: 0 0 8px 0; color: #5f4200; font-size: 12px; line-height: 1.4; border-radius: 4px; }
             .region-panel-pending strong { font-weight: 600; }
             .region-panel-pending kbd { display: inline-block; padding: 1px 4px; border-radius: 3px; border: 1px solid #d7ccc8; background: #fff; font-size: 11px; font-family: 'Segoe UI', sans-serif; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1); }
+            .region-panel-mode { background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 6px; color: #1d4ed8; font-size: 12px; line-height: 1.45; margin: 0 0 8px 0; padding: 8px 10px; box-shadow: inset 0 1px 0 rgba(59, 130, 246, 0.1); }
+            .region-panel-mode__title { font-weight: 600; margin: 0 0 4px 0; font-size: 12px; color: #1e3a8a; }
+            .region-panel-mode p { margin: 4px 0 0 0; color: inherit; }
+            .region-panel-mode kbd { display: inline-block; padding: 1px 4px; border-radius: 3px; border: 1px solid rgba(37, 99, 235, 0.35); background: #fff; font-size: 11px; font-family: 'Segoe UI', sans-serif; box-shadow: inset 0 -1px 0 rgba(37, 99, 235, 0.15); color: inherit; }
             .region-panel-info { background: #f8fafc; border-radius: 6px; border-left: 4px solid #3b82f6; color: #1f2937; font-size: 12px; line-height: 1.45; margin: 0 0 8px 0; padding: 8px 10px; }
             .region-panel-info--pending { background: #fff7ed; border-color: #fb923c; color: #5f3700; }
             .region-panel-info__title { font-weight: 600; margin: 0 0 4px 0; font-size: 12px; }
@@ -57,6 +61,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             <li>Use <kbd>Ctrl</kbd> + click inside a region to remove it, or <kbd>Ctrl</kbd>/<kbd>Alt</kbd> + <kbd>←</kbd>/<kbd>→</kbd> to resize the selected region's edges.</li>
         </ul>
     `;
+
+    const CREATION_MODE_HTML = `${PANEL_STYLE}
+        <div class="region-panel-mode">
+            <div class="region-panel-mode__title">Create Region mode active</div>
+            <p>Press <kbd>R</kbd> again to complete the region at the current cursor position or <kbd>Esc</kbd> to cancel.</p>
+        </div>`;
 
     function normalizeColor(color) {
         if (typeof color === 'string') {
@@ -383,6 +393,31 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    function updateCreationIndicator(indicatorDiv, panelVisible, pendingRegionStart) {
+        if (!indicatorDiv) {
+            return;
+        }
+
+        const hasPending = Number.isFinite(pendingRegionStart?.timestamp)
+            && typeof pendingRegionStart?.positionId === 'string';
+        const shouldShow = panelVisible && hasPending;
+
+        if (indicatorDiv.visible !== shouldShow) {
+            indicatorDiv.visible = shouldShow;
+        }
+
+        if (!shouldShow) {
+            if (indicatorDiv.text !== '') {
+                indicatorDiv.text = '';
+            }
+            return;
+        }
+
+        if (indicatorDiv.text !== CREATION_MODE_HTML) {
+            indicatorDiv.text = CREATION_MODE_HTML;
+        }
+    }
+
     function updateMessage(messageDiv, detailLayout, hasRegions, panelVisible, pendingRegionStart) {
         if (!messageDiv || !detailLayout) return;
         const hasPending = Number.isFinite(pendingRegionStart?.timestamp) && typeof pendingRegionStart?.positionId === 'string';
@@ -606,6 +641,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             regionSource,
             regionTable,
             messageDiv,
+            creationIndicatorDiv,
             detail,
             noteInput,
             metricsDiv,
@@ -635,9 +671,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const hasRegions = regionList.length > 0;
         const hasSelection = Boolean(selectedRegion);
 
+        const pendingRegionStart = state?.interaction?.pendingRegionStart || null;
+
         updateVisibilityToggle(visibilityToggle, regionList.length, panelVisible, overlaysVisible);
         updateAutoButton(autoDayNightButton, hasPositions, panelVisible);
-        updateMessage(messageDiv, detail, hasRegions, panelVisible, state?.interaction?.pendingRegionStart || null);
+        updateCreationIndicator(creationIndicatorDiv, panelVisible, pendingRegionStart);
+        updateMessage(messageDiv, detail, hasRegions, panelVisible, pendingRegionStart);
         updateButtons(panelModels, hasSelection, selectedRegion, state, isMergeModeActive, panelVisible);
         updateNoteInput(noteInput, selectedRegion);
 

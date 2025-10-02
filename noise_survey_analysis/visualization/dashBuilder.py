@@ -553,6 +553,7 @@ class DashBuilder:
             'regionPanelSource': self.shared_components['region_panel'].region_source,
             'regionPanelTable': self.shared_components['region_panel'].region_table,
             'regionPanelMessageDiv': self.shared_components['region_panel'].message_div,
+            'regionPanelCreationIndicatorDiv': self.shared_components['region_panel'].creation_indicator_div,
             'regionPanelDetail': self.shared_components['region_panel'].detail_layout,
             'regionPanelCopyButton': self.shared_components['region_panel'].copy_button,
             'regionPanelDeleteButton': self.shared_components['region_panel'].delete_button,

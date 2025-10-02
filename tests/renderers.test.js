@@ -167,6 +167,7 @@ describe('NoiseSurveyApp.renderers', () => {
             },
             table: { disabled: true, visible: false },
             messageDiv: { text: '', visible: true },
+            creationIndicatorDiv: { text: '', visible: false },
             detail: { visible: false },
             copyButton: { disabled: true },
             deleteButton: { disabled: true },
@@ -188,6 +189,7 @@ describe('NoiseSurveyApp.renderers', () => {
             regionPanelSource: regionPanelMocks.source,
             regionPanelTable: regionPanelMocks.table,
             regionPanelMessageDiv: regionPanelMocks.messageDiv,
+            regionPanelCreationIndicatorDiv: regionPanelMocks.creationIndicatorDiv,
             regionPanelDetail: regionPanelMocks.detail,
             regionPanelCopyButton: regionPanelMocks.copyButton,
             regionPanelDeleteButton: regionPanelMocks.deleteButton,
@@ -237,6 +239,8 @@ describe('NoiseSurveyApp.renderers', () => {
 
             expect(models.regionPanelDetail.visible).toBe(false);
             expect(models.regionPanelMessageDiv.visible).toBe(false);
+            expect(models.regionPanelCreationIndicatorDiv.visible).toBe(false);
+            expect(models.regionPanelCreationIndicatorDiv.text).toBe('');
             expect(models.regionVisibilityToggle.active).toBe(false);
             expect(models.regionVisibilityToggle.label).toBe('Regions (1)');
             expect(models.regionVisibilityToggle.button_type).toBe('default');
@@ -546,6 +550,8 @@ describe('NoiseSurveyApp.renderers', () => {
             renderers.renderRegions(populatedState, {});
             expect(models.regionPanelMessageDiv.visible).toBe(true);
             expect(models.regionPanelMessageDiv.text).toContain('Region tips');
+            expect(models.regionPanelCreationIndicatorDiv.visible).toBe(false);
+            expect(models.regionPanelCreationIndicatorDiv.text).toBe('');
             expect(models.regionPanelDetail.visible).toBe(true);
             expect(models.regionPanelTable.disabled).toBe(false);
             expect(models.regionPanelSource.data.title[0]).toBe('hello');
@@ -581,6 +587,8 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMessageDiv.text).toContain('Make Region mode active');
             expect(models.regionPanelMessageDiv.text).toContain('Region start pinned');
             expect(models.regionPanelMessageDiv.text).toContain('P9');
+            expect(models.regionPanelCreationIndicatorDiv.visible).toBe(true);
+            expect(models.regionPanelCreationIndicatorDiv.text).toContain('Create Region mode active');
             expect(models.regionPanelDetail.visible).toBe(true);
 
             const multiAreaState = {
