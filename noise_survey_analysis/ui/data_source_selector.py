@@ -4,17 +4,17 @@ import os
 import glob
 import logging
 import json
-from collections import defaultdict
+import os.path
+import re
 from datetime import datetime
-from bokeh.plotting import figure
-from bokeh.layouts import column, row, layout, grid
+
+from bokeh.layouts import column, row
 from bokeh.models import (
-    ColumnDataSource, DataTable, TableColumn, StringEditor, CheckboxEditor,
-    TextInput, Button, Div, Spacer, Select, MultiSelect, CustomJS, Panel, Tabs,
-    HTMLTemplateFormatter, SelectEditor, NumberFormatter
+    ColumnDataSource, DataTable, TableColumn, StringEditor,
+    TextInput, Button, Div, Spacer, Select, CustomJS,
+    HTMLTemplateFormatter, SelectEditor
 )
 from bokeh.events import ButtonClick, ValueSubmit
-import os.path
 
 from ..core.data_loaders import scan_directory_for_sources, summarize_scanned_sources
 from ..core.config import DEFAULT_BASE_JOB_DIR
@@ -27,46 +27,32 @@ if not os.path.isdir(DEFAULT_BASE_JOB_DIR):
     logger.warning(f"Default base job directory not found. Falling back to: {DEFAULT_BASE_JOB_DIR}")
 
 
-CSV_PRIORITY_KEYWORDS = ("log", "summary")
-PRIORITY_HIGHLIGHT_COLOR = "#1f3c88"  # Deep accent for likely valid sources
-PRIORITY_HIGHLIGHT_TEXT_COLOR = "#f8f9fa"  # Light text for dark background
-SECONDARY_HIGHLIGHT_COLOR = "#f1f3f5"  # Muted backdrop for other files
-SECONDARY_HIGHLIGHT_TEXT_COLOR = "#212529"
-NTI_DEFAULT_PRIORITY_THRESHOLD_BYTES = 0.1 * 1024 * 1024  # 3 MB default, tune per file type below
+CSV_KEYWORD_PATTERNS = {
+    "log": re.compile(r"(?:^|[\s_-])log\.csv$", re.IGNORECASE),
+    "summary": re.compile(r"(?:^|[\s_-])summary\.csv$", re.IGNORECASE),
+}
+
+CSV_MIN_SIZE_BYTES = {
+    "log": 40 * 1024,
+    "summary": 10 * 1024,
+}
+
+CSV_MAX_SIZE_BYTES = 300 * 1024 * 1024
+
+TXT_NAMING_PATTERN = re.compile(r"(log|rpt_report|report)\.txt$", re.IGNORECASE)
+NTI_DEFAULT_PRIORITY_THRESHOLD_BYTES = 0.5 * 1024 * 1024
 NTI_SIZE_HINTS_BYTES = {
-    "rta_rpt": 0.1 * 1024 * 1024,
-    "rpt_report": 0.1 * 1024 * 1024,
+    "rta_rpt": 0.5 * 1024 * 1024,
+    "rpt_report": 0.5 * 1024 * 1024,
     "rta_log": 1 * 1024 * 1024,
     "log": 0.5 * 1024 * 1024,
     "spectral": 0.5 * 1024 * 1024,
 }
+NTI_MAX_SIZE_BYTES = 80 * 1024 * 1024
 
-VALIDITY_STATUS_DISPLAY = {
-    "likely_valid": {
-        "label": "Likely valid",
-        "text_color": "#0f5132",
-        "bg_color": "rgba(25, 135, 84, 0.18)",
-        "highlight_color": "",
-    },
-    "needs_review": {
-        "label": "Check header",
-        "text_color": "#664d03",
-        "bg_color": "rgba(255, 193, 7, 0.2)",
-        "highlight_color": "rgba(255, 193, 7, 0.25)",
-    },
-    "unlikely_valid": {
-        "label": "Header mismatch",
-        "text_color": "#842029",
-        "bg_color": "rgba(220, 53, 69, 0.18)",
-        "highlight_color": "rgba(220, 53, 69, 0.28)",
-    },
-    "unknown": {
-        "label": "Unknown",
-        "text_color": "#495057",
-        "bg_color": "rgba(108, 117, 125, 0.12)",
-        "highlight_color": "",
-    },
-}
+PRIORITY_HIGHLIGHT_COLOR = "#1f3c88"
+PRIORITY_HIGHLIGHT_TEXT_COLOR = "#f8f9fa"
+DEFAULT_TEXT_COLOR = "#212529"
 
 
 class DataSourceSelector:
@@ -83,25 +69,20 @@ class DataSourceSelector:
         self.on_data_sources_selected = on_data_sources_selected
         self.scanned_sources = []
         self.current_config_path = None
-        
+        self.valid_config_paths = []
+
         # Data sources for the dual-pane interface
         self.available_files_source = ColumnDataSource({
             'index': [], 'position': [], 'relpath': [], 'display_path': [],
             'fullpath': [], 'type': [], 'file_size': [],
             'group': [], 'parser_type': [], 'file_size_bytes': [],
-            'highlight_color': [], 'highlight_text_color': [], 'highlight_reason': [],
-            'validity_status': [], 'validity_reason': [], 'header_preview': [],
-            'validity_label': [], 'validity_text_color': [], 'validity_bg_color': [],
-            'validity_tooltip': []
+            'highlight_color': [], 'highlight_text_color': [], 'highlight_reason': []
         })
 
         self.included_files_source = ColumnDataSource({
             'index': [], 'position': [], 'relpath': [], 'display_path': [],
             'fullpath': [], 'type': [], 'file_size': [],
-            'group': [], 'parser_type': [], 'file_size_bytes': [],
-            'validity_status': [], 'validity_reason': [], 'header_preview': [],
-            'validity_label': [], 'validity_text_color': [], 'validity_bg_color': [],
-            'validity_tooltip': []
+            'group': [], 'parser_type': [], 'file_size_bytes': []
         })
         
         self.source_table_data = ColumnDataSource({
@@ -115,26 +96,6 @@ class DataSourceSelector:
 
         self._create_ui_components()
         self._attach_dnd_handlers()
-
-
-    def _resolve_validity_fields(self, status, reason, header_preview):
-        normalized_status = (status or "unknown").lower()
-        display = VALIDITY_STATUS_DISPLAY.get(normalized_status, VALIDITY_STATUS_DISPLAY["unknown"])
-        safe_reason = reason or ""
-        safe_preview = header_preview or ""
-        tooltip_parts = [part for part in (safe_reason.strip(), safe_preview.strip()) if part]
-        tooltip = "\n".join(tooltip_parts)
-
-        return {
-            'status': normalized_status,
-            'reason': safe_reason,
-            'header': safe_preview,
-            'label': display["label"],
-            'text_color': display["text_color"],
-            'bg_color': display["bg_color"],
-            'tooltip': tooltip,
-            'highlight_color': display.get("highlight_color", "")
-        }
 
 
     def _create_ui_components(self):
@@ -160,7 +121,7 @@ class DataSourceSelector:
         )
 
         self.available_files_label = Div(
-            text="<b>Available Files:</b> <i>(Highlights flag heuristics; Validity column shows header checks)</i>",
+            text="<b>Available Files:</b> <i>(CSV/TXT files with expected names & sizes are highlighted)</i>",
             width=400
         )
 
@@ -171,23 +132,13 @@ class DataSourceSelector:
         </div>
         """
 
-        validity_template = """
-        <div style=\"padding:4px 6px; border-radius:4px; background-color:<%= validity_bg_color %>;\">
-            <span style=\"color:<%= validity_text_color %>; font-weight:600;\" <% if (validity_tooltip) { %>title=\"<%- validity_tooltip %>\"<% } %>>
-                <%= validity_label %>
-            </span>
-        </div>
-        """
-
         self.available_files_columns = [
             TableColumn(field="group", title="Folder", width=120),
             TableColumn(field="display_path", title="File Path", width=250,
                         formatter=HTMLTemplateFormatter(template=highlight_template)),
             TableColumn(field="type", title="Type", width=80),
             TableColumn(field="position", title="Position", width=120),
-            TableColumn(field="file_size", title="Size", width=80),
-            TableColumn(field="validity_label", title="Validity", width=140,
-                        formatter=HTMLTemplateFormatter(template=validity_template))
+            TableColumn(field="file_size", title="Size", width=80)
         ]
         
         self.available_files_table = DataTable(
@@ -230,7 +181,7 @@ class DataSourceSelector:
         )
 
         self.save_config_button = Button(label="Save Config", button_type="warning", width=120, disabled=True)
-        self.load_config_button = Button(label="Load Config", button_type="default", width=120)
+        self.load_config_button = Button(label="Load Config", button_type="default", width=120, disabled=True)
         self.load_button = Button(label="Load Selected Data", button_type="success", width=200, disabled=True)
         self.cancel_button = Button(label="Cancel", button_type="default", width=200)
         
@@ -296,7 +247,7 @@ class DataSourceSelector:
             self.scanned_sources.extend(unique_new_sources)
             self._update_available_files_table()
             self._update_status(f"Added {len(unique_new_sources)} new file(s) from drag and drop.", 'green')
-            self.load_button.disabled = False
+            self._update_button_states()
         else:
             self._update_status("No new unique files were added from drag and drop.", 'orange')
         
@@ -316,8 +267,6 @@ class DataSourceSelector:
         file_sizes_bytes = [src.get("file_size_bytes", 0) for src in self.scanned_sources]
 
         display_paths, groups, highlight_colors, highlight_text_colors, highlight_reasons = [], [], [], [], []
-        validity_statuses, validity_reasons, header_previews = [], [], []
-        validity_labels, validity_text_colors, validity_bg_colors, validity_tooltips = [], [], [], []
 
         for source in self.scanned_sources:
             path = source.get("file_path", "")
@@ -331,19 +280,6 @@ class DataSourceSelector:
             highlight_colors.append(color)
             highlight_text_colors.append(text_color)
             highlight_reasons.append(reason)
-
-            validity = self._resolve_validity_fields(
-                source.get("validity_status"),
-                source.get("validity_reason"),
-                source.get("header_preview")
-            )
-            validity_statuses.append(validity['status'])
-            validity_reasons.append(validity['reason'])
-            header_previews.append(validity['header'])
-            validity_labels.append(validity['label'])
-            validity_text_colors.append(validity['text_color'])
-            validity_bg_colors.append(validity['bg_color'])
-            validity_tooltips.append(validity['tooltip'])
 
         sorted_indices = sorted(range(len(indices)), key=lambda idx: groups[idx])
 
@@ -361,59 +297,93 @@ class DataSourceSelector:
             'highlight_color': [highlight_colors[i] for i in sorted_indices],
             'highlight_text_color': [highlight_text_colors[i] for i in sorted_indices],
             'highlight_reason': [highlight_reasons[i] for i in sorted_indices],
-            'validity_status': [validity_statuses[i] for i in sorted_indices],
-            'validity_reason': [validity_reasons[i] for i in sorted_indices],
-            'header_preview': [header_previews[i] for i in sorted_indices],
-            'validity_label': [validity_labels[i] for i in sorted_indices],
-            'validity_text_color': [validity_text_colors[i] for i in sorted_indices],
-            'validity_bg_color': [validity_bg_colors[i] for i in sorted_indices],
-            'validity_tooltip': [validity_tooltips[i] for i in sorted_indices],
         }
+
+        self._detect_and_handle_configs()
 
     def _determine_highlight(self, source):
         """Determine if a file should be visually highlighted in the available list."""
         filename = (source.get("display_path") or source.get("file_path") or "").split('/')[-1]
         filename_lower = filename.lower()
-        parser_type = (source.get("parser_type") or "").lower()
         file_size_bytes = source.get("file_size_bytes") or 0
-        validity_status = (source.get("validity_status") or "").lower()
+        parser_type = (source.get("parser_type") or "").lower()
 
-        reasons = []
-        has_priority = False
+        highlight_color = ""
+        text_color = DEFAULT_TEXT_COLOR
+        reason = ""
 
-        if filename_lower.endswith('.csv') and all(keyword in filename_lower for keyword in CSV_PRIORITY_KEYWORDS):
-            has_priority = True
-            reasons.append("CSV includes log & summary keywords")
+        if filename_lower.endswith('.csv'):
+            for keyword, pattern in CSV_KEYWORD_PATTERNS.items():
+                if pattern.search(filename_lower):
+                    min_size = CSV_MIN_SIZE_BYTES.get(keyword, 0)
+                    if min_size <= file_size_bytes <= CSV_MAX_SIZE_BYTES:
+                        highlight_color = PRIORITY_HIGHLIGHT_COLOR
+                        text_color = PRIORITY_HIGHLIGHT_TEXT_COLOR
+                        size_label = self._format_file_size(file_size_bytes)
+                        reason = f"{keyword.title()} CSV matches naming & size ({size_label})"
+                    break
 
-        if parser_type == 'nti':
+        elif filename_lower.endswith('.txt') and parser_type == 'nti' and TXT_NAMING_PATTERN.search(filename_lower):
             threshold = NTI_DEFAULT_PRIORITY_THRESHOLD_BYTES
             for keyword, size_threshold in NTI_SIZE_HINTS_BYTES.items():
                 if keyword in filename_lower:
                     threshold = max(threshold, size_threshold)
 
-            if file_size_bytes >= threshold > 0:
-                has_priority = True
+            if threshold <= file_size_bytes <= NTI_MAX_SIZE_BYTES:
+                highlight_color = PRIORITY_HIGHLIGHT_COLOR
+                text_color = PRIORITY_HIGHLIGHT_TEXT_COLOR
                 approx_mb = file_size_bytes / (1024 * 1024)
-                reasons.append(f"NTi file ~{approx_mb:.1f} MB")
+                threshold_label = f">={threshold / (1024 * 1024):.1f} MB" if threshold >= 1024 * 1024 else f">={threshold / 1024:.0f} KB"
+                reason = f"NTi TXT meets naming & size {threshold_label} (≈{approx_mb:.1f} MB)"
 
-        if parser_type == 'audio':
-            has_priority = True
-            audio_reason = source.get("validity_reason") or "Audio capture folder"
-            reasons.append(audio_reason)
+        highlight_reason = reason
+        return highlight_color, text_color, highlight_reason
 
-        if has_priority and validity_status not in ("likely_valid", ""):
-            has_priority = False
-            reasons.append("Header check needs review")
+    def _detect_and_handle_configs(self):
+        valid_configs = []
 
-        if has_priority:
-            highlight_color = PRIORITY_HIGHLIGHT_COLOR
-            text_color = PRIORITY_HIGHLIGHT_TEXT_COLOR
-        else:
-            highlight_color = SECONDARY_HIGHLIGHT_COLOR
-            text_color = SECONDARY_HIGHLIGHT_TEXT_COLOR
+        for source in self.scanned_sources:
+            if source.get("parser_type") != 'config':
+                continue
 
-        reason_text = "; ".join(reasons)
-        return highlight_color, text_color, reason_text
+            config_path = source.get("file_path")
+            if not config_path:
+                continue
+
+            try:
+                with open(config_path, 'r') as f:
+                    config_data = json.load(f)
+                if isinstance(config_data.get("sources"), list):
+                    valid_configs.append(config_path)
+                else:
+                    logger.warning(f"Config file missing 'sources' list: {config_path}")
+            except Exception as exc:
+                logger.warning(f"Unable to validate config {config_path}: {exc}")
+
+        previous_paths = set(self.valid_config_paths)
+        self.valid_config_paths = valid_configs
+        self.load_config_button.disabled = not bool(valid_configs)
+
+        if len(valid_configs) == 1:
+            config_path = valid_configs[0]
+            if (
+                self.current_config_path != config_path
+                or not self.included_files_source.data.get('index')
+            ):
+                success, files_not_found = self._load_config_from_path(config_path)
+                if success:
+                    status_msg = f"Loaded saved configuration: {os.path.basename(config_path)}"
+                    if files_not_found:
+                        status_msg += f". Warning: {files_not_found} file(s) not found."
+                    color = 'green' if not files_not_found else 'orange'
+                    self._update_status(status_msg, color)
+        elif len(valid_configs) > 1:
+            if set(valid_configs) != previous_paths:
+                file_names = ', '.join(os.path.basename(path) for path in valid_configs)
+                self._update_status(
+                    f"Multiple configs found ({file_names}). Select one and click 'Load Config'.",
+                    'blue'
+                )
 
     def _scan_directory(self, event=None):
         base_dir, job_num = self.base_directory_input.value.strip(), self.job_number_input.value.strip()
@@ -445,7 +415,7 @@ class DataSourceSelector:
             
             self._update_available_files_table()
             self.included_files_source.data = {k: [] for k in self.included_files_source.data.keys()}
-            self.load_button.disabled = False
+            self._update_button_states()
             self._update_status(f"Scan complete. Found {len(self.scanned_sources)} data source(s).", 'green')
         except Exception as e:
             logger.exception(f"Error scanning directory: {e}")
@@ -638,7 +608,7 @@ class DataSourceSelector:
             config_base_path = self._find_common_parent_directory(file_paths) or self.current_job_directory or os.getcwd()
 
             config_data = {
-                "version": "1.2",
+                "version": "1.3",
                 "created_at": datetime.now().isoformat(),
                 "config_base_path": config_base_path.replace('\\', '/'),
                 "sources": []
@@ -659,9 +629,6 @@ class DataSourceSelector:
                     "position": included_data['position'][i],
                     "type": included_data['type'][i],
                     "parser_type": included_data['parser_type'][i],
-                    "validity_status": included_data['validity_status'][i],
-                    "validity_reason": included_data['validity_reason'][i],
-                    "header_preview": included_data['header_preview'][i],
                 })
 
             job_num_str = self.job_number_input.value or 'custom_selection'
@@ -680,77 +647,94 @@ class DataSourceSelector:
 
     def _load_config(self):
         try:
-            selected_indices = self.available_files_table.source.selected.indices
-            if not selected_indices:
-                return self._update_status("Please select a config file from the 'Available Files' list.", 'orange')
-
             available_data = self.available_files_source.data
-            config_path = next((available_data['fullpath'][i] for i in selected_indices if available_data['parser_type'][i] == 'config'), None)
+            selected_indices = self.available_files_table.source.selected.indices
+
+            config_path = None
+            for idx in selected_indices:
+                if available_data['parser_type'][idx] == 'config':
+                    config_path = available_data['fullpath'][idx]
+                    break
 
             if not config_path:
-                return self._update_status("The selected file is not a valid config file.", 'orange')
+                if len(self.valid_config_paths) == 1:
+                    config_path = self.valid_config_paths[0]
+                else:
+                    return self._update_status("Please select a config file from the 'Available Files' list.", 'orange')
 
-            with open(config_path, 'r') as f:
-                config_data = json.load(f)
-
-            if "sources" not in config_data:
-                return self._update_status("Invalid configuration file format.", 'red')
-
-            self._clear_table()
-
-            # Determine the base path for resolving relative paths
-            # New format uses 'config_base_path', old format relies on the config file's directory
-            base_path = config_data.get('config_base_path', os.path.dirname(config_path))
-
-            included_data = defaultdict(list)
-            files_not_found = 0
-
-            for i, source in enumerate(config_data["sources"]):
-                stored_path = source["path"]
-                # If stored_path is absolute, join will use it directly. Otherwise, it's joined with base_path.
-                full_path = os.path.abspath(os.path.join(base_path, stored_path))
-
-                if not os.path.exists(full_path):
-                    logger.warning(f"File from config not found: {full_path} (resolved from base '{base_path}' and path '{stored_path}')")
-                    files_not_found += 1
-                    continue
-
-                display_path = os.path.relpath(full_path, base_path) if base_path in full_path else stored_path
-
-                included_data['index'].append(i)
-                included_data['position'].append(source.get("position", ""))
-                included_data['relpath'].append(stored_path)
-                included_data['display_path'].append(display_path.replace('\\', '/'))
-                included_data['fullpath'].append(full_path)
-                included_data['type'].append(source.get("type", "unknown"))
-                included_data['file_size'].append(self._format_file_size(os.path.getsize(full_path)) if os.path.isfile(full_path) else "Dir")
-                included_data['group'].append(os.path.dirname(display_path) or ".")
-                included_data['parser_type'].append(source.get("parser_type", "auto"))
-                included_data['file_size_bytes'].append(os.path.getsize(full_path) if os.path.isfile(full_path) else 0)
-                validity = self._resolve_validity_fields(
-                    source.get("validity_status"),
-                    source.get("validity_reason"),
-                    source.get("header_preview")
-                )
-                included_data['validity_status'].append(validity['status'])
-                included_data['validity_reason'].append(validity['reason'])
-                included_data['header_preview'].append(validity['header'])
-                included_data['validity_label'].append(validity['label'])
-                included_data['validity_text_color'].append(validity['text_color'])
-                included_data['validity_bg_color'].append(validity['bg_color'])
-                included_data['validity_tooltip'].append(validity['tooltip'])
-
-            self.included_files_source.data = dict(included_data)
-            if included_data['index']: self._update_button_states()
-
-            status_msg = f"Config loaded from: {os.path.basename(config_path)}"
-            if files_not_found:
-                status_msg += f". Warning: {files_not_found} file(s) not found."
-            self._update_status(status_msg, 'green' if not files_not_found else 'orange')
+            success, files_not_found = self._load_config_from_path(config_path)
+            if success:
+                status_msg = f"Config loaded from: {os.path.basename(config_path)}"
+                if files_not_found:
+                    status_msg += f". Warning: {files_not_found} file(s) not found."
+                self._update_status(status_msg, 'green' if not files_not_found else 'orange')
 
         except Exception as e:
             self._update_status(f"Error loading configuration: {e}", 'red')
             logger.error(f"Error loading config: {e}", exc_info=True)
+
+    def _load_config_from_path(self, config_path):
+        try:
+            with open(config_path, 'r') as f:
+                config_data = json.load(f)
+        except Exception as exc:
+            self._update_status(f"Error reading configuration: {exc}", 'red')
+            logger.error(f"Failed to read config {config_path}: {exc}")
+            return False, 0
+
+        sources = config_data.get("sources")
+        if not isinstance(sources, list):
+            self._update_status("Invalid configuration file format.", 'red')
+            return False, 0
+
+        base_path = config_data.get('config_base_path', os.path.dirname(config_path))
+
+        included_data = {key: [] for key in self.included_files_source.data.keys()}
+        files_not_found = 0
+
+        for source in sources:
+            stored_path = source.get("path")
+            if not stored_path:
+                continue
+
+            full_path = os.path.abspath(os.path.join(base_path, stored_path))
+
+            if not os.path.exists(full_path):
+                logger.warning(
+                    f"File from config not found: {full_path} (resolved from base '{base_path}' and path '{stored_path}')"
+                )
+                files_not_found += 1
+                continue
+
+            try:
+                rel_path = os.path.relpath(full_path, base_path)
+                display_path = rel_path if not rel_path.startswith('..') else stored_path
+            except ValueError:
+                display_path = stored_path
+
+            included_data['index'].append(len(included_data['index']))
+            included_data['position'].append(source.get("position", ""))
+            included_data['relpath'].append(stored_path)
+            included_data['display_path'].append(display_path.replace('\\', '/'))
+            included_data['fullpath'].append(full_path)
+            included_data['type'].append(source.get("type", "unknown"))
+
+            if os.path.isdir(full_path):
+                included_data['file_size'].append("Dir")
+                included_data['file_size_bytes'].append(0)
+            else:
+                size_bytes = os.path.getsize(full_path)
+                included_data['file_size'].append(self._format_file_size(size_bytes))
+                included_data['file_size_bytes'].append(size_bytes)
+
+            included_data['group'].append(os.path.dirname(display_path) or ".")
+            included_data['parser_type'].append(source.get("parser_type", "auto"))
+
+        self.included_files_source.data = included_data
+        self._update_button_states()
+        self.available_files_table.source.selected.indices = []
+        self.current_config_path = config_path
+        return True, files_not_found
 
     def _find_common_parent_directory(self, file_paths):
         if not file_paths: return None
@@ -776,22 +760,24 @@ class DataSourceSelector:
         return f"{size_bytes} B"
 
     def _clear_table(self):
-          self.scanned_sources = []
-          self.current_job_directory = None
-          
-          # Use a dictionary comprehension to create new lists for each key
-          self.available_files_source.data = {k: [] for k in self.available_files_source.data.keys()}
-          self.included_files_source.data = {k: [] for k in self.included_files_source.data.keys()}
-          
-          # Also clear any selections to prevent out-of-bounds errors
-          self.available_files_table.source.selected.indices = []
-          self.included_files_table.source.selected.indices = []
-          
-          self.load_button.disabled = True
-          self.save_config_button.disabled = True
-          self.add_button.disabled = True
-          self.remove_button.disabled = True
-          self.info_div.text = "Scan results summary will appear here."
+        self.scanned_sources = []
+        self.current_job_directory = None
+        self.current_config_path = None
+        self.valid_config_paths = []
+
+        self.available_files_source.data = {k: [] for k in self.available_files_source.data.keys()}
+        self.included_files_source.data = {k: [] for k in self.included_files_source.data.keys()}
+
+        self.available_files_table.source.selected.indices = []
+        self.included_files_table.source.selected.indices = []
+
+        self.load_button.disabled = True
+        self.save_config_button.disabled = True
+        self.load_config_button.disabled = True
+        self.bulk_edit_button.disabled = True
+        self.add_button.disabled = True
+        self.remove_button.disabled = True
+        self.info_div.text = "Scan results summary will appear here."
 
     def get_layout(self):
         return self.main_layout
