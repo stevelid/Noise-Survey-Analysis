@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2025-10-03
-**Version:** 1.2.2
+**Last Updated:** 2025-10-05
+**Version:** 1.2.3
 
 ---
 
@@ -520,6 +520,29 @@
 - [ ] **Test:** Perform 50+ interactions (clicks, zooms, region creates/deletes)
 - [ ] **Expected:** Memory usage remains stable (< 500MB growth)
 - [ ] **Expected:** No memory leaks detected
+
+---
+
+## 11. Data Source Selector Panel 🔴 SERVER
+
+### 11.1 Highlighting Rules 🟢
+- [ ] **Setup:** Scan a job directory that contains CSV log/summary files and unrelated files
+- [ ] **Expected:** Only CSV/TXT files with expected naming and size bounds show highlighted styling
+- [ ] **Expected:** Other file types display without the old validity column or highlight badges
+- [ ] **Test:** Confirm log and summary CSVs highlight independently when their sizes meet expectations
+
+### 11.2 Config Auto-Detection 🔴
+- [ ] **Setup:** Scan a directory containing a single valid `noise_survey_config_*.json`
+- [ ] **Expected:** "Load Config" button enables automatically
+- [ ] **Expected:** Config loads immediately into the Included Files table without manual selection
+- [ ] **Expected:** Status banner reports the auto-loaded config and warns if referenced files are missing
+
+### 11.3 Multiple Config Prompt 🔴
+- [ ] **Setup:** Scan a directory containing two or more valid config JSON files
+- [ ] **Expected:** Status banner prompts to select a config before loading
+- [ ] **Action:** Select one config in Available Files and press "Load Config"
+- [ ] **Expected:** Selected config populates the Included Files table while other configs remain available
+- [ ] **Test:** With multiple configs present, pressing "Load Config" without a selection keeps the prompt visible
 
 ---
 
