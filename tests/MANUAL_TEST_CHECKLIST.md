@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2025-10-02
-**Version:** 1.2.1
+**Last Updated:** 2025-10-03
+**Version:** 1.2.2
 
 ---
 
@@ -226,6 +226,7 @@
 - [ ] **Action:** Select a region, type notes in text area
 - [ ] **Expected:** Notes save automatically as you type
 - [ ] **Expected:** Notes persist when switching to another region and back
+- [ ] **Expected:** Keyboard shortcuts (Space, R, M) do not trigger while typing
 - [ ] **Test:** Type special characters and emojis
 
 ### 4.6 Copy Summary Button 🟡 PARTIAL
@@ -296,6 +297,7 @@
 - [ ] **Action:** Select a marker, type notes in text area
 - [ ] **Expected:** Notes save automatically as you type
 - [ ] **Expected:** Notes persist when switching markers
+- [ ] **Expected:** Keyboard shortcuts (Space, R, M) do not trigger while typing
 
 ### 5.5 Copy Details Button 🟡 PARTIAL
 - [ ] **Action:** Select a marker, click "Copy Details"
