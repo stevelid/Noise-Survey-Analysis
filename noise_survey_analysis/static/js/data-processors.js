@@ -253,9 +253,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             if (viewType === 'log') {
                 if (hasLogData) {
-                    const pointsInView = Math.floor((viewState.viewport.max - viewState.viewport.min) / logData.time_step);
+                    // Calculate theoretical points based on viewport width
+                    const viewportWidth = viewState.viewport.max - viewState.viewport.min;
+                    const pointsInView = Math.floor(viewportWidth / logData.time_step);
 
-                    if (pointsInView <= MAX_SPECTRAL_POINTS_TO_RENDER) {
+                    // Verify log data actually covers the viewport
+                    const logDataStart = logData.times_ms[0];
+                    const logDataEnd = logData.times_ms[logData.times_ms.length - 1];
+                    
+                    // Calculate actual coverage: how much of the viewport is covered by log data
+                    const viewportStart = effectiveMin;
+                    const viewportEnd = effectiveMax;
+                    const overlapStart = Math.max(viewportStart, logDataStart);
+                    const overlapEnd = Math.min(viewportEnd, logDataEnd);
+                    const overlapWidth = Math.max(0, overlapEnd - overlapStart);
+                    const coverageRatio = overlapWidth / viewportWidth;
+                    
+                    // Only use log data if: (1) it fits render limit AND (2) covers ≥80% of viewport
+                    const MIN_COVERAGE_RATIO = 0.8;
+                    const hasAdequateCoverage = coverageRatio >= MIN_COVERAGE_RATIO;
+
+                    if (pointsInView <= MAX_SPECTRAL_POINTS_TO_RENDER && hasAdequateCoverage) {
                         // Happy Path: Show chunked LOG data
                         finalDataToUse = logData;
                         displayMetadata = { type: 'log', reason: ' (Log Data)' }; // Explicitly label the log view

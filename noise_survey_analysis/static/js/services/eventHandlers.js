@@ -366,10 +366,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function handleKeyPress(e) {
-        const targetTagName = typeof e?.target?.tagName === 'string'
-            ? e.target.tagName.toLowerCase()
+        const target = e?.target;
+        const targetTagName = typeof target?.tagName === 'string'
+            ? target.tagName.toLowerCase()
             : '';
+        
+        // Check if the target is an input field or if we're inside a contenteditable element
         if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') return;
+        
+        // Check if any parent element is contenteditable or an input field
+        let element = target;
+        while (element && element !== document.body) {
+            const tagName = element.tagName ? element.tagName.toLowerCase() : '';
+            if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') return;
+            if (element.isContentEditable || element.getAttribute('contenteditable') === 'true') return;
+            element = element.parentElement;
+        }
 
         const dispatch = app.store && app.store.dispatch;
         if (typeof dispatch !== 'function') {
