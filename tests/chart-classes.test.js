@@ -14,15 +14,37 @@ describe('NoiseSurveyApp.classes', () => {
       Object.assign(this, props);
       this.visible = true;
     };
-    const MockBoxAnnotation = function(props) {
+    const MockColumnDataSource = function(props = {}) {
+      this.data = props.data || {};
+      this.name = props.name;
+      this.change = { emit: vi.fn() };
       Object.assign(this, props);
-      this.visible = true;
+    };
+    const MockQuad = function(props = {}) {
+      Object.assign(this, props);
+    };
+    const MockGlyphRenderer = function(props = {}) {
+      Object.assign(this, props);
+      this.visible = props.visible ?? true;
     };
 
     const doc = {
       roots: [],
-      add_model: vi.fn(),
-      create_model: (type, props) => ({ type, ...props }),
+      add_model: vi.fn(model => model),
+      create_model: (type, props) => {
+        switch (type) {
+          case 'ColumnDataSource':
+            return new MockColumnDataSource(props);
+          case 'Quad':
+            return new MockQuad(props);
+          case 'GlyphRenderer':
+            return new MockGlyphRenderer(props);
+          case 'Span':
+            return new MockSpan(props);
+          default:
+            return { type, ...props };
+        }
+      },
       add_root: vi.fn(model => {
         doc.roots.push(model);
         return model;
@@ -38,11 +60,16 @@ describe('NoiseSurveyApp.classes', () => {
       Models: {
         get: vi.fn((name) => {
           if (name === 'Span') return MockSpan;
-          if (name === 'BoxAnnotation') return MockBoxAnnotation;
+          if (name === 'ColumnDataSource') return MockColumnDataSource;
+          if (name === 'Quad') return MockQuad;
+          if (name === 'GlyphRenderer') return MockGlyphRenderer;
           return null;
         }),
       },
     };
+
+    global.window = global.window || global;
+    window.Bokeh = global.Bokeh;
   });
 
   it('TimeSeriesChart.update should set source data and title with reason', () => {
@@ -197,6 +224,8 @@ describe('NoiseSurveyApp.classes', () => {
       name: 'figure_P1_timeseries',
       add_layout: vi.fn(),
       remove_layout: vi.fn(),
+      add_glyph: vi.fn(function(renderer) { this.renderers.push(renderer); }),
+      renderers: [],
       request_render: requestRender,
       x_range: { start: 0, end: 100 },
       y_range: { start: 0, end: 1 },
@@ -205,19 +234,19 @@ describe('NoiseSurveyApp.classes', () => {
     const chart = new classes.Chart(chartModel, sourceModel, {}, {}, 'P1');
 
     chart.syncRegions([{ id: 1, positionId: 'P1', start: 10, end: 20 }], 1);
-    expect(chartModel.add_layout).toHaveBeenCalledTimes(1);
-    const annotations = chart.regionAnnotations.get(1);
-    expect(Array.isArray(annotations)).toBe(true);
-    expect(annotations).toHaveLength(1);
-    const annotation = annotations[0];
-    expect(annotation).toBeDefined();
-    expect(annotation.visible).toBe(true);
-    expect(annotation.line_width).toBe(3);
+    expect(chart.regionOverlay).toBeDefined();
+    const { source, renderer } = chart.regionOverlay;
+    expect(source.data.left).toEqual([10]);
+    expect(source.data.right).toEqual([20]);
+    expect(source.data.fill_alpha).toEqual([0.2]);
+    expect(source.data.line_width).toEqual([3]);
+    expect(renderer.visible).toBe(true);
+    expect(chartModel.add_glyph).toHaveBeenCalled();
+    expect(source.change.emit).toHaveBeenCalled();
 
     chart.syncRegions([], null);
-    expect(chartModel.remove_layout).toHaveBeenCalledWith(annotation);
-    expect(annotation.visible).toBe(false);
-    expect(chart.regionAnnotations.has(1)).toBe(false);
+    expect(source.data.left).toEqual([]);
+    expect(renderer.visible).toBe(false);
     expect(requestRender).toHaveBeenCalled();
   });
 

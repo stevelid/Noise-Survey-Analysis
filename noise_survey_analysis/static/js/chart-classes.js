@@ -12,6 +12,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     const DEFAULT_REGION_COLOR = '#1e88e5';
+    const DEFAULT_REGION_FILL_ALPHA = 0.08;
+    const SELECTED_REGION_FILL_ALPHA = 0.2;
+    const DEFAULT_REGION_LINE_ALPHA = 0.6;
+    const DEFAULT_REGION_LINE_WIDTH = 1;
+    const SELECTED_REGION_LINE_WIDTH = 3;
     const DEFAULT_MARKER_COLOR = '#fdd835';
     const SELECTED_MARKER_LINE_WIDTH = 3;
     const UNSELECTED_MARKER_LINE_WIDTH = 2;
@@ -64,7 +69,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.name = chartModel.name;
             this.positionId = positionId; // Store the position ID
             this.markerModels = []; // Each chart instance manages its own marker models.
-            this.regionAnnotations = new Map();
+            this.regionOverlay = null;
         }
 
         setVisible(isVisible) {
@@ -239,20 +244,137 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         syncRegions(regionList, selectedId) {
             if (!Array.isArray(regionList)) return;
-            const doc = window.Bokeh?.documents?.[0];
+            const overlay = this._ensureRegionOverlay();
+            if (!overlay) {
+                return;
+            }
+
+            const { source, renderer } = overlay;
+            const nextData = this._buildRegionOverlayData(regionList, selectedId);
+
+            source.data = nextData;
+            if (source.change && typeof source.change.emit === 'function') {
+                source.change.emit();
+            }
+
+            renderer.visible = nextData.left.length > 0;
+
+            if (typeof this.model?.request_render === 'function') {
+                this.model.request_render();
+            } else if (this.model?.change?.emit) {
+                this.model.change.emit();
+            }
+        }
+
+        _ensureRegionOverlay() {
+            if (this.regionOverlay?.source && this.regionOverlay?.renderer) {
+                return this.regionOverlay;
+            }
+
             if (!window.Bokeh || !window.Bokeh.Models) {
                 console.error("CRITICAL: window.Bokeh.Models is not available. BokehJS may not be loaded correctly.");
-                return;
+                return null;
             }
 
-            const BoxAnnotation = Bokeh.Models.get("BoxAnnotation");
-            if (!BoxAnnotation) {
-                console.error("Could not retrieve BoxAnnotation model constructor from Bokeh.Models.");
-                return;
+            const doc = window.Bokeh?.documents?.[0];
+            const ColumnDataSource = Bokeh.Models.get('ColumnDataSource');
+            const Quad = Bokeh.Models.get('Quad');
+            const GlyphRenderer = Bokeh.Models.get('GlyphRenderer');
+
+            if (!ColumnDataSource || !Quad || !GlyphRenderer) {
+                console.error('[Chart._ensureRegionOverlay] Required Bokeh models (ColumnDataSource, Quad, GlyphRenderer) are not available.');
+                return null;
             }
 
-            const seen = new Set();
-            let didMutate = false;
+            const initialData = this._emptyRegionOverlayData();
+            let source;
+            if (doc && typeof doc.create_model === 'function' && typeof doc.add_model === 'function') {
+                source = doc.add_model(doc.create_model('ColumnDataSource', {
+                    data: initialData,
+                    name: `region_overlay_source_${this.name}`
+                }));
+            } else {
+                source = new ColumnDataSource({ data: initialData, name: `region_overlay_source_${this.name}` });
+            }
+
+            if (!source.change || typeof source.change.emit !== 'function') {
+                source.change = source.change || {};
+                source.change.emit = typeof source.change.emit === 'function' ? source.change.emit : function () { };
+            }
+
+            const glyphProps = {
+                left: { field: 'left' },
+                right: { field: 'right' },
+                bottom: { field: 'bottom' },
+                top: { field: 'top' },
+                fill_color: { field: 'fill_color' },
+                fill_alpha: { field: 'fill_alpha' },
+                line_color: { field: 'line_color' },
+                line_alpha: { field: 'line_alpha' },
+                line_width: { field: 'line_width' }
+            };
+            const glyph = doc && typeof doc.create_model === 'function'
+                ? doc.create_model('Quad', glyphProps)
+                : new Quad(glyphProps);
+
+            const rendererProps = {
+                data_source: source,
+                glyph,
+                level: 'underlay',
+                visible: false,
+                name: `region_overlay_renderer_${this.name}`
+            };
+            const renderer = doc && typeof doc.create_model === 'function' && typeof doc.add_model === 'function'
+                ? doc.add_model(doc.create_model('GlyphRenderer', rendererProps))
+                : new GlyphRenderer(rendererProps);
+
+            let rendererAdded = false;
+            if (typeof this.model?.add_glyph === 'function') {
+                try {
+                    this.model.add_glyph(renderer);
+                    rendererAdded = true;
+                } catch (error) {
+                    console.warn('[Chart._ensureRegionOverlay] add_glyph failed, falling back to manual renderer registration.', error);
+                }
+            }
+            if (!rendererAdded) {
+                if (typeof this.model?.add_renderers === 'function') {
+                    this.model.add_renderers(renderer);
+                    rendererAdded = true;
+                } else if (Array.isArray(this.model?.renderers)) {
+                    this.model.renderers.push(renderer);
+                    rendererAdded = true;
+                }
+            }
+
+            this.regionOverlay = { source, renderer };
+            return this.regionOverlay;
+        }
+
+        _emptyRegionOverlayData() {
+            return {
+                left: [],
+                right: [],
+                bottom: [],
+                top: [],
+                fill_color: [],
+                fill_alpha: [],
+                line_color: [],
+                line_alpha: [],
+                line_width: [],
+                region_id: [],
+                area_index: []
+            };
+        }
+
+        _buildRegionOverlayData(regionList, selectedId) {
+            const data = this._emptyRegionOverlayData();
+            const yRange = this.model?.y_range;
+            const yStart = Number(yRange?.start);
+            const yEnd = Number(yRange?.end);
+            const hasValidRange = Number.isFinite(yStart) && Number.isFinite(yEnd);
+            const bottom = hasValidRange ? Math.min(yStart, yEnd) : 0;
+            const top = hasValidRange ? Math.max(yStart, yEnd) : 1;
 
             regionList.forEach(region => {
                 if (!region || region.positionId !== this.positionId) return;
@@ -263,27 +385,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         : []);
                 if (!areas.length) return;
 
-                seen.add(region.id);
-
-                let annotations = this.regionAnnotations.get(region.id);
-                if (!Array.isArray(annotations)) {
-                    if (annotations) {
-                        try {
-                            if (typeof this.model.remove_layout === 'function') {
-                                this.model.remove_layout(annotations);
-                            } else if (doc && doc.session && typeof doc.remove_root === 'function') {
-                                doc.remove_root(annotations);
-                            }
-                        } catch (error) {
-                            console.error('Error removing legacy region annotation:', error);
-                        }
-                    }
-                    annotations = [];
-                    this.regionAnnotations.set(region.id, annotations);
-                }
                 const regionColor = typeof region.color === 'string' && region.color.trim()
                     ? region.color.trim()
                     : DEFAULT_REGION_COLOR;
+                const isSelected = region.id === selectedId;
 
                 areas.forEach((area, index) => {
                     const start = Number(area?.start);
@@ -291,93 +396,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
                         return;
                     }
-                    let annotation = annotations[index];
-                    const isSelected = region.id === selectedId;
-                    if (!annotation) {
-                        // Create new annotation with all initial properties set
-                        annotation = new BoxAnnotation({
-                            left: start,
-                            right: end,
-                            fill_alpha: isSelected ? 0.2 : 0.08,
-                            fill_color: regionColor,
-                            line_color: regionColor,
-                            line_alpha: 0.6,
-                            line_width: isSelected ? 1 : 1,
-                            level: 'underlay',
-                            visible: true,
-                            name: `region_${this.name}_${region.id}_${index}`
-                        });
-                        annotations[index] = annotation;
-                        // Only add to document root if in live mode (static reports don't have sessions)
-                        if (doc && doc.session) {
-                            doc.add_root(annotation);
-                        }
-                        this.model.add_layout(annotation);
-                        didMutate = true;
-                    } else {
-                        // Only update existing annotations
-                        annotation.left = start;
-                        annotation.right = end;
-                        annotation.fill_alpha = isSelected ? 0.2 : 0.08;
-                        annotation.fill_color = regionColor;
-                        annotation.line_color = regionColor;
-                        annotation.visible = true;
-                    }
+
+                    data.left.push(start);
+                    data.right.push(end);
+                    data.bottom.push(bottom);
+                    data.top.push(top);
+                    data.fill_color.push(regionColor);
+                    data.fill_alpha.push(isSelected ? SELECTED_REGION_FILL_ALPHA : DEFAULT_REGION_FILL_ALPHA);
+                    data.line_color.push(regionColor);
+                    data.line_alpha.push(DEFAULT_REGION_LINE_ALPHA);
+                    data.line_width.push(isSelected ? SELECTED_REGION_LINE_WIDTH : DEFAULT_REGION_LINE_WIDTH);
+                    data.region_id.push(region.id);
+                    data.area_index.push(index);
                 });
-
-                if (annotations.length > areas.length) {
-                    const extras = annotations.splice(areas.length);
-                    extras.forEach(annotation => {
-                        if (!annotation) return;
-                        annotation.visible = false;
-                        try {
-                            if (typeof this.model.remove_layout === 'function') {
-                                this.model.remove_layout(annotation);
-                            }
-                            if (doc && doc.session && typeof doc.remove_root === 'function') {
-                                doc.remove_root(annotation);
-                            }
-                        } catch (error) {
-                            console.error('Error removing surplus region annotation:', error);
-                        }
-                    });
-                    if (extras.length) {
-                        didMutate = true;
-                    }
-                }
             });
 
-            const idsToRemove = [];
-            this.regionAnnotations.forEach((annotations, id) => {
-                if (!seen.has(id)) {
-                    const list = Array.isArray(annotations) ? annotations : [annotations];
-                    list.forEach(annotation => {
-                        if (!annotation) return;
-                        annotation.visible = false;
-                        try {
-                            if (typeof this.model.remove_layout === 'function') {
-                                this.model.remove_layout(annotation);
-                            }
-                            if (doc && doc.session && typeof doc.remove_root === 'function') {
-                                doc.remove_root(annotation);
-                            }
-                        } catch (error) {
-                            console.error('Error removing BoxAnnotation:', error);
-                        }
-                    });
-                    idsToRemove.push(id);
-                    didMutate = true;
-                }
-            });
-            idsToRemove.forEach(id => this.regionAnnotations.delete(id));
-
-            if (didMutate) {
-                if (typeof this.model?.request_render === 'function') {
-                    this.model.request_render();
-                } else if (this.model?.change?.emit) {
-                    this.model.change.emit();
-                }
-            }
+            return data;
         }
 
         update() {
