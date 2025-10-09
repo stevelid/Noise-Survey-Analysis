@@ -108,6 +108,34 @@ def _normalize_path(value):
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# --- Process-level cache for parsed data ---
+# This cache persists across Bokeh sessions to avoid re-parsing the same files
+_data_manager_cache = {}
+
+def _get_cache_key(source_configs):
+    """Generate a cache key from source configurations."""
+    if not source_configs:
+        return None
+    try:
+        # Create a stable key from sorted file paths
+        key_parts = []
+        for config in sorted(source_configs, key=lambda x: x.get('position_name', '')):
+            position = config.get('position_name', '')
+            paths = config.get('file_paths', set())
+            if isinstance(paths, set):
+                paths = sorted(list(paths))
+            elif isinstance(paths, list):
+                paths = sorted(paths)
+            elif isinstance(config.get('file_path'), str):
+                paths = [config.get('file_path')]
+            else:
+                paths = []
+            key_parts.append(f"{position}:{','.join(paths)}")
+        return '|'.join(key_parts)
+    except Exception as e:
+        logger.warning(f"Failed to generate cache key: {e}")
+        return None
+
 
 def create_app(doc, config_path=None, state_path=None):
     """
@@ -197,7 +225,19 @@ def create_app(doc, config_path=None, state_path=None):
         # This function will run after the loading screen is displayed.
         def build_dashboard():
             nonlocal initial_saved_workspace_state
-            app_data = DataManager(source_configurations=source_configs)
+            
+            # Check cache for existing DataManager
+            cache_key = _get_cache_key(source_configs)
+            if cache_key and cache_key in _data_manager_cache:
+                logger.info(f"Using cached DataManager for {len(source_configs)} source(s). Skipping file parsing.")
+                app_data = _data_manager_cache[cache_key]
+            else:
+                logger.info(f"Creating new DataManager and parsing {len(source_configs)} source(s)...")
+                app_data = DataManager(source_configurations=source_configs)
+                if cache_key:
+                    _data_manager_cache[cache_key] = app_data
+                    logger.info(f"Cached DataManager with key: {cache_key[:50]}...")
+            
             audio_processor = AudioDataProcessor()
             audio_processor.anchor_audio_files(app_data)
             audio_handler = AudioPlaybackHandler(position_data=app_data.get_all_position_data())

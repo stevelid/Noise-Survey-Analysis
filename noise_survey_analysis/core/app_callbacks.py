@@ -140,16 +140,23 @@ class AppCallbacks:
     def _stop_periodic_update(self):
         """Stops the periodic callback for audio status updates."""
         if self._periodic_callback_id is not None:
-            self.doc.remove_periodic_callback(self._periodic_callback_id)
-            self._periodic_callback_id = None
-            logger.info("Stopped periodic audio status update.")
+            try:
+                self.doc.remove_periodic_callback(self._periodic_callback_id)
+                logger.info("Stopped periodic audio status update.")
+            except Exception as e:
+                logger.warning(f"Error removing periodic callback (likely already removed): {e}")
+            finally:
+                self._periodic_callback_id = None
 
     def cleanup(self):
         """Cleans up resources when the session is destroyed."""
         self._stop_periodic_update()
         if self.audio_handler:
-            self.audio_handler.release()
-            logger.info("Audio handler released.")
+            try:
+                self.audio_handler.release()
+                logger.info("Audio handler released.")
+            except Exception as e:
+                logger.warning(f"Error releasing audio handler: {e}")
         logger.info("AppCallbacks cleaned up.")
 
     def attach_non_audio_callbacks(self):
