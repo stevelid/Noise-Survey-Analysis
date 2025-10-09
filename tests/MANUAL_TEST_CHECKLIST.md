@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2025-10-09
-**Version:** 1.3.0
+**Last Updated:** 2025-10-10
+**Version:** 1.3.1
 
 ---
 
@@ -220,6 +220,7 @@
 - [ ] **Expected:** Markers panel table becomes empty
 - [ ] **Expected:** Marker selection clears
 - [ ] **Test:** After clearing, create new markers - should work normally
+- [ ] **Expected:** Newly created markers repopulate the table with every marker visible
 - [ ] **Test:** After clearing, all marker functionality still works (double-click, M key, etc.)
 
 ### 3.5 Chart Visibility Checkboxes 🟢
@@ -299,6 +300,7 @@
 - [ ] **Expected:** Panel shows no selection
 - [ ] **Test:** Delete all regions, then create new ones - should work normally
 - [ ] **Test:** After deleting all regions and recreating them, all region functionality still works
+- [ ] **Expected:** When recreating multiple regions, every region appears in the regions table
 
 ### 4.8 Add Area Button 🟢
 - [ ] **Action:** Select a region, click "Add Area"

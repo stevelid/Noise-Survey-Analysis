@@ -306,6 +306,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return true;
     }
 
+    function emitColumnDataChange(source) {
+        if (!source) {
+            return;
+        }
+        const changeSignal = source.change;
+        if (changeSignal && typeof changeSignal.emit === 'function') {
+            changeSignal.emit();
+        }
+        const dataChangeSignal = source.properties?.data?.change;
+        if (dataChangeSignal && typeof dataChangeSignal.emit === 'function') {
+            dataChangeSignal.emit();
+        }
+    }
+
     function shallowEqualObjects(a, b) {
         const left = a || {};
         const right = b || {};
@@ -344,9 +358,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         if (dataChanged) {
             regionSource.data = nextData;
-            if (regionSource.change && typeof regionSource.change.emit === 'function') {
-                regionSource.change.emit();
-            }
+            emitColumnDataChange(regionSource);
         }
 
         const desiredIndex = (() => {

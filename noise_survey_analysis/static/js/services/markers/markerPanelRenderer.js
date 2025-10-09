@@ -62,6 +62,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return true;
     }
 
+    function emitColumnDataChange(source) {
+        if (!source) {
+            return;
+        }
+        const changeSignal = source.change;
+        if (changeSignal && typeof changeSignal.emit === 'function') {
+            changeSignal.emit();
+        }
+        const dataChangeSignal = source.properties?.data?.change;
+        if (dataChangeSignal && typeof dataChangeSignal.emit === 'function') {
+            dataChangeSignal.emit();
+        }
+    }
+
     function formatTimestamp(timestamp) {
         if (!Number.isFinite(timestamp)) {
             return '—';
@@ -156,9 +170,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         if (changed) {
             markerSource.data = data;
-            if (markerSource.change && typeof markerSource.change.emit === 'function') {
-                markerSource.change.emit();
-            }
+            emitColumnDataChange(markerSource);
         }
 
         const selection = markerSource.selected;

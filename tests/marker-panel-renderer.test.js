@@ -10,6 +10,11 @@ describe('markerPanelRenderer.renderMarkerPanel', () => {
         const markerSource = {
             data: {},
             change: { emit: vi.fn() },
+            properties: {
+                data: {
+                    change: { emit: vi.fn() }
+                }
+            },
             selected: {
                 indices: [],
                 change: { emit: vi.fn() }
@@ -67,6 +72,7 @@ describe('markerPanelRenderer.renderMarkerPanel', () => {
         expect(panelModels.markerSource.data.note_preview[0].endsWith('…')).toBe(true);
         expect(panelModels.markerSource.data.color[0]).toBe('#abc123');
         expect(panelModels.markerSource.change.emit).toHaveBeenCalledTimes(1);
+        expect(panelModels.markerSource.properties.data.change.emit).toHaveBeenCalledTimes(1);
         expect(panelModels.markerSource.selected.indices).toEqual([0]);
         expect(panelModels.markerSource.selected.change.emit).toHaveBeenCalledTimes(1);
 
@@ -104,6 +110,8 @@ describe('markerPanelRenderer.renderMarkerPanel', () => {
         renderMarkerPanel(panelModels, markersState, { tap: {} }, { selectedParameter: 'LZeq' });
 
         expect(panelModels.markerSource.data.id).toEqual([]);
+        expect(panelModels.markerSource.change.emit).toHaveBeenCalledTimes(1);
+        expect(panelModels.markerSource.properties.data.change.emit).toHaveBeenCalledTimes(1);
         expect(panelModels.markerTable.disabled).toBe(true);
         expect(panelModels.markerTable.visible).toBe(false);
         expect(panelModels.messageDiv.visible).toBe(true);
