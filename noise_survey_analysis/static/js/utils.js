@@ -19,7 +19,30 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return -1;
     }
 
+    /**
+     * Determines if a keyboard event originated from an editable element.
+     * Walks the composed path (including nodes inside Bokeh's shadow roots) to detect
+     * native editables and Bokeh widget classes.
+     *
+     * @param {KeyboardEvent} ev - The keyboard event to check.
+     * @returns {boolean} True if the event originated from an editable element.
+     */
+    function isEditableEvent(ev) {
+        // Walk the composed path (includes nodes inside Bokeh's shadow roots)
+        const path = ev.composedPath ? ev.composedPath() : [];
+        const inEditable = path.some((el) => {
+            if (!(el instanceof Element)) return false;
+            // Native editables and Bokeh widget classes
+            if (el.matches?.('textarea, input, [contenteditable="true"]')) return true;
+            if (el.classList?.contains('bk-input')) return true;
+            if (el.classList?.contains('bk-textareainput')) return true;
+            return false;
+        });
+        return inEditable;
+    }
+
     app.utils = {
-        findAssociatedDateIndex: findAssociatedDateIndex
+        findAssociatedDateIndex: findAssociatedDateIndex,
+        isEditableEvent: isEditableEvent
     };
 })(window.NoiseSurveyApp);

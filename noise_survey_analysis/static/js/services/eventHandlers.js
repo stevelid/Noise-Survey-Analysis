@@ -366,41 +366,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function handleKeyPress(e) {
-        const target = e?.target;
-        const targetTagName = typeof target?.tagName === 'string'
-            ? target.tagName.toLowerCase()
-            : '';
-
-        // Bokeh renders text inputs with `.bk-input` and may wrap them in spans/divs.
-        // Ensure any focusable text entry widget (native or custom) gets priority.
-        const INTERACTIVE_SELECTOR = 'input, textarea, select, [contenteditable=""], [contenteditable="true"], .bk-input, .bk-input-group, .bk-input-wrapper';
-
-        // Check if the target itself is a form control
-        if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') return;
-        if (typeof target?.isContentEditable === 'boolean' && target.isContentEditable) return;
-
-        // Check if any parent element matches known input containers (handles nested Bokeh markup)
-        if (typeof target?.closest === 'function') {
-            const interactiveAncestor = target.closest(INTERACTIVE_SELECTOR);
-            if (interactiveAncestor) {
+        // Ignore keyboard events from editable elements
+        if (app.utils && typeof app.utils.isEditableEvent === 'function') {
+            if (app.utils.isEditableEvent(e)) {
                 return;
             }
-        }
-
-        // Fallback to manual traversal for environments without `Element.closest`
-        let element = target?.parentElement;
-        while (element && element !== document.body) {
-            const tagName = element.tagName ? element.tagName.toLowerCase() : '';
-            if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') return;
-            if (element.isContentEditable || element.getAttribute('contenteditable') === 'true') return;
-            if (typeof element.classList !== 'undefined' && (
-                element.classList.contains('bk-input')
-                || element.classList.contains('bk-input-group')
-                || element.classList.contains('bk-input-wrapper')
-            )) {
-                return;
-            }
-            element = element.parentElement;
         }
 
         const dispatch = app.store && app.store.dispatch;
