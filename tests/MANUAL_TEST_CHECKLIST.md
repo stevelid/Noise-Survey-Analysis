@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2025-10-10
-**Version:** 1.3.1
+**Last Updated:** 2025-10-11
+**Version:** 1.3.2
 
 ---
 
@@ -242,6 +242,8 @@
 - [ ] **Action:** Click Menu → "Import Annotations (CSV)"
 - [ ] **Expected:** File picker opens
 - [ ] **Expected:** Annotations load from selected CSV
+- [ ] **Expected:** Imported regions show overlays on all relevant charts
+- [ ] **Test:** Select an imported region and confirm metrics (duration, LAeq) populate without console errors
 
 ---
 

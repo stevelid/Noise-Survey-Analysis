@@ -968,6 +968,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     if (Array.isArray(regions)) {
                         if (typeof app.actions?.regionReplaceAll === 'function') {
                             app.store.dispatch(app.actions.regionReplaceAll(regions));
+                            if (typeof app.regions?.invalidateMetricsCache === 'function') {
+                                app.regions.invalidateMetricsCache();
+                            }
                         } else {
                             console.error('[Session] Region replace action is unavailable.');
                         }
