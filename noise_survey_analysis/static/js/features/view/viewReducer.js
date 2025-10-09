@@ -274,9 +274,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             case actionTypes.VIEW_ACTIVE_SIDE_PANEL_TAB_SET: {
-                console.log('[VIEW_ACTIVE_SIDE_PANEL_TAB_SET] action.payload', action.payload); // DEBUG
                 const desiredIndex = normalizeTabIndex(action.payload?.index, state.activeSidePanelTab);
-                console.log('[VIEW_ACTIVE_SIDE_PANEL_TAB_SET desiredIndex', desiredIndex); // DEBUG
                 if (desiredIndex === state.activeSidePanelTab) {
                     return state;
                 }

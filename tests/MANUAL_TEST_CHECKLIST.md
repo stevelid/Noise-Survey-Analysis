@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2025-10-05
-**Version:** 1.2.3
+**Last Updated:** 2025-10-09
+**Version:** 1.3.0
 
 ---
 
@@ -45,14 +45,19 @@
 ### 1.2 Double Click 🟢
 - [ ] **Action:** Double-click on time series chart
 - [ ] **Expected:** New marker is created at clicked timestamp
-- [ ] **Expected:** Marker appears as green vertical line on all charts
+- [ ] **Expected:** Marker appears as orange vertical line on all charts
+- [ ] **Expected:** Marker panel is displayed
+- [ ] **Expected:** New marker is the active selected marker
 - [ ] **Expected:** Marker appears in Markers panel table
 
 ### 1.3 Shift + Click (Create Region) 🟢
 - [ ] **Action:** Click to place tap line, then Shift+click at different location
 - [ ] **Expected:** Region is created spanning from first to second click
-- [ ] **Expected:** Region appears as colored box on all charts
+- [ ] **Expected:** Region appears as colored box on the charts
 - [ ] **Expected:** Region appears in Regions panel table
+- [ ] **Expected:** Region side panel is active
+- [ ] **Expected:** New region is the active selected region
+- [ ] **Expected:** Region details (timestamps, metrics) load in the side panel
 - [ ] **Expected:** Works in both directions (left-to-right and right-to-left)
 
 ### 1.4 Ctrl + Click (Delete Region) 🟢
@@ -66,6 +71,9 @@
 - [ ] **Expected:** Selection box appears during drag
 - [ ] **Expected:** Region is created when mouse is released
 - [ ] **Expected:** Region spans the selected time range
+- [ ] **Expected:** Region side panel is active
+- [ ] **Expected:** New region is the active selected region
+- [ ] **Expected:** Region details (timestamps, metrics) load in the side panel.
 - [ ] **Test:** Try very small selections (< 1 second)
 - [ ] **Test:** Try very large selections (> 1 day)
 
@@ -76,6 +84,8 @@
 - [ ] **Expected:** Frequency bar updates to show spectrum at hover point
 - [ ] **Expected:** Hover line disappears when mouse leaves chart
 - [ ] **Test:** Disable "Hover Enabled" toggle - hover line should not appear
+
+### 1.7 
 
 ### 1.7 Range Selector 🟢
 - [ ] **Action:** Drag left handle of range selector
@@ -103,32 +113,74 @@
 - [ ] **Expected:** Marker is created at tap line position
 - [ ] **Expected:** Marker appears on all charts
 - [ ] **Expected:** Marker appears in Markers panel
+- [ ] **Expected:** Newly created marker is automatically selected
+- [ ] **Expected:** Side panel switches to Markers tab
 
-### 2.3 R Key (Toggle Region Mode) 🟢
-- [ ] **Action:** Press R
-- [ ] **Expected:** Region make mode activates (visual indicator?)
-- [ ] **Action:** Press R again
-- [ ] **Expected:** Region make mode deactivates
-- [ ] **Expected:** Regions panel shows "Create Region mode active" banner near the top while awaiting the second press (disappears after finishing or cancelling).
+### 2.3 R Key (Two-Step Region Creation) 🟢
+- [ ] **Action:** Click on chart to place tap line, press R
+- [ ] **Expected:** Region creation mode activates
+- [ ] **Expected:** Side panel switches to Regions tab
+- [ ] **Expected:** Regions panel shows "Create Region mode active" banner with timestamp and position
+- [ ] **Expected:** Banner shows instructions: "Move tap line and press R again to finish, or Escape to cancel"
+- [ ] **Action:** Move tap line to different location, press R again
+- [ ] **Expected:** Region is created spanning from first to second tap position
+- [ ] **Expected:** Newly created region is automatically selected
+- [ ] **Expected:** Region details appear in panel
+- [ ] **Expected:** Creation banner disappears
+- [ ] **Test:** Press R, then press R again at same location - no region created (too small)
+- [ ] **Test:** Press R, then press Escape - creation mode cancels, no region created
 
 ### 2.4 Escape Key (Exit Modes) 🟢
-- [ ] **Action:** Enter region make mode, press Escape
-- [ ] **Expected:** Region make mode exits
+- [ ] **Action:** Press R to enter region creation mode, then press Escape
+- [ ] **Expected:** Region creation mode exits
+- [ ] **Expected:** Creation banner disappears
+- [ ] **Expected:** No region is created
 - [ ] **Action:** Select a region, press Escape
-- [ ] **Expected:** Region selection clears
+- [ ] **Expected:** Region selection clears (if implemented)
 - [ ] **Action:** Enter comparison mode, press Escape
-- [ ] **Expected:** Comparison mode exits
+- [ ] **Expected:** Comparison mode exits (if implemented)
 
 ### 2.5 Arrow Keys (Nudge Tap Line) 🟡 PARTIAL
 - [ ] **Action:** Place tap line, press Right Arrow
-- [ ] **Expected:** Tap line moves to next data point
+- [ ] **Expected:** Tap line moves to next data point (~5 minutes forward)
 - [ ] **Expected:** Summary table updates
 - [ ] **Expected:** If audio is playing, it jumps to new position
 - [ ] **Action:** Press Left Arrow
-- [ ] **Expected:** Tap line moves to previous data point
+- [ ] **Expected:** Tap line moves to previous data point (~5 minutes backward)
 - [ ] **Test:** Press and hold arrow key - should move continuously
 
-### 2.6 Shift Key (Switch Drag Tool) 🟢
+### 2.6 Ctrl + Arrow Keys (Adjust Region Start) 🟢
+- [ ] **Action:** Select a region, press Ctrl+Right Arrow
+- [ ] **Expected:** Region start edge moves forward (~5 minutes)
+- [ ] **Expected:** Region updates on all charts immediately
+- [ ] **Action:** Press Ctrl+Left Arrow
+- [ ] **Expected:** Region start edge moves backward
+- [ ] **Test:** If region has multiple areas and tap/hover is over one area, only that area's start adjusts
+- [ ] **Test:** If no tap/hover over region, first area's start adjusts
+- [ ] **Test:** Cannot move start past end (minimum 1ms width enforced)
+- [ ] **Test:** Cannot move start before viewport minimum or past previous area's end
+
+### 2.7 Alt + Arrow Keys (Adjust Region End) 🟢
+- [ ] **Action:** Select a region, press Alt+Right Arrow
+- [ ] **Expected:** Region end edge moves forward (~5 minutes)
+- [ ] **Expected:** Region updates on all charts immediately
+- [ ] **Action:** Press Alt+Left Arrow
+- [ ] **Expected:** Region end edge moves backward
+- [ ] **Test:** If region has multiple areas and tap/hover is over one area, only that area's end adjusts
+- [ ] **Test:** If no tap/hover over region, last area's end adjusts
+- [ ] **Test:** Cannot move end before start (minimum 1ms width enforced)
+- [ ] **Test:** Cannot move end past viewport maximum or before next area's start
+
+### 2.8 Ctrl + Arrow Keys with Selected Marker 🟢
+- [ ] **Action:** Select a marker, press Ctrl+Right Arrow
+- [ ] **Expected:** Marker timestamp moves forward (~5 minutes)
+- [ ] **Expected:** Marker updates on all charts immediately
+- [ ] **Expected:** Marker table updates with new timestamp
+- [ ] **Action:** Press Ctrl+Left Arrow
+- [ ] **Expected:** Marker timestamp moves backward
+- [ ] **Test:** Marker nudging takes priority over region adjustment when marker is selected
+
+### 2.9 Shift Key (Switch Drag Tool) 🟢
 - [ ] **Action:** Hold Shift key
 - [ ] **Expected:** Cursor changes to indicate box select mode
 - [ ] **Expected:** Dragging creates selection box instead of panning
@@ -166,7 +218,9 @@
 - [ ] **Action:** Create 2-3 markers, click "Clear All Markers"
 - [ ] **Expected:** All markers disappear from charts
 - [ ] **Expected:** Markers panel table becomes empty
-- [ ] **Expected:** Confirmation prompt appears (if implemented)
+- [ ] **Expected:** Marker selection clears
+- [ ] **Test:** After clearing, create new markers - should work normally
+- [ ] **Test:** After clearing, all marker functionality still works (double-click, M key, etc.)
 
 ### 3.5 Chart Visibility Checkboxes 🟢
 - [ ] **Action:** Uncheck a time series visibility checkbox
@@ -197,8 +251,11 @@
 - [ ] **Expected:** Region becomes selected (highlighted in table)
 - [ ] **Expected:** Region details appear in panel
 - [ ] **Expected:** Region highlights on charts
+- [ ] **Expected:** Marker selection clears (if any marker was selected)
+- [ ] **Expected:** Side panel shows Regions tab
 - [ ] **Action:** Click on a different region
 - [ ] **Expected:** Selection switches to new region
+- [ ] **Expected:** Previous region unhighlights
 
 ### 4.2 Region Visibility Toggle 🟢
 - [ ] **Action:** Click "Regions" toggle to disable
@@ -240,6 +297,8 @@
 - [ ] **Expected:** Region is deleted immediately
 - [ ] **Expected:** Region disappears from charts and table
 - [ ] **Expected:** Panel shows no selection
+- [ ] **Test:** Delete all regions, then create new ones - should work normally
+- [ ] **Test:** After deleting all regions and recreating them, all region functionality still works
 
 ### 4.8 Add Area Button 🟢
 - [ ] **Action:** Select a region, click "Add Area"
@@ -279,8 +338,11 @@
 - [ ] **Expected:** Marker becomes selected (highlighted in table)
 - [ ] **Expected:** Marker details appear in panel
 - [ ] **Expected:** Tap line jumps to marker timestamp
+- [ ] **Expected:** Region selection clears (if any region was selected)
+- [ ] **Expected:** Side panel shows Markers tab
 - [ ] **Action:** Click on a different marker
 - [ ] **Expected:** Selection switches to new marker
+- [ ] **Expected:** Tap line jumps to new marker timestamp
 
 ### 5.2 Marker Visibility Toggle 🟢
 - [ ] **Action:** Click "Markers" toggle to disable
@@ -309,11 +371,16 @@
 - [ ] **Action:** Select a marker, click "Delete Marker"
 - [ ] **Expected:** Marker is deleted immediately
 - [ ] **Expected:** Marker disappears from charts and table
+- [ ] **Expected:** Marker selection clears
+- [ ] **Test:** Delete all markers, then create new ones - should work normally
+- [ ] **Test:** After deleting all markers and recreating them, all marker functionality still works
 
 ### 5.7 Add Marker at Tap Button 🟢
 - [ ] **Action:** Click on chart to place tap line, click "Add Marker at Tap"
 - [ ] **Expected:** New marker is created at tap line position
 - [ ] **Expected:** Marker appears on charts and in table
+- [ ] **Expected:** Newly created marker is automatically selected
+- [ ] **Expected:** Marker details appear in panel
 
 ---
 
@@ -479,20 +546,38 @@
 - [ ] **Expected:** New position's title shows playing indicator
 
 ### 9.6 Invalid Region Operations 🟢
-- [ ] **Test:** Try to create region with start > end
-- [ ] **Expected:** Region is created with corrected bounds
+- [ ] **Test:** Try to create region with start > end (Shift+click)
+- [ ] **Expected:** Region is created with corrected bounds (start/end swapped)
+- [ ] **Test:** Try to create region with start === end
+- [ ] **Expected:** Region is not created (minimum 1ms width required)
 - [ ] **Test:** Try to merge region with itself
 - [ ] **Expected:** Operation is prevented or handled gracefully
 - [ ] **Test:** Try to split single-area region
 - [ ] **Expected:** Split button is disabled or operation is prevented
+- [ ] **Test:** Press R twice at same location
+- [ ] **Expected:** No region created, creation mode exits
 
-### 9.7 Browser Compatibility 🟢
+### 9.7 Delete and Recreate All Annotations 🟢
+- [ ] **Test:** Create 3-4 regions and 3-4 markers
+- [ ] **Action:** Delete all regions one by one
+- [ ] **Action:** Delete all markers using "Clear All Markers"
+- [ ] **Action:** Create new regions using Shift+click and R key
+- [ ] **Action:** Create new markers using double-click and M key
+- [ ] **Expected:** All region functionality works (selection, editing, notes, colors)
+- [ ] **Expected:** All marker functionality works (selection, editing, notes, colors)
+- [ ] **Expected:** Side panel switches correctly between Markers and Regions tabs
+- [ ] **Expected:** Newly created annotations are automatically selected
+- [ ] **Expected:** No console errors appear
+- [ ] **Test:** Verify region edge adjustments work (Ctrl/Alt + arrows)
+- [ ] **Test:** Verify marker nudging works (Ctrl + arrows)
+
+### 9.8 Browser Compatibility 🟢
 - [ ] **Test:** Chrome/Edge (Chromium)
 - [ ] **Test:** Firefox
 - [ ] **Test:** Safari (if available)
 - [ ] **Expected:** All interactions work consistently across browsers
 
-### 9.8 Console Error Check 🟢
+### 9.9 Console Error Check 🟢
 - [ ] **Test:** Complete entire checklist while monitoring console
 - [ ] **Expected:** No JavaScript errors appear
 - [ ] **Expected:** No Bokeh warnings appear

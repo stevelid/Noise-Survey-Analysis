@@ -1204,9 +1204,6 @@ class TimeSeriesComponent:
         self.tap_lines = Span(location=0, dimension='height', line_color='red', line_width=1, name=f"click_line_{self.name_id}")
         self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hoverline_{self.name_id}")
         self.label = Label(x=0, y=0, text="", text_font_size='10pt', background_fill_color="white", background_fill_alpha=0.6, text_baseline="middle", visible=False, name=f"label_{self.name_id}")
-        
-        # Marker lines - initially empty list, will be populated dynamically
-        self.marker_lines = []  # List of Span objects for markers
 
         self.figure.add_layout(self.tap_lines)
         self.figure.add_layout(self.hover_line)
@@ -1427,9 +1424,6 @@ class SpectrogramComponent:
         #interactive components
         self.tap_lines = Span(location=0, dimension='height', line_color='red', line_width=1, name=f"click_line_{self.name_id}")
         self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hoverline_{self.name_id}")
-        
-        # Marker lines - initially empty list, will be populated dynamically
-        self.marker_lines = []  # List of Span objects for markers
 
         self.figure.add_layout(self.tap_lines)
         self.figure.add_layout(self.hover_line)

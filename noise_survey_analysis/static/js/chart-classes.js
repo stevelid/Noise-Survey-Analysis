@@ -33,24 +33,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return DEFAULT_MARKER_COLOR;
     }
 
-    function styleMarkerSpan(span, color, isSelected) {
-        if (!span) {
-            return;
-        }
-        const desiredColor = normalizeMarkerColor(color);
-        const desiredWidth = isSelected ? SELECTED_MARKER_LINE_WIDTH : UNSELECTED_MARKER_LINE_WIDTH;
-        const desiredAlpha = isSelected ? SELECTED_MARKER_LINE_ALPHA : UNSELECTED_MARKER_LINE_ALPHA;
-
-        if (span.line_color !== desiredColor) {
-            span.line_color = desiredColor;
-        }
-        if (span.line_width !== desiredWidth) {
-            span.line_width = desiredWidth;
-        }
-        if (span.line_alpha !== desiredAlpha) {
-            span.line_alpha = desiredAlpha;
-        }
-    }
+    // Removed styleMarkerSpan - markers now use glyph-based rendering
 
     function _updateBokehImageData(existingImageData, newData) {
         if (existingImageData.length !== newData.length) {
@@ -68,8 +51,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.hoverLineModel = hoverLineModel;
             this.name = chartModel.name;
             this.positionId = positionId; // Store the position ID
-            this.markerModels = []; // Each chart instance manages its own marker models.
             this.regionOverlay = null;
+            this.markerOverlay = null; // Glyph-based marker overlay
         }
 
         setVisible(isVisible) {
@@ -114,132 +97,158 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         /**
-         * The "main" marker method. It syncs the chart's visible markers
-         * to match the global state. This is a declarative approach.
-         * @param {number[]} masterTimestampList - The global list of marker timestamps from _state.
-         * @param {boolean} areMarkersEnabled - The global visibility toggle from _state.
+         * Syncs the chart's visible markers to match the global state using Segment glyphs.
+         * @param {Array} markers - The global list of marker objects from state.
+         * @param {boolean} areMarkersEnabled - The global visibility toggle from state.
+         * @param {number} selectedMarkerId - The ID of the currently selected marker.
          */
         syncMarkers(markers, areMarkersEnabled, selectedMarkerId) {
-            // First, handle the global visibility toggle
-            if (!areMarkersEnabled) {
-                this.markerModels.forEach(marker => marker.visible = false);
-                return; // Stop here if markers are globally disabled
+            const overlay = this._ensureMarkerOverlay();
+            if (!overlay) {
+                console.error('[Chart.syncMarkers] Failed to initialize marker overlay.');
+                return;
+            }
+
+            const { source, renderer } = overlay;
+            const markerList = Array.isArray(markers) ? markers : [];
+            const nextData = this._buildMarkerOverlayData(markerList, selectedMarkerId);
+
+            source.data = nextData;
+            renderer.visible = areMarkersEnabled && nextData.x0.length > 0;
+
+            if (typeof this.model?.request_render === 'function') {
+                this.model.request_render();
+            } else if (this.model?.change?.emit) {
+                this.model.change.emit();
+            }
+        }
+
+        _ensureMarkerOverlay() {
+            if (this.markerOverlay?.source && this.markerOverlay?.renderer) {
+                return this.markerOverlay;
             }
 
             if (!window.Bokeh || !window.Bokeh.Models) {
                 console.error("CRITICAL: window.Bokeh.Models is not available. BokehJS may not be loaded correctly.");
-                return;
+                return null;
             }
 
-            const existingMarkersById = new Map();
-            this.markerModels.forEach(marker => {
-                if (Number.isFinite(marker.__markerId)) {
-                    existingMarkersById.set(marker.__markerId, marker);
-                } else {
-                    existingMarkersById.set(marker.location, marker);
-                }
-                marker.visible = false;
-            });
+            const doc = window.Bokeh?.documents?.[0];
+            const ColumnDataSource = Bokeh.Models.get('ColumnDataSource');
+            const Segment = Bokeh.Models.get('Segment');
+            const GlyphRenderer = Bokeh.Models.get('GlyphRenderer');
 
-            const nextMarkers = [];
-            const markerList = Array.isArray(markers) ? markers : [];
-            markerList.forEach(markerState => {
-                const timestamp = Number(markerState?.timestamp);
+            if (!ColumnDataSource || !Segment || !GlyphRenderer) {
+                console.error('[Chart._ensureMarkerOverlay] Required Bokeh models (ColumnDataSource, Segment, GlyphRenderer) are not available.');
+                return null;
+            }
+
+            const initialData = this._emptyMarkerOverlayData();
+            let source;
+            if (doc && typeof doc.create_model === 'function' && typeof doc.add_model === 'function') {
+                source = doc.add_model(doc.create_model('ColumnDataSource', {
+                    data: initialData,
+                    name: `marker_overlay_source_${this.name}`
+                }));
+            } else {
+                source = new ColumnDataSource({ data: initialData, name: `marker_overlay_source_${this.name}` });
+            }
+
+            if (!source.change || typeof source.change.emit !== 'function') {
+                source.change = source.change || {};
+                source.change.emit = typeof source.change.emit === 'function' ? source.change.emit : function () { };
+            }
+
+            const glyphProps = {
+                x0: { field: 'x0' },
+                y0: { field: 'y0' },
+                x1: { field: 'x1' },
+                y1: { field: 'y1' },
+                line_color: { field: 'line_color' },
+                line_alpha: { field: 'line_alpha' },
+                line_width: { field: 'line_width' }
+            };
+            const glyph = doc && typeof doc.create_model === 'function'
+                ? doc.create_model('Segment', glyphProps)
+                : new Segment(glyphProps);
+
+            const rendererProps = {
+                data_source: source,
+                glyph,
+                level: 'underlay',
+                visible: false,
+                name: `marker_overlay_renderer_${this.name}`
+            };
+            const renderer = doc && typeof doc.create_model === 'function' && typeof doc.add_model === 'function'
+                ? doc.add_model(doc.create_model('GlyphRenderer', rendererProps))
+                : new GlyphRenderer(rendererProps);
+
+            let rendererAdded = false;
+            if (typeof this.model?.add_glyph === 'function') {
+                try {
+                    this.model.add_glyph(renderer);
+                    rendererAdded = true;
+                } catch (error) {
+                    console.warn('[Chart._ensureMarkerOverlay] add_glyph failed, falling back to manual renderer registration.', error);
+                }
+            }
+            if (!rendererAdded) {
+                if (typeof this.model?.add_renderers === 'function') {
+                    this.model.add_renderers(renderer);
+                    rendererAdded = true;
+                } else if (Array.isArray(this.model?.renderers)) {
+                    this.model.renderers.push(renderer);
+                    rendererAdded = true;
+                }
+            }
+
+            this.markerOverlay = { source, renderer };
+            return this.markerOverlay;
+        }
+
+        _emptyMarkerOverlayData() {
+            return {
+                x0: [],
+                y0: [],
+                x1: [],
+                y1: [],
+                line_color: [],
+                line_alpha: [],
+                line_width: [],
+                marker_id: []
+            };
+        }
+
+        _buildMarkerOverlayData(markerList, selectedMarkerId) {
+            const data = this._emptyMarkerOverlayData();
+            const yRange = this.model?.y_range;
+            const yStart = Number(yRange?.start);
+            const yEnd = Number(yRange?.end);
+            const hasValidRange = Number.isFinite(yStart) && Number.isFinite(yEnd);
+            const y0 = hasValidRange ? Math.min(yStart, yEnd) : 0;
+            const y1 = hasValidRange ? Math.max(yStart, yEnd) : 1;
+
+            markerList.forEach(marker => {
+                const timestamp = Number(marker?.timestamp);
                 if (!Number.isFinite(timestamp)) {
                     return;
                 }
 
-                const markerId = Number(markerState?.id);
-                const markerColor = markerState?.color;
+                const markerId = marker?.id;
+                const markerColor = normalizeMarkerColor(marker?.color);
                 const isSelected = Number.isFinite(selectedMarkerId) && markerId === selectedMarkerId;
 
-                let marker = Number.isFinite(markerId)
-                    ? existingMarkersById.get(markerId)
-                    : existingMarkersById.get(timestamp);
-                if (!marker) {
-                    const doc = Bokeh.documents[0];
-                    if (!doc) {
-                        console.error("[Chart.syncMarkers] Bokeh document not available for creating Span markers");
-                        return;
-                    }
-
-                    const Span = Bokeh.Models.get("Span");
-                    if (!Span) {
-                        console.error("[Chart.syncMarkers] Could not retrieve Span model constructor from Bokeh.Models.");
-                        return;
-                    }
-
-                    try {
-                        marker = new Span({
-                            location: timestamp,
-                            dimension: 'height',
-                            line_color: normalizeMarkerColor(markerColor),
-                            line_width: UNSELECTED_MARKER_LINE_WIDTH,
-                            line_alpha: UNSELECTED_MARKER_LINE_ALPHA,
-                            level: 'underlay',
-                            visible: true,
-                            name: `marker_${this.name}_${timestamp}`
-                        });
-                        
-                        
-                        // Add to chart layout first
-                        this.model.add_layout(marker);
-
-                        try {
-                            doc.add_root(marker);
-                            console.log("[Chart.syncMarkers] Added marker to document root"); // DEBUG
-                        } catch (error) {
-                            console.error("[Chart.syncMarkers] Failed to add marker to document root:", error);
-                            // Then add to document root if in live mode
-                            // This is needed for Bokeh's view system to work properly
-                            if (doc.session) {
-                                console.log("[Chart.syncMarkers] Adding marker to document root"); // DEBUG
-                                doc.add_root(marker);
-                            } else {
-                                console.log("[Chart.syncMarkers] Document session not available, skipping document root addition"); // DEBUG
-                            }
-                        }
-                    } catch (error) {
-                        console.error(`[Chart.syncMarkers] Failed to create/add marker for chart ${this.name}:`, error);
-                        console.error('[Chart.syncMarkers] Stack trace:', error.stack);
-                        return;
-                    }
-                } else {
-                    marker.location = timestamp;
-                    marker.visible = true;
-                }
-
-                marker.__markerId = Number.isFinite(markerId) ? markerId : null;
-                styleMarkerSpan(marker, markerColor, isSelected);
-                nextMarkers.push(marker);
+                data.x0.push(timestamp);
+                data.y0.push(y0);
+                data.x1.push(timestamp);
+                data.y1.push(y1);
+                data.line_color.push(markerColor);
+                data.line_alpha.push(isSelected ? SELECTED_MARKER_LINE_ALPHA : UNSELECTED_MARKER_LINE_ALPHA);
+                data.line_width.push(isSelected ? SELECTED_MARKER_LINE_WIDTH : UNSELECTED_MARKER_LINE_WIDTH);
+                data.marker_id.push(markerId);
             });
 
-            // Remove markers that are no longer in state
-            const doc = Bokeh.documents[0];
-            this.markerModels.forEach(marker => {
-                if (!nextMarkers.includes(marker)) {
-                    try {
-                        if (this.model && typeof this.model.remove_layout === 'function') {
-                            this.model.remove_layout(marker);
-                        }
-                        if (doc && doc.session && typeof doc.remove_root === 'function') {
-                            doc.remove_root(marker);
-                        }
-                    } catch (error) {
-                        console.warn(`[Chart.syncMarkers] Failed to remove marker from chart ${this.name}:`, error);
-                    }
-                }
-            });
-
-            this.markerModels = nextMarkers;
-
-            if (this.model && typeof this.model.request_render === 'function') {
-                this.model.request_render();
-            }
-
-            if (this.source && this.source.change && typeof this.source.change.emit === 'function') {
-                this.source.change.emit();
-            }
+            return data;
         }
 
         syncRegions(regionList, selectedId) {

@@ -394,6 +394,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function updateCreationIndicator(indicatorDiv, panelVisible, pendingRegionStart) {
+        
         if (!indicatorDiv) {
             return;
         }
@@ -401,7 +402,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const hasPending = Number.isFinite(pendingRegionStart?.timestamp)
             && typeof pendingRegionStart?.positionId === 'string';
         const shouldShow = panelVisible && hasPending;
-
         if (indicatorDiv.visible !== shouldShow) {
             indicatorDiv.visible = shouldShow;
         }

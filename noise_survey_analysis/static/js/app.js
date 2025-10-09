@@ -118,7 +118,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const lastActionType = state.system?.lastAction?.type;
     
         // --- A. DETERMINE UPDATE TYPE (HEAVY vs. LIGHT) ---
-        // These state changes require re-calculating the main chart data
         const didViewportChange = state.view.viewport !== previousState.view.viewport;
         const didParamChange = state.view.selectedParameter !== previousState.view.selectedParameter;
         const didViewToggleChange = state.view.globalViewType !== previousState.view.globalViewType;
@@ -129,6 +128,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
         const didActiveSidePanelTabChange = state.view.activeSidePanelTab !== previousState.view.activeSidePanelTab;
         const didDisplayTitlesChange = state.view.positionDisplayTitles !== previousState.view.positionDisplayTitles;
+        const didPendingRegionChange = state.interaction.pendingRegionStart !== previousState.interaction.pendingRegionStart;
 
         const isHeavyUpdate = isInitialLoad
             || didViewportChange
@@ -172,7 +172,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.renderers.renderControlWidgets(state, displayDetailsUpdates);
 
         // render the side panel
-        if (didMarkersChange || didRegionsChange || didActiveSidePanelTabChange) {
+        if (didMarkersChange || didRegionsChange || didActiveSidePanelTabChange || didPendingRegionChange) {
             const currentPanelState = {
                 lastActionType: state.system.lastAction?.type,
                 markers: state.markers,
@@ -193,7 +193,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             app.renderers.renderMarkers(state);
         }
 
-        if (isInitialLoad || didRegionsChange) {
+        if (isInitialLoad || didRegionsChange || didPendingRegionChange) {
             app.renderers.renderRegions(state, dataCache);
         }
 

@@ -109,8 +109,62 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(leve
 logger = logging.getLogger(__name__)
 
 # --- Process-level cache for parsed data ---
-# This cache persists across Bokeh sessions to avoid re-parsing the same files
-_data_manager_cache = {}
+# This cache persists across Bokeh sessions AND module reloads to avoid re-parsing the same files
+# Bokeh's autoreload feature reloads modules, so we use a singleton pattern with a lock file
+import sys
+import tempfile
+import pickle
+from pathlib import Path
+
+class DataManagerCache:
+    """Singleton cache that survives module reloads by storing state in a file."""
+    
+    _instance = None
+    _cache_file = Path(tempfile.gettempdir()) / 'noise_survey_datamanager_cache.pkl'
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._data = {}
+            cls._instance._load_from_disk()
+        return cls._instance
+    
+    def _load_from_disk(self):
+        """Load cache from disk if it exists."""
+        try:
+            if self._cache_file.exists():
+                with open(self._cache_file, 'rb') as f:
+                    self._data = pickle.load(f)
+                logger.debug(f"Loaded {len(self._data)} cached entries from disk")
+        except Exception as e:
+            logger.warning(f"Failed to load cache from disk: {e}")
+            self._data = {}
+    
+    def _save_to_disk(self):
+        """Save cache to disk."""
+        try:
+            with open(self._cache_file, 'wb') as f:
+                pickle.dump(self._data, f)
+        except Exception as e:
+            logger.warning(f"Failed to save cache to disk: {e}")
+    
+    def __contains__(self, key):
+        return key in self._data
+    
+    def __getitem__(self, key):
+        return self._data[key]
+    
+    def __setitem__(self, key, value):
+        self._data[key] = value
+        self._save_to_disk()
+    
+    def __len__(self):
+        return len(self._data)
+    
+    def keys(self):
+        return self._data.keys()
+
+_data_manager_cache = DataManagerCache()
 
 def _get_cache_key(source_configs):
     """Generate a cache key from source configurations."""
@@ -121,17 +175,28 @@ def _get_cache_key(source_configs):
         key_parts = []
         for config in sorted(source_configs, key=lambda x: x.get('position_name', '')):
             position = config.get('position_name', '')
-            paths = config.get('file_paths', set())
-            if isinstance(paths, set):
-                paths = sorted(list(paths))
-            elif isinstance(paths, list):
-                paths = sorted(paths)
-            elif isinstance(config.get('file_path'), str):
+            
+            # Handle both file_path (singular, from workspace) and file_paths (plural, from selector)
+            if isinstance(config.get('file_path'), str):
+                # Single file path (workspace format)
                 paths = [config.get('file_path')]
+            elif 'file_paths' in config:
+                # Multiple file paths (selector format)
+                paths = config.get('file_paths', set())
+                if isinstance(paths, set):
+                    paths = sorted(list(paths))
+                elif isinstance(paths, list):
+                    paths = sorted(paths)
+                else:
+                    paths = []
             else:
                 paths = []
+            
             key_parts.append(f"{position}:{','.join(paths)}")
-        return '|'.join(key_parts)
+        
+        cache_key = '|'.join(key_parts)
+        logger.debug(f"Generated cache key (first 100 chars): {cache_key[:100]}...")
+        return cache_key
     except Exception as e:
         logger.warning(f"Failed to generate cache key: {e}")
         return None
@@ -228,8 +293,13 @@ def create_app(doc, config_path=None, state_path=None):
             
             # Check cache for existing DataManager
             cache_key = _get_cache_key(source_configs)
+            logger.debug(f"Cache key: {cache_key[:100] if cache_key else None}...")
+            logger.debug(f"Cache currently has {len(_data_manager_cache)} entries")
+            if cache_key:
+                logger.debug(f"Cache keys: {list(_data_manager_cache.keys())[:1] if _data_manager_cache else 'empty'}")
+            
             if cache_key and cache_key in _data_manager_cache:
-                logger.info(f"Using cached DataManager for {len(source_configs)} source(s). Skipping file parsing.")
+                logger.info(f"✓ Using cached DataManager for {len(source_configs)} source(s). Skipping file parsing.")
                 app_data = _data_manager_cache[cache_key]
             else:
                 logger.info(f"Creating new DataManager and parsing {len(source_configs)} source(s)...")

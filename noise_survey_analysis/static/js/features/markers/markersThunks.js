@@ -60,15 +60,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function selectMarkerIntent(markerId) {
         return function (dispatch, getState) {
-            console.log("[Markers] selectMarkerIntent dispatching"); // DEBUG
             if (!actions || typeof dispatch !== 'function') {
-                console.log("[Markers] selectMarkerIntent dispatching failed"); // DEBUG
                 return;
             }
 
             const normalizedId = Number(markerId);
             if (!Number.isFinite(normalizedId)) {
-                console.log("[Markers] selectMarkerIntent dispatching failed"); // DEBUG
                 dispatch(actions.markerSelect(null));
                 return;
             }
@@ -80,22 +77,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             // Only dispatch markerSelect if the selection actually changed
             if (currentSelectedId !== normalizedId) {
-                console.log('[markersThunks] dispatching markerSelect'); // DEBUG
                 dispatch(actions.markerSelect(normalizedId));
             }
 
-            console.log("[Markers] getting ready to clear region selection"); // DEBUG
             
             // Always clear region selection and switch to markers tab
             // These are valid side effects even if the marker selection didn't change
             if (typeof actions.regionClearSelection === 'function') {
-                console.log('[markersThunks] dispatching regionClearSelection'); // DEBUG
                 dispatch(actions.regionClearSelection());
             }
             
-            console.log("[Markers] getting ready to switch to markers tab"); // DEBUG
             if (typeof actions.setActiveSidePanelTab === 'function') {
-                console.log('[markersThunks] dispatching setActiveSidePanelTab'); // DEBUG
                 dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_MARKERS));
             }
         };
@@ -226,7 +218,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const beforeCount = Array.isArray(markersState.allIds) ? markersState.allIds.length : 0;
 
             // 1. Determine timestamp (Payload > Tap > Viewport Center)
-            console.log('[markersThunks] 1. Determine timestamp'); // DEBUG
             let timestamp = Number(payload.timestamp);
             const tapState = state.interaction?.tap;
             if (!Number.isFinite(timestamp) && tapState?.isActive) {
@@ -246,7 +237,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             // 2. Gather extras, determining positionId (Payload > Tap > Single Available Position)
-            console.log('[markersThunks] 2. Gather extras, determining positionId'); // DEBUG
             const extras = {};
             if (typeof payload.positionId === 'string' && payload.positionId.trim()) {
                 extras.positionId = payload.positionId.trim();
@@ -269,12 +259,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
 
             // 3. Dispatch the creation action
-            console.log('[markersThunks] 3. Dispatch the creation action'); // DEBUG
             dispatch(actions.markerAdd(timestamp, extras));
 
             // 4. Handle side effects after state update
             setTimeout(() => {
-                console.log('[markersThunks] 4. Handle side effects after state update'); // DEBUG
                 if (Number.isFinite(newMarkerId)) {
                     dispatch(selectMarkerIntent(newMarkerId));
                 }

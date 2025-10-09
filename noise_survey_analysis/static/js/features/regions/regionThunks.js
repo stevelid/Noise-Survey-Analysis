@@ -245,7 +245,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             dispatch(actions.regionsAdded(regions));
             app.regions?.invalidateMetricsCache?.();
             dispatch(actions.comparisonModeExited());
-            console.log('[RegionThunk] dispatching setActiveSidePanelTab'); // DEBUG
             dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
         };
     }
@@ -271,11 +270,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             dispatch(actions.regionSelect(normalizedId));
             if (typeof actions.markerSelect === 'function') {
-                console.log('[RegionThunk] dispatching markerSelect(null)'); // DEBUG
                 dispatch(actions.markerSelect(null));
             }
             if (typeof actions.setActiveSidePanelTab === 'function') {
-                console.log('[RegionThunk] dispatching setActiveSidePanelTab'); // DEBUG
                 dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
             }
         };
@@ -319,15 +316,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ? regionsState.counter
                 : null;
 
-            console.log('[regionAdd] Adding region:', { positionId, start, end });
             dispatch(actions.regionAdd(positionId, start, end));
 
-            const newState = getState();
-            const newRegionId = newState.regions.selectedId; // The reducer sets the new region as selected
-
-            // Orchestrate post-creation side effects by calling the canonical selection thunk
-            if (Number.isFinite(newRegionId)) {
-                dispatch(selectRegionIntent(newRegionId));
+            // The reducer will use `nextRegionId` and then select it.
+            // We still dispatch selectRegionIntent to handle side-effects like switching panels.
+            
+            if (Number.isFinite(nextRegionId)) {
+                
+                dispatch(selectRegionIntent(nextRegionId));
             }
         };
     }

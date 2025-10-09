@@ -64,13 +64,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const end = Math.max(previousTap, timestamp);
                 if (Math.abs(end - start) < MIN_REGION_WIDTH_MS) return;
 
-                const predictedId = Number.isFinite(state?.regions?.counter)
-                    ? state.regions.counter
-                    : null;
-                dispatch(actions.regionAdd(positionId, start, end));
-                if (app.regions?.invalidateRegionMetrics && Number.isFinite(predictedId)) {
-                    app.regions.invalidateRegionMetrics(predictedId);
+                const createRegionThunk = app.features?.regions?.thunks?.createRegionIntent;
+                if (typeof createRegionThunk === 'function') {
+                    dispatch(createRegionThunk({ positionId, start, end }));
                 }
+                return;
             }
 
             if (isCtrl && regionHit) {
@@ -167,7 +165,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     console.error('[InteractionThunk] Missing marker creation thunk.');
                     return;
                 }
-                console.log('[InteractionThunk] dispatching createMarkerIntent'); // DEBUG
                 dispatch(markerThunk({}));
                 return;
             }

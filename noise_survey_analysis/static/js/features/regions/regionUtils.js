@@ -262,7 +262,6 @@ function calcLAeq(values) {
     }
 
     function computeRegionMetrics(region, state, dataCache, models) {
-        console.log("[computeRegionMetrics] region:", region); //debugging
         const areas = getRegionAreas(region);
         const durationMs = sumAreaDurations(areas);
         const sources = models?.timeSeriesSources?.[region.positionId];

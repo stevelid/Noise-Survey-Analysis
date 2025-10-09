@@ -608,9 +608,6 @@ class DashBuilder:
             # Add position-specific controls (title and offsets)
             if comp_dict.get('position_controls'):
                 js_models['positionControls'][pos] = comp_dict['position_controls']
-            
-            js_models['components'][ts_comp.name_id] = {'marker_lines': ts_comp.marker_lines}
-            js_models['components'][spec_comp.name_id] = {'marker_lines': spec_comp.marker_lines}
 
 
         #Add RangeSelector tap and hover lines
