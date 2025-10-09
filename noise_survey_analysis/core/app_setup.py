@@ -56,6 +56,15 @@ def load_config_and_prepare_sources(config_path='config.json'):
     
     source_configurations = []
     
+    # Check if this is a workspace file (has sourceConfigs) or a config file (has sources)
+    source_configs_list = config.get("sourceConfigs")
+    if source_configs_list:
+        # This is a workspace file - sourceConfigs are already in the correct format
+        logger.info("Detected workspace file format with 'sourceConfigs'. Using directly.")
+        # Filter to only enabled configs
+        source_configurations = [sc for sc in source_configs_list if sc.get("enabled", True)]
+        return output_filename, source_configurations
+    
     # Determine the base path for resolving relative source paths.
     # Prioritize "config_base_path" if it exists in the config.
     # Otherwise, fall back to the directory where the config file is located.

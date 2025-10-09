@@ -158,8 +158,13 @@ def create_app(doc, config_path=None, state_path=None):
         except Exception as exc:
             logger.error(f"Failed to parse workspace state file '{state_path}': {exc}", exc_info=True)
 
-    def on_data_sources_selected(source_configs):
-        """Callback when data sources are selected from the selector."""
+    def on_data_sources_selected(source_configs, skip_static_export=False):
+        """Callback when data sources are selected from the selector.
+        
+        Args:
+            source_configs: List of source configuration dictionaries
+            skip_static_export: If True, skip generating static HTML (used when loading from existing config/workspace)
+        """
         logger.info("Data sources selected, building dashboard...")
         
         # Clear current layout
@@ -175,15 +180,19 @@ def create_app(doc, config_path=None, state_path=None):
         doc.add_root(loading_div)
         
         # Save a config derived from the user's selection and kick off static export in background
-        try:
-            cfg_path = save_config_from_selected_sources(source_configs)
-            if cfg_path:
-                logger.info(f"Auto-saved selector config to {cfg_path}. Starting static export in background...")
-                threading.Thread(target=generate_static_html, args=(str(cfg_path),), daemon=True).start()
-            else:
-                logger.warning("Auto-save of selector config failed or returned no path; skipping static export.")
-        except Exception as e:
-            logger.error(f"Error during auto-save/config-based static export: {e}", exc_info=True)
+        # Skip this if we're loading from an existing config/workspace (it's likely already been generated)
+        if not skip_static_export:
+            try:
+                cfg_path = save_config_from_selected_sources(source_configs)
+                if cfg_path:
+                    logger.info(f"Auto-saved selector config to {cfg_path}. Starting static export in background...")
+                    threading.Thread(target=generate_static_html, args=(str(cfg_path),), daemon=True).start()
+                else:
+                    logger.warning("Auto-save of selector config failed or returned no path; skipping static export.")
+            except Exception as e:
+                logger.error(f"Error during auto-save/config-based static export: {e}", exc_info=True)
+        else:
+            logger.info("Skipping static export (loading from existing config/workspace).")
         
         # This function will run after the loading screen is displayed.
         def build_dashboard():
@@ -213,18 +222,41 @@ def create_app(doc, config_path=None, state_path=None):
         doc.add_next_tick_callback(build_dashboard)
     
     if source_configs_from_state:
-        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs_from_state))
+        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs_from_state, skip_static_export=True))
     else:
         config_path = _normalize_path(config_path)
         if config_path:
             logger.info(f"Attempting to load data directly from config file: {config_path}")
-            _, source_configs = load_config_and_prepare_sources(config_path=config_path)
-            if source_configs is not None:
-                # Use a next tick callback to ensure the document is fully ready
-                doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs))
-            else:
-                logger.error(f"Failed to load from config file {config_path}. Falling back to selector.")
-                # Fallback to selector if config loading fails
+            
+            # Check if this is actually a workspace file (contains both sourceConfigs and appState)
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    file_content = json.load(f)
+                
+                # If it has both sourceConfigs and appState, treat it as a workspace file
+                if isinstance(file_content, dict) and 'sourceConfigs' in file_content and 'appState' in file_content:
+                    logger.info("Detected workspace file format. Extracting sourceConfigs and appState.")
+                    source_configs_from_state = file_content.get('sourceConfigs')
+                    state_payload = file_content.get('appState')
+                    if isinstance(state_payload, dict):
+                        initial_saved_workspace_state = state_payload
+                    if source_configs_from_state:
+                        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs_from_state, skip_static_export=True))
+                    else:
+                        logger.error("Workspace file has no sourceConfigs. Falling back to selector.")
+                        selector = create_data_source_selector(doc, on_data_sources_selected)
+                        doc.add_root(selector.get_layout())
+                else:
+                    # Regular config file - use the existing loader
+                    _, source_configs = load_config_and_prepare_sources(config_path=config_path)
+                    if source_configs is not None:
+                        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs, skip_static_export=True))
+                    else:
+                        logger.error(f"Failed to load from config file {config_path}. Falling back to selector.")
+                        selector = create_data_source_selector(doc, on_data_sources_selected)
+                        doc.add_root(selector.get_layout())
+            except Exception as e:
+                logger.error(f"Error reading config/workspace file {config_path}: {e}", exc_info=True)
                 selector = create_data_source_selector(doc, on_data_sources_selected)
                 doc.add_root(selector.get_layout())
         else:

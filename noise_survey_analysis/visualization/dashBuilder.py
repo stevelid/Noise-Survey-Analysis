@@ -290,14 +290,17 @@ class DashBuilder:
             spec_comp.figure.x_range = master_x_range
 
         #add callback to x_range ranges
-        range_update_js = CustomJS(code="""
-            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleRangeUpdate) {
-                window.NoiseSurveyApp.eventHandlers.handleRangeUpdate(cb_obj);
-            } else {
-                console.error('NoiseSurveyApp.eventHandlers.handleRangeUpdate not defined!');
-            }
-        """)
-        master_x_range.js_on_change('end', range_update_js)
+        if master_x_range is not None:
+            range_update_js = CustomJS(code="""
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleRangeUpdate) {
+                    window.NoiseSurveyApp.eventHandlers.handleRangeUpdate(cb_obj);
+                } else {
+                    console.error('NoiseSurveyApp.eventHandlers.handleRangeUpdate not defined!');
+                }
+            """)
+            master_x_range.js_on_change('end', range_update_js)
+        else:
+            logger.warning("No master_x_range available; skipping range update callback.")
 
 
     def _assemble_and_add_layout(self, doc):

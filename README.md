@@ -1,5 +1,6 @@
 # TL;DR
 bokeh serve noise_survey_analysis --show
+bokeh serve noise_survey_analysis --show --args --config /path/to/your/workspace.json
 python -m noise_survey_analysis.main --generate-static /path/to/your/config.json
 
 # Noise Survey Analysis Tool

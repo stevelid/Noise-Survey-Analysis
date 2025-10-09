@@ -226,6 +226,7 @@ When you add or modify any code that creates user interactions:
 - Automated tests complement but do not replace manual testing for Bokeh interactions
 
 ### Manual Testing. 
+- use bokeh serve noise_survey_analysis --show --args --config .\config.json to run live server
 - use python -m noise_survey_analysis.main --generate-static .\config.json to generate static files
 - use playwright mcp to test
 
