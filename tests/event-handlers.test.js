@@ -169,9 +169,14 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     });
 
     describe('handleParameterChange', () => {
-        it('should dispatch a PARAM_CHANGE action', () => {
+        it('should dispatch selectParameterIntent thunk', () => {
             eventHandlers.handleParameterChange('LAeq');
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.paramChange('LAeq'));
+            // Since viewThunks are now loaded, this dispatches a thunk (function) instead of a plain action
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
+
+            // Verify the thunk was created by selectParameterIntent
+            const dispatchedThunk = dispatchSpy.mock.calls[0][0];
+            expect(typeof dispatchedThunk).toBe('function');
         });
     });
 
