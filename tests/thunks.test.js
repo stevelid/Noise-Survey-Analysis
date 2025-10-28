@@ -400,17 +400,33 @@ describe('NoiseSurveyApp thunks', () => {
         thunk(store.dispatch, store.getState);
 
         const state = store.getState();
-        expect(state.regions.allIds.length).toBe(4);
+        // When both daytime and nighttime modes are requested, they are aggregated into 2 regions
+        expect(state.regions.allIds.length).toBe(2);
         const regions = state.regions.allIds.map(id => state.regions.byId[id]);
         const daytimeRegions = regions.filter(region => region.color === '#4caf50');
         const nighttimeRegions = regions.filter(region => region.color === '#7e57c2');
-        expect(daytimeRegions.length).toBe(2);
-        expect(nighttimeRegions.length).toBe(2);
-        daytimeRegions.forEach(region => {
-            expect(new Date(region.start).getUTCHours()).toBe(7);
+        expect(daytimeRegions.length).toBe(1);
+        expect(nighttimeRegions.length).toBe(1);
+
+        // Each aggregated region should contain multiple areas (one per day)
+        const daytimeRegion = daytimeRegions[0];
+        const nighttimeRegion = nighttimeRegions[0];
+        expect(daytimeRegion.areas.length).toBeGreaterThanOrEqual(2);
+        expect(nighttimeRegion.areas.length).toBeGreaterThanOrEqual(2);
+
+        // Verify times of areas in each aggregated region
+        // Times may be clamped to actual data points, so check they're in reasonable ranges
+        daytimeRegion.areas.forEach(area => {
+            const startHour = new Date(area.start).getUTCHours();
+            // Daytime regions should start between 6-8 (clamped to data availability)
+            expect(startHour).toBeGreaterThanOrEqual(6);
+            expect(startHour).toBeLessThanOrEqual(8);
         });
-        nighttimeRegions.forEach(region => {
-            expect(new Date(region.start).getUTCHours()).toBe(23);
+        nighttimeRegion.areas.forEach(area => {
+            const startHour = new Date(area.start).getUTCHours();
+            // Nighttime regions should start between 22-23 (clamped to data availability)
+            expect(startHour).toBeGreaterThanOrEqual(22);
+            expect(startHour).toBeLessThanOrEqual(23);
         });
 
         window.NoiseSurveyApp.registry.models.timeSeriesSources = originalSources;

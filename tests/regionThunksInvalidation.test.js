@@ -18,6 +18,20 @@ describe('Region thunks cache invalidation', () => {
         if (app.regions?.invalidateMetricsCache) {
             app.regions.invalidateMetricsCache();
         }
+
+        // Mock FileReader for import tests
+        global.FileReader = class MockFileReader {
+            readAsText(file) {
+                // Simulate async file read
+                setTimeout(() => {
+                    if (this.onload) {
+                        file.text().then(text => {
+                            this.onload({ target: { result: text } });
+                        });
+                    }
+                }, 0);
+            }
+        };
     });
 
     it('invalidates region metrics when creating a region', () => {
@@ -26,19 +40,20 @@ describe('Region thunks cache invalidation', () => {
             throw new Error('Required dependencies not available.');
         }
 
-        const invalidateSpy = vi.spyOn(regions, 'invalidateRegionMetrics');
+        // createRegionIntent calls invalidateMetricsCache, not invalidateRegionMetrics
+        const invalidateSpy = vi.spyOn(regions, 'invalidateMetricsCache');
 
         const intent = thunks.createRegionIntent({ positionId: 'P1', start: 0, end: 1000 });
         store.dispatch(intent);
 
-        // Should have been called for the newly created region
+        // Should have been called to invalidate the cache
         expect(invalidateSpy).toHaveBeenCalled();
         invalidateSpy.mockRestore();
     });
 
     it('invalidates cache when creating auto day/night regions', () => {
-        const { store, thunks, regions, registry } = app;
-        if (!store || !thunks?.createAutoRegionsIntent || !regions) {
+        const { store, thunks, regions, registry, actions } = app;
+        if (!store || !thunks?.createAutoRegionsIntent || !regions || !actions) {
             throw new Error('Required dependencies not available.');
         }
 
@@ -51,6 +66,14 @@ describe('Region thunks cache invalidation', () => {
             ],
             LAeq: [50, 55, 45]
         };
+
+        // Initialize state with available positions
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1'],
+            selectedParameter: 'LAeq',
+            viewport: { min: mockData.Datetime[0], max: mockData.Datetime[2] },
+            chartVisibility: {}
+        }));
 
         if (registry?.models?.timeSeriesSources) {
             registry.models.timeSeriesSources.P1 = {
@@ -130,9 +153,12 @@ describe('Region thunks cache invalidation', () => {
         // Create two regions
         store.dispatch(actions.regionAdd('P1', 0, 1000));
         store.dispatch(actions.regionAdd('P1', 2000, 3000));
-        
-        const state = store.getState();
+
+        let state = store.getState();
         const [targetId, sourceId] = state?.regions?.allIds || [];
+
+        // Select the first region (target) before merging
+        store.dispatch(actions.regionSelect(targetId));
 
         const invalidateSpy = vi.spyOn(regions, 'invalidateRegionMetrics');
 

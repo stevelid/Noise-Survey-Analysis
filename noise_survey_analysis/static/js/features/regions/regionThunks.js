@@ -318,11 +318,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             dispatch(actions.regionAdd(positionId, start, end));
 
+            // Invalidate metrics cache for the newly created region
+            app.regions?.invalidateMetricsCache?.();
+
             // The reducer will use `nextRegionId` and then select it.
             // We still dispatch selectRegionIntent to handle side-effects like switching panels.
-            
+
             if (Number.isFinite(nextRegionId)) {
-                
+
                 dispatch(selectRegionIntent(nextRegionId));
             }
         };

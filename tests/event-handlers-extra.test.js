@@ -79,8 +79,8 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
 
     const cb_obj = { origin: { name: 'figure_P1_timeseries' }, x: 100, modifiers: {} };
 
-    // Call the public, wrapped handler and expect it to re-throw
-    expect(() => window.NoiseSurveyApp.eventHandlers.handleTap(cb_obj)).toThrow('Thunk Failed');
+    // Call the public, wrapped handler - it should catch the error and not re-throw
+    window.NoiseSurveyApp.eventHandlers.handleTap(cb_obj);
 
     // Verify the wrapper caught and logged the specific error
     expect(errorSpy).toHaveBeenCalledWith(

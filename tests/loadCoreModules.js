@@ -3,6 +3,7 @@
 import '../noise_survey_analysis/static/js/core/actions.js';
 import '../noise_survey_analysis/static/js/features/view/viewReducer.js';
 import '../noise_survey_analysis/static/js/features/view/viewSelectors.js';
+import '../noise_survey_analysis/static/js/features/view/viewThunks.js';
 import '../noise_survey_analysis/static/js/features/interaction/interactionReducer.js';
 import '../noise_survey_analysis/static/js/features/markers/markersReducer.js';
 import '../noise_survey_analysis/static/js/features/markers/markersSelectors.js';
