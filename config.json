@@ -1,66 +1,24 @@
 {
   "version": "1.2",
-  "created_at": "2025-09-19T10:53:20.039033",
-  "config_base_path": "G:/Shared drives/Venta/Jobs/6030 1-2 Dems House, Storrington/6030 surveys",
-  "output_filename": "6030_survey_dashboard.html",
+  "created_at": "2026-01-12T12:27:00.000000",
+  "config_base_path": "G:/Shared drives/Venta/Jobs/5931 Lains Shooting School, Quarley/5931 Surveys",
+  "output_filename": "5931_survey_dashboard.html",
   "sources": [
     {
-      "path": "6030-1/2025-08-06_SLM_000_123_Rpt_Report.txt",
-      "position": "6030-1",
-      "type": "NTi",
-      "parser_type": "nti"
+      "path": "971-4/L419_log_short.csv",
+      "position": "L419",
+      "type": "Svan",
+      "parser_type": "svan"
     },
     {
-      "path": "6030-1/2025-08-06_SLM_000_RTA_3rd_Rpt_Report.txt",
-      "position": "6030-1",
-      "type": "NTi",
-      "parser_type": "nti"
+      "path": "971-4/L419_summary_short.csv",
+      "position": "L419",
+      "type": "Svan",
+      "parser_type": "svan"
     },
     {
-      "path": "6030-1/2025-08-06_SLM_000_123_Log.txt",
-      "position": "6030-1",
-      "type": "NTi",
-      "parser_type": "nti"
-    },
-    {
-      "path": "6030-1/2025-08-06_SLM_000_RTA_3rd_Log.txt",
-      "position": "6030-1",
-      "type": "NTi",
-      "parser_type": "nti"
-    },
-    {
-      "path": "6030-1",
-      "position": "6030-1",
-      "type": "Audio",
-      "parser_type": "audio"
-    },
-    {
-      "path": "6030-3/2025-08-06_SLM_006_123_Rpt_Report.txt",
-      "position": "6030-3",
-      "type": "NTi",
-      "parser_type": "nti"
-    },
-    {
-      "path": "6030-3/2025-08-06_SLM_006_RTA_3rd_Rpt_Report.txt",
-      "position": "6030-3",
-      "type": "NTi",
-      "parser_type": "nti"
-    },
-    {
-      "path": "6030-3/2025-08-06_SLM_006_123_Log.txt",
-      "position": "6030-3",
-      "type": "NTi",
-      "parser_type": "nti"
-    },
-    {
-      "path": "6030-3/2025-08-06_SLM_006_RTA_3rd_Log.txt",
-      "position": "6030-3",
-      "type": "NTi",
-      "parser_type": "nti"
-    },
-    {
-      "path": "6030-3",
-      "position": "6030-3",
+      "path": "971-4",
+      "position": "L419",
       "type": "Audio",
       "parser_type": "audio"
     }
