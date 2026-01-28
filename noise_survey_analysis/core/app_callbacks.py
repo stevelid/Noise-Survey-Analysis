@@ -134,7 +134,9 @@ class AppCallbacks:
     def _start_periodic_update(self):
         """Starts the periodic callback for audio status updates."""
         if self._periodic_callback_id is None:
-            self._periodic_callback_id = self.doc.add_periodic_callback(self._periodic_update_audio_status, 100)
+            # Use 200ms interval instead of 100ms to reduce WebSocket traffic
+            # This improves zoom responsiveness during audio playback
+            self._periodic_callback_id = self.doc.add_periodic_callback(self._periodic_update_audio_status, 200)
             logger.info("Started periodic audio status update.")
 
     def _stop_periodic_update(self):

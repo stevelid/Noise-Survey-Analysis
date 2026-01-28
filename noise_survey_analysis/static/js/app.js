@@ -15,6 +15,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     // --- Module-level variables ---
     let previousState; // used to track state changes
+    let _lastHeavyUpdateTime = 0; // Timestamp of last heavy update for throttling
+    let _pendingHeavyUpdate = null; // Pending heavy update RAF handle
+    const HEAVY_UPDATE_THROTTLE_MS = 50; // Minimum ms between heavy updates during audio playback
 
     // The mutable, non-serializable data cache for large data arrays.
     const dataCache = {
@@ -23,6 +26,37 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         activeFreqBarData: {},
         _spectrogramCanvasBuffers: {}
     };
+
+    const logStepSizeByPosition = {};
+    const lineDisplayTypeByPosition = {};
+
+    function computeMedianPositiveStep(datetime) {
+        if (!datetime || datetime.length < 2) {
+            return;
+        }
+
+        const diffs = [];
+        const maxPairs = Math.min(datetime.length - 1, 2000);
+        for (let i = 0; i < maxPairs; i++) {
+            const a = Number(datetime[i]);
+            const b = Number(datetime[i + 1]);
+            const diff = b - a;
+            if (Number.isFinite(diff) && diff > 0) {
+                diffs.push(diff);
+            }
+        }
+
+        if (!diffs.length) {
+            return;
+        }
+
+        diffs.sort((x, y) => x - y);
+        let step = diffs[Math.floor(diffs.length / 2)];
+
+        const oneHour = 3600000;
+        step = Math.min(step, oneHour);
+        return step;
+    }
 
     app.dataCache = dataCache;
 
@@ -63,12 +97,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 dataCache.activeSpectralData[pos] = {};
             });
 
+            const { models } = app.registry;
+            initialStatePayload.availablePositions.forEach(pos => {
+                const datetime = models?.timeSeriesSources?.[pos]?.log?.data?.Datetime;
+                const step = computeMedianPositiveStep(datetime);
+                if (Number.isFinite(step)) {
+                    logStepSizeByPosition[pos] = step;
+                }
+            });
+
             app.store.dispatch(app.actions.initializeState(initialStatePayload));
 
             // --- 2. CONNECT BOKEH EVENT LISTENERS ---
-            const { models } = app.registry;
             if (models.audio_status_source) {
-                // This listener dispatches an action when Python sends new audio status
                 models.audio_status_source.patching.connect(app.eventHandlers.handleAudioStatusUpdate);
             }
 
@@ -83,8 +124,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             app.store.subscribe(onStateChange);
 
             // --- 5. KICK OFF THE FIRST RENDER ---
-            // Trigger the first data processing and render pass manually.
-            onStateChange(true); // Pass a flag to indicate it's the initial load
+            const kickoffInitialRender = () => onStateChange(true);
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(kickoffInitialRender);
+            } else {
+                setTimeout(kickoffInitialRender, 0);
+            }
 
             if (app.session && typeof app.session.applyInitialWorkspaceState === 'function') {
                 try {
@@ -129,30 +174,77 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didActiveSidePanelTabChange = state.view.activeSidePanelTab !== previousState.view.activeSidePanelTab;
         const didDisplayTitlesChange = state.view.positionDisplayTitles !== previousState.view.positionDisplayTitles;
         const didPendingRegionChange = state.interaction.pendingRegionStart !== previousState.interaction.pendingRegionStart;
+        const didTapChange = state.interaction.tap !== previousState.interaction.tap;
+        const didAudioPositionChange = state.audio.activePositionId !== previousState.audio.activePositionId;
 
-        const isHeavyUpdate = isInitialLoad
+        const isHeavyUpdateRequested = isInitialLoad
             || didViewportChange
             || didParamChange
             || didViewToggleChange
             || didVisibilityChange
             || didChartOffsetsChange
             || didDisplayTitlesChange;
+
+        // Throttle heavy updates during audio playback to prevent UI lag
+        const now = performance.now();
+        const isAudioPlaying = state.audio?.isPlaying;
+        const timeSinceLastHeavy = now - _lastHeavyUpdateTime;
+        const shouldThrottle = isAudioPlaying && timeSinceLastHeavy < HEAVY_UPDATE_THROTTLE_MS;
         
-            // --- B. ORCHESTRATE DATA PROCESSING & RENDERING ---
+        // Allow heavy update if: not throttled, or it's a critical update (param/view toggle change)
+        const isCriticalUpdate = isInitialLoad || didParamChange || didViewToggleChange;
+        const isHeavyUpdate = isHeavyUpdateRequested && (!shouldThrottle || isCriticalUpdate);
+        
+        // If we're throttling a viewport change during audio, schedule it for later
+        if (isHeavyUpdateRequested && shouldThrottle && !isCriticalUpdate && didViewportChange) {
+            if (_pendingHeavyUpdate === null) {
+                _pendingHeavyUpdate = requestAnimationFrame(() => {
+                    _pendingHeavyUpdate = null;
+                    // Re-trigger state change processing
+                    onStateChange(false);
+                });
+            }
+        }
+        
+        // --- B. ORCHESTRATE DATA PROCESSING & RENDERING ---
         let displayDetailsUpdates = null;
 
         if (isHeavyUpdate) {
+            _lastHeavyUpdateTime = now;
             // 1. Process heavy data (time series, spectrograms)
             if (app.data_processors?.updateActiveData) {
                 displayDetailsUpdates = app.data_processors.updateActiveData(state.view, dataCache, app.registry.models) || {};
             }
+        }
 
-            // 2. Calculate new step size based on new data
-            const newStepSize = app.data_processors?.calculateStepSize
-                ? app.data_processors.calculateStepSize(state, dataCache)
-                : undefined;
-            if (Number.isFinite(newStepSize) && newStepSize !== state.interaction.keyboard.stepSizeMs) {
-                app.store.dispatch(app.actions.stepSizeCalculated(newStepSize));
+        if (displayDetailsUpdates) {
+            Object.keys(displayDetailsUpdates).forEach(positionId => {
+                const lineType = displayDetailsUpdates?.[positionId]?.line?.type;
+                if (typeof lineType === 'string') {
+                    lineDisplayTypeByPosition[positionId] = lineType;
+                }
+            });
+        }
+
+        const shouldUpdateStep = !isInitialLoad
+            ? (isHeavyUpdate || didTapChange || didAudioPositionChange)
+            : true;
+
+        if (shouldUpdateStep && lastActionType !== actionTypes.STEP_SIZE_CALCULATED) {
+            const focusedPositionId = state.interaction.tap.position || state.audio.activePositionId;
+            if (focusedPositionId) {
+                const lineType = displayDetailsUpdates?.[focusedPositionId]?.line?.type
+                    || lineDisplayTypeByPosition[focusedPositionId];
+
+                const newStepSize = lineType === 'log' && Number.isFinite(logStepSizeByPosition[focusedPositionId])
+                    ? logStepSizeByPosition[focusedPositionId]
+                    : (app.data_processors?.calculateStepSize
+                        ? app.data_processors.calculateStepSize(state, dataCache)
+                        : undefined);
+
+                if (Number.isFinite(newStepSize) && newStepSize !== state.interaction.keyboard.stepSizeMs) {
+                    app.store.dispatch(app.actions.stepSizeCalculated(newStepSize));
+                }
             }
         }
 

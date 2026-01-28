@@ -4,17 +4,76 @@ import os
 import pandas as pd
 from collections import defaultdict # Not strictly needed with current PositionData, but good for other aggregations
 import logging
-from typing import List, Dict, Optional, Any, Set, Union # Added Union
+from typing import List, Dict, Optional, Any, Set, Union, Tuple, Callable
 
 # Assuming your refactored parsers are in a file named 'data_parsers_refactored.py'
 # in the same directory or a properly configured package.
 try:
     from .data_parsers import NoiseParserFactory, ParsedData, AbstractNoiseParser
+    from .parsed_data_cache import get_parsed_data_cache
 except ImportError: # Fallback for running script directly
     from data_parsers import NoiseParserFactory, ParsedData, AbstractNoiseParser
+    from parsed_data_cache import get_parsed_data_cache
 
 
 logger = logging.getLogger(__name__)
+
+
+# ==============================================================================
+#  Helper Functions
+# ==============================================================================
+
+def _parse_single_file(file_path: str, position_name: str,
+                       parser_type_hint: Optional[str] = None,
+                       return_all_columns: bool = False,
+                       use_cache: bool = True) -> Tuple[str, str, ParsedData]:
+    """
+    Worker function to parse a single file.
+
+    Returns:
+        Tuple of (file_path, position_name, parsed_data)
+    """
+    try:
+        # Check cache first
+        if use_cache:
+            cache = get_parsed_data_cache()
+            cached_data = cache.get(file_path, return_all_columns)
+            if cached_data is not None:
+                logger.debug(f"Using cached data for: {os.path.basename(file_path)}")
+                return (file_path, position_name, cached_data)
+
+        # Parse the file
+        factory = NoiseParserFactory()
+        parser = factory.get_parser(file_path)
+
+        if not parser:
+            err_msg = f"No suitable parser found for file: {file_path}"
+            logger.error(err_msg)
+            error_data = ParsedData(
+                original_file_path=file_path,
+                parser_type='None',
+                metadata={'error': err_msg}
+            )
+            return (file_path, position_name, error_data)
+
+        parsed_data = parser.parse(file_path, return_all_columns=return_all_columns)
+
+        # Cache the result
+        if use_cache and 'error' not in parsed_data.metadata:
+            cache = get_parsed_data_cache()
+            cache.put(file_path, parsed_data, return_all_columns)
+
+        return (file_path, position_name, parsed_data)
+
+    except Exception as e:
+        logger.error(f"Error parsing {file_path}: {e}", exc_info=True)
+        error_data = ParsedData(
+            original_file_path=file_path,
+            parser_type='Error',
+            metadata={'error': str(e)}
+        )
+        return (file_path, position_name, error_data)
+
 
 # ==============================================================================
 #  1. The Data Holder Class for a Single Position
@@ -147,28 +206,38 @@ class PositionData:
         # Distribute DataFrames based on data_profile
         profile = parsed_data_obj.data_profile
 
-        logger.debug(f"Adding data from {os.path.basename(parsed_data_obj.original_file_path)} to {self.name}")
-        logger.debug(f"  ParsedData profile: {parsed_data_obj.data_profile}, parser_type: {parsed_data_obj.parser_type}")
-        logger.debug(f"  ParsedData totals_df shape: {parsed_data_obj.totals_df.shape if parsed_data_obj.totals_df is not None else 'None'}")
-        logger.debug(f"  ParsedData spectral_df shape: {parsed_data_obj.spectral_df.shape if parsed_data_obj.spectral_df is not None else 'None'}")
+        logger.info(f"Adding data from {os.path.basename(parsed_data_obj.original_file_path)} to {self.name}")
+        logger.info(f"  ParsedData profile: {parsed_data_obj.data_profile}, parser_type: {parsed_data_obj.parser_type}")
+        logger.info(f"  ParsedData totals_df shape: {parsed_data_obj.totals_df.shape if parsed_data_obj.totals_df is not None else 'None'}")
+        logger.info(f"  ParsedData spectral_df shape: {parsed_data_obj.spectral_df.shape if parsed_data_obj.spectral_df is not None else 'None'}")
+        if parsed_data_obj.totals_df is not None:
+            logger.info(f"  totals_df columns: {list(parsed_data_obj.totals_df.columns)[:10]}")
+            logger.info(f"  totals_df has 'Datetime' column: {'Datetime' in parsed_data_obj.totals_df.columns}")
+        if parsed_data_obj.spectral_df is not None:
+            logger.info(f"  spectral_df columns: {list(parsed_data_obj.spectral_df.columns)[:10]}")
+            logger.info(f"  spectral_df has 'Datetime' column: {'Datetime' in parsed_data_obj.spectral_df.columns}")
 
         if profile == 'overview': # Typically summary reports
             if parsed_data_obj.totals_df is not None:
                 self.overview_totals = self._merge_df(self.overview_totals, parsed_data_obj.totals_df)
-            logger.debug(f"  After merge - overview_totals shape: {self.overview_totals.shape if self.overview_totals is not None else 'None'}")
+            logger.info(f"  After merge - overview_totals shape: {self.overview_totals.shape if self.overview_totals is not None else 'None'}")
+            if self.overview_totals is not None:
+                logger.info(f"  overview_totals has 'Datetime' column: {'Datetime' in self.overview_totals.columns}")
 
             if parsed_data_obj.spectral_df is not None:
                 self.overview_spectral = self._merge_df(self.overview_spectral, parsed_data_obj.spectral_df)
-            logger.debug(f"  After merge - overview_spectral shape: {self.overview_spectral.shape if self.overview_spectral is not None else 'None'}")
+            logger.info(f"  After merge - overview_spectral shape: {self.overview_spectral.shape if self.overview_spectral is not None else 'None'}")
 
         elif profile == 'log': # Typically time-history logs
             if parsed_data_obj.totals_df is not None:
                 self.log_totals = self._merge_df(self.log_totals, parsed_data_obj.totals_df)
-            logger.debug(f"  After merge - log_totals shape: {self.log_totals.shape if self.log_totals is not None else 'None'}")
+            logger.info(f"  After merge - log_totals shape: {self.log_totals.shape if self.log_totals is not None else 'None'}")
+            if self.log_totals is not None:
+                logger.info(f"  log_totals has 'Datetime' column: {'Datetime' in self.log_totals.columns}")
 
             if parsed_data_obj.spectral_df is not None:
                 self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
-            logger.debug(f"  After merge - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
+            logger.info(f"  After merge - log_spectral shape: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
 
         elif profile == 'file_list' and parsed_data_obj.parser_type == 'Audio': # Audio parser result
             # Set the path for the audio handler to use later
@@ -200,30 +269,51 @@ class DataManager:
     Manages loading, parsing, and accessing all survey data.
     Acts as the primary interface for retrieving noise data.
     """
-    def __init__(self, source_configurations: Optional[List[Dict[str, Any]]] = None):
+    def __init__(self, source_configurations: Optional[List[Dict[str, Any]]] = None,
+                 use_cache: bool = True,
+                 progress_callback: Optional[Callable[[int, int], None]] = None):
+        """
+        Initialize DataManager.
+
+        Args:
+            source_configurations: List of source configuration dictionaries
+            use_cache: If True, use file-level caching to avoid re-parsing (default: True)
+            progress_callback: Optional callback function(completed, total) for progress updates
+        """
         self._positions_data: Dict[str, PositionData] = {}
         self._position_order: List[str] = []  # Preserve order from config file
         self.parser_factory = NoiseParserFactory() # Uses your refactored factory
+        self.use_cache = use_cache
+        self.progress_callback = progress_callback
 
         if source_configurations:
             self.load_from_configs(source_configurations)
 
-    def load_from_configs(self, source_configs: List[Dict[str, Any]], 
+    def load_from_configs(self, source_configs: List[Dict[str, Any]],
                           return_all_columns_override: Optional[bool] = None):
         """
         Loads and processes data from a list of configuration dictionaries.
         Each dictionary should define a 'position_name' and either
         'file_path' (str) or 'file_paths' (Set[str] or List[str]).
         """
+        # Build a list of all file parsing tasks
+        parse_tasks: List[Tuple[str, str, bool, Optional[str]]] = []  # (file_path, position_name, return_all_cols, parser_hint)
+
         for config in source_configs:
             if not config.get("enabled", True): # Default to enabled if not specified
                 logger.info(f"Skipping disabled source config: {config.get('position_name', 'N/A')}")
                 continue
-            
+
             position_name = config.get("position_name")
             if not position_name:
                 logger.warning(f"Skipping source config with no 'position_name': {config}")
                 continue
+
+            # Ensure position exists in our data structure
+            if position_name not in self._positions_data:
+                self._positions_data[position_name] = PositionData(name=position_name)
+                if position_name not in self._position_order:
+                    self._position_order.append(position_name)
 
             # Determine how 'return_all_columns' is set for this source
             use_return_all_cols = config.get('return_all_columns', False) # Default from config
@@ -235,31 +325,57 @@ class DataManager:
                 file_paths_to_process.append(config["file_path"])
             elif "file_paths" in config and isinstance(config["file_paths"], (list, set)):
                 file_paths_to_process.extend(list(config["file_paths"]))
-            
+
             if not file_paths_to_process:
                 logger.warning(f"No valid 'file_path' or 'file_paths' found for position '{position_name}'. Config: {config}")
                 continue
 
             for path in file_paths_to_process:
-                self.add_source_file(path, position_name,
-                                     parser_type_hint=config.get("parser_type_hint"),
-                                     return_all_columns=use_return_all_cols)
+                parse_tasks.append((path, position_name, use_return_all_cols, config.get("parser_type_hint")))
 
-    def add_source_file(self, file_path: str, position_name: str, 
+        # Process files sequentially
+        if not parse_tasks:
+            logger.warning("No files to process")
+            return
+
+        self._load_files_sequential(parse_tasks)
+
+    def _load_files_sequential(self, parse_tasks: List[Tuple[str, str, bool, Optional[str]]]):
+        """Load files sequentially."""
+        total = len(parse_tasks)
+        for idx, (file_path, position_name, return_all_cols, parser_hint) in enumerate(parse_tasks, 1):
+            self.add_source_file(file_path, position_name,
+                                parser_type_hint=parser_hint,
+                                return_all_columns=return_all_cols)
+            if self.progress_callback:
+                self.progress_callback(idx, total)
+
+    def add_source_file(self, file_path: str, position_name: str,
                         parser_type_hint: Optional[str] = None,
                         return_all_columns: bool = False):
         """
         Parses a single file and adds its data to the specified position.
+        This method is used for sequential processing and backwards compatibility.
         """
         logger.info(f"DataManager: Processing '{file_path}' for position '{position_name}' (AllCols: {return_all_columns}).")
-        
+
         if position_name not in self._positions_data:
             self._positions_data[position_name] = PositionData(name=position_name)
             # Preserve the order from config file
             if position_name not in self._position_order:
                 self._position_order.append(position_name)
-        
+
         position_obj = self._positions_data[position_name]
+
+        # Try cache first if enabled
+        parsed_data_obj = None
+        if self.use_cache:
+            cache = get_parsed_data_cache()
+            parsed_data_obj = cache.get(file_path, return_all_columns)
+            if parsed_data_obj is not None:
+                logger.info(f"Using cached data for: {os.path.basename(file_path)}")
+                position_obj.add_parsed_file_data(parsed_data_obj)
+                return
 
         parser = self.parser_factory.get_parser(file_path) # Factory can use hint if we modify it
         if not parser:
@@ -268,7 +384,7 @@ class DataManager:
             # Store error info in the PositionData's source metadata
             position_obj.source_file_metadata.append({
                 'original_file_path': file_path, 'error': err_msg,
-                'parser_type': 'None', 'data_profile': 'error', 
+                'parser_type': 'None', 'data_profile': 'error',
                 'spectral_data_type': 'none', 'sample_period_seconds': None
             })
             return
@@ -276,13 +392,19 @@ class DataManager:
         try:
             parsed_data_obj = parser.parse(file_path, return_all_columns=return_all_columns)
             position_obj.add_parsed_file_data(parsed_data_obj)
+
+            # Cache the result if enabled and no errors
+            if self.use_cache and 'error' not in parsed_data_obj.metadata:
+                cache = get_parsed_data_cache()
+                cache.put(file_path, parsed_data_obj, return_all_columns)
+
             logger.info(f"Successfully processed and added data from '{file_path}' to '{position_name}'.")
         except Exception as e:
             err_msg = f"Critical error parsing file {file_path} with {parser.__class__.__name__}: {e}"
             logger.error(err_msg, exc_info=True)
             position_obj.source_file_metadata.append({
                 'original_file_path': file_path, 'error': err_msg,
-                'parser_type': parser.__class__.__name__, 'data_profile': 'error', 
+                'parser_type': parser.__class__.__name__, 'data_profile': 'error',
                 'spectral_data_type': 'none', 'sample_period_seconds': None
             })
 

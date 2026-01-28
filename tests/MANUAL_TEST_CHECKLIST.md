@@ -142,11 +142,13 @@
 
 ### 2.5 Arrow Keys (Nudge Tap Line) 🟡 PARTIAL
 - [ ] **Action:** Place tap line, press Right Arrow
-- [ ] **Expected:** Tap line moves to next data point (~5 minutes forward)
+- [ ] **Expected:** Tap line moves to next data point
+- [ ] **Expected:** When the time series is displaying **log** data, the step matches the log cadence (can be sub-second)
+- [ ] **Expected:** When the time series is displaying **overview** data (including when Log View is enabled but zoomed out), the step matches the overview cadence
 - [ ] **Expected:** Summary table updates
 - [ ] **Expected:** If audio is playing, it jumps to new position
 - [ ] **Action:** Press Left Arrow
-- [ ] **Expected:** Tap line moves to previous data point (~5 minutes backward)
+- [ ] **Expected:** Tap line moves to previous data point (matching the currently displayed dataset cadence)
 - [ ] **Test:** Press and hold arrow key - should move continuously
 
 ### 2.6 Ctrl + Arrow Keys (Adjust Region Start) 🟢

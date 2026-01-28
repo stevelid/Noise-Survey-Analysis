@@ -169,36 +169,47 @@ _data_manager_cache = DataManagerCache()
 def _get_cache_key(source_configs):
     """Generate a cache key from source configurations."""
     if not source_configs:
+        logger.debug("_get_cache_key: No source configs provided, returning None")
         return None
     try:
         # Create a stable key from sorted file paths
         key_parts = []
-        for config in sorted(source_configs, key=lambda x: x.get('position_name', '')):
+        logger.debug(f"_get_cache_key: Processing {len(source_configs)} source configs")
+        for idx, config in enumerate(sorted(source_configs, key=lambda x: x.get('position_name', ''))):
             position = config.get('position_name', '')
-            
+            logger.debug(f"  Config {idx}: position='{position}', keys={list(config.keys())}")
+
             # Handle both file_path (singular, from workspace) and file_paths (plural, from selector)
             if isinstance(config.get('file_path'), str):
                 # Single file path (workspace format)
                 paths = [config.get('file_path')]
+                logger.debug(f"    Using single file_path: {paths[0][:80]}...")
             elif 'file_paths' in config:
                 # Multiple file paths (selector format)
                 paths = config.get('file_paths', set())
+                logger.debug(f"    Found file_paths (type: {type(paths).__name__})")
                 if isinstance(paths, set):
                     paths = sorted(list(paths))
                 elif isinstance(paths, list):
                     paths = sorted(paths)
                 else:
                     paths = []
+                logger.debug(f"    After sorting: {len(paths)} paths")
             else:
                 paths = []
-            
-            key_parts.append(f"{position}:{','.join(paths)}")
-        
+                logger.debug(f"    No file_path or file_paths found!")
+
+            # Normalize paths for consistent comparison
+            normalized_paths = [os.path.normpath(os.path.abspath(p)) for p in paths]
+            key_part = f"{position}:{','.join(normalized_paths)}"
+            key_parts.append(key_part)
+            logger.debug(f"    Key part length: {len(key_part)}")
+
         cache_key = '|'.join(key_parts)
-        logger.debug(f"Generated cache key (first 100 chars): {cache_key[:100]}...")
+        logger.info(f"Generated cache key (length: {len(cache_key)}, first 100 chars): {cache_key[:100]}...")
         return cache_key
     except Exception as e:
-        logger.warning(f"Failed to generate cache key: {e}")
+        logger.error(f"Failed to generate cache key: {e}", exc_info=True)
         return None
 
 
@@ -292,21 +303,53 @@ def create_app(doc, config_path=None, state_path=None):
             nonlocal initial_saved_workspace_state
             
             # Check cache for existing DataManager
+            logger.info("=" * 80)
+            logger.info("CACHE LOOKUP STARTING")
+            logger.info("=" * 80)
+
             cache_key = _get_cache_key(source_configs)
-            logger.debug(f"Cache key: {cache_key[:100] if cache_key else None}...")
-            logger.debug(f"Cache currently has {len(_data_manager_cache)} entries")
+
+            logger.info(f"Cache lookup results:")
+            logger.info(f"  Generated cache_key: {'<None>' if cache_key is None else f'{len(cache_key)} chars'}")
+            logger.info(f"  Cache currently has {len(_data_manager_cache)} entries")
+
+            if len(_data_manager_cache) > 0:
+                logger.info(f"  Existing cache keys:")
+                for idx, existing_key in enumerate(_data_manager_cache.keys()):
+                    logger.info(f"    [{idx}] Length: {len(existing_key)}, First 100 chars: {existing_key[:100]}...")
+
             if cache_key:
-                logger.debug(f"Cache keys: {list(_data_manager_cache.keys())[:1] if _data_manager_cache else 'empty'}")
-            
+                cache_match = cache_key in _data_manager_cache
+                logger.info(f"  Cache key match result: {cache_match}")
+                if not cache_match and len(_data_manager_cache) > 0:
+                    # Compare keys to find differences
+                    for existing_key in _data_manager_cache.keys():
+                        if len(cache_key) == len(existing_key):
+                            logger.info(f"  Length matches existing key, comparing characters...")
+                            diff_positions = [i for i in range(len(cache_key)) if cache_key[i] != existing_key[i]]
+                            if len(diff_positions) < 20:  # Only log if small number of differences
+                                logger.info(f"    Character differences at positions: {diff_positions[:10]}")
+                        else:
+                            logger.info(f"  Length mismatch: generated={len(cache_key)}, existing={len(existing_key)}")
+
             if cache_key and cache_key in _data_manager_cache:
-                logger.info(f"✓ Using cached DataManager for {len(source_configs)} source(s). Skipping file parsing.")
+                logger.info("✓✓✓ CACHE HIT! Using cached DataManager ✓✓✓")
+                logger.info("=" * 80)
                 app_data = _data_manager_cache[cache_key]
             else:
-                logger.info(f"Creating new DataManager and parsing {len(source_configs)} source(s)...")
+                logger.info("✗✗✗ CACHE MISS! Creating new DataManager ✗✗✗")
+                if cache_key is None:
+                    logger.warning("  Reason: cache_key is None")
+                elif len(_data_manager_cache) == 0:
+                    logger.info("  Reason: Cache is empty (first run)")
+                else:
+                    logger.warning("  Reason: cache_key doesn't match any existing keys")
+                logger.info("=" * 80)
+
                 app_data = DataManager(source_configurations=source_configs)
                 if cache_key:
                     _data_manager_cache[cache_key] = app_data
-                    logger.info(f"Cached DataManager with key: {cache_key[:50]}...")
+                    logger.info(f"✓ Stored DataManager in cache with key length: {len(cache_key)}")
             
             audio_processor = AudioDataProcessor()
             audio_processor.anchor_audio_files(app_data)
@@ -423,6 +466,15 @@ if doc.session_context:
 
     if state_file_path is None:
         state_file_path = _extract_argv_argument('--state', '--workspace', '--savedworkspace')
+    
+    # Handle positional argument from bokeh serve --args "path/to/config.json"
+    if config_file_path is None and len(sys.argv) > 1:
+        # Check if first argument after script name looks like a config file path
+        potential_config = sys.argv[1]
+        if potential_config and not potential_config.startswith('-'):
+            if os.path.exists(potential_config) or potential_config.endswith('.json'):
+                config_file_path = potential_config
+                logger.info(f"Using positional argument as config path: {config_file_path}")
 
     create_app(doc, config_path=config_file_path, state_path=state_file_path)
 else:

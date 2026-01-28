@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m noise_survey_analysis:*)",
+      "Bash(python:*)",
+      "Bash(bokeh serve:*)",
+      "Bash(claude mcp:*)",
+      "Bash(playwright_navigate http://localhost:5006/noise_survey_analysis)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_close",
+      "Bash(taskkill:*)",
+      "Bash(powershell -Command \"Get-Process | Where-Object {$_ProcessName -like ''*bokeh*'' -or $_ProcessName -like ''*python*'' -and $_CommandLine -like ''*bokeh*''} | Stop-Process -Force\")",
+      "Bash(timeout:*)",
+      "Bash(mcp-client playwright screenshot:*)",
+      "Bash(dir:*)",
+      "Bash(del \"%TEMP%\\\\noise_survey_datamanager_cache.pkl\")",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(tee:*)",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__take_snapshot",
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__chrome-devtools__click",
+      "mcp__chrome-devtools__new_page",
+      "mcp__chrome-devtools__evaluate_script",
+      "Bash(del \"C:\\\\Users\\\\steve\\\\.claude\\\\skills\\\\load-job.json\")",
+      "Bash(powershell \"Get-ChildItem ''G:\\\\Shared drives\\\\Venta\\\\Jobs'' | Where-Object { $_Name -match ''^62'' } | Select-Object -First 20 Name\")",
+      "Bash(powershell \"Get-ChildItem ''G:\\\\Shared drives\\\\Venta\\\\Jobs'' -Directory | Where-Object { $_Name -like ''62*'' } | Select-Object -First 10 Name\")",
+      "mcp__chrome-devtools__fill",
+      "Bash(powershell -Command \"Get-Content ''C:\\\\Users\\\\steve\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\G--My-Drive-Programing-Noise-Survey-Analysis\\\\tasks\\\\bec53cb.output'' | Select-Object -Last 20\")"
+    ]
+  }
+}

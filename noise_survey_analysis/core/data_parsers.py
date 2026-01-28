@@ -426,12 +426,9 @@ class NoiseSentryFileParser(AbstractNoiseParser):
         except FileNotFoundError:
             parsed_data_obj.metadata['error'] = "File not found"
             return parsed_data_obj
-        except Exception as e:
-            parsed_data_obj.metadata['error'] = str(e)
-            logger.error(f"SentryParser: Error parsing {file_path}: {e}", exc_info=True)
-            return parsed_data_obj
 
 class SvanFileParser(AbstractNoiseParser):
+
     CLEAN_PAT = re.compile(r'\s*\((?:SR|TH|Lin|Fast|Slow|SPL)\)\s*|\s*\[dB\]\s*|\s*Histogram\s*', flags=re.IGNORECASE)
     FREQ_SUFFIX_PAT = re.compile(r'(\d+(?:\.\d+)?)(k?)_?Hz$', flags=re.IGNORECASE)
 
@@ -483,7 +480,8 @@ class SvanFileParser(AbstractNoiseParser):
 
     def _get_data_profile_heuristic(self, lines: List[str], file_path: str) -> str:
         filename_upper = os.path.basename(file_path).upper()
-        if '_LOG.CSV' in filename_upper: return 'log'
+        # Check for log files: _LOG.CSV or _LOG_*.CSV (e.g., _log_1s.csv, _log_10s.csv)
+        if '_LOG.CSV' in filename_upper or '_LOG_' in filename_upper: return 'log'
         if '_SUMMARY.CSV' in filename_upper: return 'overview'
         for line in lines[:5]:
             if '(TH)' in line.upper(): return 'log'
@@ -579,36 +577,116 @@ class SvanFileParser(AbstractNoiseParser):
                 return parsed_data_obj
 
             # Continue with CSV parsing logic
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f: lines = f.readlines()
-            if not lines: parsed_data_obj.metadata['error'] = "File empty"; return parsed_data_obj
-
-            parsed_data_obj.data_profile = self._get_data_profile_heuristic(lines, file_path)
-            
+            # First pass: find headers without loading entire file into memory
             h_indices = [-1,-1,-1]
-            for i, line in enumerate(lines):
-                if 'date & time' in line.lower() or 'start date & time' in line.lower():
-                    if i > 1: h_indices = [i-2, i-1, i]; break
+            header_lines = []
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for i, line in enumerate(f):
+                    if i < 100:  # Keep first 100 lines for profile heuristic
+                        header_lines.append(line)
+                    if 'date & time' in line.lower() or 'start date & time' in line.lower():
+                        if i > 1:
+                            h_indices = [i-2, i-1, i]
+                            # Ensure we have the header lines
+                            if len(header_lines) <= i:
+                                # Need to re-read to get these lines
+                                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f2:
+                                    header_lines = [f2.readline() for _ in range(i+1)]
+                            break
+                    if i > 10000:  # Safety: don't search forever
+                        break
+
+            if not header_lines:
+                parsed_data_obj.metadata['error'] = "File empty"; return parsed_data_obj
+
+            parsed_data_obj.data_profile = self._get_data_profile_heuristic(header_lines, file_path)
+
             if h_indices[2] == -1:
+                try:
+                    simple_header_idx = -1
+                    for i, line in enumerate(header_lines[:50]):
+                        lowered = line.lower()
+                        if 'start time' in lowered and 'laeq' in lowered:
+                            simple_header_idx = i
+                            break
+
+                    if simple_header_idx != -1:
+                        # Count non-blank lines before the header to adjust for pandas skipping blank lines by default
+                        non_blank_count = sum(1 for i, line in enumerate(header_lines[:simple_header_idx]) if line.strip())
+                        df_simple = pd.read_csv(
+                            file_path,
+                            header=non_blank_count,
+                            sep=',',
+                            na_filter=False,
+                            on_bad_lines='warn',
+                            low_memory=False,
+                            encoding='utf-8',
+                            encoding_errors='ignore'
+                        )
+                        df_simple = df_simple.replace('', np.nan).dropna(how='all')
+                        if df_simple.empty:
+                            parsed_data_obj.metadata['error'] = "No data rows"; return parsed_data_obj
+
+                        rename_map = {}
+                        for col in df_simple.columns:
+                            col_str = str(col).strip()
+                            lower = col_str.lower()
+                            if lower == 'start time':
+                                rename_map[col] = 'Datetime'
+                            elif lower == 'la10':
+                                rename_map[col] = 'LAF10'
+                            elif lower == 'la90':
+                                rename_map[col] = 'LAF90'
+                            else:
+                                rename_map[col] = col_str
+                        df_simple = df_simple.rename(columns=rename_map)
+
+                        if 'Datetime' not in df_simple.columns:
+                            parsed_data_obj.metadata['error'] = "Datetime column not established"; return parsed_data_obj
+
+                        df_simple = self._normalize_datetime_column(df_simple, dt_col_names=['Datetime'])
+                        if df_simple.empty:
+                            parsed_data_obj.metadata['error'] = "All rows failed Datetime"; return parsed_data_obj
+
+                        df_simple = self._safe_convert_to_float(df_simple)
+                        parsed_data_obj.sample_period_seconds = self._calculate_sample_period(df_simple)
+                        parsed_data_obj.spectral_data_type = 'none'
+
+                        available_cols = list(df_simple.columns)
+                        parsed_data_obj.totals_df = self._filter_df_columns(df_simple, 'totals', available_cols, return_all_columns)
+                        return parsed_data_obj
+                except Exception as e:
+                    logger.warning(f"Failed to parse simple SVAN log format for {file_path}: {e}")
+
                 parsed_data_obj.metadata['error'] = "Svan datetime header not found"; return parsed_data_obj
 
             raw_headers = []
-            temp_headers_parts = [pd.read_csv(StringIO(lines[idx]), header=None, dtype=str).iloc[0].fillna('').tolist() if idx >=0 else [] for idx in h_indices]
+            temp_headers_parts = [pd.read_csv(StringIO(header_lines[idx]), header=None, dtype=str).iloc[0].fillna('').tolist() if idx >=0 and idx < len(header_lines) else [] for idx in h_indices]
             max_h_len = max(len(h) for h in temp_headers_parts) if temp_headers_parts else 0
             for i in range(max_h_len):
                 parts = [h[i].strip() if i < len(h) else '' for h in temp_headers_parts]
                 raw_headers.append(re.sub(r'_+', '_', "_".join(p for p in parts if p)).strip('_') or f"Unnamed_{i}")
-            
+
+            # Check trailing unnamed columns by sampling data rows
             while raw_headers and raw_headers[-1].startswith("Unnamed_"):
                 col_idx_to_check = len(raw_headers) -1
                 is_col_empty_in_data = True
-                for data_line_idx in range(h_indices[2] + 1, min(h_indices[2] + 11, len(lines))):
-                    data_parts = lines[data_line_idx].strip().split(',')
-                    if col_idx_to_check < len(data_parts) and data_parts[col_idx_to_check].strip():
-                        is_col_empty_in_data = False; break
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line_idx, line in enumerate(f):
+                        if h_indices[2] < line_idx <= h_indices[2] + 10:
+                            data_parts = line.strip().split(',')
+                            if col_idx_to_check < len(data_parts) and data_parts[col_idx_to_check].strip():
+                                is_col_empty_in_data = False
+                                break
+                        elif line_idx > h_indices[2] + 10:
+                            break
                 if is_col_empty_in_data: raw_headers.pop()
                 else: break
-            
-            df_full_raw = pd.read_csv(StringIO("".join(lines[h_indices[2]+1:])), header=None, names=raw_headers, usecols=range(len(raw_headers)), sep=',', na_filter=False, on_bad_lines='warn', low_memory=False)
+
+            # Read CSV directly from file, skipping header rows
+            df_full_raw = pd.read_csv(file_path, header=None, names=raw_headers, usecols=range(len(raw_headers)),
+                                     sep=',', na_filter=False, on_bad_lines='warn', low_memory=False,
+                                     skiprows=h_indices[2]+1, encoding='utf-8', encoding_errors='ignore')
             df_full_raw = df_full_raw.replace('', np.nan).dropna(how='all')
             if df_full_raw.empty: 
                 parsed_data_obj.metadata['error'] = "No data rows"; return parsed_data_obj

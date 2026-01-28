@@ -62,7 +62,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         render() {
-            this.source.change.emit();
+            if (this.source && this.source.change && typeof this.source.change.emit === 'function') {
+                this.source.change.emit();
+            }
         }
 
         renderLabel(timestamp, text) {
@@ -186,7 +188,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             let rendererAdded = false;
             if (typeof this.model?.add_glyph === 'function') {
                 try {
-                    this.model.add_glyph(renderer);
+                    // add_glyph expects a Glyph object (e.g., Segment), not a GlyphRenderer
+                    // It returns a GlyphRenderer which we should use instead of our manually created one
+                    const addedRenderer = this.model.add_glyph(glyph, source);
+                    if (addedRenderer) {
+                        // Use the renderer returned by add_glyph
+                        this.markerOverlay = { source, renderer: addedRenderer };
+                        return this.markerOverlay;
+                    }
                     rendererAdded = true;
                 } catch (error) {
                     console.warn('[Chart._ensureMarkerOverlay] add_glyph failed, falling back to manual renderer registration.', error);
@@ -340,7 +349,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             let rendererAdded = false;
             if (typeof this.model?.add_glyph === 'function') {
                 try {
-                    this.model.add_glyph(renderer);
+                    const addedRenderer = this.model.add_glyph(glyph, source);
+                    if (addedRenderer) {
+                        this.regionOverlay = { source, renderer: addedRenderer };
+                        return this.regionOverlay;
+                    }
                     rendererAdded = true;
                 } catch (error) {
                     console.warn('[Chart._ensureRegionOverlay] add_glyph failed, falling back to manual renderer registration.', error);
@@ -438,6 +451,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.activeData = {};
             this.lastDisplayDetails = { reason: '' };
             this.displayName = this.positionId;
+            this._lastDataHash = null; // For change detection
+        }
+
+        _computeDataHash(data) {
+            if (!data || !data.Datetime) return null;
+            // Fast hash using first, last, and length of Datetime array
+            const dt = data.Datetime;
+            const len = dt.length;
+            if (len === 0) return 'empty';
+            return `${len}:${dt[0]}:${dt[len - 1]}`;
         }
 
         setDisplayName(name) {
@@ -449,14 +472,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         update(activeLineData, displayDetails) {
-            this.activeData = activeLineData;
-            this.source.data = activeLineData;
             this.lastDisplayDetails = displayDetails || { reason: '' };
-            // The 'reason' now contains the full suffix, including leading spaces/parentheses
             const suffix = this.lastDisplayDetails.reason || '';
             const baseName = this.displayName || this.positionId;
             this.model.title.text = `${baseName} - Time History${suffix}`;
-            this.render();
+
+            // Skip expensive source.data assignment if data hasn't changed
+            const newHash = this._computeDataHash(activeLineData);
+            if (newHash !== this._lastDataHash) {
+                this._lastDataHash = newHash;
+                this.activeData = activeLineData;
+                this.source.data = activeLineData;
+                this.render();
+            }
         }
 
         getLabelText(timestamp) {
@@ -494,6 +522,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.hoverDivModel = hoverDivModel;
             this.lastDisplayDetails = { reason: '' };
             this.displayName = this.positionId;
+            this._lastGlyphX = null; // For change detection
+        }
+
+        _hasGlyphChanged(replacement) {
+            if (!replacement) return false;
+            const newX = replacement.x?.[0];
+            if (newX === this._lastGlyphX) return false;
+            this._lastGlyphX = newX;
+            return true;
         }
 
         setDisplayName(name) {
@@ -506,13 +543,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         update(activeSpectralData, displayDetails, selectedParameter) {
             this.lastDisplayDetails = displayDetails || { reason: '' };
-            // The 'reason' now contains the full suffix, including leading spaces/parentheses
             const suffix = this.lastDisplayDetails.reason || '';
             const baseName = this.displayName || this.positionId;
             this.model.title.text = `${baseName} - ${selectedParameter} Spectrogram${suffix}`;
 
             const replacement = activeSpectralData?.source_replacement;
             if (replacement && this.imageRenderer) {
+                // Skip expensive updates if glyph position hasn't changed
+                if (!this._hasGlyphChanged(replacement)) {
+                    return;
+                }
+
                 const glyph = this.imageRenderer.glyph;
 
                 // The image data MUST be updated first, using our special function.
@@ -524,26 +565,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
                 // Handle frequency slicing by updating plot range but keeping original glyph positioning
                 if (replacement.y_range_start !== undefined && replacement.y_range_end !== undefined) {
-
-                    // CRITICAL: Keep original glyph positioning to match image data layout
-                    glyph.y = replacement.y[0];  // Original image position (matches data layout)
-                    glyph.dh = replacement.dh[0]; // Original image height (matches data layout)
-
-                    // Let the plot range crop the view to show only visible frequencies
+                    glyph.y = replacement.y[0];
+                    glyph.dh = replacement.dh[0];
                     this.model.y_range.start = replacement.y_range_start;
                     this.model.y_range.end = replacement.y_range_end;
                 } else {
-                    // Fallback to original glyph positioning if no frequency slicing
                     glyph.y = replacement.y[0];
                     glyph.dh = replacement.dh[0];
                 }
 
-                // Update the y-axis ticks to only show labels for the visible range (if frequency slicing was applied)
+                // Update the y-axis ticks to only show labels for the visible range
                 if (replacement.visible_freq_indices && replacement.visible_frequency_labels && this.model.yaxis && this.model.yaxis.ticker) {
                     this.model.yaxis.ticker.ticks = replacement.visible_freq_indices;
-                    this.model.yaxis.major_label_overrides = {}; // Clear old labels first
+                    this.model.yaxis.major_label_overrides = {};
                     replacement.visible_freq_indices.forEach((tickIndex, i) => {
-                        // Recreate label from label string (e.g., "5000 Hz" -> "5000")
                         const labelText = replacement.visible_frequency_labels[i].split(' ')[0];
                         this.model.yaxis.major_label_overrides[tickIndex] = labelText;
                     });

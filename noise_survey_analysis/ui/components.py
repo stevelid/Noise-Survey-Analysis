@@ -9,6 +9,7 @@ from bokeh.models import (
     ColumnDataSource,
     DatetimeTickFormatter,
     DatetimeTicker,
+    FixedTicker,
     CustomJSTickFormatter,
     FactorRange,
     Range1d,
@@ -1241,6 +1242,8 @@ class TimeSeriesComponent:
             "active_drag": pan_tool,
             "active_scroll": "xwheel_zoom",
             "name": f"figure_{self.name_id}",
+            "min_border_top": 35,
+            "min_border_bottom": 50,
         }
 
         # Set y-range if specified in config
@@ -1447,6 +1450,8 @@ class SpectrogramComponent:
             active_drag=pan_tool,
             active_scroll=self.chart_settings['active_scroll'],
             name=f"figure_{self.name_id}",
+            min_border_top=35,
+            min_border_bottom=50,
         )
         p.xaxis.formatter = CustomJSTickFormatter(args={"fig": p}, code="""
             const d = new Date(tick);
@@ -1468,7 +1473,7 @@ class SpectrogramComponent:
         """)
         p.xaxis.ticker = DatetimeTicker(desired_num_ticks=10) # Fewer ticks might be cleaner
         p.yaxis.axis_label = "Frequency (Hz)"
-        #p.xaxis.axis_label = "Time"
+        p.xaxis.axis_label = "Time"
         p.xgrid.visible = False
         p.ygrid.visible = False
         p.visible = False
@@ -1526,7 +1531,7 @@ class SpectrogramComponent:
             self.figure.y_range.end = n_freqs - 0.5
         
         # Update Y-axis ticks and labels to show only visible frequencies
-        self.figure.yaxis.ticker = visible_freq_indices
+        self.figure.yaxis.ticker = FixedTicker(ticks=visible_freq_indices)
         self.figure.yaxis.major_label_overrides = visible_freq_labels
         
         # Update or create image glyph

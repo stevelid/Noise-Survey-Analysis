@@ -396,7 +396,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function renderAllVisuals(state, dataCache) {
         // This function is now deprecated. All rendering should go through _dispatchAction.
         // It's kept for backward compatibility during refactoring, but will be removed.
-        console.warn("[DEBUG] renderAllVisuals() called. This function is deprecated. Use app.state.dispatchAction instead.");
         renderPrimaryCharts(state, dataCache);
         renderOverlays(state, dataCache);
         renderFrequencyBar(state, dataCache);

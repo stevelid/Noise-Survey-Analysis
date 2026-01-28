@@ -104,3 +104,8 @@ example files/
 
 # Other
 repomix-output.xml
+
+# Temporary Claude files
+tmpclaude-*-cwd
+nul
+server_output*.txt
