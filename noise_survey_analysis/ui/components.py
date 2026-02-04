@@ -1815,11 +1815,21 @@ class ControlsComponent:
             styles={"display": "flex", "align-items": "center", "padding-left": "8px"}
         )
 
+        # Audio file info display (filename, position in file, file start time)
+        audio_file_info_display = Div(
+            text="",
+            width=350,
+            height=30,
+            name="global_audio_file_info_display",
+            styles={"display": "flex", "align-items": "center", "padding-left": "8px", "font-size": "10px", "color": "#555"}
+        )
+
         controls_layout = Row(
             play_toggle,
             playback_rate_button,
             volume_boost_button,
             active_position_display,
+            audio_file_info_display,
             name="global_audio_controls",
             styles={
                 "gap": "4px",
@@ -1836,7 +1846,8 @@ class ControlsComponent:
             'play_toggle': play_toggle,
             'playback_rate_button': playback_rate_button,
             'volume_boost_button': volume_boost_button,
-            'active_position_display': active_position_display
+            'active_position_display': active_position_display,
+            'audio_file_info_display': audio_file_info_display
         }
 
     def add_parameter_selector(self, available_params: List[str]):

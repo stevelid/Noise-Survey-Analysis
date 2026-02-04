@@ -81,7 +81,8 @@ class DashBuilder:
             'current_file_duration': [0], 
             'current_file_start_time': [0],
             'active_position_id': [None],
-            'volume_boost': [False]
+            'volume_boost': [False],
+            'current_file_name': ['']
             })
         
         # These will be populated by the build process
@@ -92,7 +93,8 @@ class DashBuilder:
 
     def build_layout(self, doc, app_data: DataManager, chart_settings: dict,
                      source_configs=None,
-                     saved_workspace_state=None):
+                     saved_workspace_state=None,
+                     job_number=None):
         """
         The main public method that constructs the entire application layout.
         This is the primary entry point for this class.
@@ -101,6 +103,9 @@ class DashBuilder:
             doc: The Bokeh document to attach the final layout to.
             app_data: The complete, prepared data object from the DataManager.
             chart_settings: The global dictionary of chart settings.
+            source_configs: List of source configuration dictionaries.
+            saved_workspace_state: Optional saved workspace state to restore.
+            job_number: Optional job number/identifier to display in the dashboard title.
         """
         print("INFO: DashboardBuilder: Starting UI construction...")
 
@@ -109,6 +114,7 @@ class DashBuilder:
 
         self.prepared_glyph_data = prepared_glyph_data
         self.source_configs = source_configs or []
+        self.job_number = job_number
         self.position_display_titles = self._extract_position_display_titles(self.source_configs)
         self.saved_workspace_state = saved_workspace_state
         self._create_components(app_data, prepared_glyph_data, available_params, chart_settings)
@@ -514,6 +520,7 @@ class DashBuilder:
                 'freq_table_freq_range_hz': CHART_SETTINGS.get('freq_table_freq_range_hz'),
             },
             'sourceConfigs': getattr(self, 'source_configs', []),
+            'jobNumber': getattr(self, 'job_number', None),
             'positionDisplayTitles': getattr(self, 'position_display_titles', {}),
             'savedWorkspaceState': getattr(self, 'saved_workspace_state', None),
             'uiPositionElements': {},

@@ -723,6 +723,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (utils?.invalidateMetricsCache) {
                 utils.invalidateMetricsCache();
             }
+            // Pre-compute metrics for all imported regions so spectrum data is available
+            if (typeof utils?.getRegionMetrics === 'function') {
+                const state = app.store.getState();
+                const models = app.registry?.models;
+                const dataCache = app.dataCache;
+                const regionsState = state?.regions;
+                if (regionsState?.allIds && regionsState?.byId) {
+                    regionsState.allIds.forEach(id => {
+                        const region = regionsState.byId[id];
+                        if (region) {
+                            utils.getRegionMetrics(region, state, dataCache, models);
+                        }
+                    });
+                }
+            }
             return true;
         } catch (error) {
             console.error('[Session] Failed to import regions from JSON:', error);
@@ -856,6 +871,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.store.dispatch(app.actions.rehydrateState(nextState));
         if (app.regions?.invalidateMetricsCache) {
             app.regions.invalidateMetricsCache();
+        }
+        // Pre-compute metrics for all regions so spectrum data is recalculated from actual data
+        const utils = app.features?.regions?.utils;
+        if (typeof utils?.getRegionMetrics === 'function') {
+            const state = app.store.getState();
+            const models = app.registry?.models;
+            const dataCache = app.dataCache;
+            const regionsState = state?.regions;
+            if (regionsState?.allIds && regionsState?.byId) {
+                regionsState.allIds.forEach(id => {
+                    const region = regionsState.byId[id];
+                    if (region) {
+                        utils.getRegionMetrics(region, state, dataCache, models);
+                    }
+                });
+            }
         }
         return true;
     }

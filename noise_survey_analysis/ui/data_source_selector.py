@@ -607,10 +607,12 @@ class DataSourceSelector:
             # The base path for the config is the common parent of all included files.
             config_base_path = self._find_common_parent_directory(file_paths) or self.current_job_directory or os.getcwd()
 
+            job_num_str = self.job_number_input.value.strip() or 'custom_selection'
             config_data = {
                 "version": "1.3",
                 "created_at": datetime.now().isoformat(),
                 "config_base_path": config_base_path.replace('\\', '/'),
+                "job_number": job_num_str,
                 "sources": []
             }
 

@@ -346,21 +346,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
          * data view (zoom level, parameter, log/overview) changes.
          */
     function renderPrimaryCharts(state, dataCache, displayDetailsByPosition = {}) {
-        const { controllers } = app.registry;
+        const { controllers, models } = app.registry;
         if (!controllers?.positions) return;
 
         const safeDisplayDetails = displayDetailsByPosition || {};
         const viewState = state?.view || {};
         const displayTitles = viewState.positionDisplayTitles || {};
+        const jobNumber = models?.jobNumber;
 
         for (const posId in controllers.positions) {
             const controller = controllers.positions[posId];
             const tsChartName = `figure_${posId}_timeseries`;
             const specChartName = `figure_${posId}_spectrogram`;
             const positionDisplayDetails = safeDisplayDetails[posId] || {};
-            const displayName = typeof displayTitles[posId] === 'string' && displayTitles[posId].trim()
+            const rawDisplayName = typeof displayTitles[posId] === 'string' && displayTitles[posId].trim()
                 ? displayTitles[posId]
                 : posId;
+            const displayName = jobNumber ? `${jobNumber} | ${rawDisplayName}` : rawDisplayName;
 
             if (typeof controller?.setDisplayName === 'function') {
                 controller.setDisplayName(displayName);
@@ -678,6 +680,42 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     globalAudioControls.active_position_display.text = displayText;
                 }
             }
+
+            // Update Audio File Info Display
+            if (globalAudioControls.audio_file_info_display) {
+                let fileInfoText = "";
+                if (isPlaying && state.audio.currentFileName) {
+                    const fileName = state.audio.currentFileName;
+                    const currentTimeMs = state.audio.currentTime || 0;
+                    const fileStartTimeMs = state.audio.currentFileStartTime || 0;
+                    
+                    // Calculate position within file in seconds
+                    const positionInFileSec = Math.max(0, (currentTimeMs - fileStartTimeMs) / 1000);
+                    const posHours = Math.floor(positionInFileSec / 3600);
+                    const posMinutes = Math.floor((positionInFileSec % 3600) / 60);
+                    const posSeconds = Math.floor(positionInFileSec % 60);
+                    const positionFormatted = `${String(posHours).padStart(2, '0')}:${String(posMinutes).padStart(2, '0')}:${String(posSeconds).padStart(2, '0')}`;
+                    
+                    // Format file start time as HH:MM:SS DD:MM:YY
+                    const fileStartDate = new Date(fileStartTimeMs);
+                    const startHours = String(fileStartDate.getHours()).padStart(2, '0');
+                    const startMinutes = String(fileStartDate.getMinutes()).padStart(2, '0');
+                    const startSeconds = String(fileStartDate.getSeconds()).padStart(2, '0');
+                    const startDay = String(fileStartDate.getDate()).padStart(2, '0');
+                    const startMonth = String(fileStartDate.getMonth() + 1).padStart(2, '0');
+                    const startYear = String(fileStartDate.getFullYear()).slice(-2);
+                    const startTimeFormatted = `${startHours}:${startMinutes}:${startSeconds} ${startDay}/${startMonth}/${startYear}`;
+                    
+                    fileInfoText = `<span style='font-size: 10px; color: #555;'>` +
+                        `<b>${fileName}</b> | ` +
+                        `${positionFormatted} | ` +
+                        `Start: ${startTimeFormatted}` +
+                        `</span>`;
+                }
+                if (globalAudioControls.audio_file_info_display.text !== fileInfoText) {
+                    globalAudioControls.audio_file_info_display.text = fileInfoText;
+                }
+            }
         }
         const isChartVisible = chartName => {
             if (!chartName) {
@@ -689,6 +727,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return true;
         };
 
+        const jobNumber = models.jobNumber;
+
         availablePositions.forEach(pos => {
             const controller = controllers.positions[pos];
             const positionControls = models.positionControls?.[pos];
@@ -696,9 +736,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const timeSeriesChartName = `figure_${pos}_timeseries`;
             const spectrogramChartName = `figure_${pos}_spectrogram`;
             const shouldShowControls = isChartVisible(timeSeriesChartName) || isChartVisible(spectrogramChartName);
-            const displayName = typeof displayTitles[pos] === 'string' && displayTitles[pos].trim()
+            const rawDisplayName = typeof displayTitles[pos] === 'string' && displayTitles[pos].trim()
                 ? displayTitles[pos]
                 : pos;
+            const displayName = jobNumber ? `${jobNumber} | ${rawDisplayName}` : rawDisplayName;
 
             if (positionControls?.layout && positionControls.layout.visible !== shouldShowControls) {
                 positionControls.layout.visible = shouldShowControls;

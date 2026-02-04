@@ -14,7 +14,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         isPlaying: false,
         activePositionId: null,
         playbackRate: 1.0,
-        volumeBoost: false
+        volumeBoost: false,
+        currentTime: 0,
+        currentFileStartTime: 0,
+        currentFileDuration: 0,
+        currentFileName: ''
     };
 
     function audioReducer(state = initialAudioState, action) {
@@ -25,7 +29,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     isPlaying: action.payload?.status?.is_playing?.[0] ?? state.isPlaying,
                     activePositionId: action.payload?.status?.active_position_id?.[0] ?? state.activePositionId,
                     playbackRate: action.payload?.status?.playback_rate?.[0] ?? state.playbackRate,
-                    volumeBoost: action.payload?.status?.volume_boost?.[0] ?? state.volumeBoost
+                    volumeBoost: action.payload?.status?.volume_boost?.[0] ?? state.volumeBoost,
+                    currentTime: action.payload?.status?.current_time?.[0] ?? state.currentTime,
+                    currentFileStartTime: action.payload?.status?.current_file_start_time?.[0] ?? state.currentFileStartTime,
+                    currentFileDuration: action.payload?.status?.current_file_duration?.[0] ?? state.currentFileDuration,
+                    currentFileName: action.payload?.status?.current_file_name?.[0] ?? state.currentFileName
                 };
 
             case actionTypes.AUDIO_PLAY_PAUSE_TOGGLE: {

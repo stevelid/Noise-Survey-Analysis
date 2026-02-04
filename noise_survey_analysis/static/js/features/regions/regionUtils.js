@@ -308,8 +308,8 @@ function calcLAeq(values) {
 
         const selectedParam = state?.view?.selectedParameter;
         const prepared = models?.preparedGlyphData?.[region.positionId];
-        const logSpectral = prepared?.log?.prepared_params?.[selectedParam];
-        const overviewSpectral = prepared?.overview?.prepared_params?.[selectedParam];
+        const logSpectral = prepared?.log?.prepared_params?.['LZeq'];
+        const overviewSpectral = prepared?.overview?.prepared_params?.['LZeq'];
 
         let spectrumSource = null;
         let spectrum = { labels: [], values: [] };

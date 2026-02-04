@@ -119,6 +119,12 @@ class AppCallbacks:
         current_file_duration = self.audio_handler.current_file_duration if self.audio_handler.current_file_duration is not None else 0
         current_file_start_time_dt = self.audio_handler.media_start_time
         current_file_start_time_ms = int(current_file_start_time_dt.timestamp() * 1000) if current_file_start_time_dt else 0
+        
+        # Get current file name (just the basename)
+        import os
+        current_file_name = ''
+        if self.audio_handler.current_file:
+            current_file_name = os.path.basename(self.audio_handler.current_file)
 
         # Patch the ColumnDataSource with all fields expected by JS
         self.audio_status_source.patch({
@@ -128,7 +134,8 @@ class AppCallbacks:
             'current_file_duration': [(0, current_file_duration)],
             'current_file_start_time': [(0, current_file_start_time_ms)],
             'active_position_id': [(0, current_position_id)],
-            'volume_boost': [(0, boost_active)]
+            'volume_boost': [(0, boost_active)],
+            'current_file_name': [(0, current_file_name)]
         })
 
     def _start_periodic_update(self):

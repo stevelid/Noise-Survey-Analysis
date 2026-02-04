@@ -32,23 +32,27 @@ def generate_static_html(config_path: str, resources: str = "CDN") -> Optional[P
         logger.info(f"--- Generating static HTML from config: {config_path} ---")
 
         # Load config and prepare sources once.
-        loaded_filename, source_configs = load_config_and_prepare_sources(config_path=config_path)
+        loaded_filename, source_configs, job_number = load_config_and_prepare_sources(config_path=config_path)
         if source_configs is None:
             logger.error("Could not load source configurations. Aborting static generation.")
             return None
 
-        # Determine output filename from config path
-        config_filename = Path(config_path).name
-        job_number_match = re.search(r"(\d+)", config_filename)
-        if job_number_match:
-            job_number = job_number_match.group(1)
+        # Determine output filename from config path or job_number
+        if job_number:
             output_filename = f"{job_number}_survey_dashboard.html"
         else:
-            # Fallback to the name specified inside the config file, or a default.
-            output_filename = loaded_filename or "default_dashboard.html"
-            logger.warning(
-                f"Could not find job number in '{config_filename}'. Falling back to filename: {output_filename}"
-            )
+            # Try to extract from config filename
+            config_filename = Path(config_path).name
+            job_number_match = re.search(r"(\d+)", config_filename)
+            if job_number_match:
+                job_number = job_number_match.group(1)
+                output_filename = f"{job_number}_survey_dashboard.html"
+            else:
+                # Fallback to the name specified inside the config file, or a default.
+                output_filename = loaded_filename or "default_dashboard.html"
+                logger.warning(
+                    f"Could not find job number in '{config_filename}'. Falling back to filename: {output_filename}"
+                )
 
         # The output directory is the same as the config file's directory.
         output_dir = Path(config_path).parent
@@ -65,7 +69,7 @@ def generate_static_html(config_path: str, resources: str = "CDN") -> Optional[P
 
         # 3. Create and build document
         static_doc = Document()
-        dash_builder.build_layout(static_doc, app_data, CHART_SETTINGS)
+        dash_builder.build_layout(static_doc, app_data, CHART_SETTINGS, source_configs=source_configs, job_number=job_number)
 
         # 4. Save the document using file_html (works under bokeh serve and CLI)
         try:

@@ -394,12 +394,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const isMarkerKey = normalizedKey === 'm';
         const isRegionKey = normalizedKey === 'r';
         const isArrowKey = rawKey === 'ArrowLeft' || rawKey === 'ArrowRight';
+        const isDeleteKey = rawKey === 'Delete' || rawKey === 'Backspace';
 
-        if (!(isSpace || isEscape || isMarkerKey || isRegionKey || isArrowKey)) {
+        if (!(isSpace || isEscape || isMarkerKey || isRegionKey || isArrowKey || isDeleteKey)) {
             return;
         }
 
-        if (isSpace || isEscape || isMarkerKey || isRegionKey || isArrowKey) {
+        if (isSpace || isEscape || isMarkerKey || isRegionKey || isArrowKey || isDeleteKey) {
             e.preventDefault();
         }
 

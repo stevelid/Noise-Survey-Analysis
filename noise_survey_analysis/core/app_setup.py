@@ -47,12 +47,13 @@ def load_config_and_prepare_sources(config_path='config.json'):
             config = json.load(f)
     except FileNotFoundError:
         logger.error(f"Configuration file not found at {config_full_path}")
-        return None, None
+        return None, None, None
     except json.JSONDecodeError:
         logger.error(f"Error decoding JSON from {config_full_path}")
-        return None, None
+        return None, None, None
 
     output_filename = config.get("output_filename", "default_dashboard.html")
+    job_number = config.get("job_number")
     
     source_configurations = []
     
@@ -63,7 +64,7 @@ def load_config_and_prepare_sources(config_path='config.json'):
         logger.info("Detected workspace file format with 'sourceConfigs'. Using directly.")
         # Filter to only enabled configs
         source_configurations = [sc for sc in source_configs_list if sc.get("enabled", True)]
-        return output_filename, source_configurations
+        return output_filename, source_configurations, job_number
     
     # Determine the base path for resolving relative source paths.
     # Prioritize "config_base_path" if it exists in the config.
@@ -108,4 +109,4 @@ def load_config_and_prepare_sources(config_path='config.json'):
 
     source_configurations = list(grouped_sources.values())
 
-    return output_filename, source_configurations
+    return output_filename, source_configurations, job_number

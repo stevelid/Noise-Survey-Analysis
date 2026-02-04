@@ -38,6 +38,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         models.sourceConfigs = Array.isArray(bokehModels?.sourceConfigs)
             ? bokehModels.sourceConfigs
             : [];
+        models.jobNumber = bokehModels?.jobNumber || null;
         models.positionDisplayTitles = bokehModels?.positionDisplayTitles || {};
         models.savedWorkspaceState = bokehModels?.savedWorkspaceState || null;
         if (bokehModels?.sessionMenu) {

@@ -179,6 +179,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            if (rawKey === 'Delete' || rawKey === 'Backspace') {
+                const state = typeof getState === 'function' ? getState() : null;
+                const selectedRegionId = state?.regions?.selectedId;
+                if (Number.isFinite(selectedRegionId) && typeof actions.regionRemoved === 'function') {
+                    dispatch(actions.regionRemoved({ id: selectedRegionId }));
+                    if (app.regions?.invalidateRegionMetrics) {
+                        app.regions.invalidateRegionMetrics(selectedRegionId);
+                    }
+                }
+                return;
+            }
+
             if (rawKey !== 'ArrowLeft' && rawKey !== 'ArrowRight') {
                 return;
             }

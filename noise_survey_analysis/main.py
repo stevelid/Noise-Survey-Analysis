@@ -232,6 +232,7 @@ def create_app(doc, config_path=None, state_path=None):
     
     initial_saved_workspace_state = None
     source_configs_from_state = None
+    current_job_number = None
 
     state_path = _normalize_path(state_path)
     if state_path:
@@ -262,14 +263,17 @@ def create_app(doc, config_path=None, state_path=None):
         except Exception as exc:
             logger.error(f"Failed to parse workspace state file '{state_path}': {exc}", exc_info=True)
 
-    def on_data_sources_selected(source_configs, skip_static_export=False):
+    def on_data_sources_selected(source_configs, skip_static_export=False, job_number=None):
         """Callback when data sources are selected from the selector.
         
         Args:
             source_configs: List of source configuration dictionaries
             skip_static_export: If True, skip generating static HTML (used when loading from existing config/workspace)
+            job_number: Optional job number/identifier to display in the dashboard
         """
-        logger.info("Data sources selected, building dashboard...")
+        nonlocal current_job_number
+        current_job_number = job_number
+        logger.info(f"Data sources selected, building dashboard... (job_number={job_number})")
         
         # Clear current layout
         doc.clear()
@@ -355,7 +359,7 @@ def create_app(doc, config_path=None, state_path=None):
             audio_processor.anchor_audio_files(app_data)
             audio_handler = AudioPlaybackHandler(position_data=app_data.get_all_position_data())
             audio_control_source = ColumnDataSource(data={'command': [], 'position_id': [], 'value': []}, name='audio_control_source')
-            audio_status_source = ColumnDataSource(data={'is_playing': [False], 'current_time': [0], 'playback_rate': [1.0], 'current_file_duration': [0], 'current_file_start_time': [0], 'active_position_id': [None], 'volume_boost': [False]}, name='audio_status_source')
+            audio_status_source = ColumnDataSource(data={'is_playing': [False], 'current_time': [0], 'playback_rate': [1.0], 'current_file_duration': [0], 'current_file_start_time': [0], 'active_position_id': [None], 'volume_boost': [False], 'current_file_name': ['']}, name='audio_status_source')
             app_callbacks = AppCallbacks(doc, audio_handler, audio_control_source, audio_status_source)
             doc.clear() # Clear the loading message
             dash_builder = DashBuilder(audio_control_source, audio_status_source)
@@ -365,6 +369,7 @@ def create_app(doc, config_path=None, state_path=None):
                 CHART_SETTINGS,
                 source_configs=source_configs,
                 saved_workspace_state=initial_saved_workspace_state,
+                job_number=current_job_number,
             )
             doc.add_root(audio_control_source)
             doc.add_root(audio_status_source)
@@ -401,9 +406,9 @@ def create_app(doc, config_path=None, state_path=None):
                         doc.add_root(selector.get_layout())
                 else:
                     # Regular config file - use the existing loader
-                    _, source_configs = load_config_and_prepare_sources(config_path=config_path)
+                    _, source_configs, loaded_job_number = load_config_and_prepare_sources(config_path=config_path)
                     if source_configs is not None:
-                        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs, skip_static_export=True))
+                        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs, skip_static_export=True, job_number=loaded_job_number))
                     else:
                         logger.error(f"Failed to load from config file {config_path}. Falling back to selector.")
                         selector = create_data_source_selector(doc, on_data_sources_selected)
