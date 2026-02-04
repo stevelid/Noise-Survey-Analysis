@@ -34,12 +34,13 @@ from noise_survey_analysis.ui.components import (
     MarkerPanelComponent,
     SidePanelComponent,
 )
-from noise_survey_analysis.core.data_processors import GlyphDataProcessor
+from noise_survey_analysis.core.data_processors import GlyphDataProcessor, downsample_dataframe_max
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
 from noise_survey_analysis.core.data_manager import DataManager, PositionData # Ensure PositionData is imported
 from noise_survey_analysis.core.config import (
     CHART_SETTINGS,  # Ensure CHART_SETTINGS is imported
     UI_LAYOUT_SETTINGS,
+    LITE_TARGET_POINTS,
 )
 from noise_survey_analysis.js.loader import load_js_file
 
@@ -94,7 +95,8 @@ class DashBuilder:
     def build_layout(self, doc, app_data: DataManager, chart_settings: dict,
                      source_configs=None,
                      saved_workspace_state=None,
-                     job_number=None):
+                     job_number=None,
+                     server_mode: bool = False):
         """
         The main public method that constructs the entire application layout.
         This is the primary entry point for this class.
@@ -110,6 +112,7 @@ class DashBuilder:
         print("INFO: DashboardBuilder: Starting UI construction...")
 
         # The sequence of operations is clear and logical
+        self.server_mode = bool(server_mode)
         prepared_glyph_data, available_params = self._prepare_glyph_data(app_data)
 
         self.prepared_glyph_data = prepared_glyph_data
@@ -136,7 +139,10 @@ class DashBuilder:
 
         for position_name in app_data.positions():
             position_data = app_data[position_name]
-            all_prepared_glyph_data[position_name] = processor.prepare_all_spectral_data(position_data)
+            all_prepared_glyph_data[position_name] = processor.prepare_all_spectral_data(
+                position_data,
+                log_target_points=LITE_TARGET_POINTS,
+            )
             
             try:
                 available_params.update(all_prepared_glyph_data[position_name]['overview']['available_params'])
@@ -192,17 +198,18 @@ class DashBuilder:
         # Create components for each position found in the data
         for position_name in app_data.positions():
             position_data_obj = app_data[position_name] # Get PositionData object
+            display_position_data = self._build_position_display_data(position_data_obj)
             position_specific_glyph_data = prepared_glyph_data.get(position_name, {})
 
             initial_mode = self._determine_initial_display_mode(position_data_obj)
             initial_param_spectrogram = chart_settings.get('default_spectral_parameter', 'LZeq')
 
             ts_component = TimeSeriesComponent(
-                position_data_obj=position_data_obj,
+                position_data_obj=display_position_data,
                 initial_display_mode=initial_mode
             )
             spec_component = SpectrogramComponent(
-                position_data_obj=position_data_obj,
+                position_data_obj=display_position_data,
                 position_glyph_data=position_specific_glyph_data,
                 initial_display_mode=initial_mode,
                 initial_param=initial_param_spectrogram
@@ -283,6 +290,7 @@ class DashBuilder:
 
             if master_x_range is None:
                 master_x_range = ts_comp.figure.x_range
+                master_x_range.name = "master_x_range"
                 
                 # Set initial viewport to actual data range if we computed valid bounds
                 if global_min_time is not None and global_max_time is not None:
@@ -518,6 +526,7 @@ class DashBuilder:
                 'spectrogram_freq_range_hz': CHART_SETTINGS.get('spectrogram_freq_range_hz'),
                 'freq_bar_freq_range_hz': CHART_SETTINGS.get('freq_bar_freq_range_hz'),
                 'freq_table_freq_range_hz': CHART_SETTINGS.get('freq_table_freq_range_hz'),
+                'server_mode': getattr(self, 'server_mode', False),
             },
             'sourceConfigs': getattr(self, 'source_configs', []),
             'jobNumber': getattr(self, 'job_number', None),
@@ -625,6 +634,9 @@ class DashBuilder:
     
     # Helper method
     def _determine_initial_display_mode(self, position_data: PositionData) -> str:
+        if self.server_mode and (position_data.has_overview_totals or position_data.has_overview_spectral):
+            logger.debug(f"DashBuilder: Forcing 'overview' mode for {position_data.name} in server mode.")
+            return 'overview'
         if position_data.has_log_totals:
             logger.debug(f"DashBuilder: Defaulting to 'log' view for {position_data.name} as log data is available.")
             return 'log'
@@ -641,3 +653,23 @@ class DashBuilder:
         
         logger.warning(f"DashBuilder: No plottable data found for {position_data.name}. Defaulting to 'overview'.")
         return 'overview'
+
+    def _build_position_display_data(self, position_data_obj: PositionData) -> PositionData:
+        if not position_data_obj.has_log_totals:
+            return position_data_obj
+        downsampled_log_totals = downsample_dataframe_max(position_data_obj.log_totals, LITE_TARGET_POINTS)
+        if downsampled_log_totals is position_data_obj.log_totals:
+            return position_data_obj
+
+        display_data = PositionData(position_data_obj.name)
+        display_data.overview_totals = position_data_obj.overview_totals
+        display_data.overview_spectral = position_data_obj.overview_spectral
+        display_data.log_totals = downsampled_log_totals
+        display_data.log_spectral = position_data_obj.log_spectral
+        display_data.audio_files_list = position_data_obj.audio_files_list
+        display_data.audio_files_path = position_data_obj.audio_files_path
+        display_data.source_file_metadata = position_data_obj.source_file_metadata
+        display_data.parser_types_used = position_data_obj.parser_types_used
+        display_data.sample_periods_seconds = position_data_obj.sample_periods_seconds
+        display_data.spectral_data_types_present = position_data_obj.spectral_data_types_present
+        return display_data

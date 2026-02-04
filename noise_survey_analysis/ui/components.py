@@ -1180,6 +1180,7 @@ class TimeSeriesComponent:
             self.overview_source: ColumnDataSource = ColumnDataSource(data=overview_df)
         else:
             self.overview_source: ColumnDataSource = ColumnDataSource(data={})
+        self.overview_source.name = f"source_{self.position_name}_timeseries_overview"
         
         if position_data_obj.log_totals is not None:
             log_df = position_data_obj.log_totals.copy()
@@ -1187,6 +1188,7 @@ class TimeSeriesComponent:
             self.log_source: ColumnDataSource = ColumnDataSource(data=log_df)
         else:
             self.log_source: ColumnDataSource = ColumnDataSource(data={})
+        self.log_source.name = f"source_{self.position_name}_timeseries_log"
         
         # Use overview data for initialization if available, otherwise use log data.
         # This ensures all columns are present for renderer creation.
@@ -3023,4 +3025,3 @@ class SummaryTableComponent:
     def layout(self):
         """Returns the Bokeh layout object for this component."""
         return self.summary_div
-

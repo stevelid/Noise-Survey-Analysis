@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 # Assuming AudioPlaybackHandler has been updated with set_amplification
 from .audio_handler import AudioPlaybackHandler
+from .config import STREAMING_DEBOUNCE_MS, STREAMING_ENABLED
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +26,31 @@ class AppCallbacks:
     Manages Python-side callbacks for the Bokeh application.
     Connects UI events to application logic.
     """
-    def __init__(self, doc, audio_handler: AudioPlaybackHandler | None, audio_control_source: ColumnDataSource, audio_status_source: ColumnDataSource):
+    def __init__(
+        self,
+        doc,
+        audio_handler: AudioPlaybackHandler | None,
+        audio_control_source: ColumnDataSource,
+        audio_status_source: ColumnDataSource,
+        server_data_handler=None,
+        streaming_enabled: bool = STREAMING_ENABLED,
+        streaming_debounce_ms: int = STREAMING_DEBOUNCE_MS,
+    ):
         self.doc = doc
         self.audio_handler = audio_handler
         self.audio_control_source = audio_control_source
         self.audio_status_source = audio_status_source
+        self.server_data_handler = server_data_handler
+        self.streaming_enabled = streaming_enabled
+        self.streaming_debounce_ms = streaming_debounce_ms
 
         logger.debug(f"[AppCallbacks.__init__] Received audio_control_source with id: {id(self.audio_control_source)}")
         
         self.position_callbacks = []
         self._periodic_callback_id = None
         self._last_seek_time = 0.0
+        self._streaming_timeout_id = None
+        self._pending_stream_range = None
 
         if not self.audio_handler:
             logger.info("AppCallbacks initialized without audio handler. Audio features disabled.")
@@ -168,8 +183,49 @@ class AppCallbacks:
                 logger.warning(f"Error releasing audio handler: {e}")
         logger.info("AppCallbacks cleaned up.")
 
+    def set_server_data_handler(self, server_data_handler):
+        self.server_data_handler = server_data_handler
+
     def attach_non_audio_callbacks(self):
-        pass
+        if not self.streaming_enabled or not self.server_data_handler:
+            return
+
+        master_x_range = self.doc.get_model_by_name('master_x_range')
+        if not master_x_range:
+            logger.warning("Streaming enabled but 'master_x_range' model not found.")
+            return
+
+        def schedule_range_update(attr, old, new):
+            self._pending_stream_range = (master_x_range.start, master_x_range.end)
+            if self._streaming_timeout_id is not None:
+                return
+
+            def run_update():
+                self._streaming_timeout_id = None
+                pending = self._pending_stream_range
+                self._pending_stream_range = None
+                if not pending:
+                    return
+                start_ms, end_ms = pending
+                self.server_data_handler.handle_range_update(start_ms, end_ms)
+
+            self._streaming_timeout_id = self.doc.add_timeout_callback(
+                run_update,
+                self.streaming_debounce_ms,
+            )
+
+        master_x_range.on_change('start', schedule_range_update)
+        master_x_range.on_change('end', schedule_range_update)
+
+        param_select = self.doc.get_model_by_name('global_parameter_selector')
+        if param_select:
+            def on_param_change(attr, old, new):
+                self.server_data_handler.set_selected_parameter(new)
+                self.server_data_handler.handle_range_update(master_x_range.start, master_x_range.end)
+
+            param_select.on_change('value', on_param_change)
+
+        self.server_data_handler.handle_range_update(master_x_range.start, master_x_range.end)
 
     def attach_js_callbacks(self):
         pass

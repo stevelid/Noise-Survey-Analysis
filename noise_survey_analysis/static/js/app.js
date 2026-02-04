@@ -107,6 +107,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             });
 
             app.store.dispatch(app.actions.initializeState(initialStatePayload));
+            if (app.data_processors?.calculateStepSize) {
+                app.data_processors.calculateStepSize(app.store.getState(), dataCache);
+            }
 
             // --- 2. CONNECT BOKEH EVENT LISTENERS ---
             if (models.audio_status_source) {
@@ -124,7 +127,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             app.store.subscribe(onStateChange);
 
             // --- 5. KICK OFF THE FIRST RENDER ---
-            const kickoffInitialRender = () => onStateChange(true);
+            let didInitialRender = false;
+            const kickoffInitialRender = () => {
+                if (didInitialRender) {
+                    return;
+                }
+                didInitialRender = true;
+                onStateChange(true);
+            };
+            kickoffInitialRender();
             if (typeof requestAnimationFrame === 'function') {
                 requestAnimationFrame(kickoffInitialRender);
             } else {
@@ -242,6 +253,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         ? app.data_processors.calculateStepSize(state, dataCache)
                         : undefined);
 
+                if (Number.isFinite(newStepSize) && newStepSize !== state.interaction.keyboard.stepSizeMs) {
+                    app.store.dispatch(app.actions.stepSizeCalculated(newStepSize));
+                }
+            } else if (isInitialLoad && app.data_processors?.calculateStepSize) {
+                const newStepSize = app.data_processors.calculateStepSize(state, dataCache);
                 if (Number.isFinite(newStepSize) && newStepSize !== state.interaction.keyboard.stepSizeMs) {
                     app.store.dispatch(app.actions.stepSizeCalculated(newStepSize));
                 }

@@ -13,7 +13,7 @@ current_file = Path(__file__)
 project_root = current_file.parent.parent
 sys.path.insert(0, str(project_root))
 
-from noise_survey_analysis.core.config import CHART_SETTINGS
+from noise_survey_analysis.core.config import CHART_SETTINGS, STREAMING_ENABLED
 from noise_survey_analysis.core.data_manager import DataManager
 from noise_survey_analysis.core.audio_processor import AudioDataProcessor
 from noise_survey_analysis.core.app_setup import load_config_and_prepare_sources
@@ -21,6 +21,7 @@ from noise_survey_analysis.core.config_io import save_config_from_selected_sourc
 from noise_survey_analysis.export.static_export import generate_static_html
 from noise_survey_analysis.core.audio_handler import AudioPlaybackHandler
 from noise_survey_analysis.core.app_callbacks import AppCallbacks, session_destroyed
+from noise_survey_analysis.core.server_data_handler import ServerDataHandler
 from noise_survey_analysis.visualization.dashBuilder import DashBuilder
 from noise_survey_analysis.ui.data_source_selector import create_data_source_selector
 
@@ -370,9 +371,13 @@ def create_app(doc, config_path=None, state_path=None):
                 source_configs=source_configs,
                 saved_workspace_state=initial_saved_workspace_state,
                 job_number=current_job_number,
+                server_mode=STREAMING_ENABLED,
             )
             doc.add_root(audio_control_source)
             doc.add_root(audio_status_source)
+            if STREAMING_ENABLED:
+                server_data_handler = ServerDataHandler(doc, app_data, CHART_SETTINGS)
+                app_callbacks.set_server_data_handler(server_data_handler)
             app_callbacks.attach_callbacks()
             setattr(doc.session_context, '_app_callback_manager', app_callbacks)
             initial_saved_workspace_state = None

@@ -69,7 +69,14 @@ def generate_static_html(config_path: str, resources: str = "CDN") -> Optional[P
 
         # 3. Create and build document
         static_doc = Document()
-        dash_builder.build_layout(static_doc, app_data, CHART_SETTINGS, source_configs=source_configs, job_number=job_number)
+        dash_builder.build_layout(
+            static_doc,
+            app_data,
+            CHART_SETTINGS,
+            source_configs=source_configs,
+            job_number=job_number,
+            server_mode=False,
+        )
 
         # 4. Save the document using file_html (works under bokeh serve and CLI)
         try:

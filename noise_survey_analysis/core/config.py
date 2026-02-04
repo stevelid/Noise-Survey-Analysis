@@ -89,6 +89,12 @@ PROCESSING_SETTINGS = {
     'smooth_window': 3,
 }
 
+# Streaming / Lite data settings
+LITE_TARGET_POINTS = 5000
+STREAMING_ENABLED = True
+STREAMING_DEBOUNCE_MS = 200
+STREAMING_VIEWPOINT_MULTIPLIER = 3
+
 # Default base directory for job files
 DEFAULT_BASE_JOB_DIR = "G:\\Shared drives\\Venta\\Jobs"
 
