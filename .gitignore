@@ -109,3 +109,10 @@ repomix-output.xml
 tmpclaude-*-cwd
 nul
 server_output*.txt
+
+# Cloud refactor temporary files
+*.junk.js
+*.sessionManager.js
+*.chunks.js
+refactor_plan_*.md
+analysis_*.md
