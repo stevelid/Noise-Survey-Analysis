@@ -478,6 +478,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.model.title.text = `${baseName} - Time History${suffix}`;
 
             // Skip expensive source.data assignment if data hasn't changed
+            if (activeLineData?.skipSourceUpdate) {
+                this.activeData = this.source.data;
+                return;
+            }
             const newHash = this._computeDataHash(activeLineData);
             if (newHash !== this._lastDataHash) {
                 this._lastDataHash = newHash;
@@ -547,6 +551,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const baseName = this.displayName || this.positionId;
             this.model.title.text = `${baseName} - ${selectedParameter} Spectrogram${suffix}`;
 
+            if (activeSpectralData?.skipSourceUpdate) {
+                return;
+            }
             const replacement = activeSpectralData?.source_replacement;
             if (replacement && this.imageRenderer) {
                 // Skip expensive updates if glyph position hasn't changed

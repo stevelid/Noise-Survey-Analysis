@@ -17,14 +17,51 @@ from noise_survey_analysis.core.data_manager import PositionData
 logger = logging.getLogger(__name__)
 
 
+def downsample_dataframe_max(df: pd.DataFrame, target_points: int) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    if target_points <= 0:
+        return df
+    if 'Datetime' not in df.columns:
+        logger.warning("Cannot downsample DataFrame without 'Datetime' column.")
+        return df
+
+    if not pd.api.types.is_datetime64_any_dtype(df['Datetime']):
+        df = df.copy()
+        df.loc[:, 'Datetime'] = pd.to_datetime(df['Datetime'], errors='coerce')
+        df.dropna(subset=['Datetime'], inplace=True)
+
+    if df.empty or len(df) <= target_points:
+        return df
+
+    df_sorted = df.sort_values(by='Datetime')
+    time_start = df_sorted['Datetime'].iloc[0]
+    time_end = df_sorted['Datetime'].iloc[-1]
+    total_ms = (time_end - time_start).total_seconds() * 1000
+    if total_ms <= 0:
+        return df_sorted.head(target_points)
+
+    interval_ms = max(1, math.ceil(total_ms / target_points))
+    resample_interval = pd.to_timedelta(interval_ms, unit='ms')
+    resampled = (
+        df_sorted.set_index('Datetime')
+        .resample(resample_interval)
+        .max()
+        .dropna(how='all')
+        .reset_index()
+    )
+    return resampled
+
+
 class GlyphDataProcessor:
     """
     A class dedicated to transforming DataFrames into specific data structures
     required by Bokeh glyphs, such as the Image glyph for spectrograms.
     """
 
-    def prepare_all_spectral_data(self, position_data_obj: PositionData, 
-                                  chart_settings: Optional[Dict] = None) -> Dict[str, Dict[str, Any]]:
+    def prepare_all_spectral_data(self, position_data_obj: PositionData,
+                                  chart_settings: Optional[Dict] = None,
+                                  log_target_points: Optional[int] = None) -> Dict[str, Dict[str, Any]]:
         """
         Processes all available spectral data (overview and log) for a single position.
 
@@ -83,7 +120,12 @@ class GlyphDataProcessor:
             if params:
                 prepared_params_dict = {}
                 for param in params:
-                    prepared_data = self.prepare_single_spectrogram_data(df, param, chart_settings)
+                    if log_target_points:
+                        prepared_data = self.prepare_downsampled_spectral_data(
+                            df, param, chart_settings, log_target_points
+                        )
+                    else:
+                        prepared_data = self.prepare_single_spectrogram_data(df, param, chart_settings)
                     if prepared_data:
                         prepared_params_dict[param] = prepared_data
                 if prepared_params_dict:
@@ -276,6 +318,13 @@ class GlyphDataProcessor:
                 'image': [first_data_chunk]
             }
         }
+
+    def prepare_downsampled_spectral_data(self, df: pd.DataFrame, param_prefix: str,
+                                          chart_settings: Dict, target_points: int) -> Optional[Dict[str, Any]]:
+        if df is None or df.empty:
+            return None
+        downsampled = downsample_dataframe_max(df, target_points)
+        return self.prepare_single_spectrogram_data(downsampled, param_prefix, chart_settings)
 
     def _extract_spectral_parameters(self, df: Optional[pd.DataFrame]) -> List[str]:
         """

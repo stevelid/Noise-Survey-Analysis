@@ -143,6 +143,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const overviewData = sourceData?.overview?.data;
             const logData = sourceData?.log?.data;
             const hasLogData = logData && logData.Datetime && logData.Datetime.length > 0;
+            const isServerMode = Boolean(models?.config?.server_mode);
 
             let displayDetails = { type: 'overview', reason: ' (Overview)' }; // Default reason
 
@@ -155,6 +156,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             if (viewType === 'log') {
                 if (hasLogData) {
+                    if (isServerMode) {
+                        const logClone = cloneDataColumns(logData || {});
+                        applyDatetimeOffset(logClone, positionOffsetMs);
+                        nextActiveLine = logClone;
+                        displayDetails = { type: 'log', reason: ' (Log Data)' };
+                    } else {
                     const startIndex = logData.Datetime.findIndex(t => t >= effectiveMin);
                     const endIndex = logData.Datetime.findLastIndex(t => t <= effectiveMax);
                     const pointsInView = (startIndex !== -1 && endIndex !== -1) ? endIndex - startIndex : 0;
@@ -184,6 +191,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         applyDatetimeOffset(chunk, positionOffsetMs);
                         nextActiveLine = chunk;
                         displayDetails = { type: 'log', reason: ' (Log Data)' };
+                    }
                     }
                 } else {
                     // Log view is active, but no log data exists for this position
@@ -241,6 +249,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const overviewData = positionGlyphData?.overview?.prepared_params?.[parameter];
             const logData = positionGlyphData?.log?.prepared_params?.[parameter];
             const hasLogData = logData && logData.times_ms && logData.times_ms.length > 0;
+            const isServerMode = Boolean(models?.config?.server_mode);
 
             let finalDataToUse, finalGlyphData;
             let displayMetadata = { type: 'none', reason: ' (No Data Available)' };
@@ -253,6 +262,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             if (viewType === 'log') {
                 if (hasLogData) {
+                    if (isServerMode) {
+                        finalDataToUse = logData;
+                        displayMetadata = { type: 'log', reason: ' (Log Data)' };
+                        finalGlyphData = null;
+                    } else {
                     // Calculate theoretical points based on viewport width
                     const viewportWidth = viewState.viewport.max - viewState.viewport.min;
                     const pointsInView = Math.floor(viewportWidth / logData.time_step);
@@ -306,6 +320,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                         finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
                     }
+                    }
                 } else {
                     // Log view active, but no log data exists
                     finalDataToUse = overviewData;
@@ -322,13 +337,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             // --- Final state update ---
-            if (finalGlyphData && finalDataToUse) {
-                const adjustedReplacement = applySpectrogramReplacementOffset(finalGlyphData, offsetMs);
+            if (finalDataToUse) {
+                const adjustedReplacement = finalGlyphData
+                    ? applySpectrogramReplacementOffset(finalGlyphData, offsetMs)
+                    : null;
                 const adjustedTimes = finalDataToUse.times_ms ? createOffsetArray(finalDataToUse.times_ms, offsetMs) : [];
                 dataCache.activeSpectralData[position] = {
                     ...finalDataToUse,
                     times_ms: adjustedTimes,
-                    source_replacement: adjustedReplacement
+                    source_replacement: adjustedReplacement,
+                    skipSourceUpdate: isServerMode && viewType === 'log'
                 };
             } else {
                 // This case handles when overviewData was also null in one of the fallback paths.
