@@ -110,6 +110,20 @@ GENERAL_SETTINGS = {
     # "log_level": "INFO", # Example: DEBUG, INFO, WARNING, ERROR
 }
 
+# --- Audio anchoring settings ---
+AUDIO_ANCHORING_SETTINGS = {
+    # Minimum gap (seconds) to consider measurement data disjoint.
+    'min_gap_seconds': 300,
+    # Multiplier on median sample interval to detect disjoint segments.
+    'gap_multiplier': 5,
+    # Maximum time delta (hours) to match an audio file to a measurement segment.
+    'max_match_hours': 12,
+    # Warning threshold (hours) for low-confidence audio-to-segment matches.
+    'warning_match_hours': 2,
+    # Tolerance for duration vs. segment length comparisons (seconds).
+    'duration_tolerance_seconds': 300,
+}
+
 # --- New Data Source Configuration ---
 # A list of dictionaries, where each dictionary defines a data source file.
 DEFAULT_DATA_SOURCES = [

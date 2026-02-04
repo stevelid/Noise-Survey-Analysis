@@ -80,6 +80,13 @@ class AudioPlaybackHandler:
             files_to_process = []
             for _, row in audio_df.iterrows():
                 # The row['Datetime'] is now the correct, UTC-aware timestamp
+                if pd.isna(row['Datetime']):
+                    logger.warning(
+                        "Skipping audio file without anchored datetime for '%s': %s",
+                        position_name,
+                        row.get('full_path'),
+                    )
+                    continue
                 files_to_process.append((row['full_path'], row['Datetime'], row['duration_sec']))
             
             self.file_info_by_position[position_name] = files_to_process
