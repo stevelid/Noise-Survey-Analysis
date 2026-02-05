@@ -116,6 +116,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 models.audio_status_source.patching.connect(app.eventHandlers.handleAudioStatusUpdate);
             }
 
+            // Listen for server-pushed data updates to log sources (reservoir streaming)
+            Object.keys(models.timeSeriesSources || {}).forEach(positionId => {
+                const logSource = models.timeSeriesSources[positionId]?.log;
+                if (logSource && logSource.change) {
+                    logSource.change.connect(() => {
+                        app.store.dispatch(app.actions.dataRefreshed(positionId));
+                    });
+                }
+            });
+
+            // Same for spectrogram sources
+            if (models.spectrogramSources) {
+                Object.keys(models.spectrogramSources).forEach(positionId => {
+                    const logSource = models.spectrogramSources[positionId]?.log;
+                    if (logSource && logSource.change) {
+                        logSource.change.connect(() => {
+                            app.store.dispatch(app.actions.dataRefreshed(positionId));
+                        });
+                    }
+                });
+            }
+
             // --- 3. SETUP KEYBOARD & OTHER GLOBAL EVENT LISTENERS ---
             document.addEventListener('keydown', app.eventHandlers.handleKeyPress);
             document.addEventListener('keydown', handleDragToolKeyDown);
@@ -187,6 +209,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didPendingRegionChange = state.interaction.pendingRegionStart !== previousState.interaction.pendingRegionStart;
         const didTapChange = state.interaction.tap !== previousState.interaction.tap;
         const didAudioPositionChange = state.audio.activePositionId !== previousState.audio.activePositionId;
+        const didDataRefresh = lastActionType === actionTypes.DATA_REFRESHED;
 
         const isHeavyUpdateRequested = isInitialLoad
             || didViewportChange
@@ -194,7 +217,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             || didViewToggleChange
             || didVisibilityChange
             || didChartOffsetsChange
-            || didDisplayTitlesChange;
+            || didDisplayTitlesChange
+            || didDataRefresh;
 
         // Throttle heavy updates during audio playback to prevent UI lag
         const now = performance.now();

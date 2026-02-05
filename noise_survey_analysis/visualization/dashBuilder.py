@@ -521,6 +521,7 @@ class DashBuilder:
             'charts': [],
             'chartsSources': [],
             'timeSeriesSources': {},
+            'spectrogramSources': {},
             'preparedGlyphData': self.prepared_glyph_data,
             'config': {
                 'spectrogram_freq_range_hz': CHART_SETTINGS.get('spectrogram_freq_range_hz'),
@@ -610,6 +611,11 @@ class DashBuilder:
                 'log': comp_dict['timeseries'].log_source,
             }
 
+            js_models['spectrogramSources'][pos] = {
+                'overview': comp_dict['spectrogram'].overview_source,
+                'log': comp_dict['spectrogram'].log_source,
+            }
+
             ts_comp = comp_dict['timeseries']
             spec_comp = comp_dict['spectrogram']
             
@@ -637,24 +643,31 @@ class DashBuilder:
         if self.server_mode and (position_data.has_overview_totals or position_data.has_overview_spectral):
             logger.debug(f"DashBuilder: Forcing 'overview' mode for {position_data.name} in server mode.")
             return 'overview'
-        if position_data.has_log_totals:
-            logger.debug(f"DashBuilder: Defaulting to 'log' view for {position_data.name} as log data is available.")
-            return 'log'
-        elif position_data.has_overview_totals:
-            logger.debug(f"DashBuilder: Defaulting to 'overview' view for {position_data.name} as only overview data is available.")
+        if position_data.has_overview_totals:
+            logger.debug(f"DashBuilder: Defaulting to 'overview' view for {position_data.name} as overview data is available.")
             return 'overview'
-        # Fallback: if no totals, check for spectral data as a last resort
-        elif position_data.has_log_spectral:
-            logger.warning(f"DashBuilder: No totals data for {position_data.name}, but log spectral data found. Defaulting to 'log'.")
+        elif position_data.has_log_totals:
+            logger.debug(f"DashBuilder: Defaulting to 'log' view for {position_data.name} as only log data is available.")
             return 'log'
+        # Fallback: if no totals, check for spectral data as a last resort
         elif position_data.has_overview_spectral:
             logger.warning(f"DashBuilder: No totals data for {position_data.name}, but overview spectral data found. Defaulting to 'overview'.")
             return 'overview'
+        elif position_data.has_log_spectral:
+            logger.warning(f"DashBuilder: No totals data for {position_data.name}, but log spectral data found. Defaulting to 'log'.")
+            return 'log'
         
         logger.warning(f"DashBuilder: No plottable data found for {position_data.name}. Defaulting to 'overview'.")
         return 'overview'
 
     def _build_position_display_data(self, position_data_obj: PositionData) -> PositionData:
+        # In server mode (hybrid streaming), keep all data intact.
+        # The system should start with true overview/summary data (from _summary.csv files).
+        # When zooming in, ServerDataHandler will stream from full log data (from _log.csv files).
+        if self.server_mode:
+            # No transformation needed - return original data structure
+            return position_data_obj
+
         if not position_data_obj.has_log_totals:
             return position_data_obj
         downsampled_log_totals = downsample_dataframe_max(position_data_obj.log_totals, LITE_TARGET_POINTS)

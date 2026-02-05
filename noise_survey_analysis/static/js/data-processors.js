@@ -14,8 +14,82 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const MAX_LINE_POINTS_TO_RENDER = 5000;
     const MAX_SPECTRAL_POINTS_TO_RENDER = 5000;
+    
+    // Log view threshold - maximum viewport width (in seconds) for log view
+    // Beyond this, use overview data. Default: 300 seconds (5 minutes)
+    // This should match the server-side LOG_VIEW_MAX_VIEWPORT_SECONDS config
+    const LOG_VIEW_MAX_VIEWPORT_SECONDS = 300;
 
     const _models = app.models;
+
+    // Utility for handling spectrogram matrix operations
+    const MatrixUtils = {
+        /**
+         * Generates a 2D image array from flat level data.
+         * Bokeh 3.x Image glyph expects a 2D array (Array of TypedArrays).
+         * 
+         * @param {Array|Float32Array} levelsFlat - Flattened spectrogram data (n_freqs * n_times)
+         * @param {number} nFreqs - Number of frequency bins (rows)
+         * @param {number} nTimes - Number of time steps (cols)
+         * @returns {Object} { image: Array<Float32Array> }
+         */
+        generateSpectrogramImage: function(levelsFlat, nFreqs, nTimes) {
+            if (!levelsFlat || nFreqs <= 0 || nTimes <= 0) {
+                return { image: [] };
+            }
+
+            // Create 2D array structure: Array of Float32Arrays
+            const image = new Array(nFreqs);
+            
+            // Check if input is already a typed array to optimize
+            const isTyped = levelsFlat.subarray !== undefined;
+
+            for (let i = 0; i < nFreqs; i++) {
+                const start = i * nTimes;
+                const end = start + nTimes;
+                
+                if (isTyped) {
+                    // Fast slice for typed arrays
+                    image[i] = levelsFlat.slice(start, end);
+                } else {
+                    // Manual copy for regular arrays
+                    const row = new Float32Array(nTimes);
+                    for (let j = 0; j < nTimes; j++) {
+                        row[j] = levelsFlat[start + j];
+                    }
+                    image[i] = row;
+                }
+            }
+            
+            return { image: image };
+        },
+
+        /**
+         * Updates a Bokeh image buffer in place.
+         * 
+         * @param {Array<Float32Array>} buffer - The target 2D array buffer
+         * @param {Array|Float32Array} newData - Flattened new data
+         * @param {number} nFreqs - Number of frequency bins
+         * @param {number} nTimes - Number of time steps
+         */
+        updateBokehImageData: function(buffer, newData, nFreqs, nTimes) {
+            // Check dimensions match
+            if (!buffer || buffer.length !== nFreqs || (buffer[0] && buffer[0].length !== nTimes)) {
+                console.warn("[MatrixUtils] Buffer dimensions mismatch, creating new image.");
+                return this.generateSpectrogramImage(newData, nFreqs, nTimes).image;
+            }
+
+            // Update in place
+            for (let i = 0; i < nFreqs; i++) {
+                const row = buffer[i];
+                const start = i * nTimes;
+                for (let j = 0; j < nTimes; j++) {
+                    row[j] = newData[start + j];
+                }
+            }
+            return buffer;
+        }
+    };
 
     function cloneDataColumns(source) {
         if (!source || typeof source !== 'object') {
@@ -143,9 +217,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const overviewData = sourceData?.overview?.data;
             const logData = sourceData?.log?.data;
             const hasLogData = logData && logData.Datetime && logData.Datetime.length > 0;
-            const isServerMode = Boolean(models?.config?.server_mode);
 
-            let displayDetails = { type: 'overview', reason: ' (Overview)' }; // Default reason
+            let displayDetails = { type: 'overview', reason: ' (Overview - Enable Log View for detail)' }; // Default reason
 
             const viewportMin = Number(viewState.viewport?.min);
             const viewportMax = Number(viewState.viewport?.max);
@@ -156,42 +229,52 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             if (viewType === 'log') {
                 if (hasLogData) {
-                    if (isServerMode) {
-                        const logClone = cloneDataColumns(logData || {});
-                        applyDatetimeOffset(logClone, positionOffsetMs);
-                        nextActiveLine = logClone;
-                        displayDetails = { type: 'log', reason: ' (Log Data)' };
-                    } else {
-                    const startIndex = logData.Datetime.findIndex(t => t >= effectiveMin);
-                    const endIndex = logData.Datetime.findLastIndex(t => t <= effectiveMax);
-                    const pointsInView = (startIndex !== -1 && endIndex !== -1) ? endIndex - startIndex : 0;
-
-                    if (pointsInView > MAX_LINE_POINTS_TO_RENDER) {
-                        // Log view is active, but user is too zoomed out
+                    // Check viewport width against threshold (in milliseconds)
+                    const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin) 
+                        ? effectiveMax - effectiveMin : Infinity;
+                    const viewportWidthSeconds = viewportWidthMs / 1000;
+                    const viewportTooLarge = viewportWidthSeconds > LOG_VIEW_MAX_VIEWPORT_SECONDS;
+                    
+                    if (viewportTooLarge) {
+                        // Viewport too large for log data - use overview
                         const overviewClone = cloneDataColumns(overviewData || {});
                         applyDatetimeOffset(overviewClone, positionOffsetMs);
                         nextActiveLine = overviewClone;
-                        displayDetails = { type: 'overview', reason: ' - Zoom in for Log Data' };
+                        const maxMinutes = Math.floor(LOG_VIEW_MAX_VIEWPORT_SECONDS / 60);
+                        const maxSeconds = LOG_VIEW_MAX_VIEWPORT_SECONDS % 60;
+                        const thresholdStr = maxSeconds > 0 ? `${maxMinutes}:${String(maxSeconds).padStart(2, '0')}` : `${maxMinutes}:00`;
+                        displayDetails = { type: 'overview', reason: ` - Zoom to <${thresholdStr} for Log` };
                     } else {
-                        // Happy path: Show a chunk of log data
-                        const buffer = Math.floor(pointsInView * 0.5);
-                        const sliceStart = Math.max(0, startIndex - buffer);
-                        const sliceEnd = Math.min(logData.Datetime.length, endIndex + buffer + 1);
-                        const chunk = {};
-                        for (const key in logData) {
-                            const column = logData[key];
-                            if (column && typeof column.slice === 'function') {
-                                chunk[key] = column.slice(sliceStart, sliceEnd);
-                            } else if (Array.isArray(column)) {
-                                chunk[key] = column.slice(sliceStart, sliceEnd);
-                            } else {
-                                chunk[key] = column;
+                        const startIndex = logData.Datetime.findIndex(t => t >= effectiveMin);
+                        const endIndex = logData.Datetime.findLastIndex(t => t <= effectiveMax);
+                        const pointsInView = (startIndex !== -1 && endIndex !== -1) ? endIndex - startIndex : 0;
+
+                        if (pointsInView > MAX_LINE_POINTS_TO_RENDER) {
+                            // Log view is active, but user is too zoomed out
+                            const overviewClone = cloneDataColumns(overviewData || {});
+                            applyDatetimeOffset(overviewClone, positionOffsetMs);
+                            nextActiveLine = overviewClone;
+                            displayDetails = { type: 'overview', reason: ' - Zoom in for Log Data' };
+                        } else {
+                            // Happy path: Show a chunk of log data
+                            const buffer = Math.floor(pointsInView * 0.5);
+                            const sliceStart = Math.max(0, startIndex - buffer);
+                            const sliceEnd = Math.min(logData.Datetime.length, endIndex + buffer + 1);
+                            const chunk = {};
+                            for (const key in logData) {
+                                const column = logData[key];
+                                if (column && typeof column.slice === 'function') {
+                                    chunk[key] = column.slice(sliceStart, sliceEnd);
+                                } else if (Array.isArray(column)) {
+                                    chunk[key] = column.slice(sliceStart, sliceEnd);
+                                } else {
+                                    chunk[key] = column;
+                                }
                             }
+                            applyDatetimeOffset(chunk, positionOffsetMs);
+                            nextActiveLine = chunk;
+                            displayDetails = { type: 'log', reason: ' (Log Data)' };
                         }
-                        applyDatetimeOffset(chunk, positionOffsetMs);
-                        nextActiveLine = chunk;
-                        displayDetails = { type: 'log', reason: ' (Log Data)' };
-                    }
                     }
                 } else {
                     // Log view is active, but no log data exists for this position
@@ -205,7 +288,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const overviewClone = cloneDataColumns(overviewData || {});
                 applyDatetimeOffset(overviewClone, positionOffsetMs);
                 nextActiveLine = overviewClone;
-                displayDetails = { type: 'overview', reason: ' (Overview)' };
+                displayDetails = { type: 'overview', reason: hasLogData ? ' (Overview - Enable Log View for detail)' : ' (Overview - No Log Data)' };
             }
 
             if (nextActiveLine) {
@@ -245,11 +328,75 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             const viewType = viewState.globalViewType;
             const parameter = viewState.selectedParameter;
+            
+            // Read from streaming sources (reservoir)
+            const spectrogramSources = models.spectrogramSources?.[position];
+            const overviewSourceData = spectrogramSources?.overview?.data;
+            const logSourceData = spectrogramSources?.log?.data;
+            
+            // Debug logging for log data flow
+            if (viewType === 'log') {
+                console.log(`[Spectrogram] Processing ${position}:`, {
+                    hasSource: !!spectrogramSources,
+                    hasLogSource: !!spectrogramSources?.log,
+                    hasLogData: !!logSourceData,
+                    keys: logSourceData ? Object.keys(logSourceData) : []
+                });
+            }
+
+            // For overview, use preparedGlyphData (static)
             const positionGlyphData = models.preparedGlyphData[position];
             const overviewData = positionGlyphData?.overview?.prepared_params?.[parameter];
-            const logData = positionGlyphData?.log?.prepared_params?.[parameter];
+            
+            // For log, construct data from streaming source and compute metadata
+            const logData = logSourceData?.times_ms ? (() => {
+                // Unwrap arrays from single-element lists (server wraps them to satisfy Bokeh column length constraint)
+                // Fallback to direct access if not wrapped (robustness)
+                const times = Array.isArray(logSourceData.times_ms[0]) ? logSourceData.times_ms[0] : logSourceData.times_ms;
+                const levels = Array.isArray(logSourceData.levels_flat_transposed[0]) ? logSourceData.levels_flat_transposed[0] : logSourceData.levels_flat_transposed;
+                const freqLabels = logSourceData.frequency_labels ? (Array.isArray(logSourceData.frequency_labels[0]) ? logSourceData.frequency_labels[0] : logSourceData.frequency_labels) : null;
+                const freqHz = logSourceData.frequencies_hz ? (Array.isArray(logSourceData.frequencies_hz[0]) ? logSourceData.frequencies_hz[0] : logSourceData.frequencies_hz) : null;
+                
+                if (viewType === 'log') {
+                    console.log(`[Spectrogram] Unwrapped data for ${position}:`, {
+                        timesLen: times?.length,
+                        levelsLen: levels?.length,
+                        freqLabelsLen: freqLabels?.length,
+                        firstTime: times?.[0],
+                        lastTime: times?.[times?.length - 1]
+                    });
+                }
+
+                // Compute metadata from array dimensions
+                const n_times = times.length;
+                const n_freqs = freqLabels?.length || freqHz?.length || 0;
+                const time_step = n_times > 1 ? (times[n_times - 1] - times[0]) / (n_times - 1) : 0;
+                const chunk_time_length = n_times > 0 ? times[n_times - 1] - times[0] + time_step : 0;
+                
+                // Compute min/max from levels data
+                let min_val = Infinity, max_val = -Infinity;
+                if (levels && levels.length > 0) {
+                    for (let i = 0; i < levels.length; i++) {
+                        if (levels[i] < min_val) min_val = levels[i];
+                        if (levels[i] > max_val) max_val = levels[i];
+                    }
+                }
+                
+                return {
+                    times_ms: times,
+                    levels_flat_transposed: levels,
+                    n_freqs,
+                    n_times,
+                    time_step,
+                    chunk_time_length,
+                    frequency_labels: freqLabels,
+                    frequencies_hz: freqHz,
+                    min_val: min_val === Infinity ? 0 : min_val,
+                    max_val: max_val === -Infinity ? 100 : max_val
+                };
+            })() : null;
+            
             const hasLogData = logData && logData.times_ms && logData.times_ms.length > 0;
-            const isServerMode = Boolean(models?.config?.server_mode);
 
             let finalDataToUse, finalGlyphData;
             let displayMetadata = { type: 'none', reason: ' (No Data Available)' };
@@ -259,67 +406,78 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const viewportMax = Number(viewState.viewport?.max);
             const effectiveMin = Number.isFinite(viewportMin) ? viewportMin - offsetMs : viewportMin;
             const effectiveMax = Number.isFinite(viewportMax) ? viewportMax - offsetMs : viewportMax;
+            
+            // Check viewport width against threshold (in milliseconds)
+            const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin) 
+                ? effectiveMax - effectiveMin : Infinity;
+            const viewportWidthSeconds = viewportWidthMs / 1000;
+            const viewportTooLarge = viewportWidthSeconds > LOG_VIEW_MAX_VIEWPORT_SECONDS;
 
             if (viewType === 'log') {
                 if (hasLogData) {
-                    if (isServerMode) {
-                        finalDataToUse = logData;
-                        displayMetadata = { type: 'log', reason: ' (Log Data)' };
-                        finalGlyphData = null;
-                    } else {
-                    // Calculate theoretical points based on viewport width
-                    const viewportWidth = viewState.viewport.max - viewState.viewport.min;
-                    const pointsInView = Math.floor(viewportWidth / logData.time_step);
-
-                    // Verify log data actually covers the viewport
-                    const logDataStart = logData.times_ms[0];
-                    const logDataEnd = logData.times_ms[logData.times_ms.length - 1];
-                    
-                    // Calculate actual coverage: how much of the viewport is covered by log data
-                    const viewportStart = effectiveMin;
-                    const viewportEnd = effectiveMax;
-                    const overlapStart = Math.max(viewportStart, logDataStart);
-                    const overlapEnd = Math.min(viewportEnd, logDataEnd);
-                    const overlapWidth = Math.max(0, overlapEnd - overlapStart);
-                    const coverageRatio = overlapWidth / viewportWidth;
-                    
-                    // Only use log data if: (1) it fits render limit AND (2) covers ≥80% of viewport
-                    const MIN_COVERAGE_RATIO = 0.8;
-                    const hasAdequateCoverage = coverageRatio >= MIN_COVERAGE_RATIO;
-
-                    if (pointsInView <= MAX_SPECTRAL_POINTS_TO_RENDER && hasAdequateCoverage) {
-                        // Happy Path: Show chunked LOG data
-                        finalDataToUse = logData;
-                        displayMetadata = { type: 'log', reason: ' (Log Data)' }; // Explicitly label the log view
-
-                        const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs } = finalDataToUse;
-                        let viewportCenter = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
-                            ? (effectiveMax + effectiveMin) / 2
-                            : times_ms[Math.max(0, Math.floor(n_times / 2))];
-                        if (!Number.isFinite(viewportCenter)) {
-                            viewportCenter = times_ms[Math.max(0, Math.floor(n_times / 2))];
-                        }
-                        const targetChunkStartTimeStamp = viewportCenter - (chunk_time_length * time_step / 2);
-
-                        // A more robust way to find the index, defaulting to 0 if the view is before the data starts.
-                        let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
-                        if (chunkStartTimeIdx === -1) {
-                            // If the view is past the end of the data, show the last possible chunk.
-                            chunkStartTimeIdx = Math.max(0, n_times - chunk_time_length);
-                        }
-
-                        const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, chunk_time_length);
-
-                        // Apply paint-on-canvas frequency slicing for spectrogram
-                        finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataCache, models);
-
-                    } else {
-                        // Log view active, but too zoomed out
+                    if (viewportTooLarge) {
+                        // Viewport too large for log data - use overview
                         finalDataToUse = overviewData;
-                        displayMetadata = { type: 'overview', reason: ' - Zoom in for Log Data' };
+                        const maxMinutes = Math.floor(LOG_VIEW_MAX_VIEWPORT_SECONDS / 60);
+                        const maxSeconds = LOG_VIEW_MAX_VIEWPORT_SECONDS % 60;
+                        const thresholdStr = maxSeconds > 0 ? `${maxMinutes}:${String(maxSeconds).padStart(2, '0')}` : `${maxMinutes}:00`;
+                        displayMetadata = { type: 'overview', reason: ` - Zoom to <${thresholdStr} for Log` };
                         const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                         finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
-                    }
+                    } else {
+                        // Calculate theoretical points based on viewport width
+                        const viewportWidth = viewState.viewport.max - viewState.viewport.min;
+                        const pointsInView = Math.floor(viewportWidth / logData.time_step);
+
+                        // Verify log data actually covers the viewport
+                        const logDataStart = logData.times_ms[0];
+                        const logDataEnd = logData.times_ms[logData.times_ms.length - 1];
+                        
+                        // Calculate actual coverage: how much of the viewport is covered by log data
+                        const viewportStart = effectiveMin;
+                        const viewportEnd = effectiveMax;
+                        const overlapStart = Math.max(viewportStart, logDataStart);
+                        const overlapEnd = Math.min(viewportEnd, logDataEnd);
+                        const overlapWidth = Math.max(0, overlapEnd - overlapStart);
+                        const coverageRatio = overlapWidth / viewportWidth;
+                        
+                        // Only use log data if: (1) it fits render limit AND (2) covers ≥80% of viewport
+                        const MIN_COVERAGE_RATIO = 0.8;
+                        const hasAdequateCoverage = coverageRatio >= MIN_COVERAGE_RATIO;
+
+                        if (pointsInView <= MAX_SPECTRAL_POINTS_TO_RENDER && hasAdequateCoverage) {
+                            // Happy Path: Show chunked LOG data
+                            finalDataToUse = logData;
+                            displayMetadata = { type: 'log', reason: ' (Log Data)' }; // Explicitly label the log view
+
+                            const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs } = finalDataToUse;
+                            let viewportCenter = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
+                                ? (effectiveMax + effectiveMin) / 2
+                                : times_ms[Math.max(0, Math.floor(n_times / 2))];
+                            if (!Number.isFinite(viewportCenter)) {
+                                viewportCenter = times_ms[Math.max(0, Math.floor(n_times / 2))];
+                            }
+                            const targetChunkStartTimeStamp = viewportCenter - (chunk_time_length * time_step / 2);
+
+                            // A more robust way to find the index, defaulting to 0 if the view is before the data starts.
+                            let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
+                            if (chunkStartTimeIdx === -1) {
+                                // If the view is past the end of the data, show the last possible chunk.
+                                chunkStartTimeIdx = Math.max(0, n_times - chunk_time_length);
+                            }
+
+                            const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, chunk_time_length);
+
+                            // Apply paint-on-canvas frequency slicing for spectrogram
+                            finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataCache, models);
+
+                        } else {
+                            // Log view active, but too zoomed out
+                            finalDataToUse = overviewData;
+                            displayMetadata = { type: 'overview', reason: ' - Zoom in for Log Data' };
+                            const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
+                            finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
+                        }
                     }
                 } else {
                     // Log view active, but no log data exists
@@ -331,7 +489,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             } else {
                 // Overview view is explicitly active
                 finalDataToUse = overviewData;
-                displayMetadata = { type: 'overview', reason: ' (Overview)' };
+                displayMetadata = { type: 'overview', reason: hasLogData ? ' (Overview - Enable Log View for detail)' : ' (Overview - No Log Data)' };
                 const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                 finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
             }
@@ -342,11 +500,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     ? applySpectrogramReplacementOffset(finalGlyphData, offsetMs)
                     : null;
                 const adjustedTimes = finalDataToUse.times_ms ? createOffsetArray(finalDataToUse.times_ms, offsetMs) : [];
+                
                 dataCache.activeSpectralData[position] = {
                     ...finalDataToUse,
                     times_ms: adjustedTimes,
-                    source_replacement: adjustedReplacement,
-                    skipSourceUpdate: isServerMode && viewType === 'log'
+                    source_replacement: adjustedReplacement
                 };
             } else {
                 // This case handles when overviewData was also null in one of the fallback paths.

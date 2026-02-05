@@ -30,7 +30,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         positionDisplayTitles: {},
         chartVisibility: {},
         viewport: { min: null, max: null },
-        globalViewType: 'log',
+        globalViewType: 'overview',
         selectedParameter: 'LZeq',
         hoverEnabled: true,
         activeSidePanelTab: DEFAULT_ACTIVE_TAB,

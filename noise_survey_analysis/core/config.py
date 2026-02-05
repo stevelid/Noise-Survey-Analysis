@@ -95,6 +95,15 @@ STREAMING_ENABLED = True
 STREAMING_DEBOUNCE_MS = 200
 STREAMING_VIEWPOINT_MULTIPLIER = 3
 
+# Log view threshold - switch from overview to log when viewport shows fewer than this many overview points
+# User can configure this via the UI. Default: 50 overview points triggers log view.
+# This translates to roughly 50 seconds of data at 1-second overview resolution.
+LOG_VIEW_THRESHOLD_POINTS = 50
+
+# Maximum viewport width (in seconds) for log view - beyond this, use overview
+# Default: 5 minutes (300 seconds). Format: seconds
+LOG_VIEW_MAX_VIEWPORT_SECONDS = 300
+
 # Default base directory for job files
 DEFAULT_BASE_JOB_DIR = "G:\\Shared drives\\Venta\\Jobs"
 

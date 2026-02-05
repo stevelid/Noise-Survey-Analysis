@@ -93,6 +93,10 @@ class PositionData:
         self.log_spectral: Optional[pd.DataFrame] = None
         self.audio_files_list: Optional[pd.DataFrame] = None # For list of audio files
         self.audio_files_path: Optional[str] = None # For path to audio files
+        
+        # Lazy loading: store file paths for on-demand loading
+        self.log_file_paths: List[Dict[str, Any]] = []  # List of {file_path, parser_type, return_all_cols}
+        self._log_data_loaded: bool = False  # Track if log data has been loaded
 
         # Store combined metadata from all contributing files for this position
         self.source_file_metadata: Optional[List[Dict[str, Any]]] = []
@@ -260,6 +264,49 @@ class PositionData:
             if parsed_data_obj.spectral_df is not None:
                 self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
 
+    def load_log_data_lazy(self, parser_factory, use_cache: bool = True) -> None:
+        """
+        Load log data on-demand from stored file paths.
+        This is called by ServerDataHandler when streaming is first triggered.
+        Preserves the exact same data format as the old eager loading approach.
+        """
+        if self._log_data_loaded:
+            logger.debug(f"Log data already loaded for {self.name}, skipping lazy load")
+            return
+        
+        if not self.log_file_paths:
+            logger.debug(f"No log file paths stored for {self.name}, nothing to load")
+            return
+        
+        logger.info(f"[LAZY LOAD] Loading log data for {self.name} from {len(self.log_file_paths)} file(s)")
+        
+        for file_info in self.log_file_paths:
+            file_path = file_info['file_path']
+            parser_type = file_info.get('parser_type')
+            return_all_cols = file_info.get('return_all_cols', False)
+            
+            try:
+                # Parse the file using the same logic as initial load
+                parsed_data = parser_factory.parse_file(
+                    file_path=file_path,
+                    parser_type_hint=parser_type,
+                    return_all_columns=return_all_cols,
+                    use_cache=use_cache
+                )
+                
+                if parsed_data:
+                    # Use the same add_data method to maintain identical data format
+                    self.add_data(parsed_data)
+                    logger.info(f"[LAZY LOAD] Loaded {file_path} for {self.name}")
+                else:
+                    logger.warning(f"[LAZY LOAD] Failed to parse {file_path}")
+                    
+            except Exception as e:
+                logger.error(f"[LAZY LOAD] Error loading {file_path}: {e}")
+        
+        self._log_data_loaded = True
+        logger.info(f"[LAZY LOAD] Completed for {self.name}. Log totals: {self.log_totals.shape if self.log_totals is not None else 'None'}, Log spectral: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
+
 
 # ==============================================================================
 #  2. The Main Data Orchestrator Class
@@ -352,10 +399,15 @@ class DataManager:
 
     def add_source_file(self, file_path: str, position_name: str,
                         parser_type_hint: Optional[str] = None,
-                        return_all_columns: bool = False):
+                        return_all_columns: bool = False,
+                        skip_log_files: bool = True):
         """
         Parses a single file and adds its data to the specified position.
         This method is used for sequential processing and backwards compatibility.
+        
+        Args:
+            skip_log_files: If True, log files are not loaded immediately. Instead, their paths
+                           are stored for lazy loading. This speeds up initial dashboard load.
         """
         logger.info(f"DataManager: Processing '{file_path}' for position '{position_name}' (AllCols: {return_all_columns}).")
 
@@ -366,6 +418,25 @@ class DataManager:
                 self._position_order.append(position_name)
 
         position_obj = self._positions_data[position_name]
+
+        # Check if this is a log file by quick heuristic (before parsing)
+        # Log files typically have "_log" in filename or are large CSV/TXT files
+        filename_lower = os.path.basename(file_path).lower()
+        is_likely_log_file = (
+            '_log' in filename_lower or 
+            'log_' in filename_lower or
+            (filename_lower.endswith(('.csv', '.txt')) and os.path.getsize(file_path) > 1_000_000)  # > 1MB
+        )
+        
+        if skip_log_files and is_likely_log_file:
+            # Store file path for lazy loading instead of parsing now
+            logger.info(f"[LAZY LOAD] Deferring log file: {os.path.basename(file_path)}")
+            position_obj.log_file_paths.append({
+                'file_path': file_path,
+                'parser_type': parser_type_hint,
+                'return_all_cols': return_all_columns
+            })
+            return
 
         # Try cache first if enabled
         parsed_data_obj = None

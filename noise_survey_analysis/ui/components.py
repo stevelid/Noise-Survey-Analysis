@@ -1414,6 +1414,13 @@ class SpectrogramComponent:
         self._current_param = initial_param
         self.name_id = f"{self.position_name}_spectrogram"
         
+        # Create overview and log sources for reservoir streaming
+        self.overview_source: ColumnDataSource = ColumnDataSource(data=dict())
+        self.overview_source.name = f"source_{self.position_name}_spectrogram_overview"
+        
+        self.log_source: ColumnDataSource = ColumnDataSource(data=dict())
+        self.log_source.name = f"source_{self.position_name}_spectrogram_log"
+        
         #source and figure
         self.source: ColumnDataSource = ColumnDataSource(data=dict()) # Holds the [transposed_matrix]
         self.source.name = "source_" + self.name_id
@@ -1703,11 +1710,11 @@ class ControlsComponent:
 
     def add_view_type_selector(self):
         toggle = Toggle(
-            label="Log View Enabled", 
+            label="Log View Disabled", 
             button_type="primary", 
             width=150,
             name="global_view_toggle",
-            active=True
+            active=False
         )
         
         toggle.js_on_change("active", CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleViewToggle) {
