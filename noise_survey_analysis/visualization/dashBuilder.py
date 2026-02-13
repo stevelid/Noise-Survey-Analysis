@@ -41,6 +41,8 @@ from noise_survey_analysis.core.config import (
     CHART_SETTINGS,  # Ensure CHART_SETTINGS is imported
     UI_LAYOUT_SETTINGS,
     LITE_TARGET_POINTS,
+    LOG_VIEW_MAX_VIEWPORT_SECONDS,
+    LOG_STREAM_TARGET_POINTS,
 )
 from noise_survey_analysis.js.loader import load_js_file
 
@@ -527,6 +529,8 @@ class DashBuilder:
                 'spectrogram_freq_range_hz': CHART_SETTINGS.get('spectrogram_freq_range_hz'),
                 'freq_bar_freq_range_hz': CHART_SETTINGS.get('freq_bar_freq_range_hz'),
                 'freq_table_freq_range_hz': CHART_SETTINGS.get('freq_table_freq_range_hz'),
+                'log_view_max_viewport_seconds': LOG_VIEW_MAX_VIEWPORT_SECONDS,
+                'log_stream_target_points': LOG_STREAM_TARGET_POINTS,
                 'server_mode': getattr(self, 'server_mode', False),
             },
             'sourceConfigs': getattr(self, 'source_configs', []),
@@ -534,6 +538,7 @@ class DashBuilder:
             'positionDisplayTitles': getattr(self, 'position_display_titles', {}),
             'savedWorkspaceState': getattr(self, 'saved_workspace_state', None),
             'uiPositionElements': {},
+            'positionHasLogData': {},  # per-position flag: whether log data exists (even if not yet loaded)
             'clickLines': [],
             'hoverLines': [],
             'labels': [],
@@ -544,6 +549,7 @@ class DashBuilder:
             'freqTableDiv': self.shared_components['freq_bar'].table_div,  # Add the frequency table div for copy/paste functionality
             'summaryTableDiv': self.shared_components['summary_table'].summary_div,
             'paramSelect': self.shared_components['controls'].param_select,
+            'logThresholdSpinner': self.shared_components['controls'].log_threshold_spinner_widget,
             'viewToggle': self.shared_components['controls'].view_toggle,
             'hoverToggle': self.shared_components['controls'].hover_toggle,
             'sessionMenu': self.shared_components['controls'].session_menu,
@@ -610,6 +616,7 @@ class DashBuilder:
                 'overview': comp_dict['timeseries'].overview_source,
                 'log': comp_dict['timeseries'].log_source,
             }
+            js_models['positionHasLogData'][pos] = comp_dict['timeseries'].has_log_data
 
             js_models['spectrogramSources'][pos] = {
                 'overview': comp_dict['spectrogram'].overview_source,

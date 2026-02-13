@@ -3,6 +3,9 @@ bokeh serve noise_survey_analysis --show
 bokeh serve noise_survey_analysis --show --args --config /path/to/your/workspace.json
 python -m noise_survey_analysis.main --generate-static /path/to/your/config.json
 
+**Create static HTML from live server (opt-in):**
+bokeh serve noise_survey_analysis --show --args --create-static
+
 # Noise Survey Analysis Tool
 
 An interactive Bokeh application for loading, analyzing, and visualizing noise survey data from various sound level meters.
@@ -14,7 +17,7 @@ This tool provides a powerful, interactive dashboard for analyzing noise survey 
 ## Key Features
 
 *   **Unified Dashboard:** View time history, spectrograms, and frequency data for multiple positions in a single, synchronized view.
-*   **Multi-Source Data Import:** Automatically parses and aggregates data from various formats, including NTi `.txt`, Svan `.csv`/`.xlsx`, and Noise Sentry `.csv`.
+*   **Multi-Source Data Import:** Automatically parses and aggregates data from various formats, including NTi `.txt`, Svan `.csv`/`.xlsx`, Noise Sentry `.csv`, and generic line-only tabular files.
 *   **High-Performance Spectrograms:** Utilizes an efficient rendering strategy for smooth, interactive spectrograms, even with millions of data points.
 *   **Synchronized Chart Interaction:**
     *   Pan and zoom on one chart updates all other time-based charts simultaneously.
@@ -29,7 +32,7 @@ This tool provides a powerful, interactive dashboard for analyzing noise survey 
 *   **Audio File Scanning (Wider Format Support):**
     *   The audio directory scanner now uses `soundfile` (libsndfile) to read durations, enabling support for common formats like WAV, FLAC, OGG, etc. WAV remains supported even without `soundfile`.
 *   **Keyboard Navigation:** Use arrow keys for fine-grained time-stepping.
-*   **Static HTML Export:** Generate a single, self-contained HTML file of the dashboard for easy sharing and reporting (audio playback is disabled in static mode).
+*   **Static HTML Export:** Generate a single, self-contained HTML file of the dashboard for easy sharing and reporting (audio playback is disabled in static mode). This is now opt-in via `--create-static` flag when running the live server.
 *   **Flexible Region Management:** Build multi-segment regions, merge related selections, and append new segments with the dedicated Add Area mode while metrics update automatically for the combined duration.
 
 ## Getting Started
@@ -70,6 +73,20 @@ If you have a previously saved configuration file, you can bypass the selector a
 ```bash
 bokeh serve noise_survey_analysis --show --args --config /path/to/your/config.json
 ```
+
+**Optional: Generate Static HTML from Live Server**
+
+By default, the live server does **not** generate static HTML files. To create a static HTML export while running the live server, add the `--create-static` flag:
+
+```bash
+# With data source selector
+bokeh serve noise_survey_analysis --show --args --create-static
+
+# With a config file
+bokeh serve noise_survey_analysis --show --args --config /path/to/your/config.json --create-static
+```
+
+When `--create-static` is used, the application will generate a static HTML file in the background after you select data sources. The static file will be saved in the same directory as the auto-generated config file.
 
 **C) Generate a Static HTML File**
 
@@ -123,7 +140,24 @@ Here is an example of the `v1.2` format:
 *   `"sources"`: A list of data source entries.
 *   `"path"`: The path to the data file or directory, relative to the `config_base_path`. The application combines these two paths to find the data.
 *   `"position"`: The name for the measurement position that appears in the dashboard.
-*   `"parser_type"`: The specific parser to use (`svan`, `nti`, `sentry`, `audio`, or `auto`).
+*   `"parser_type"`: The specific parser to use (`svan`, `nti`, `sentry`, `audio`, `generic`, or `auto`).
+
+### Generic parser (`parser_type: "generic"`)
+
+Use `generic` when you want to plot line data from a non-standard file format without adding a dedicated parser.
+
+Requirements:
+*   At least one datetime-like column (`Datetime`, `Timestamp`, or a `Date` + `Time` pair).
+*   At least one numeric column.
+
+Behavior:
+*   Loads data into time-series line charts only (`totals_df`).
+*   Keeps only plottable numeric columns plus `Datetime`.
+*   Does not produce spectral data (`spectral_df` stays empty).
+
+Limitations:
+*   Spectrogram charts and spectral parameter workflows are unavailable for generic sources.
+*   Features that expect standard metrics (`LAeq`, `LAFmax`, `LAF90`, etc.) may show blank or `N/A` if those columns are not present in the source.
 
 ## Working with Markers and Regions
 

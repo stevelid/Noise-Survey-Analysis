@@ -365,6 +365,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         dispatch(thunkCreator());
     }
 
+    function handleLogViewThresholdChange(value) {
+        const seconds = parseFloat(value);
+        app.store.dispatch(actions.logViewThresholdSet(
+            Number.isFinite(seconds) && seconds > 0 ? seconds : null
+        ));
+    }
+
     function handleKeyPress(e) {
         // Ignore keyboard events from editable elements
         if (app.utils && typeof app.utils.isEditableEvent === 'function') {
@@ -458,6 +465,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleStartComparison: withErrorHandling(handleStartComparison, 'handleStartComparison'),
         handleFinishComparison: withErrorHandling(handleFinishComparison, 'handleFinishComparison'),
         handleComparisonPositionsChange: withErrorHandling(handleComparisonPositionsChange, 'handleComparisonPositionsChange'),
-        handleComparisonMakeRegions: withErrorHandling(handleComparisonMakeRegions, 'handleComparisonMakeRegions')
+        handleComparisonMakeRegions: withErrorHandling(handleComparisonMakeRegions, 'handleComparisonMakeRegions'),
+        handleLogViewThresholdChange: withErrorHandling(handleLogViewThresholdChange, 'handleLogViewThresholdChange')
     };
 })(window.NoiseSurveyApp);

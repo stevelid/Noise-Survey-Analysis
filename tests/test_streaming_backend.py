@@ -99,15 +99,34 @@ class StreamingBackendTests(unittest.TestCase):
             [self.start_ms, self.middle_ms, self.end_ms],
         )
 
-        # Now we push raw flat data instead of pre-computed image
+        # Now we push complete prepared data structure
         # All arrays are wrapped in single-element lists to satisfy Bokeh ColumnDataSource constraints
         spectrogram_data = spectrogram_log_source.data
+
+        # Verify array fields (wrapped)
         self.assertIn("levels_flat_transposed", spectrogram_data)
         self.assertIn("times_ms", spectrogram_data)
         self.assertIn("frequency_labels", spectrogram_data)
         self.assertIn("frequencies_hz", spectrogram_data)
-        
-        # Verify wrapping (list of lists)
+
+        # Verify metadata fields (scalars)
+        self.assertIn("n_times", spectrogram_data)
+        self.assertIn("n_freqs", spectrogram_data)
+        self.assertIn("chunk_time_length", spectrogram_data)
+        self.assertIn("time_step", spectrogram_data)
+        self.assertIn("min_val", spectrogram_data)
+        self.assertIn("max_val", spectrogram_data)
+        self.assertIn("min_time", spectrogram_data)
+        self.assertIn("max_time", spectrogram_data)
+
+        # Verify initial_glyph_data fields
+        self.assertIn("initial_glyph_data_x", spectrogram_data)
+        self.assertIn("initial_glyph_data_y", spectrogram_data)
+        self.assertIn("initial_glyph_data_dw", spectrogram_data)
+        self.assertIn("initial_glyph_data_dh", spectrogram_data)
+        self.assertIn("initial_glyph_data_image", spectrogram_data)
+
+        # Verify wrapping (list of lists for arrays)
         self.assertEqual(len(spectrogram_data["frequency_labels"]), 1)
         self.assertEqual(len(spectrogram_data["frequency_labels"][0]), 2)  # 2 frequency bands inside wrapper
 
@@ -138,6 +157,57 @@ class StreamingBackendTests(unittest.TestCase):
         doc.flush_timeouts()
 
         server_data_handler.handle_range_update.assert_called_once_with(150, 250)
+
+    def test_server_data_handler_allows_wider_low_sample_rate_viewport(self):
+        timeseries_log_source = ColumnDataSource(data={})
+        spectrogram_log_source = ColumnDataSource(data={})
+
+        doc = FakeDoc({
+            "source_P1_timeseries_log": timeseries_log_source,
+            "source_P1_spectrogram_log": spectrogram_log_source,
+            "figure_P1_timeseries": DummyFigure(width=320),
+            "figure_P1_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({"P1": self.position}), CHART_SETTINGS)
+
+        # 20-minute viewport, which exceeds the old fixed 300s limit.
+        wide_end_ms = self.start_ms + (20 * 60 * 1000)
+        handler.handle_range_update(self.start_ms, wide_end_ms)
+
+        self.assertIn("Datetime", timeseries_log_source.data)
+        self.assertEqual(timeseries_log_source.data["LAeq"], [50, 52, 54])
+
+    def test_server_data_handler_skips_wide_high_sample_rate_viewport(self):
+        base_time = pd.Timestamp("2024-01-01T00:00:00Z")
+        high_rate_times = [base_time + pd.Timedelta(seconds=idx) for idx in range(20)]
+        high_rate_position = PositionData(name="P2")
+        high_rate_position.log_totals = pd.DataFrame({
+            "Datetime": high_rate_times,
+            "LAeq": [40 + idx for idx in range(20)],
+        })
+        high_rate_position.log_spectral = pd.DataFrame({
+            "Datetime": high_rate_times,
+            "LZeq_100": [60 + idx for idx in range(20)],
+            "LZeq_200": [63 + idx for idx in range(20)],
+        })
+
+        timeseries_log_source = ColumnDataSource(data={})
+        spectrogram_log_source = ColumnDataSource(data={})
+        doc = FakeDoc({
+            "source_P2_timeseries_log": timeseries_log_source,
+            "source_P2_spectrogram_log": spectrogram_log_source,
+            "figure_P2_timeseries": DummyFigure(width=320),
+            "figure_P2_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({"P2": high_rate_position}), CHART_SETTINGS)
+
+        # 20-minute viewport should be skipped for 1-second log data at default target points.
+        start_ms = int(high_rate_times[0].value // 10**6)
+        wide_end_ms = start_ms + (20 * 60 * 1000)
+        handler.handle_range_update(start_ms, wide_end_ms)
+
+        self.assertEqual(timeseries_log_source.data, {})
+        self.assertEqual(spectrogram_log_source.data, {})
 
 
 if __name__ == "__main__":

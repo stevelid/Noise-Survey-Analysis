@@ -44,7 +44,7 @@ def _parse_single_file(file_path: str, position_name: str,
 
         # Parse the file
         factory = NoiseParserFactory()
-        parser = factory.get_parser(file_path)
+        parser = factory.get_parser(file_path, parser_type=parser_type_hint or 'auto')
 
         if not parser:
             err_msg = f"No suitable parser found for file: {file_path}"
@@ -287,16 +287,17 @@ class PositionData:
             
             try:
                 # Parse the file using the same logic as initial load
-                parsed_data = parser_factory.parse_file(
-                    file_path=file_path,
-                    parser_type_hint=parser_type,
-                    return_all_columns=return_all_cols,
-                    use_cache=use_cache
-                )
+                # (mirrors _parse_single_file: factory.get_parser → parser.parse)
+                parser = parser_factory.get_parser(file_path, parser_type=parser_type or 'auto')
+                if not parser:
+                    logger.warning(f"[LAZY LOAD] No suitable parser for {file_path}")
+                    continue
+
+                parsed_data = parser.parse(file_path, return_all_columns=return_all_cols)
                 
                 if parsed_data:
-                    # Use the same add_data method to maintain identical data format
-                    self.add_data(parsed_data)
+                    # Use the same method as eager loading to maintain identical data format
+                    self.add_parsed_file_data(parsed_data)
                     logger.info(f"[LAZY LOAD] Loaded {file_path} for {self.name}")
                 else:
                     logger.warning(f"[LAZY LOAD] Failed to parse {file_path}")
@@ -378,7 +379,8 @@ class DataManager:
                 continue
 
             for path in file_paths_to_process:
-                parse_tasks.append((path, position_name, use_return_all_cols, config.get("parser_type_hint")))
+                parser_hint = config.get("parser_type_hint") or config.get("parser_type")
+                parse_tasks.append((path, position_name, use_return_all_cols, parser_hint))
 
         # Process files sequentially
         if not parse_tasks:
@@ -421,9 +423,11 @@ class DataManager:
 
         # Check if this is a log file by quick heuristic (before parsing)
         # Log files typically have "_log" in filename or are large CSV/TXT files
+        # Summary files (_summary) are always loaded eagerly regardless of size
         filename_lower = os.path.basename(file_path).lower()
-        is_likely_log_file = (
-            '_log' in filename_lower or 
+        is_summary_file = '_summary' in filename_lower
+        is_likely_log_file = not is_summary_file and (
+            '_log' in filename_lower or
             'log_' in filename_lower or
             (filename_lower.endswith(('.csv', '.txt')) and os.path.getsize(file_path) > 1_000_000)  # > 1MB
         )
@@ -448,7 +452,7 @@ class DataManager:
                 position_obj.add_parsed_file_data(parsed_data_obj)
                 return
 
-        parser = self.parser_factory.get_parser(file_path) # Factory can use hint if we modify it
+        parser = self.parser_factory.get_parser(file_path, parser_type=parser_type_hint or 'auto')
         if not parser:
             err_msg = f"No suitable parser found for file: {file_path}"
             logger.error(err_msg)

@@ -46,6 +46,7 @@ class AudioDataProcessor:
                 continue
 
             logger.info("AudioDataProcessor: Anchoring audio for position '%s'...", position_name)
+            logger.info("  has_log_totals=%s, has_overview_totals=%s", has_log_totals, has_overview_totals)
 
             measurement_times = self._collect_measurement_times(pos_data)
             if measurement_times.empty:
@@ -53,6 +54,9 @@ class AudioDataProcessor:
                 continue
 
             segments = self._split_measurement_segments(measurement_times)
+            logger.info("  Measurement times range: %s -> %s (%d points)", measurement_times.iloc[0] if len(measurement_times) > 0 else 'N/A', measurement_times.iloc[-1] if len(measurement_times) > 0 else 'N/A', len(measurement_times))
+            for si, seg in enumerate(segments):
+                logger.info("  Segment %d: %s -> %s", si, seg['start'], seg['end'])
             if not segments:
                 logger.warning("AudioDataProcessor: No valid measurement segments for position '%s'.", position_name)
                 continue
@@ -61,8 +65,13 @@ class AudioDataProcessor:
             if audio_df is None or audio_df.empty:
                 continue
 
+            logger.info("  Audio files before anchoring: %d files", len(audio_df))
+            for _, arow in audio_df.iterrows():
+                logger.info("    File: %s, modified_time=%s, duration=%.1fs", arow.get('filename', 'unknown'), arow.get('modified_time', arow.get('Datetime', 'N/A')), arow.get('duration_sec', 0))
             anchored_df = self._anchor_audio_files_to_segments(audio_df, segments, position_name)
             pos_data.audio_files_list = anchored_df
+            for _, arow in anchored_df.iterrows():
+                logger.info("  Anchored: %s -> %s (confidence=%s, warning=%s)", arow.get('filename', 'unknown'), arow.get('Datetime', 'NaT'), arow.get('anchor_confidence', ''), arow.get('anchor_warning', ''))
 
             logger.info(
                 "AudioDataProcessor: Successfully anchored %d audio files for '%s'.",
@@ -122,15 +131,26 @@ class AudioDataProcessor:
                 working_df.at[idx, 'anchor_warning'] = 'missing modified time'
                 continue
 
+            # Use the full recording span (start→end) for matching, not just modified_time
+            duration_sec = row.get('duration_sec', 0)
+            duration_sec = duration_sec if pd.notna(duration_sec) and duration_sec > 0 else 0
+            recording_start = modified_time - pd.Timedelta(seconds=duration_sec)
+            recording_end = modified_time
+
             best_idx = None
             best_distance = None
             for segment_idx, segment in enumerate(segments):
-                start = segment['start']
-                end = segment['end']
-                if start <= modified_time <= end:
+                seg_start = segment['start']
+                seg_end = segment['end']
+                # Check if recording span overlaps the segment
+                if recording_start <= seg_end and recording_end >= seg_start:
                     distance = pd.Timedelta(seconds=0)
                 else:
-                    distance = min(abs(modified_time - start), abs(modified_time - end))
+                    # No overlap: distance is gap between nearest edges
+                    distance = min(
+                        abs(recording_start - seg_end),
+                        abs(recording_end - seg_start),
+                    )
                 if best_distance is None or distance < best_distance:
                     best_distance = distance
                     best_idx = segment_idx
@@ -154,29 +174,17 @@ class AudioDataProcessor:
             if not row_indices:
                 continue
             segment = segments[segment_idx]
-            segment_duration = segment['end'] - segment['start']
             row_indices = sorted(
                 row_indices,
                 key=lambda index: working_df.at[index, 'modified_time'],
             )
-            current_time = segment['start']
-            total_duration = pd.Timedelta(seconds=0)
             for index in row_indices:
-                working_df.at[index, 'anchored_datetime'] = current_time
+                modified_time = working_df.at[index, 'modified_time']
                 duration_seconds = working_df.at[index, 'duration_sec']
-                duration_seconds = duration_seconds if pd.notna(duration_seconds) else 0
-                duration_delta = pd.to_timedelta(duration_seconds, unit='s')
-                total_duration += duration_delta
-                current_time += duration_delta
-
-            if segment_duration and total_duration > segment_duration + DURATION_TOLERANCE:
-                warning = (
-                    "audio duration exceeds measurement segment by "
-                    f"{total_duration - segment_duration}"
-                )
-                for index in row_indices:
-                    existing = working_df.at[index, 'anchor_warning']
-                    working_df.at[index, 'anchor_warning'] = f"{existing}; {warning}".strip('; ')
+                duration_seconds = duration_seconds if pd.notna(duration_seconds) and duration_seconds > 0 else 0
+                # Anchor to actual recording start: modified_time - duration
+                recording_start = modified_time - pd.to_timedelta(duration_seconds, unit='s')
+                working_df.at[index, 'anchored_datetime'] = recording_start
 
         working_df['Datetime'] = working_df['anchored_datetime']
         return working_df

@@ -283,7 +283,7 @@ describe('NoiseSurveyApp.data_processors', () => {
 
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
             expect(details?.type).toBe('overview');
-            expect(details?.reason).toBe(' - Zoom in for Log Data');
+            expect(details?.reason).toBe(' - Overview - zoom in for Log');
             expect(viewState.displayDetails).toBeUndefined();
         });
 
@@ -310,7 +310,7 @@ describe('NoiseSurveyApp.data_processors', () => {
 
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
             expect(details?.type).toBe('overview');
-            expect(details?.reason).toBe(' (No Log Data Available)');
+            expect(details?.reason).toBe(' (Overview)');
             expect(viewState.displayDetails).toBeUndefined();
         });
 
@@ -343,8 +343,118 @@ describe('NoiseSurveyApp.data_processors', () => {
 
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
             expect(details?.type).toBe('overview');
-            expect(details?.reason).toBe(' (Overview)');
+            expect(details?.reason).toBe(' (Overview - Enable Log View for detail)');  // Updated to match actual message
             expect(viewState.displayDetails).toBeUndefined();
+        });
+
+        it('should cap user threshold to the server streaming max', () => {
+            const viewState = {
+                globalViewType: 'log',
+                logViewThresholdSeconds: 600,
+                viewport: { min: 0, max: 500000 } // 500 seconds
+            };
+            const dataCache = { activeLineData: {} };
+            const models = {
+                config: {
+                    log_view_max_viewport_seconds: 300
+                },
+                timeSeriesSources: {
+                    P1: {
+                        overview: {
+                            data: {
+                                Datetime: [0, 500000],
+                                LAeq: [55, 65]
+                            }
+                        },
+                        log: {
+                            data: {
+                                Datetime: Array.from({ length: 200 }, (_, i) => i * 1000),
+                                LAeq: Array.from({ length: 200 }, (_, i) => 40 + i)
+                            }
+                        }
+                    }
+                }
+            };
+
+            const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
+
+            expect(details?.type).toBe('overview');
+            expect(details?.reason).toBe(' - Overview - zoom in for Log');
+            expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
+        });
+
+        it('should honor configured log stream target points for auto-threshold', () => {
+            const viewState = {
+                globalViewType: 'log',
+                viewport: { min: 0, max: 7000 } // 7 seconds
+            };
+            const dataCache = { activeLineData: {} };
+            const models = {
+                config: {
+                    log_stream_target_points: 5,
+                    log_view_max_viewport_seconds: 300
+                },
+                spectrogramSources: {
+                    P1: {
+                        overview: { data: { time_step: [100] } },
+                        log: { data: { time_step: [1000] } }
+                    }
+                },
+                timeSeriesSources: {
+                    P1: {
+                        overview: {
+                            data: {
+                                Datetime: [0, 10000],
+                                LAeq: [55, 65]
+                            }
+                        },
+                        log: {
+                            data: {
+                                Datetime: Array.from({ length: 20 }, (_, i) => i * 1000),
+                                LAeq: Array.from({ length: 20 }, (_, i) => 40 + i)
+                            }
+                        }
+                    }
+                }
+            };
+
+            const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
+
+            expect(details?.type).toBe('overview');
+            expect(details?.reason).toBe(' - Overview - zoom in for Log');
+            expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
+        });
+
+        it('should fall back to overview when viewport is outside current log chunk', () => {
+            const viewState = {
+                globalViewType: 'log',
+                viewport: { min: 10000, max: 11000 }
+            };
+            const dataCache = { activeLineData: {} };
+            const models = {
+                timeSeriesSources: {
+                    P1: {
+                        overview: {
+                            data: {
+                                Datetime: [0, 20000],
+                                LAeq: [55, 65]
+                            }
+                        },
+                        log: {
+                            data: {
+                                Datetime: [0, 1000, 2000, 3000],
+                                LAeq: [50, 60, 70, 80]
+                            }
+                        }
+                    }
+                }
+            };
+
+            const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
+
+            expect(details?.type).toBe('overview');
+            expect(details?.reason).toBe(' (Overview - Streaming Log Data...)');
+            expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
         });
     });
 });

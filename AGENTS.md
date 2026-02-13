@@ -109,4 +109,12 @@ Follow consistent naming to make intent obvious:
 5. **Orchestrator (`onStateChange`):** Detects changes to `state.regions` and invokes `renderers.renderRegions(newState)`.
 6. **Renderer (`renderRegions`):** Reads the updated region list via a selector, removes the corresponding `BoxAnnotation`, and updates the side panel UI.
 
+## 8. Generic Parser Contract (`parser_type: generic`)
+- **Scope:** Generic parser support is intentionally "plot lines only." It populates `totals_df` with `Datetime` + numeric columns and leaves `spectral_df` empty.
+- **When to use:** Non-standard CSV/TXT/XLSX datasets where a dedicated parser does not exist yet.
+- **Required shape:** Source must contain a parseable datetime field (or date+time pair) and at least one numeric column.
+- **Downstream implications:** Spectrogram views and spectral parameter switching are expected to be unavailable for these sources.
+- **Risk to existing features:** Regions, marker navigation, and line rendering should still function, but metrics/components that assume `LAeq`/`LAF*` columns may be blank unless those columns exist.
+- **Implementation rule:** Keep this parser generic and low-assumption; do not add instrument-specific heuristics that belong in dedicated parser classes.
+
 By following this handbook, contributors maintain a clean, scalable, and predictable codebase that respects the project’s performance constraints and architectural conventions.

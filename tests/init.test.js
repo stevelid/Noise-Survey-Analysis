@@ -16,7 +16,7 @@ describe('NoiseSurveyApp.init (store creation)', () => {
 
     const state = app.store.getState();
     // Spot-check a few initial state properties from reducers.js
-    expect(state.view.globalViewType).toBe('log');
+    expect(state.view.globalViewType).toBe('overview');
     expect(state.interaction.keyboard.stepSizeMs).toBe(300000);
   });
 });

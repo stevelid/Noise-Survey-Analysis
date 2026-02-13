@@ -6,6 +6,7 @@ import pandas as pd
 from noise_survey_analysis.core.config import (
     CHART_SETTINGS,
     LOG_VIEW_MAX_VIEWPORT_SECONDS,
+    LOG_STREAM_TARGET_POINTS,
 )
 from noise_survey_analysis.core.data_manager import DataManager
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
@@ -44,22 +45,74 @@ class ServerDataHandler:
         if isinstance(param, str) and param.strip():
             self.selected_parameter = param.strip()
 
+    def _estimate_log_time_step_ms(self, position_data) -> Optional[float]:
+        def extract_step_from_df(df: Optional[pd.DataFrame]) -> Optional[float]:
+            if df is None or df.empty or 'Datetime' not in df.columns:
+                return None
+            try:
+                times_ms = (pd.to_datetime(df['Datetime']).astype('int64') // 10**6).to_numpy()
+            except Exception:
+                return None
+            if len(times_ms) < 2:
+                return None
+            deltas = pd.Series(times_ms).diff().dropna()
+            positive = deltas[deltas > 0]
+            if positive.empty:
+                return None
+            return float(positive.median())
+
+        step_ms = extract_step_from_df(getattr(position_data, 'log_totals', None))
+        if step_ms and step_ms > 0:
+            return step_ms
+
+        step_ms = extract_step_from_df(getattr(position_data, 'log_spectral', None))
+        if step_ms and step_ms > 0:
+            return step_ms
+
+        sample_periods = getattr(position_data, 'sample_periods_seconds', None)
+        if sample_periods:
+            positive_periods = [float(v) for v in sample_periods if isinstance(v, (int, float)) and v > 0]
+            if positive_periods:
+                return min(positive_periods) * 1000
+
+        return None
+
+    def _position_max_viewport_seconds(self, position_data) -> float:
+        hard_cap_seconds = float(LOG_VIEW_MAX_VIEWPORT_SECONDS)
+        target_points = max(1, int(LOG_STREAM_TARGET_POINTS))
+        fallback_seconds = min(300.0, hard_cap_seconds)
+
+        step_ms = self._estimate_log_time_step_ms(position_data)
+        if not step_ms or step_ms <= 0:
+            return fallback_seconds
+
+        adaptive_seconds = (step_ms * target_points) / 1000.0
+        if adaptive_seconds <= 0:
+            return fallback_seconds
+
+        return min(adaptive_seconds, hard_cap_seconds)
+
     def handle_range_update(self, start_ms: float, end_ms: float) -> None:
         if not isinstance(start_ms, (int, float)) or not isinstance(end_ms, (int, float)):
             return
-        
-        # Don't stream log data if viewport is too large - use configurable threshold
+
         viewport_width_ms = abs(end_ms - start_ms)
         viewport_width_seconds = viewport_width_ms / 1000
-        max_viewport_seconds = LOG_VIEW_MAX_VIEWPORT_SECONDS
-        
-        if viewport_width_seconds > max_viewport_seconds:
-            logger.debug(f"Viewport too large ({viewport_width_seconds:.0f}s > {max_viewport_seconds}s), skipping log data stream")
-            return
-        
-        # Stream log data for all positions when viewport is small enough
-        # Only update if viewport approaches buffer edge (edge detection)
+
+        # Evaluate stream eligibility per position so low-sample-rate positions
+        # can stream wider windows than high-sample-rate ones.
         for position_id in self.app_data.positions():
+            position_data = self.app_data[position_id]
+            max_viewport_seconds = self._position_max_viewport_seconds(position_data)
+            if viewport_width_seconds > max_viewport_seconds:
+                logger.debug(
+                    "Viewport too large for %s (%.0fs > %.0fs), skipping log stream",
+                    position_id,
+                    viewport_width_seconds,
+                    max_viewport_seconds,
+                )
+                continue
+
             if not self._buffer_covers_viewport(position_id, start_ms, end_ms):
                 buffer_start, buffer_end = self._calculate_buffer(start_ms, end_ms)
                 self._update_position(position_id, buffer_start, buffer_end)
@@ -78,18 +131,27 @@ class ServerDataHandler:
             position_data.load_log_data_lazy(self.app_data.parser_factory, self.app_data.use_cache)
         
         model_bundle = self.position_models.get(position_id, {})
+        logger.debug(f"[UPDATE] Position {position_id}: has_log_totals={position_data.has_log_totals}, has_log_spectral={position_data.has_log_spectral}")
+        logger.debug(f"[UPDATE] Position {position_id}: model_bundle keys={list(model_bundle.keys())}")
         if position_data.has_log_totals:
             self._update_log_totals(position_data.log_totals, model_bundle, start_ms, end_ms)
         if position_data.has_log_spectral:
+            logger.info(f"[UPDATE] Updating spectrogram for {position_id}")
             self._update_log_spectrogram(position_data.log_spectral, model_bundle, start_ms, end_ms)
 
     def _update_log_totals(self, df: pd.DataFrame, model_bundle: Dict[str, object], start_ms: float, end_ms: float) -> None:
         timeseries_source = model_bundle.get('timeseries_log_source')
-        if timeseries_source is None or df is None or df.empty:
+        if timeseries_source is None:
+            logger.warning(f"[UPDATE] timeseries_log_source is None - cannot push log totals")
+            return
+        if df is None or df.empty:
+            logger.warning(f"[UPDATE] log_totals df is None/empty - cannot push")
             return
         sliced = self._slice_by_time(df, start_ms, end_ms)
         if sliced.empty:
+            logger.debug(f"[UPDATE] Sliced log_totals is empty for range {start_ms}-{end_ms}")
             return
+        logger.info(f"[UPDATE] Pushing {len(sliced)} log totals rows to timeseries source")
         
         # Stream full-resolution log data (no downsampling)
         # Resolution can be anything from 0.1s to 60s depending on the source data
@@ -116,20 +178,37 @@ class ServerDataHandler:
         # Resolution can be anything from 0.1s to 60s depending on the source data
         prepared = self.processor.prepare_single_spectrogram_data(sliced, param, self.chart_settings)
         if prepared:
-            # Push raw flat data (not pre-computed image) for JS to slice from
-            # Wrap ALL arrays in single-element lists so every column has length 1
-            # This satisfies Bokeh's ColumnDataSource constraint while transporting arrays of different lengths
+            # Send COMPLETE prepared data structure matching preparedGlyphData format
+            # BUT: Bokeh ColumnDataSource requires ALL values to be sequences
+            # So wrap EVERYTHING (arrays AND scalars) in single-element lists
+            # This creates a "1-row table" where each cell can hold an array or scalar value
             new_data = {
+                # Array fields (wrap in single-element lists)
                 'levels_flat_transposed': [prepared['levels_flat_transposed'].tolist()],
                 'times_ms': [prepared['times_ms']],
                 'frequency_labels': [prepared['frequency_labels']],
                 'frequencies_hz': [prepared['frequencies_hz']],
+                # Metadata scalars (also wrap in single-element lists for Bokeh)
+                'n_times': [prepared['n_times']],
+                'n_freqs': [prepared['n_freqs']],
+                'chunk_time_length': [prepared['chunk_time_length']],
+                'time_step': [prepared['time_step']],
+                'min_val': [prepared['min_val']],
+                'max_val': [prepared['max_val']],
+                'min_time': [prepared['min_time']],
+                'max_time': [prepared['max_time']],
+                # initial_glyph_data fields (already lists from prepared, keep them)
+                'initial_glyph_data_x': [prepared['initial_glyph_data']['x']],
+                'initial_glyph_data_y': [prepared['initial_glyph_data']['y']],
+                'initial_glyph_data_dw': [prepared['initial_glyph_data']['dw']],
+                'initial_glyph_data_dh': [prepared['initial_glyph_data']['dh']],
+                'initial_glyph_data_image': [prepared['initial_glyph_data']['image'][0].tolist()],
             }
-            
+
             # Log data structure for verification
             logger.debug(f"Pushing log spectrogram data: keys={list(new_data.keys())}")
-            logger.debug(f"Data lengths (should all be 1): {[len(v) for v in new_data.values()]}")
-            
+            logger.debug(f"All columns have length 1 (Bokeh format): {all(len(v) == 1 for v in new_data.values())}")
+
             spectrogram_source.data = new_data
 
     def _slice_by_time(self, df: pd.DataFrame, start_ms: float, end_ms: float) -> pd.DataFrame:

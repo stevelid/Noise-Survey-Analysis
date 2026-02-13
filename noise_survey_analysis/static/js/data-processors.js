@@ -15,10 +15,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const MAX_LINE_POINTS_TO_RENDER = 5000;
     const MAX_SPECTRAL_POINTS_TO_RENDER = 5000;
     
-    // Log view threshold - maximum viewport width (in seconds) for log view
-    // Beyond this, use overview data. Default: 300 seconds (5 minutes)
-    // This should match the server-side LOG_VIEW_MAX_VIEWPORT_SECONDS config
-    const LOG_VIEW_MAX_VIEWPORT_SECONDS = 300;
+    // Log view threshold is calculated dynamically based on data time steps.
+    // The threshold is the larger of:
+    //   - overview_time_step * 10
+    //   - log_time_step * log_stream_target_points
+    // and then capped by the backend hard limit.
 
     const _models = app.models;
 
@@ -90,6 +91,75 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return buffer;
         }
     };
+
+    function getServerLogViewportLimitSeconds(models) {
+        const rawLimit = Number(models?.config?.log_view_max_viewport_seconds);
+        const DEFAULT_SERVER_LIMIT_SECONDS = 300;
+        return (Number.isFinite(rawLimit) && rawLimit > 0)
+            ? rawLimit
+            : DEFAULT_SERVER_LIMIT_SECONDS;
+    }
+
+    function getLogStreamTargetPoints(models) {
+        const rawTarget = Number(models?.config?.log_stream_target_points);
+        return (Number.isFinite(rawTarget) && rawTarget > 0)
+            ? rawTarget
+            : 500;
+    }
+
+    /**
+     * Calculates the dynamic log view threshold in seconds.
+     * The threshold is the larger of:
+     *   - overview_time_step * 10 (converted to seconds)
+     *   - log_time_step * log_stream_target_points (converted to seconds)
+     * Falls back to 300 seconds if time steps cannot be determined.
+     * The final threshold is capped to the backend streaming max viewport.
+     * 
+     * @param {Object} models - The models registry containing spectrogramSources
+     * @param {string} position - The position identifier
+     * @returns {number} Threshold in seconds
+     */
+    function calculateLogViewThreshold(models, position, userThresholdSeconds) {
+        const serverLimitSeconds = getServerLogViewportLimitSeconds(models);
+        const logStreamTargetPoints = getLogStreamTargetPoints(models);
+        if (Number.isFinite(userThresholdSeconds) && userThresholdSeconds > 0) {
+            return Math.min(userThresholdSeconds, serverLimitSeconds);
+        }
+        const DEFAULT_THRESHOLD_SECONDS = 300;
+
+        const spectrogramSources = models.spectrogramSources?.[position];
+        if (!spectrogramSources) {
+            return Math.min(DEFAULT_THRESHOLD_SECONDS, serverLimitSeconds);
+        }
+        
+        // Get overview time step from spectrogram data
+        let overviewTimeStepMs = 0;
+        const overviewSource = spectrogramSources?.overview;
+        if (overviewSource?.data) {
+            // time_step is wrapped in single-element list from Bokeh transport
+            const rawTimeStep = overviewSource.data.time_step;
+            overviewTimeStepMs = Array.isArray(rawTimeStep) ? (rawTimeStep[0] || 0) : (rawTimeStep || 0);
+        }
+        
+        // Get log time step from spectrogram data
+        let logTimeStepMs = 0;
+        const logSource = spectrogramSources?.log;
+        if (logSource?.data) {
+            // time_step is wrapped in single-element list from Bokeh transport
+            const rawTimeStep = logSource.data.time_step;
+            logTimeStepMs = Array.isArray(rawTimeStep) ? (rawTimeStep[0] || 0) : (rawTimeStep || 0);
+        }
+        
+        // Calculate thresholds: time_step is in ms, convert to seconds
+        const overviewThresholdSeconds = (overviewTimeStepMs * 10) / 1000;
+        const logThresholdSeconds = (logTimeStepMs * logStreamTargetPoints) / 1000;
+        
+        // Use the larger of the two, with fallback to default if both are 0
+        const calculatedThreshold = Math.max(overviewThresholdSeconds, logThresholdSeconds);
+        
+        const threshold = calculatedThreshold > 0 ? calculatedThreshold : DEFAULT_THRESHOLD_SECONDS;
+        return Math.min(threshold, serverLimitSeconds);
+    }
 
     function cloneDataColumns(source) {
         if (!source || typeof source !== 'object') {
@@ -176,8 +246,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const tsChartName = `figure_${position}_timeseries`;
             const specChartName = `figure_${position}_spectrogram`;
 
-
-
             // Only process data for charts that are currently visible
             if (viewState.chartVisibility[tsChartName] || viewState.chartVisibility[specChartName]) {
                 const offsetMs = getChartOffsetMs(viewState, position);
@@ -217,6 +285,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const overviewData = sourceData?.overview?.data;
             const logData = sourceData?.log?.data;
             const hasLogData = logData && logData.Datetime && logData.Datetime.length > 0;
+            // Whether log data exists on disk (even if not yet lazy-loaded)
+            const logDataExists = models.positionHasLogData?.[position] ?? hasLogData;
 
             let displayDetails = { type: 'overview', reason: ' (Overview - Enable Log View for detail)' }; // Default reason
 
@@ -229,51 +299,59 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             if (viewType === 'log') {
                 if (hasLogData) {
-                    // Check viewport width against threshold (in milliseconds)
-                    const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin) 
+                    // Check viewport width against dynamic threshold (in milliseconds)
+                    const userThreshold = viewState.logViewThresholdSeconds;
+                    const logViewThresholdSeconds = calculateLogViewThreshold(models, position, userThreshold);
+                    const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
                         ? effectiveMax - effectiveMin : Infinity;
                     const viewportWidthSeconds = viewportWidthMs / 1000;
-                    const viewportTooLarge = viewportWidthSeconds > LOG_VIEW_MAX_VIEWPORT_SECONDS;
-                    
+                    const viewportTooLarge = viewportWidthSeconds > logViewThresholdSeconds;
+
                     if (viewportTooLarge) {
                         // Viewport too large for log data - use overview
                         const overviewClone = cloneDataColumns(overviewData || {});
                         applyDatetimeOffset(overviewClone, positionOffsetMs);
                         nextActiveLine = overviewClone;
-                        const maxMinutes = Math.floor(LOG_VIEW_MAX_VIEWPORT_SECONDS / 60);
-                        const maxSeconds = LOG_VIEW_MAX_VIEWPORT_SECONDS % 60;
-                        const thresholdStr = maxSeconds > 0 ? `${maxMinutes}:${String(maxSeconds).padStart(2, '0')}` : `${maxMinutes}:00`;
-                        displayDetails = { type: 'overview', reason: ` - Zoom to <${thresholdStr} for Log` };
+                        displayDetails = { type: 'overview', reason: ' - Overview - zoom in for Log' };
                     } else {
                         const startIndex = logData.Datetime.findIndex(t => t >= effectiveMin);
                         const endIndex = logData.Datetime.findLastIndex(t => t <= effectiveMax);
-                        const pointsInView = (startIndex !== -1 && endIndex !== -1) ? endIndex - startIndex : 0;
-
-                        if (pointsInView > MAX_LINE_POINTS_TO_RENDER) {
-                            // Log view is active, but user is too zoomed out
+                        const hasViewportOverlap = startIndex !== -1 && endIndex !== -1 && endIndex >= startIndex;
+                        if (!hasViewportOverlap) {
+                            // Log source has data, but current viewport is outside the streamed chunk.
                             const overviewClone = cloneDataColumns(overviewData || {});
                             applyDatetimeOffset(overviewClone, positionOffsetMs);
                             nextActiveLine = overviewClone;
-                            displayDetails = { type: 'overview', reason: ' - Zoom in for Log Data' };
+                            displayDetails = { type: 'overview', reason: ' (Overview - Streaming Log Data...)' };
                         } else {
-                            // Happy path: Show a chunk of log data
-                            const buffer = Math.floor(pointsInView * 0.5);
-                            const sliceStart = Math.max(0, startIndex - buffer);
-                            const sliceEnd = Math.min(logData.Datetime.length, endIndex + buffer + 1);
-                            const chunk = {};
-                            for (const key in logData) {
-                                const column = logData[key];
-                                if (column && typeof column.slice === 'function') {
-                                    chunk[key] = column.slice(sliceStart, sliceEnd);
-                                } else if (Array.isArray(column)) {
-                                    chunk[key] = column.slice(sliceStart, sliceEnd);
-                                } else {
-                                    chunk[key] = column;
+                            // Keep historical slice behavior for in-range log chunks.
+                            const pointsInView = endIndex - startIndex;
+                            if (pointsInView > MAX_LINE_POINTS_TO_RENDER) {
+                                // Log view is active, but user is too zoomed out
+                                const overviewClone = cloneDataColumns(overviewData || {});
+                                applyDatetimeOffset(overviewClone, positionOffsetMs);
+                                nextActiveLine = overviewClone;
+                                displayDetails = { type: 'overview', reason: ' - Zoom in for Log Data' };
+                            } else {
+                                // Happy path: Show a chunk of log data
+                                const buffer = Math.floor(pointsInView * 0.5);
+                                const sliceStart = Math.max(0, startIndex - buffer);
+                                const sliceEnd = Math.min(logData.Datetime.length, endIndex + buffer + 1);
+                                const chunk = {};
+                                for (const key in logData) {
+                                    const column = logData[key];
+                                    if (column && typeof column.slice === 'function') {
+                                        chunk[key] = column.slice(sliceStart, sliceEnd);
+                                    } else if (Array.isArray(column)) {
+                                        chunk[key] = column.slice(sliceStart, sliceEnd);
+                                    } else {
+                                        chunk[key] = column;
+                                    }
                                 }
+                                applyDatetimeOffset(chunk, positionOffsetMs);
+                                nextActiveLine = chunk;
+                                displayDetails = { type: 'log', reason: ' (Log Data)' };
                             }
-                            applyDatetimeOffset(chunk, positionOffsetMs);
-                            nextActiveLine = chunk;
-                            displayDetails = { type: 'log', reason: ' (Log Data)' };
                         }
                     }
                 } else {
@@ -281,19 +359,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     const overviewClone = cloneDataColumns(overviewData || {});
                     applyDatetimeOffset(overviewClone, positionOffsetMs);
                     nextActiveLine = overviewClone;
-                    displayDetails = { type: 'overview', reason: ' (No Log Data Available)' };
+                    displayDetails = { type: 'overview', reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)' };
                 }
             } else {
                 // Overview view is explicitly active
                 const overviewClone = cloneDataColumns(overviewData || {});
                 applyDatetimeOffset(overviewClone, positionOffsetMs);
                 nextActiveLine = overviewClone;
-                displayDetails = { type: 'overview', reason: hasLogData ? ' (Overview - Enable Log View for detail)' : ' (Overview - No Log Data)' };
+                displayDetails = { type: 'overview', reason: logDataExists ? ' (Overview - Enable Log View for detail)' : ' (Overview)' };
             }
 
             if (nextActiveLine) {
                 dataCache.activeLineData[position] = {
-                    ...nextActiveLine
+                    ...nextActiveLine,
+                    _offsetMs: positionOffsetMs
                 };
             } else {
                 dataCache.activeLineData[position] = {
@@ -348,15 +427,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const positionGlyphData = models.preparedGlyphData[position];
             const overviewData = positionGlyphData?.overview?.prepared_params?.[parameter];
             
-            // For log, construct data from streaming source and compute metadata
+            // For log, reconstruct data from streaming source (Bokeh ColumnDataSource format)
+            // Server wraps EVERYTHING in single-element lists to satisfy Bokeh constraint
             const logData = logSourceData?.times_ms ? (() => {
-                // Unwrap arrays from single-element lists (server wraps them to satisfy Bokeh column length constraint)
-                // Fallback to direct access if not wrapped (robustness)
+                // Unwrap arrays from single-element lists
+                // Arrays: logSourceData.times_ms = [[...actual array...]]
+                // Scalars: logSourceData.n_times = [scalar_value]
                 const times = Array.isArray(logSourceData.times_ms[0]) ? logSourceData.times_ms[0] : logSourceData.times_ms;
                 const levels = Array.isArray(logSourceData.levels_flat_transposed[0]) ? logSourceData.levels_flat_transposed[0] : logSourceData.levels_flat_transposed;
                 const freqLabels = logSourceData.frequency_labels ? (Array.isArray(logSourceData.frequency_labels[0]) ? logSourceData.frequency_labels[0] : logSourceData.frequency_labels) : null;
                 const freqHz = logSourceData.frequencies_hz ? (Array.isArray(logSourceData.frequencies_hz[0]) ? logSourceData.frequencies_hz[0] : logSourceData.frequencies_hz) : null;
-                
+
                 if (viewType === 'log') {
                     console.log(`[Spectrogram] Unwrapped data for ${position}:`, {
                         timesLen: times?.length,
@@ -367,21 +448,32 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     });
                 }
 
-                // Compute metadata from array dimensions
-                const n_times = times.length;
-                const n_freqs = freqLabels?.length || freqHz?.length || 0;
-                const time_step = n_times > 1 ? (times[n_times - 1] - times[0]) / (n_times - 1) : 0;
-                const chunk_time_length = n_times > 0 ? times[n_times - 1] - times[0] + time_step : 0;
-                
-                // Compute min/max from levels data
-                let min_val = Infinity, max_val = -Infinity;
-                if (levels && levels.length > 0) {
-                    for (let i = 0; i < levels.length; i++) {
-                        if (levels[i] < min_val) min_val = levels[i];
-                        if (levels[i] > max_val) max_val = levels[i];
-                    }
+                // Unwrap scalar metadata from single-element lists (Bokeh transport format)
+                // Use server-provided metadata (ensures consistency with buffer sizing)
+                const n_times = logSourceData.n_times ? logSourceData.n_times[0] : times.length;
+                const n_freqs = logSourceData.n_freqs ? logSourceData.n_freqs[0] : (freqLabels?.length || freqHz?.length || 0);
+                const time_step = logSourceData.time_step ? logSourceData.time_step[0] : (n_times > 1 ? (times[n_times - 1] - times[0]) / (n_times - 1) : 0);
+                const chunk_time_length = logSourceData.chunk_time_length ? logSourceData.chunk_time_length[0] : (n_times > 0 ? times[n_times - 1] - times[0] + time_step : 0);
+                const min_val = logSourceData.min_val ? logSourceData.min_val[0] : 0;
+                const max_val = logSourceData.max_val ? logSourceData.max_val[0] : 100;
+
+                // Reconstruct initial_glyph_data from flattened transport fields
+                // These fields are wrapped: [[x], [y], [dw], [dh]] format
+                let initial_glyph_data = null;
+                if (logSourceData.initial_glyph_data_image) {
+                    const imageData = Array.isArray(logSourceData.initial_glyph_data_image[0])
+                        ? logSourceData.initial_glyph_data_image[0]
+                        : logSourceData.initial_glyph_data_image;
+
+                    initial_glyph_data = {
+                        x: logSourceData.initial_glyph_data_x ? logSourceData.initial_glyph_data_x[0] : [0],
+                        y: logSourceData.initial_glyph_data_y ? logSourceData.initial_glyph_data_y[0] : [-0.5],
+                        dw: logSourceData.initial_glyph_data_dw ? logSourceData.initial_glyph_data_dw[0] : [0],
+                        dh: logSourceData.initial_glyph_data_dh ? logSourceData.initial_glyph_data_dh[0] : [0],
+                        image: [imageData]
+                    };
                 }
-                
+
                 return {
                     times_ms: times,
                     levels_flat_transposed: levels,
@@ -391,12 +483,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     chunk_time_length,
                     frequency_labels: freqLabels,
                     frequencies_hz: freqHz,
-                    min_val: min_val === Infinity ? 0 : min_val,
-                    max_val: max_val === -Infinity ? 100 : max_val
+                    min_val,
+                    max_val,
+                    initial_glyph_data
                 };
             })() : null;
             
             const hasLogData = logData && logData.times_ms && logData.times_ms.length > 0;
+            // Whether log data exists on disk (even if not yet lazy-loaded)
+            const logDataExists = models.positionHasLogData?.[position] ?? hasLogData;
 
             let finalDataToUse, finalGlyphData;
             let displayMetadata = { type: 'none', reason: ' (No Data Available)' };
@@ -407,21 +502,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const effectiveMin = Number.isFinite(viewportMin) ? viewportMin - offsetMs : viewportMin;
             const effectiveMax = Number.isFinite(viewportMax) ? viewportMax - offsetMs : viewportMax;
             
-            // Check viewport width against threshold (in milliseconds)
-            const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin) 
+            // Check viewport width against dynamic threshold (in milliseconds)
+            const userThreshold = viewState.logViewThresholdSeconds;
+            const logViewThresholdSeconds = calculateLogViewThreshold(models, position, userThreshold);
+            const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
                 ? effectiveMax - effectiveMin : Infinity;
             const viewportWidthSeconds = viewportWidthMs / 1000;
-            const viewportTooLarge = viewportWidthSeconds > LOG_VIEW_MAX_VIEWPORT_SECONDS;
+            const viewportTooLarge = viewportWidthSeconds > logViewThresholdSeconds;
 
             if (viewType === 'log') {
                 if (hasLogData) {
                     if (viewportTooLarge) {
                         // Viewport too large for log data - use overview
                         finalDataToUse = overviewData;
-                        const maxMinutes = Math.floor(LOG_VIEW_MAX_VIEWPORT_SECONDS / 60);
-                        const maxSeconds = LOG_VIEW_MAX_VIEWPORT_SECONDS % 60;
-                        const thresholdStr = maxSeconds > 0 ? `${maxMinutes}:${String(maxSeconds).padStart(2, '0')}` : `${maxMinutes}:00`;
-                        displayMetadata = { type: 'overview', reason: ` - Zoom to <${thresholdStr} for Log` };
+                        displayMetadata = { type: 'overview', reason: ' - Overview - zoom in for Log' };
                         const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                         finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
                     } else {
@@ -482,14 +576,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 } else {
                     // Log view active, but no log data exists
                     finalDataToUse = overviewData;
-                    displayMetadata = { type: 'overview', reason: ' (No Log Data Available)' };
+                    displayMetadata = { type: 'overview', reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)' };
                     const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                     finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
                 }
             } else {
                 // Overview view is explicitly active
                 finalDataToUse = overviewData;
-                displayMetadata = { type: 'overview', reason: hasLogData ? ' (Overview - Enable Log View for detail)' : ' (Overview - No Log Data)' };
+                displayMetadata = { type: 'overview', reason: logDataExists ? ' (Overview - Enable Log View for detail)' : ' (Overview)' };
                 const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
                 finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
             }
@@ -497,7 +591,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // --- Final state update ---
             if (finalDataToUse) {
                 const adjustedReplacement = finalGlyphData
-                    ? applySpectrogramReplacementOffset(finalGlyphData, offsetMs)
+                    ? { ...applySpectrogramReplacementOffset(finalGlyphData, offsetMs), _offsetMs: offsetMs }
                     : null;
                 const adjustedTimes = finalDataToUse.times_ms ? createOffsetArray(finalDataToUse.times_ms, offsetMs) : [];
                 

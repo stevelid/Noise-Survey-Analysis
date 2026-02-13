@@ -30,10 +30,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         positionDisplayTitles: {},
         chartVisibility: {},
         viewport: { min: null, max: null },
-        globalViewType: 'overview',
+        globalViewType: 'log',
         selectedParameter: 'LZeq',
         hoverEnabled: true,
         activeSidePanelTab: DEFAULT_ACTIVE_TAB,
+        logViewThresholdSeconds: null,  // null = auto-calculated from data
         mode: 'normal',
         comparison: { ...initialComparisonState }
     };
@@ -345,6 +346,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         end: nextEnd
                     }
                 };
+            }
+
+            case actionTypes.LOG_VIEW_THRESHOLD_SET: {
+                const raw = Number(action.payload?.seconds);
+                const value = (Number.isFinite(raw) && raw > 0) ? raw : null;
+                if (value === state.logViewThresholdSeconds) return state;
+                return { ...state, logViewThresholdSeconds: value };
             }
 
             default:

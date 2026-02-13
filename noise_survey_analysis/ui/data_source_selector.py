@@ -154,7 +154,7 @@ class DataSourceSelector:
         
         self.included_files_label = Div(text="<b>Included Files:</b> <i>(Click position names to edit)</i>", width=500)
         
-        parser_options = ['auto', 'svan', 'sentry', 'nti', 'audio']
+        parser_options = ['auto', 'svan', 'sentry', 'nti', 'audio', 'generic']
         self.included_files_columns = [
             TableColumn(field="display_path", title="File Path", width=250),
             TableColumn(field="type", title="Type", width=80),

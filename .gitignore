@@ -110,6 +110,15 @@ tmpclaude-*-cwd
 nul
 server_output*.txt
 
+# Debug artifacts (screenshots, Playwright outputs, local logs)
+.playwright-mcp/
+dashboard_*.png
+before_*.png
+after_*.png
+zoomed_*.png
+console_*.txt
+bokeh*.log
+
 # Cloud refactor temporary files
 *.junk.js
 *.sessionManager.js

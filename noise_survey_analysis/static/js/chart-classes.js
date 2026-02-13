@@ -75,9 +75,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const alignRight = timestamp > middleX;
 
             this.labelModel.x = alignRight ? timestamp - (xRange.end - xRange.start) * 0.02 : timestamp + (xRange.end - xRange.start) * 0.02;
-            this.labelModel.y = yRange.end - (yRange.end - yRange.start) / 5;
+            this.labelModel.y = yRange.end;
             this.labelModel.text_align = alignRight ? 'right' : 'left';
-            this.labelModel.text = text;
+            this.labelModel.text = text.trimEnd();
             this.labelModel.visible = true;
         }
 
@@ -456,11 +456,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         _computeDataHash(data) {
             if (!data || !data.Datetime) return null;
-            // Fast hash using first, last, and length of Datetime array
+            // Fast hash using first, last, length of Datetime array, and offset
             const dt = data.Datetime;
             const len = dt.length;
             if (len === 0) return 'empty';
-            return `${len}:${dt[0]}:${dt[len - 1]}`;
+            const offset = data._offsetMs ?? 0;
+            return `${len}:${dt[0]}:${dt[len - 1]}:${offset}`;
         }
 
         setDisplayName(name) {
@@ -476,17 +477,33 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const suffix = this.lastDisplayDetails.reason || '';
             const baseName = this.displayName || this.positionId;
             this.model.title.text = `${baseName} - Time History${suffix}`;
-
-            // Skip expensive source.data assignment if data hasn't changed
-            if (activeLineData?.skipSourceUpdate) {
-                this.activeData = this.source.data;
-                return;
-            }
+            
+            // Force update if switching view types (e.g., from log to overview)
+            const newType = displayDetails?.type || 'unknown';
+            const oldType = this._lastDisplayType || 'unknown';
+            const typeChanged = newType !== oldType;
+            this._lastDisplayType = newType;
+            
             const newHash = this._computeDataHash(activeLineData);
-            if (newHash !== this._lastDataHash) {
+            if (newHash !== this._lastDataHash || typeChanged) {
                 this._lastDataHash = newHash;
                 this.activeData = activeLineData;
-                this.source.data = activeLineData;
+                // Strip non-array metadata fields before setting Bokeh ColumnDataSource
+                // Bokeh requires all values to be arrays of equal length
+                const cleanData = {};
+                for (const key in activeLineData) {
+                    const val = activeLineData[key];
+                    // Accept Arrays and TypedArrays (Float64Array, Int32Array, etc.)
+                    // but exclude strings and other non-array-like metadata
+                    if (Array.isArray(val) || ArrayBuffer.isView(val)) {
+                        cleanData[key] = val;
+                    }
+                }
+                // Only update source if we have actual data columns;
+                // prevents emptying the display source when log data hasn't loaded yet
+                if (Object.keys(cleanData).length > 0) {
+                    this.source.data = cleanData;
+                }
                 this.render();
             }
         }
@@ -499,12 +516,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const date = new Date(this.activeData.Datetime[idx]);
             let label_text = `Time: ${date.toLocaleString()}\n`;
             for (const key in this.activeData) {
-                if (key !== 'Datetime' && key !== 'index') {
-                    const value = this.activeData[key][idx];
-                    const formatted_value = parseFloat(value).toFixed(1);
-                    const unit = (key.startsWith('L') || key.includes('eq')) ? ' dB' : '';
-                    label_text += `${key}: ${formatted_value}${unit}\n`;
-                }
+                if (key === 'Datetime' || key === 'index' || key.startsWith('_')) continue;
+                const val = this.activeData[key];
+                if (!Array.isArray(val) && !ArrayBuffer.isView(val)) continue;
+                const value = val[idx];
+                const formatted_value = parseFloat(value).toFixed(1);
+                const unit = (key.startsWith('L') || key.includes('eq')) ? ' dB' : '';
+                label_text += `${key}: ${formatted_value}${unit}\n`;
             }
             return label_text;
         }
@@ -527,13 +545,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.lastDisplayDetails = { reason: '' };
             this.displayName = this.positionId;
             this._lastGlyphX = null; // For change detection
+            this._lastOffsetMs = null;
+            this._lastParameter = null;
         }
 
-        _hasGlyphChanged(replacement) {
+        _hasGlyphChanged(replacement, selectedParameter) {
             if (!replacement) return false;
             const newX = replacement.x?.[0];
-            if (newX === this._lastGlyphX) return false;
+            const newOffset = replacement._offsetMs ?? 0;
+            if (newX === this._lastGlyphX && newOffset === this._lastOffsetMs
+                && selectedParameter === this._lastParameter) {
+                return false;
+            }
             this._lastGlyphX = newX;
+            this._lastOffsetMs = newOffset;
+            this._lastParameter = selectedParameter;
             return true;
         }
 
@@ -551,13 +577,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const baseName = this.displayName || this.positionId;
             this.model.title.text = `${baseName} - ${selectedParameter} Spectrogram${suffix}`;
 
-            if (activeSpectralData?.skipSourceUpdate) {
-                return;
-            }
             const replacement = activeSpectralData?.source_replacement;
             if (replacement && this.imageRenderer) {
                 // Skip expensive updates if glyph position hasn't changed
-                if (!this._hasGlyphChanged(replacement)) {
+                if (!this._hasGlyphChanged(replacement, selectedParameter)) {
                     return;
                 }
 

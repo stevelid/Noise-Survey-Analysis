@@ -107,6 +107,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             });
 
             app.store.dispatch(app.actions.initializeState(initialStatePayload));
+
+            // Read initial log threshold from spinner widget
+            const spinnerModel = bokehModels?.logThresholdSpinner;
+            if (spinnerModel && Number.isFinite(spinnerModel.value) && spinnerModel.value > 0) {
+                app.store.dispatch(app.actions.logViewThresholdSet(spinnerModel.value * 60));
+            }
+
             if (app.data_processors?.calculateStepSize) {
                 app.data_processors.calculateStepSize(app.store.getState(), dataCache);
             }
@@ -157,7 +164,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 didInitialRender = true;
                 onStateChange(true);
             };
-            kickoffInitialRender();
+            try {
+                kickoffInitialRender();
+            } catch (paintError) {
+                // Bokeh 3.4.1 may throw _paint_levels errors during first render
+                // when image renderers haven't fully initialized. This is non-fatal;
+                // subsequent renders will succeed once views are ready.
+                console.warn('[App]', 'Non-fatal paint error during initial render:', paintError.message);
+            }
             if (typeof requestAnimationFrame === 'function') {
                 requestAnimationFrame(kickoffInitialRender);
             } else {
@@ -206,6 +220,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
         const didActiveSidePanelTabChange = state.view.activeSidePanelTab !== previousState.view.activeSidePanelTab;
         const didDisplayTitlesChange = state.view.positionDisplayTitles !== previousState.view.positionDisplayTitles;
+        const didThresholdChange = state.view.logViewThresholdSeconds !== previousState.view.logViewThresholdSeconds;
         const didPendingRegionChange = state.interaction.pendingRegionStart !== previousState.interaction.pendingRegionStart;
         const didTapChange = state.interaction.tap !== previousState.interaction.tap;
         const didAudioPositionChange = state.audio.activePositionId !== previousState.audio.activePositionId;
@@ -218,6 +233,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             || didVisibilityChange
             || didChartOffsetsChange
             || didDisplayTitlesChange
+            || didThresholdChange
             || didDataRefresh;
 
         // Throttle heavy updates during audio playback to prevent UI lag

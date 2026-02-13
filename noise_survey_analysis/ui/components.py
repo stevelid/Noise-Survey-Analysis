@@ -1206,7 +1206,7 @@ class TimeSeriesComponent:
         #interative components
         self.tap_lines = Span(location=0, dimension='height', line_color='red', line_width=1, name=f"click_line_{self.name_id}")
         self.hover_line = Span(location=0, dimension='height', line_color='grey', line_width=1, line_dash='dashed', name=f"hoverline_{self.name_id}")
-        self.label = Label(x=0, y=0, text="", text_font_size='10pt', background_fill_color="white", background_fill_alpha=0.6, text_baseline="middle", visible=False, name=f"label_{self.name_id}")
+        self.label = Label(x=0, y=0, text="", text_font_size='10pt', background_fill_color="white", background_fill_alpha=0.6, text_baseline="top", visible=False, name=f"label_{self.name_id}")
 
         self.figure.add_layout(self.tap_lines)
         self.figure.add_layout(self.hover_line)
@@ -1704,17 +1704,18 @@ class ControlsComponent:
         self.clear_markers_button = self.add_clear_markers_button()
         self.param_select = self.add_parameter_selector(available_params)
         self.global_audio_controls = self.add_global_audio_controls()
+        self.log_threshold_spinner = self.add_log_threshold_spinner()
 
         logger.info("ControlsComponent initialized.")
 
 
     def add_view_type_selector(self):
         toggle = Toggle(
-            label="Log View Disabled", 
+            label="Log View Enabled", 
             button_type="primary", 
             width=150,
             name="global_view_toggle",
-            active=False
+            active=True
         )
         
         toggle.js_on_change("active", CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleViewToggle) {
@@ -1859,6 +1860,32 @@ class ControlsComponent:
             'audio_file_info_display': audio_file_info_display
         }
 
+    def add_log_threshold_spinner(self):
+        """Creates a spinner for adjusting the log view zoom threshold."""
+        spinner = Spinner(
+            title="",
+            value=5,
+            low=0.5,
+            high=60,
+            step=0.5,
+            width=70,
+            height=30,
+            name="log_view_threshold_spinner"
+        )
+        spinner.js_on_change("value", CustomJS(code="""
+            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange) {
+                window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange(cb_obj.value * 60);
+            }
+        """))
+        label = Div(
+            text="Log threshold (min):",
+            width=130,
+            height=30,
+            styles={'line-height': '30px', 'font-size': '9pt', 'white-space': 'nowrap'}
+        )
+        self.log_threshold_spinner_widget = spinner
+        return Row(label, spinner, name="log_threshold_group")
+
     def add_parameter_selector(self, available_params: List[str]):
         select = Select(
             options=available_params,
@@ -1947,6 +1974,7 @@ class ControlsComponent:
             self.session_menu,
             self.param_select,
             self.view_toggle,
+            self.log_threshold_spinner,
             self.hover_toggle,
             self.global_audio_controls['layout'],
             #self.clear_markers_button,
@@ -1982,7 +2010,7 @@ class ControlsComponent:
                 "gap": "12px",
                 "position": "sticky",
                 "top": "0px",
-                "background": "#ffffff",
+                "background": "#f5f5f5",
                 "padding": "12px 16px",
                 "box-shadow": "0 2px 6px rgba(0, 0, 0, 0.08)",
                 "z-index": "10"

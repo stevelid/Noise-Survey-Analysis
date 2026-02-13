@@ -1040,6 +1040,201 @@ class NTiFileParser(AbstractNoiseParser):
             logger.error(f"NTiParser: Error parsing {file_path}: {e}", exc_info=True)
             return parsed_data_obj
 
+
+class GenericFileParser(AbstractNoiseParser):
+    """Generic parser for line-plot-only data sources.
+
+    Requirements:
+    - At least one datetime-like column (or Date + Time pair)
+    - At least one numeric data column
+
+    Output:
+    - totals_df populated with Datetime + numeric columns
+    - spectral_df remains None
+    """
+
+    _DATETIME_PRIORITY = [
+        'datetime',
+        'date_time',
+        'timestamp',
+        'time_stamp',
+        'start datetime',
+        'start date time',
+        'start time',
+    ]
+
+    def inspect_file_header(self, file_path: str, max_lines: int = 20) -> FileValidityHint:
+        lines = self._read_file_head(file_path, max_lines=max_lines)
+        if not lines:
+            return FileValidityHint(status='unlikely_valid', reason='File appears to be empty.')
+
+        header_line = next((line for line in lines if line.strip()), '')
+        lowered = header_line.lower()
+        if any(token in lowered for token in ('date', 'time', 'timestamp')):
+            return FileValidityHint(
+                status='likely_valid',
+                reason='Header contains datetime-related tokens.',
+                header_excerpt=header_line[:200],
+            )
+        return FileValidityHint(
+            status='needs_review',
+            reason='Header does not clearly indicate datetime columns.',
+            header_excerpt=header_line[:200],
+        )
+
+    def _read_tabular_file(self, file_path: str) -> pd.DataFrame:
+        if file_path.lower().endswith(('.xlsx', '.xls')):
+            return pd.read_excel(file_path)
+
+        # First attempt: pandas delimiter inference.
+        try:
+            return pd.read_csv(
+                file_path,
+                sep=None,
+                engine='python',
+                on_bad_lines='warn',
+                low_memory=False,
+                encoding='utf-8',
+                encoding_errors='ignore',
+            )
+        except Exception:
+            pass
+
+        # Fallback delimiters for unusual exports.
+        for sep in [',', ';', '\t', '|']:
+            try:
+                return pd.read_csv(
+                    file_path,
+                    sep=sep,
+                    on_bad_lines='warn',
+                    low_memory=False,
+                    encoding='utf-8',
+                    encoding_errors='ignore',
+                )
+            except Exception:
+                continue
+
+        raise ValueError("Unable to parse file as a tabular dataset.")
+
+    def _find_datetime_columns(self, df: pd.DataFrame) -> List[str]:
+        if df.empty:
+            return []
+
+        col_map = {str(col).strip().lower(): col for col in df.columns}
+
+        # Most explicit names first.
+        for key in self._DATETIME_PRIORITY:
+            if key in col_map:
+                return [col_map[key]]
+
+        # Explicit date + time combinations.
+        if 'date' in col_map and 'time' in col_map:
+            return [col_map['date'], col_map['time']]
+        if 'start date' in col_map and 'start time' in col_map:
+            return [col_map['start date'], col_map['start time']]
+
+        # Fuzzy single-column matches.
+        for key, original in col_map.items():
+            if 'datetime' in key or 'timestamp' in key:
+                return [original]
+        for key, original in col_map.items():
+            if key == 'time' or key.endswith(' time') or key.startswith('time '):
+                return [original]
+
+        # Final heuristic: first non-numeric column with strong datetime parse ratio.
+        for col in df.columns:
+            series = df[col]
+            if pd.api.types.is_numeric_dtype(series):
+                continue
+            parsed = pd.to_datetime(series, errors='coerce', utc=True)
+            valid_ratio = float(parsed.notna().mean()) if len(parsed) else 0.0
+            if valid_ratio >= 0.8:
+                return [col]
+
+        return []
+
+    def _normalize_datetime_utc(self, df: pd.DataFrame, dt_cols: List[str]) -> pd.DataFrame:
+        if len(dt_cols) == 2:
+            raw = df[dt_cols[0]].astype(str) + ' ' + df[dt_cols[1]].astype(str)
+        else:
+            raw = df[dt_cols[0]]
+
+        parsed = pd.to_datetime(raw, errors='coerce', utc=True)
+        df['Datetime'] = parsed
+
+        for col in dt_cols:
+            if col != 'Datetime' and col in df.columns:
+                df = df.drop(columns=[col])
+
+        df = df.dropna(subset=['Datetime'])
+        if not df.empty:
+            df = df.sort_values(by='Datetime').reset_index(drop=True)
+        return df
+
+    def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
+        logger.info(f"GenericParser: Parsing {file_path}")
+        parsed_data_obj = ParsedData(
+            original_file_path=file_path,
+            parser_type='Generic',
+            spectral_data_type='none',
+        )
+
+        try:
+            df_raw = self._read_tabular_file(file_path)
+            if df_raw is None or df_raw.empty:
+                parsed_data_obj.metadata['error'] = "No rows parsed from file."
+                return parsed_data_obj
+
+            df_raw = df_raw.replace('', np.nan).dropna(how='all')
+            if df_raw.empty:
+                parsed_data_obj.metadata['error'] = "No usable rows after removing empty rows."
+                return parsed_data_obj
+
+            dt_cols = self._find_datetime_columns(df_raw)
+            if not dt_cols:
+                parsed_data_obj.metadata['error'] = "No datetime column found. Expected Datetime/Timestamp or Date+Time."
+                return parsed_data_obj
+
+            df_processed = self._normalize_datetime_utc(df_raw.copy(), dt_cols)
+            if df_processed.empty:
+                parsed_data_obj.metadata['error'] = "All rows failed datetime parsing."
+                return parsed_data_obj
+
+            non_dt_cols = [col for col in df_processed.columns if col != 'Datetime']
+            for col in non_dt_cols:
+                df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce')
+
+            numeric_cols = [col for col in non_dt_cols if df_processed[col].notna().any()]
+            if not numeric_cols:
+                parsed_data_obj.metadata['error'] = "No numeric columns found to plot."
+                return parsed_data_obj
+
+            parsed_data_obj.totals_df = df_processed[['Datetime', *numeric_cols]].copy()
+            parsed_data_obj.sample_period_seconds = self._calculate_sample_period(parsed_data_obj.totals_df)
+
+            filename_lower = os.path.basename(file_path).lower()
+            if 'summary' in filename_lower or 'overview' in filename_lower:
+                parsed_data_obj.data_profile = 'overview'
+            elif 'log' in filename_lower:
+                parsed_data_obj.data_profile = 'log'
+            elif parsed_data_obj.sample_period_seconds is not None and parsed_data_obj.sample_period_seconds > 60:
+                parsed_data_obj.data_profile = 'overview'
+            else:
+                parsed_data_obj.data_profile = 'log'
+
+            parsed_data_obj.metadata['numeric_columns'] = numeric_cols
+            parsed_data_obj.metadata['return_all_columns_requested'] = bool(return_all_columns)
+            return parsed_data_obj
+
+        except FileNotFoundError:
+            parsed_data_obj.metadata['error'] = "File not found"
+            return parsed_data_obj
+        except Exception as e:
+            parsed_data_obj.metadata['error'] = str(e)
+            logger.error(f"GenericParser: Error parsing {file_path}: {e}", exc_info=True)
+            return parsed_data_obj
+
+
 class AudioFileParser(AbstractNoiseParser):
     def _get_wav_duration(self, filepath: str) -> float:
         """Reads the duration in seconds from an audio file.
@@ -1133,6 +1328,22 @@ class AudioFileParser(AbstractNoiseParser):
 class NoiseParserFactory:
     @staticmethod
     def get_parser(file_path: str, parser_type: str = 'auto') -> Optional[AbstractNoiseParser]:
+        forced_type = (parser_type or 'auto').strip().lower().replace('_', '').replace('-', '')
+
+        if forced_type not in ('', 'auto'):
+            if forced_type in ('sentry', 'noisesentry'):
+                return NoiseSentryFileParser()
+            if forced_type in ('svan', 'svantek'):
+                return SvanFileParser()
+            if forced_type == 'nti':
+                return NTiFileParser()
+            if forced_type in ('audio', 'wav'):
+                return AudioFileParser()
+            if forced_type in ('generic', 'plotlinesonly', 'lineonly'):
+                return GenericFileParser()
+
+            logger.warning(f"Unknown forced parser type '{parser_type}' for {file_path}; falling back to auto detection.")
+
         filename_lower = os.path.basename(file_path).lower()
         
         # Audio directory check is now first and more specific

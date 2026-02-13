@@ -64,23 +64,23 @@ test('parameter selection updates the application state', async ({ page }) => {
   await select.selectOption('LCeq');
 
   await expect(selectedParameter).toHaveText('LCeq');
-  await expect(page.getByTestId('view-mode')).toHaveText('log');
+  await expect(page.getByTestId('view-mode')).toHaveText('overview');
 });
 
 test('view toggle switches between log and overview modes', async ({ page }) => {
   const toggle = page.getByTestId('view-toggle');
   const viewMode = page.getByTestId('view-mode');
 
-  await expect(toggle).toHaveText('Log View Enabled');
+  await expect(toggle).toHaveText('Log View Disabled');
+  await expect(viewMode).toHaveText('overview');
+
+  await toggle.click();
   await expect(viewMode).toHaveText('log');
+  await expect(toggle).toHaveText('Log View Enabled');
 
   await toggle.click();
   await expect(viewMode).toHaveText('overview');
   await expect(toggle).toHaveText('Log View Disabled');
-
-  await toggle.click();
-  await expect(viewMode).toHaveText('log');
-  await expect(toggle).toHaveText('Log View Enabled');
 });
 
 test('users can create, select, and remove regions from the chart', async ({ page }) => {

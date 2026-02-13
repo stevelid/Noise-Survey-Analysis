@@ -95,14 +95,19 @@ STREAMING_ENABLED = True
 STREAMING_DEBOUNCE_MS = 200
 STREAMING_VIEWPOINT_MULTIPLIER = 3
 
+# Target number of log points to stream for the current viewport window.
+# Effective streamable window scales with sample period:
+#   max_viewport_seconds ~= log_sample_period_seconds * LOG_STREAM_TARGET_POINTS
+LOG_STREAM_TARGET_POINTS = 500
+
 # Log view threshold - switch from overview to log when viewport shows fewer than this many overview points
 # User can configure this via the UI. Default: 50 overview points triggers log view.
 # This translates to roughly 50 seconds of data at 1-second overview resolution.
 LOG_VIEW_THRESHOLD_POINTS = 50
 
-# Maximum viewport width (in seconds) for log view - beyond this, use overview
-# Default: 5 minutes (300 seconds). Format: seconds
-LOG_VIEW_MAX_VIEWPORT_SECONDS = 300
+# Hard cap for log viewport width (seconds), after adaptive point-based scaling.
+# Keeps streaming bounded for very low sample-rate datasets.
+LOG_VIEW_MAX_VIEWPORT_SECONDS = 86400
 
 # Default base directory for job files
 DEFAULT_BASE_JOB_DIR = "G:\\Shared drives\\Venta\\Jobs"

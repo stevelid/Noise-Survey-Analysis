@@ -214,7 +214,7 @@ def _get_cache_key(source_configs):
         return None
 
 
-def create_app(doc, config_path=None, state_path=None):
+def create_app(doc, config_path=None, state_path=None, create_static=False):
     """
     This function is the entry point for the LIVE Bokeh server application.
     """
@@ -289,8 +289,8 @@ def create_app(doc, config_path=None, state_path=None):
         doc.add_root(loading_div)
         
         # Save a config derived from the user's selection and kick off static export in background
-        # Skip this if we're loading from an existing config/workspace (it's likely already been generated)
-        if not skip_static_export:
+        # Only create static HTML if explicitly requested via --create-static flag
+        if create_static and not skip_static_export:
             try:
                 cfg_path = save_config_from_selected_sources(source_configs)
                 if cfg_path:
@@ -301,7 +301,10 @@ def create_app(doc, config_path=None, state_path=None):
             except Exception as e:
                 logger.error(f"Error during auto-save/config-based static export: {e}", exc_info=True)
         else:
-            logger.info("Skipping static export (loading from existing config/workspace).")
+            if skip_static_export:
+                logger.info("Skipping static export (loading from existing config/workspace).")
+            if not create_static:
+                logger.info("Skipping static export (use --create-static to generate static HTML).")
         
         # This function will run after the loading screen is displayed.
         def build_dashboard():
@@ -338,11 +341,11 @@ def create_app(doc, config_path=None, state_path=None):
                             logger.info(f"  Length mismatch: generated={len(cache_key)}, existing={len(existing_key)}")
 
             if cache_key and cache_key in _data_manager_cache:
-                logger.info("✓✓✓ CACHE HIT! Using cached DataManager ✓✓✓")
+                logger.info("*** CACHE HIT! Using cached DataManager ***")
                 logger.info("=" * 80)
                 app_data = _data_manager_cache[cache_key]
             else:
-                logger.info("✗✗✗ CACHE MISS! Creating new DataManager ✗✗✗")
+                logger.info("*** CACHE MISS! Creating new DataManager ***")
                 if cache_key is None:
                     logger.warning("  Reason: cache_key is None")
                 elif len(_data_manager_cache) == 0:
@@ -354,7 +357,7 @@ def create_app(doc, config_path=None, state_path=None):
                 app_data = DataManager(source_configurations=source_configs)
                 if cache_key:
                     _data_manager_cache[cache_key] = app_data
-                    logger.info(f"✓ Stored DataManager in cache with key length: {len(cache_key)}")
+                    logger.info(f"Stored DataManager in cache with key length: {len(cache_key)}")
             
             audio_processor = AudioDataProcessor()
             audio_processor.anchor_audio_files(app_data)
@@ -384,18 +387,28 @@ def create_app(doc, config_path=None, state_path=None):
 
         doc.add_next_tick_callback(build_dashboard)
     
+    # IMPORTANT: Add loading div synchronously BEFORE any async callbacks
+    # This ensures the document has content when the initial HTTP response is sent
+    loading_div = Div(
+        text="""<h1 style='text-align:center; color:#555; margin-top:100px;'>Initializing Dashboard...</h1>
+                <p style='text-align:center; color:#888;'>Loading survey data, please wait...</p>""",
+        width=800, align='center',
+        styles={'margin': 'auto', 'padding-top': '100px'}
+    )
+    doc.add_root(loading_div)
+
     if source_configs_from_state:
         doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs_from_state, skip_static_export=True))
     else:
         config_path = _normalize_path(config_path)
         if config_path:
             logger.info(f"Attempting to load data directly from config file: {config_path}")
-            
+
             # Check if this is actually a workspace file (contains both sourceConfigs and appState)
             try:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     file_content = json.load(f)
-                
+
                 # If it has both sourceConfigs and appState, treat it as a workspace file
                 if isinstance(file_content, dict) and 'sourceConfigs' in file_content and 'appState' in file_content:
                     logger.info("Detected workspace file format. Extracting sourceConfigs and appState.")
@@ -407,6 +420,7 @@ def create_app(doc, config_path=None, state_path=None):
                         doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs_from_state, skip_static_export=True))
                     else:
                         logger.error("Workspace file has no sourceConfigs. Falling back to selector.")
+                        doc.clear()  # Remove loading div
                         selector = create_data_source_selector(doc, on_data_sources_selected)
                         doc.add_root(selector.get_layout())
                 else:
@@ -416,15 +430,18 @@ def create_app(doc, config_path=None, state_path=None):
                         doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs, skip_static_export=True, job_number=loaded_job_number))
                     else:
                         logger.error(f"Failed to load from config file {config_path}. Falling back to selector.")
+                        doc.clear()  # Remove loading div
                         selector = create_data_source_selector(doc, on_data_sources_selected)
                         doc.add_root(selector.get_layout())
             except Exception as e:
                 logger.error(f"Error reading config/workspace file {config_path}: {e}", exc_info=True)
+                doc.clear()  # Remove loading div
                 selector = create_data_source_selector(doc, on_data_sources_selected)
                 doc.add_root(selector.get_layout())
         else:
             # Show data source selector initially if no config path is provided
             logger.info("No config file provided. Showing data source selector...")
+            doc.clear()  # Remove loading div
             selector = create_data_source_selector(doc, on_data_sources_selected)
             doc.add_root(selector.get_layout())
     doc.on_session_destroyed(session_destroyed)
@@ -470,6 +487,13 @@ if doc.session_context:
 
     config_file_path = _extract_request_argument(request_arguments, 'config')
     state_file_path = _extract_request_argument(request_arguments, 'state', 'workspace', 'savedworkspace')
+    
+    # Check for --create-static flag
+    create_static = _extract_request_argument(request_arguments, 'create-static', 'create_static') is not None
+    if not create_static:
+        create_static = _extract_argv_argument('--create-static', '--create_static') is not None
+    if not create_static:
+        create_static = '--create-static' in sys.argv or '--create_static' in sys.argv
 
     if config_file_path is None:
         config_file_path = _extract_argv_argument('--config')
@@ -486,7 +510,7 @@ if doc.session_context:
                 config_file_path = potential_config
                 logger.info(f"Using positional argument as config path: {config_file_path}")
 
-    create_app(doc, config_path=config_file_path, state_path=state_file_path)
+    create_app(doc, config_path=config_file_path, state_path=state_file_path, create_static=create_static)
 else:
     # No session context, so we're running as a standalone script.
     # This block will be executed when running `python main.py ...`

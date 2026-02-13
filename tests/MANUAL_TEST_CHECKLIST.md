@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2025-10-11
-**Version:** 1.3.2
+**Last Updated:** 2026-02-05
+**Version:** 1.4.0
 
 ---
 
@@ -202,12 +202,13 @@
 - [ ] **Test:** Verify each parameter displays different data
 
 ### 3.2 Log View Toggle 🟢
+- [ ] **Expected:** On initial load, charts show overview data and the toggle reads "Log View Disabled"
+- [ ] **Action:** Click "Log View Disabled" to enable
+- [ ] **Expected:** All charts switch to log data
+- [ ] **Expected:** Chart data becomes more granular
 - [ ] **Action:** Click "Log View Enabled" to disable
 - [ ] **Expected:** All charts switch to overview data
 - [ ] **Expected:** Chart data becomes less granular
-- [ ] **Action:** Click to enable again
-- [ ] **Expected:** All charts switch back to log data
-- [ ] **Expected:** Chart data becomes more granular
 
 ### 3.3 Hover Enabled Toggle 🟢
 - [ ] **Action:** Click "Hover Enabled" to disable
@@ -614,21 +615,65 @@
 
 ---
 
-## 11. Data Source Selector Panel 🔴 SERVER
+## 11. Reservoir Streaming (Log Data) 🔴 SERVER
 
-### 11.1 Highlighting Rules 🟢
+**Note:** These tests verify the reservoir streaming architecture where the server pushes log data to the frontend as the user pans/zooms.
+
+### 11.1 Log Data Streaming on Zoom 🔴
+- [ ] **Setup:** Enable Log View, zoom in to < 5 minute viewport
+- [ ] **Expected:** Log data displays (chart title shows "Log Data")
+- [ ] **Expected:** Data appears within ~500ms of zoom completing
+- [ ] **Test:** Zoom out past 5 minute threshold
+- [ ] **Expected:** Chart switches to overview data automatically
+- [ ] **Expected:** Chart title shows zoom threshold message
+
+### 11.2 Buffer Edge Detection 🔴
+- [ ] **Setup:** Enable Log View, zoom to ~2 minute viewport
+- [ ] **Action:** Pan slowly to the right
+- [ ] **Expected:** Data remains smooth during pan (no flickering)
+- [ ] **Expected:** New data loads when approaching buffer edge (~20% margin)
+- [ ] **Test:** Pan rapidly back and forth
+- [ ] **Expected:** App remains responsive, no console errors
+
+### 11.3 Spectrogram Streaming 🔴
+- [ ] **Setup:** Enable Log View, zoom to < 5 minute viewport
+- [ ] **Expected:** Spectrogram shows log data (higher resolution)
+- [ ] **Action:** Pan to new time range
+- [ ] **Expected:** Spectrogram updates with new data
+- [ ] **Expected:** Frequency bar updates correctly at tap location
+
+### 11.4 Data Refresh Trigger 🔴
+- [ ] **Setup:** Enable Log View, zoom in, place tap line
+- [ ] **Action:** Pan to new time range (triggering server data push)
+- [ ] **Expected:** Summary table updates with new values
+- [ ] **Expected:** Frequency bar updates with new spectrum
+- [ ] **Expected:** No console errors about missing data
+
+### 11.5 Mixed View Transitions 🔴
+- [ ] **Action:** Toggle Log View on/off rapidly (5+ times)
+- [ ] **Expected:** Charts switch correctly each time
+- [ ] **Expected:** No stale data displayed
+- [ ] **Expected:** No console errors
+- [ ] **Test:** Zoom in (log view), toggle to overview, toggle back to log
+- [ ] **Expected:** Log data reloads correctly
+
+---
+
+## 12. Data Source Selector Panel 🔴 SERVER
+
+### 12.1 Highlighting Rules 🟢
 - [ ] **Setup:** Scan a job directory that contains CSV log/summary files and unrelated files
 - [ ] **Expected:** Only CSV/TXT files with expected naming and size bounds show highlighted styling
 - [ ] **Expected:** Other file types display without the old validity column or highlight badges
 - [ ] **Test:** Confirm log and summary CSVs highlight independently when their sizes meet expectations
 
-### 11.2 Config Auto-Detection 🔴
+### 12.2 Config Auto-Detection 🔴
 - [ ] **Setup:** Scan a directory containing a single valid `noise_survey_config_*.json`
 - [ ] **Expected:** "Load Config" button enables automatically
 - [ ] **Expected:** Config loads immediately into the Included Files table without manual selection
 - [ ] **Expected:** Status banner reports the auto-loaded config and warns if referenced files are missing
 
-### 11.3 Multiple Config Prompt 🔴
+### 12.3 Multiple Config Prompt 🔴
 - [ ] **Setup:** Scan a directory containing two or more valid config JSON files
 - [ ] **Expected:** Status banner prompts to select a config before loading
 - [ ] **Action:** Select one config in Available Files and press "Load Config"

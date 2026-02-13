@@ -35,6 +35,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         POSITION_CHART_OFFSET_SET: 'view/positionChartOffsetSet',
         POSITION_AUDIO_OFFSET_SET: 'view/positionAudioOffsetSet',
         STEP_SIZE_CALCULATED: 'view/STEP_SIZE_CALCULATED',
+        LOG_VIEW_THRESHOLD_SET: 'view/logViewThresholdSet',
         VIEW_ACTIVE_SIDE_PANEL_TAB_SET: 'view/activeSidePanelTabSet',
 
         COMPARISON_MODE_ENTERED: 'view/comparisonModeEntered',
@@ -77,6 +78,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // System
         KEYBOARD_SETUP_COMPLETE: 'KEYBOARD_SETUP_COMPLETE',
+        DATA_REFRESHED: 'data/refreshed',
         
         
     };
@@ -125,6 +127,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         hoverToggle: (isActive) => ({ type: actionTypes.HOVER_TOGGLE, payload: { isActive } }),
 
         stepSizeCalculated: (stepSizeMs) => ({ type: actionTypes.STEP_SIZE_CALCULATED, payload: { stepSizeMs } }),
+
+        logViewThresholdSet: (seconds) => ({
+            type: actionTypes.LOG_VIEW_THRESHOLD_SET,
+            payload: { seconds }
+        }),
 
         positionDisplayTitlesSet: (titles) => ({
             type: actionTypes.POSITION_DISPLAY_TITLES_SET,
@@ -264,6 +271,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         audioBoostToggleRequest: (positionId, isBoostActive) => ({ 
             type: actionTypes.AUDIO_BOOST_TOGGLE_REQUEST, 
             payload: { positionId, isBoostActive } }),
+
+        dataRefreshed: (positionId) => ({
+            type: actionTypes.DATA_REFRESHED,
+            payload: { positionId }
+        }),
     
     };
 

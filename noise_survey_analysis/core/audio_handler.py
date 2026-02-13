@@ -91,6 +91,11 @@ class AudioPlaybackHandler:
             
             self.file_info_by_position[position_name] = files_to_process
             logger.info(f"Indexed {len(files_to_process)} pre-anchored audio files for position '{position_name}'.")
+            if files_to_process:
+                first_start = files_to_process[0][1]
+                last_start = files_to_process[-1][1]
+                last_dur = files_to_process[-1][2]
+                logger.info(f"  Audio range for '{position_name}': {first_start} -> {last_start} + {last_dur}s")
 
     def set_current_position(self, position: str) -> bool:
         """

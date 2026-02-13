@@ -46,7 +46,7 @@ describe('Application Integration Tests', () => {
 
   it('handleViewToggle should update the globalViewType in the store', () => {
     const initialView = store.getState().view.globalViewType;
-    expect(initialView).toBe('log'); // Default is 'log'
+    expect(initialView).toBe('overview'); // Default is 'overview'
 
     // Act: Simulate toggling the view to overview
     eventHandlers.handleViewToggle(false); // false for 'overview'

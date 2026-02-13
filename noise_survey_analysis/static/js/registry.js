@@ -75,8 +75,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // 2. Initialize controllers
         const availablePositions = Array.from(new Set(models.charts.map(c => {
-            const parts = c.name.split('_');
-            return parts.length >= 2 ? parts[1] : null;
+            // Extract position ID by stripping known prefix and suffix
+            // e.g. "figure_971-4_1st_timeseries" → "971-4_1st"
+            const name = c.name;
+            const suffixes = ['_timeseries', '_spectrogram'];
+            const prefix = 'figure_';
+            if (!name.startsWith(prefix)) return null;
+            let stripped = name.slice(prefix.length);
+            for (const suffix of suffixes) {
+                if (stripped.endsWith(suffix)) {
+                    stripped = stripped.slice(0, -suffix.length);
+                    return stripped || null;
+                }
+            }
+            return null;
         }).filter(Boolean)));
 
         availablePositions.forEach(pos => {
