@@ -472,6 +472,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
 
+        _setOptionalPercentileRenderersVisible(displayType) {
+            const renderers = Array.isArray(this.model?.renderers) ? this.model.renderers : [];
+            const showOptionalPercentiles = displayType !== 'log';
+
+            renderers.forEach(renderer => {
+                const ySpec = renderer?.glyph?.y;
+                const fieldName = typeof ySpec === 'string'
+                    ? ySpec
+                    : (typeof ySpec?.field === 'string' ? ySpec.field : null);
+                if (fieldName === 'LAF90' || fieldName === 'LAF10') {
+                    renderer.visible = showOptionalPercentiles;
+                }
+            });
+        }
+
         update(activeLineData, displayDetails) {
             this.lastDisplayDetails = displayDetails || { reason: '' };
             const suffix = this.lastDisplayDetails.reason || '';
@@ -483,6 +498,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const oldType = this._lastDisplayType || 'unknown';
             const typeChanged = newType !== oldType;
             this._lastDisplayType = newType;
+            this._setOptionalPercentileRenderersVisible(newType);
             
             const newHash = this._computeDataHash(activeLineData);
             if (newHash !== this._lastDataHash || typeChanged) {
@@ -499,6 +515,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         cleanData[key] = val;
                     }
                 }
+
+                // Keep optional percentile fields present in log mode so Bokeh
+                // does not warn about missing renderer fields during source swaps.
+                if (newType === 'log' && (Array.isArray(cleanData.Datetime) || ArrayBuffer.isView(cleanData.Datetime))) {
+                    const n = cleanData.Datetime.length;
+                    if (!Object.prototype.hasOwnProperty.call(cleanData, 'LAF90')) {
+                        cleanData.LAF90 = new Array(n).fill(NaN);
+                    }
+                    if (!Object.prototype.hasOwnProperty.call(cleanData, 'LAF10')) {
+                        cleanData.LAF10 = new Array(n).fill(NaN);
+                    }
+                }
+
                 // Only update source if we have actual data columns;
                 // prevents emptying the display source when log data hasn't loaded yet
                 if (Object.keys(cleanData).length > 0) {

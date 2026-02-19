@@ -9,9 +9,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     const DEFAULT_SERVER_LIMIT_SECONDS = 86400;
-    const DEFAULT_AUTO_THRESHOLD_SECONDS = 3600;
-    const DEFAULT_OVERVIEW_STEPS = 10;
-    const DEFAULT_LOG_STEPS = 360;
+    const DEFAULT_AUTO_THRESHOLD_SECONDS = DEFAULT_SERVER_LIMIT_SECONDS;
 
     function computeMedianPositiveStepMs(values, maxPairs = 4000) {
         if (!values || typeof values.length !== 'number' || values.length < 2) {
@@ -90,21 +88,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function calculatePositionAutoLogThresholdSeconds(models, positionId) {
-        const overviewTimes = models?.timeSeriesSources?.[positionId]?.overview?.data?.Datetime;
-        const logTimes = models?.timeSeriesSources?.[positionId]?.log?.data?.Datetime;
-        const overviewStepMs = computeMedianPositiveStepMs(overviewTimes);
-        const logStepMs = computeMedianPositiveStepMs(logTimes);
-
-        const candidates = [DEFAULT_AUTO_THRESHOLD_SECONDS];
-        if (Number.isFinite(overviewStepMs) && overviewStepMs > 0) {
-            candidates.push((overviewStepMs / 1000) * DEFAULT_OVERVIEW_STEPS);
-        }
-        if (Number.isFinite(logStepMs) && logStepMs > 0) {
-            candidates.push((logStepMs / 1000) * DEFAULT_LOG_STEPS);
-        }
-
-        const threshold = Math.min(...candidates);
-        return (Number.isFinite(threshold) && threshold > 0) ? threshold : DEFAULT_AUTO_THRESHOLD_SECONDS;
+        const serverLimit = getServerLogViewportLimitSeconds(models);
+        return Number.isFinite(serverLimit) && serverLimit > 0
+            ? serverLimit
+            : DEFAULT_AUTO_THRESHOLD_SECONDS;
     }
 
     function calculateGlobalAutoLogThresholdSeconds(models, positions) {

@@ -1873,7 +1873,7 @@ class ControlsComponent:
             title="",
             value=5,
             low=0.5,
-            high=60,
+            high=1440,
             step=0.5,
             width=70,
             height=30,

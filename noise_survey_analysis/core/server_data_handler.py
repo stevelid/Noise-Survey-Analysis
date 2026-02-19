@@ -6,7 +6,6 @@ import pandas as pd
 from noise_survey_analysis.core.config import (
     CHART_SETTINGS,
     LOG_VIEW_MAX_VIEWPORT_SECONDS,
-    LOG_STREAM_TARGET_POINTS,
 )
 from noise_survey_analysis.core.data_manager import DataManager
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
@@ -45,52 +44,9 @@ class ServerDataHandler:
         if isinstance(param, str) and param.strip():
             self.selected_parameter = param.strip()
 
-    def _estimate_log_time_step_ms(self, position_data) -> Optional[float]:
-        def extract_step_from_df(df: Optional[pd.DataFrame]) -> Optional[float]:
-            if df is None or df.empty or 'Datetime' not in df.columns:
-                return None
-            try:
-                times_ms = (pd.to_datetime(df['Datetime']).astype('int64') // 10**6).to_numpy()
-            except Exception:
-                return None
-            if len(times_ms) < 2:
-                return None
-            deltas = pd.Series(times_ms).diff().dropna()
-            positive = deltas[deltas > 0]
-            if positive.empty:
-                return None
-            return float(positive.median())
-
-        step_ms = extract_step_from_df(getattr(position_data, 'log_totals', None))
-        if step_ms and step_ms > 0:
-            return step_ms
-
-        step_ms = extract_step_from_df(getattr(position_data, 'log_spectral', None))
-        if step_ms and step_ms > 0:
-            return step_ms
-
-        sample_periods = getattr(position_data, 'sample_periods_seconds', None)
-        if sample_periods:
-            positive_periods = [float(v) for v in sample_periods if isinstance(v, (int, float)) and v > 0]
-            if positive_periods:
-                return min(positive_periods) * 1000
-
-        return None
-
-    def _position_max_viewport_seconds(self, position_data) -> float:
-        hard_cap_seconds = float(LOG_VIEW_MAX_VIEWPORT_SECONDS)
-        target_points = max(1, int(LOG_STREAM_TARGET_POINTS))
-        fallback_seconds = min(300.0, hard_cap_seconds)
-
-        step_ms = self._estimate_log_time_step_ms(position_data)
-        if not step_ms or step_ms <= 0:
-            return fallback_seconds
-
-        adaptive_seconds = (step_ms * target_points) / 1000.0
-        if adaptive_seconds <= 0:
-            return fallback_seconds
-
-        return min(adaptive_seconds, hard_cap_seconds)
+    def _position_max_viewport_seconds(self, _position_data) -> float:
+        # Keep the explicit hard cap threshold behavior (24h default).
+        return float(LOG_VIEW_MAX_VIEWPORT_SECONDS)
 
     def handle_range_update(self, start_ms: float, end_ms: float) -> None:
         if not isinstance(start_ms, (int, float)) or not isinstance(end_ms, (int, float)):

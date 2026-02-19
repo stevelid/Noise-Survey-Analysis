@@ -12,9 +12,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
-    const MAX_LINE_POINTS_TO_RENDER = 5000;
-    const MAX_SPECTRAL_POINTS_TO_RENDER = 5000;
-    
+    const MAX_LOG_SPECTROGRAM_TIME_POINTS = 30000;
+    const LOG_SPECTROGRAM_BUFFER_RATIO = 0.5;
+
     // Log view threshold default:
     // min(1 hour, 10 overview steps, 360 log steps)
     // capped by backend hard limit.
@@ -274,34 +274,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             nextActiveLine = overviewClone;
                             displayDetails = { type: 'overview', reason: ' (Overview - Streaming Log Data...)' };
                         } else {
-                            // Keep historical slice behavior for in-range log chunks.
-                            const pointsInView = endIndex - startIndex;
-                            if (pointsInView > MAX_LINE_POINTS_TO_RENDER) {
-                                // Log view is active, but user is too zoomed out
-                                const overviewClone = cloneDataColumns(overviewData || {});
-                                applyDatetimeOffset(overviewClone, positionOffsetMs);
-                                nextActiveLine = overviewClone;
-                                displayDetails = { type: 'overview', reason: ' - Zoom in for Log Data' };
-                            } else {
-                                // Happy path: Show a chunk of log data
-                                const buffer = Math.floor(pointsInView * 0.5);
-                                const sliceStart = Math.max(0, startIndex - buffer);
-                                const sliceEnd = Math.min(logData.Datetime.length, endIndex + buffer + 1);
-                                const chunk = {};
-                                for (const key in logData) {
-                                    const column = logData[key];
-                                    if (column && typeof column.slice === 'function') {
-                                        chunk[key] = column.slice(sliceStart, sliceEnd);
-                                    } else if (Array.isArray(column)) {
-                                        chunk[key] = column.slice(sliceStart, sliceEnd);
-                                    } else {
-                                        chunk[key] = column;
-                                    }
+                            // Log view: keep full-resolution data and only slice by viewport.
+                            const sliceStart = startIndex;
+                            const sliceEnd = endIndex + 1;
+                            const chunk = {};
+                            for (const key in logData) {
+                                const column = logData[key];
+                                if (column && typeof column.slice === 'function') {
+                                    chunk[key] = column.slice(sliceStart, sliceEnd);
+                                } else if (Array.isArray(column)) {
+                                    chunk[key] = column.slice(sliceStart, sliceEnd);
+                                } else {
+                                    chunk[key] = column;
                                 }
-                                applyDatetimeOffset(chunk, positionOffsetMs);
-                                nextActiveLine = chunk;
-                                displayDetails = { type: 'log', reason: ' (Log Data)' };
                             }
+                            applyDatetimeOffset(chunk, positionOffsetMs);
+                            nextActiveLine = chunk;
+                            displayDetails = { type: 'log', reason: ' (Log Data)' };
                         }
                     }
                 } else {
@@ -469,11 +458,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         finalDataToUse = overviewData;
                         displayMetadata = { type: 'overview', reason: ' - Overview - zoom in for Log' };
                         const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
-                        finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
+                        finalGlyphData = tryApplySpectrogramSlice(
+                            finalDataToUse,
+                            baseImage,
+                            0,
+                            finalDataToUse?.chunk_time_length,
+                            position,
+                            dataCache,
+                            models
+                        );
                     } else {
-                        // Calculate theoretical points based on viewport width
                         const viewportWidth = viewState.viewport.max - viewState.viewport.min;
-                        const pointsInView = Math.floor(viewportWidth / logData.time_step);
 
                         // Verify log data actually covers the viewport
                         const logDataStart = logData.times_ms[0];
@@ -487,42 +482,77 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         const overlapWidth = Math.max(0, overlapEnd - overlapStart);
                         const coverageRatio = overlapWidth / viewportWidth;
                         
-                        // Only use log data if: (1) it fits render limit AND (2) covers ≥80% of viewport
+                        // Only use log data when it covers most of the viewport.
                         const MIN_COVERAGE_RATIO = 0.8;
                         const hasAdequateCoverage = coverageRatio >= MIN_COVERAGE_RATIO;
 
-                        if (pointsInView <= MAX_SPECTRAL_POINTS_TO_RENDER && hasAdequateCoverage) {
+                        if (hasAdequateCoverage) {
                             // Happy Path: Show chunked LOG data
                             finalDataToUse = logData;
                             displayMetadata = { type: 'log', reason: ' (Log Data)' }; // Explicitly label the log view
 
                             const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs } = finalDataToUse;
+                            const safeTimeStep = Number.isFinite(time_step) && time_step > 0 ? time_step : 1000;
+                            const rawViewportPoints = Number.isFinite(viewportWidth) && viewportWidth > 0
+                                ? Math.ceil(viewportWidth / safeTimeStep)
+                                : chunk_time_length;
+                            const viewportPoints = Math.max(
+                                1,
+                                Math.min(n_times, Number.isFinite(rawViewportPoints) ? rawViewportPoints : chunk_time_length)
+                            );
+                            const bufferPoints = Math.ceil(viewportPoints * LOG_SPECTROGRAM_BUFFER_RATIO);
+                            const targetChunkPoints = Math.max(
+                                1,
+                                Math.min(
+                                    n_times,
+                                    MAX_LOG_SPECTROGRAM_TIME_POINTS,
+                                    viewportPoints + (2 * bufferPoints)
+                                )
+                            );
+
                             let viewportCenter = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
                                 ? (effectiveMax + effectiveMin) / 2
                                 : times_ms[Math.max(0, Math.floor(n_times / 2))];
                             if (!Number.isFinite(viewportCenter)) {
                                 viewportCenter = times_ms[Math.max(0, Math.floor(n_times / 2))];
                             }
-                            const targetChunkStartTimeStamp = viewportCenter - (chunk_time_length * time_step / 2);
+                            const targetChunkStartTimeStamp = viewportCenter - (targetChunkPoints * safeTimeStep / 2);
 
                             // A more robust way to find the index, defaulting to 0 if the view is before the data starts.
                             let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
                             if (chunkStartTimeIdx === -1) {
                                 // If the view is past the end of the data, show the last possible chunk.
-                                chunkStartTimeIdx = Math.max(0, n_times - chunk_time_length);
+                                chunkStartTimeIdx = Math.max(0, n_times - targetChunkPoints);
                             }
+                            const actualChunkPoints = Math.max(1, Math.min(targetChunkPoints, n_times - chunkStartTimeIdx));
 
-                            const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, chunk_time_length);
+                            const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, actualChunkPoints);
 
                             // Apply paint-on-canvas frequency slicing for spectrogram
-                            finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataCache, models);
+                            finalGlyphData = tryApplySpectrogramSlice(
+                                finalDataToUse,
+                                chunk_image_full_freqs,
+                                chunkStartTimeIdx,
+                                actualChunkPoints,
+                                position,
+                                dataCache,
+                                models
+                            );
 
                         } else {
-                            // Log view active, but too zoomed out
+                            // Log view active, but current streamed source does not cover viewport.
                             finalDataToUse = overviewData;
-                            displayMetadata = { type: 'overview', reason: ' - Zoom in for Log Data' };
+                            displayMetadata = { type: 'overview', reason: ' (Overview - Streaming Log Data...)' };
                             const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
-                            finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
+                            finalGlyphData = tryApplySpectrogramSlice(
+                                finalDataToUse,
+                                baseImage,
+                                0,
+                                finalDataToUse?.chunk_time_length,
+                                position,
+                                dataCache,
+                                models
+                            );
                         }
                     }
                 } else {
@@ -530,14 +560,30 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     finalDataToUse = overviewData;
                     displayMetadata = { type: 'overview', reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)' };
                     const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
-                    finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
+                    finalGlyphData = tryApplySpectrogramSlice(
+                        finalDataToUse,
+                        baseImage,
+                        0,
+                        finalDataToUse?.chunk_time_length,
+                        position,
+                        dataCache,
+                        models
+                    );
                 }
             } else {
                 // Overview view is explicitly active
                 finalDataToUse = overviewData;
                 displayMetadata = { type: 'overview', reason: logDataExists ? ' (Overview - Enable Log View for detail)' : ' (Overview)' };
                 const baseImage = finalDataToUse?.initial_glyph_data?.image?.[0];
-                finalGlyphData = tryApplySpectrogramSlice(finalDataToUse, baseImage, 0, position, dataCache, models);
+                finalGlyphData = tryApplySpectrogramSlice(
+                    finalDataToUse,
+                    baseImage,
+                    0,
+                    finalDataToUse?.chunk_time_length,
+                    position,
+                    dataCache,
+                    models
+                );
             }
 
             // --- Final state update ---
@@ -571,12 +617,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
-    function tryApplySpectrogramSlice(finalDataToUse, imageData, chunkStartTimeIdx, position, dataCache, models) {
+    function tryApplySpectrogramSlice(finalDataToUse, imageData, chunkStartTimeIdx, chunkTimeLength, position, dataCache, models) {
         if (!finalDataToUse || !imageData) {
             return null;
         }
         try {
-            return _applySpectrogramFreqSlicing(finalDataToUse, imageData, chunkStartTimeIdx, position, dataCache, models);
+            return _applySpectrogramFreqSlicing(finalDataToUse, imageData, chunkStartTimeIdx, chunkTimeLength, position, dataCache, models);
         }
         catch (error) {
             console.error(" [data-processors.js - tryApplySpectrogramSlice()]", error);
@@ -754,15 +800,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     /**
      * Apply paint-on-canvas frequency slicing for spectrogram display.
      */
-    function _applySpectrogramFreqSlicing(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, position, dataCache, models) {
+    function _applySpectrogramFreqSlicing(finalDataToUse, chunk_image_full_freqs, chunkStartTimeIdx, chunkTimeLength, position, dataCache, models) {
         try {
+            const effectiveChunkTimeLength = Math.max(
+                1,
+                Number.isFinite(chunkTimeLength) ? Math.floor(chunkTimeLength) : Math.floor(finalDataToUse?.chunk_time_length || 1)
+            );
             if (!finalDataToUse || !finalDataToUse.frequencies_hz || !models.config) {
                 return {
                     ...finalDataToUse.initial_glyph_data,
                     image: [chunk_image_full_freqs],
                     x: [finalDataToUse.times_ms[chunkStartTimeIdx]],
-                    dw: [finalDataToUse.chunk_time_length * finalDataToUse.time_step],
-                    times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + finalDataToUse.chunk_time_length),
+                    dw: [effectiveChunkTimeLength * finalDataToUse.time_step],
+                    times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + effectiveChunkTimeLength),
                 };
             }
 
@@ -781,8 +831,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     ...finalDataToUse.initial_glyph_data,
                     image: [chunk_image_full_freqs],
                     x: [finalDataToUse.times_ms[chunkStartTimeIdx]],
-                    dw: [finalDataToUse.chunk_time_length * finalDataToUse.time_step],
-                    times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + finalDataToUse.chunk_time_length),
+                    dw: [effectiveChunkTimeLength * finalDataToUse.time_step],
+                    times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + effectiveChunkTimeLength),
                 };
             }
             
@@ -803,8 +853,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             canvasBuffer.fill(transparent_val);
             
             for (let freq_idx = start_freq_index; freq_idx < start_freq_index + visible_n_freqs; freq_idx++) {
-                const source_row_start = freq_idx * finalDataToUse.chunk_time_length;
-                const source_row_end = source_row_start + finalDataToUse.chunk_time_length;
+                const source_row_start = freq_idx * effectiveChunkTimeLength;
+                const source_row_end = source_row_start + effectiveChunkTimeLength;
                 
                 if (source_row_end > chunk_image_full_freqs.length) {
                     console.error(`[DEBUG] Source overflow! freq_idx: ${freq_idx}, source_row_end: ${source_row_end}, source_length: ${chunk_image_full_freqs.length}`);
@@ -812,7 +862,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
                 
                 // Copy visible frequency band to the same position in the buffer (preserves original layout)
-                for (let i = 0; i < finalDataToUse.chunk_time_length; i++) {
+                for (let i = 0; i < effectiveChunkTimeLength; i++) {
                     canvasBuffer[source_row_start + i] = chunk_image_full_freqs[source_row_start + i];
                 }
             }
@@ -821,11 +871,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ...finalDataToUse.initial_glyph_data,
                 image: [canvasBuffer],  // Same size buffer as original
                 x: [finalDataToUse.times_ms[chunkStartTimeIdx]],
-                dw: [finalDataToUse.chunk_time_length * finalDataToUse.time_step],
+                dw: [effectiveChunkTimeLength * finalDataToUse.time_step],
                 // CRITICAL: Use original glyph positioning to match full image data layout
                 y: finalDataToUse.initial_glyph_data.y,      // Original position (matches full image)
                 dh: finalDataToUse.initial_glyph_data.dh,    // Original height (matches full image)
-                times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + finalDataToUse.chunk_time_length),
+                times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + effectiveChunkTimeLength),
                 y_range_start: start_freq_index - 0.5,
                 y_range_end: end_freq_index + 0.5,
                 visible_frequency_labels: finalDataToUse.frequency_labels.slice(start_freq_index, end_freq_index + 1),
@@ -841,8 +891,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ...finalDataToUse.initial_glyph_data,
                 image: [chunk_image_full_freqs],
                 x: [finalDataToUse.times_ms[chunkStartTimeIdx]],
-                dw: [finalDataToUse.chunk_time_length * finalDataToUse.time_step],
-                times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + finalDataToUse.chunk_time_length),
+                dw: [effectiveChunkTimeLength * finalDataToUse.time_step],
+                times_ms: finalDataToUse.times_ms.slice(chunkStartTimeIdx, chunkStartTimeIdx + effectiveChunkTimeLength),
             };
         }
     }

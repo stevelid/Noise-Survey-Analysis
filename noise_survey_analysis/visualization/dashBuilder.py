@@ -34,15 +34,13 @@ from noise_survey_analysis.ui.components import (
     MarkerPanelComponent,
     SidePanelComponent,
 )
-from noise_survey_analysis.core.data_processors import GlyphDataProcessor, downsample_dataframe_max
+from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
 from noise_survey_analysis.core.data_manager import DataManager, PositionData # Ensure PositionData is imported
 from noise_survey_analysis.core.config import (
     CHART_SETTINGS,  # Ensure CHART_SETTINGS is imported
     UI_LAYOUT_SETTINGS,
-    LITE_TARGET_POINTS,
     LOG_VIEW_MAX_VIEWPORT_SECONDS,
-    LOG_STREAM_TARGET_POINTS,
 )
 from noise_survey_analysis.js.loader import load_js_file
 
@@ -162,10 +160,7 @@ class DashBuilder:
 
         for position_name in app_data.positions():
             position_data = app_data[position_name]
-            all_prepared_glyph_data[position_name] = processor.prepare_all_spectral_data(
-                position_data,
-                log_target_points=LITE_TARGET_POINTS,
-            )
+            all_prepared_glyph_data[position_name] = processor.prepare_all_spectral_data(position_data)
             
             try:
                 available_params.update(all_prepared_glyph_data[position_name]['overview']['available_params'])
@@ -694,7 +689,6 @@ class DashBuilder:
                 'freq_bar_freq_range_hz': CHART_SETTINGS.get('freq_bar_freq_range_hz'),
                 'freq_table_freq_range_hz': CHART_SETTINGS.get('freq_table_freq_range_hz'),
                 'log_view_max_viewport_seconds': LOG_VIEW_MAX_VIEWPORT_SECONDS,
-                'log_stream_target_points': LOG_STREAM_TARGET_POINTS,
                 'server_mode': getattr(self, 'server_mode', False),
             },
             'sourceConfigs': getattr(self, 'source_configs', []),
@@ -836,28 +830,5 @@ class DashBuilder:
         return 'overview'
 
     def _build_position_display_data(self, position_data_obj: PositionData) -> PositionData:
-        # In server mode (hybrid streaming), keep all data intact.
-        # The system should start with true overview/summary data (from _summary.csv files).
-        # When zooming in, ServerDataHandler will stream from full log data (from _log.csv files).
-        if self.server_mode:
-            # No transformation needed - return original data structure
-            return position_data_obj
-
-        if not position_data_obj.has_log_totals:
-            return position_data_obj
-        downsampled_log_totals = downsample_dataframe_max(position_data_obj.log_totals, LITE_TARGET_POINTS)
-        if downsampled_log_totals is position_data_obj.log_totals:
-            return position_data_obj
-
-        display_data = PositionData(position_data_obj.name)
-        display_data.overview_totals = position_data_obj.overview_totals
-        display_data.overview_spectral = position_data_obj.overview_spectral
-        display_data.log_totals = downsampled_log_totals
-        display_data.log_spectral = position_data_obj.log_spectral
-        display_data.audio_files_list = position_data_obj.audio_files_list
-        display_data.audio_files_path = position_data_obj.audio_files_path
-        display_data.source_file_metadata = position_data_obj.source_file_metadata
-        display_data.parser_types_used = position_data_obj.parser_types_used
-        display_data.sample_periods_seconds = position_data_obj.sample_periods_seconds
-        display_data.spectral_data_types_present = position_data_obj.spectral_data_types_present
-        return display_data
+        # Preserve full-resolution data in both server and static modes.
+        return position_data_obj
