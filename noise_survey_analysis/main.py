@@ -292,9 +292,14 @@ def create_app(doc, config_path=None, state_path=None, create_static=False):
         # Only create static HTML if explicitly requested via --create-static flag
         if create_static and not skip_static_export:
             try:
-                cfg_path = save_config_from_selected_sources(source_configs)
+                # If a config file was already provided, use it directly rather than re-saving
+                if config_path:
+                    cfg_path = config_path
+                    logger.info(f"Using existing config for static export: {cfg_path}")
+                else:
+                    cfg_path = save_config_from_selected_sources(source_configs)
                 if cfg_path:
-                    logger.info(f"Auto-saved selector config to {cfg_path}. Starting static export in background...")
+                    logger.info(f"Starting static export in background from: {cfg_path}")
                     threading.Thread(target=generate_static_html, args=(str(cfg_path),), daemon=True).start()
                 else:
                     logger.warning("Auto-save of selector config failed or returned no path; skipping static export.")
@@ -364,9 +369,71 @@ def create_app(doc, config_path=None, state_path=None, create_static=False):
             audio_handler = AudioPlaybackHandler(position_data=app_data.get_all_position_data())
             audio_control_source = ColumnDataSource(data={'command': [], 'position_id': [], 'value': []}, name='audio_control_source')
             audio_status_source = ColumnDataSource(data={'is_playing': [False], 'current_time': [0], 'playback_rate': [1.0], 'current_file_duration': [0], 'current_file_start_time': [0], 'active_position_id': [None], 'volume_boost': [False], 'current_file_name': ['']}, name='audio_status_source')
-            app_callbacks = AppCallbacks(doc, audio_handler, audio_control_source, audio_status_source)
+            session_action_source = ColumnDataSource(
+                data={'command': [None], 'request_id': [None], 'payload': [None]},
+                name='session_action_source'
+            )
+            session_status_source = ColumnDataSource(
+                data={
+                    'request_id': [None],
+                    'level': ['info'],
+                    'message': [''],
+                    'output_path': [''],
+                    'done': [False],
+                    'updated_at': [0],
+                },
+                name='session_status_source'
+            )
+
+            def handle_static_export_request(payload=None, request_id=None):
+                logger.info(f"Session static export requested (request_id={request_id})")
+                try:
+                    cfg_path = save_config_from_selected_sources(source_configs)
+                    if not cfg_path:
+                        return {
+                            'success': False,
+                            'message': 'Static HTML export failed: unable to build a config from the current data sources.',
+                            'output_path': '',
+                        }
+
+                    output_path = generate_static_html(config_path=str(cfg_path), resources='INLINE')
+                    if output_path:
+                        output_path_str = str(output_path)
+                        return {
+                            'success': True,
+                            'message': f'Static HTML export complete: {output_path_str}',
+                            'output_path': output_path_str,
+                        }
+
+                    return {
+                        'success': False,
+                        'message': 'Static HTML export failed. Check server logs for details.',
+                        'output_path': '',
+                    }
+                except Exception as exc:
+                    logger.error(f"Session static export failed (request_id={request_id}): {exc}", exc_info=True)
+                    return {
+                        'success': False,
+                        'message': f'Static HTML export failed: {exc}',
+                        'output_path': '',
+                    }
+
+            app_callbacks = AppCallbacks(
+                doc,
+                audio_handler,
+                audio_control_source,
+                audio_status_source,
+                session_action_source=session_action_source,
+                session_status_source=session_status_source,
+                static_export_request_handler=handle_static_export_request,
+            )
             doc.clear() # Clear the loading message
-            dash_builder = DashBuilder(audio_control_source, audio_status_source)
+            dash_builder = DashBuilder(
+                audio_control_source,
+                audio_status_source,
+                session_action_source=session_action_source,
+                session_status_source=session_status_source,
+            )
             dash_builder.build_layout(
                 doc,
                 app_data,
@@ -378,6 +445,8 @@ def create_app(doc, config_path=None, state_path=None, create_static=False):
             )
             doc.add_root(audio_control_source)
             doc.add_root(audio_status_source)
+            doc.add_root(session_action_source)
+            doc.add_root(session_status_source)
             if STREAMING_ENABLED:
                 server_data_handler = ServerDataHandler(doc, app_data, CHART_SETTINGS)
                 app_callbacks.set_server_data_handler(server_data_handler)
@@ -417,7 +486,7 @@ def create_app(doc, config_path=None, state_path=None, create_static=False):
                     if isinstance(state_payload, dict):
                         initial_saved_workspace_state = state_payload
                     if source_configs_from_state:
-                        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs_from_state, skip_static_export=True))
+                        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs_from_state, skip_static_export=not create_static))
                     else:
                         logger.error("Workspace file has no sourceConfigs. Falling back to selector.")
                         doc.clear()  # Remove loading div
@@ -427,7 +496,7 @@ def create_app(doc, config_path=None, state_path=None, create_static=False):
                     # Regular config file - use the existing loader
                     _, source_configs, loaded_job_number = load_config_and_prepare_sources(config_path=config_path)
                     if source_configs is not None:
-                        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs, skip_static_export=True, job_number=loaded_job_number))
+                        doc.add_next_tick_callback(lambda: on_data_sources_selected(source_configs, skip_static_export=not create_static, job_number=loaded_job_number))
                     else:
                         logger.error(f"Failed to load from config file {config_path}. Falling back to selector.")
                         doc.clear()  # Remove loading div

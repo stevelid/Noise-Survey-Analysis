@@ -20,6 +20,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return selectViewState(state).comparison || {};
     }
 
+    function selectLogThreshold(state) {
+        const viewState = selectViewState(state);
+        const resolver = app.features?.view?.resolution;
+        if (resolver?.selectLogThresholdConfig) {
+            return resolver.selectLogThresholdConfig(viewState);
+        }
+        return { mode: 'auto', seconds: null };
+    }
+
     function selectActiveSidePanelTab(state) {
         const viewState = selectViewState(state);
         const rawIndex = viewState.activeSidePanelTab;
@@ -32,6 +41,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         selectViewState,
         selectViewport,
         selectComparisonState,
+        selectLogThreshold,
         selectActiveSidePanelTab
     };
 })(window.NoiseSurveyApp);

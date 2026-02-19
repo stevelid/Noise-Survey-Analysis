@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Import source files for side effects to enable coverage tracking.
 import './loadCoreModules.js';
+import '../noise_survey_analysis/static/js/services/eventHandlers/viewEventHandlers.js';
 import '../noise_survey_analysis/static/js/services/eventHandlers.js';
 
 // Now we can safely destructure from the global object.
@@ -160,11 +161,11 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     });
 
     describe('handleRangeUpdate', () => {
-        it('should dispatch a VIEWPORT_CHANGE action after debounce', () => {
+        it('should dispatch a viewport intent thunk after debounce', () => {
             const cb_obj = { start: 100, end: 200 };
             eventHandlers.handleRangeUpdate(cb_obj);
             vi.advanceTimersByTime(250);
-            expect(dispatchSpy).toHaveBeenCalledWith(actions.viewportChange(100, 200));
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
     });
 

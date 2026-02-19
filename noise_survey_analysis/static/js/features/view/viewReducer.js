@@ -34,10 +34,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         selectedParameter: 'LZeq',
         hoverEnabled: true,
         activeSidePanelTab: DEFAULT_ACTIVE_TAB,
-        logViewThresholdSeconds: null,  // null = auto-calculated from data
+        logViewThreshold: { mode: 'auto', seconds: null },
         mode: 'normal',
         comparison: { ...initialComparisonState }
     };
+
+    function normalizeLogThreshold(payload) {
+        const resolver = app.features?.view?.resolution;
+        const normalized = resolver?.normalizeLogThreshold
+            ? resolver.normalizeLogThreshold(payload)
+            : null;
+        if (normalized) {
+            return normalized;
+        }
+
+        const rawMode = typeof payload?.mode === 'string' ? payload.mode.toLowerCase() : 'auto';
+        const mode = rawMode === 'manual' ? 'manual' : 'auto';
+        const rawSeconds = Number(payload?.seconds);
+        const seconds = (mode === 'manual' && Number.isFinite(rawSeconds) && rawSeconds > 0) ? rawSeconds : null;
+        return { mode, seconds };
+    }
 
     function normalizeTabIndex(rawValue, fallback) {
         const numeric = Number(rawValue);
@@ -127,11 +143,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     availablePositions
                 );
 
+                const payloadLogThreshold = action.payload?.logViewThreshold ?? state.logViewThreshold;
+
                 return {
                     ...state,
                     availablePositions,
                     selectedParameter: action.payload?.selectedParameter ?? state.selectedParameter,
                     viewport: action.payload?.viewport ?? state.viewport,
+                    logViewThreshold: normalizeLogThreshold(payloadLogThreshold),
                     chartVisibility: action.payload?.chartVisibility ?? state.chartVisibility,
                     positionChartOffsets: initialChartOffsets,
                     positionAudioOffsets: initialAudioOffsets,
@@ -349,10 +368,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             case actionTypes.LOG_VIEW_THRESHOLD_SET: {
-                const raw = Number(action.payload?.seconds);
-                const value = (Number.isFinite(raw) && raw > 0) ? raw : null;
-                if (value === state.logViewThresholdSeconds) return state;
-                return { ...state, logViewThresholdSeconds: value };
+                const nextThreshold = normalizeLogThreshold(action.payload);
+                const prevThreshold = normalizeLogThreshold(state.logViewThreshold);
+                if (nextThreshold.mode === prevThreshold.mode && nextThreshold.seconds === prevThreshold.seconds) {
+                    return state;
+                }
+                return { ...state, logViewThreshold: nextThreshold };
             }
 
             default:
@@ -361,9 +382,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     app.features = app.features || {};
-    app.features.view = {
-        initialState: initialViewState,
-        initialComparisonState,
-        viewReducer
-    };
+    app.features.view = app.features.view || {};
+    app.features.view.initialState = initialViewState;
+    app.features.view.initialComparisonState = initialComparisonState;
+    app.features.view.viewReducer = viewReducer;
 })(window.NoiseSurveyApp);

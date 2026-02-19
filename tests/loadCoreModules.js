@@ -1,6 +1,7 @@
 // Ensures the NoiseSurveyApp global is populated with core modules for tests.
 
 import '../noise_survey_analysis/static/js/core/actions.js';
+import '../noise_survey_analysis/static/js/features/view/viewResolution.js';
 import '../noise_survey_analysis/static/js/features/view/viewReducer.js';
 import '../noise_survey_analysis/static/js/features/view/viewSelectors.js';
 import '../noise_survey_analysis/static/js/features/view/viewThunks.js';

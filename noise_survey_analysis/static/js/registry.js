@@ -44,6 +44,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (bokehModels?.sessionMenu) {
             models.sessionMenu = bokehModels.sessionMenu;
         }
+        if (bokehModels?.sessionActionSource) {
+            models.sessionActionSource = bokehModels.sessionActionSource;
+        }
+        if (bokehModels?.sessionStatusSource) {
+            models.sessionStatusSource = bokehModels.sessionStatusSource;
+        }
 
         //Robustly find essential models by name from the Bokeh document
         if (window.Bokeh && Bokeh.documents[0]) {
@@ -106,6 +112,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             chartVisibility[chart.name] = checkbox ? checkbox.active.includes(0) : true;
         });
 
+        const resolution = app.features?.view?.resolution;
+        const initialAutoThresholdSeconds = resolution?.calculateGlobalAutoLogThresholdSeconds
+            ? resolution.calculateGlobalAutoLogThresholdSeconds(models, availablePositions)
+            : 3600;
+
         const initialStatePayload = {
             availablePositions: availablePositions,
             selectedParameter: models.paramSelect?.value || 'LZeq',
@@ -113,6 +124,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             chartVisibility: chartVisibility,
             hoverEnabled: true,
             positionDisplayTitles: models.positionDisplayTitles,
+            logViewThreshold: {
+                mode: 'manual',
+                seconds: initialAutoThresholdSeconds
+            },
         };
 
         console.info('[Registry]', 'Registry initialized successfully.');

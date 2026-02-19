@@ -21,6 +21,16 @@ describe('rootReducer', () => {
         expect(comparable).toEqual(initialState);
     });
 
+    it('should migrate legacy rehydrated threshold state to logViewThreshold object', () => {
+        const legacyState = {
+            view: {
+                logViewThresholdSeconds: 420
+            }
+        };
+        const state = rootReducer(initialState, actions.rehydrateState(legacyState));
+        expect(state.view.logViewThreshold).toEqual({ mode: 'manual', seconds: 420 });
+    });
+
     describe('Interaction Actions', () => {
         it('should handle TAP action', () => {
             const state = rootReducer(initialState, actions.tap(12345, 'P1', 'line_P1'));
@@ -93,6 +103,16 @@ describe('rootReducer', () => {
             const state = rootReducer(baseState, actions.positionAudioOffsetSet('P1', -700));
             expect(state.view.positionAudioOffsets.P1).toBe(-700);
             expect(state.view.positionEffectiveOffsets.P1).toBe(500);
+        });
+
+        it('should store manual log threshold config as an object', () => {
+            const state = rootReducer(initialState, actions.logViewThresholdSet({ mode: 'manual', seconds: 900 }));
+            expect(state.view.logViewThreshold).toEqual({ mode: 'manual', seconds: 900 });
+        });
+
+        it('should normalize invalid log threshold payloads to auto mode', () => {
+            const state = rootReducer(initialState, actions.logViewThresholdSet({ mode: 'manual', seconds: -1 }));
+            expect(state.view.logViewThreshold).toEqual({ mode: 'auto', seconds: null });
         });
 
         it('should update position display titles with sanitization', () => {

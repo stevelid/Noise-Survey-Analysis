@@ -90,7 +90,7 @@ describe('NoiseSurveyApp.classes', () => {
     ts.update(activeLineData, { reason: ' (Overview)' });
 
     expect(ts.activeData).toBe(activeLineData);
-    expect(ts.source.data).toBe(activeLineData);
+    expect(ts.source.data).toStrictEqual(activeLineData);
     expect(chartModel.title.text).toContain('P1 - Time History (Overview)');
     expect(ts.render).toHaveBeenCalled();
   });

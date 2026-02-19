@@ -25,6 +25,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
     }
 
+    function normalizeRehydratedViewState(baseView, providedView) {
+        const mergedView = providedView ? { ...baseView, ...providedView } : baseView;
+        const resolution = app.features?.view?.resolution;
+        const normalize = resolution?.normalizeLogThreshold;
+        if (typeof normalize !== 'function') {
+            return mergedView;
+        }
+
+        // Migrate legacy saved state that only had logViewThresholdSeconds.
+        const hasStructuredThreshold = Boolean(
+            providedView
+            && Object.prototype.hasOwnProperty.call(providedView, 'logViewThreshold')
+        );
+        const migratedSource = hasStructuredThreshold
+            ? providedView.logViewThreshold
+            : providedView?.logViewThresholdSeconds;
+        return {
+            ...mergedView,
+            logViewThreshold: normalize(migratedSource)
+        };
+    }
+
     function createInitialState() {
         return {
             view: deepClone(viewFeature.initialState),
@@ -62,7 +84,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const baseState = createInitialState();
 
             const mergedState = {
-                view: providedState.view ? { ...baseState.view, ...providedState.view } : baseState.view,
+                view: normalizeRehydratedViewState(baseState.view, providedState.view),
                 interaction: providedState.interaction ? { ...baseState.interaction, ...providedState.interaction } : baseState.interaction,
                 markers: providedState.markers ? { ...baseState.markers, ...providedState.markers } : baseState.markers,
                 regions: providedState.regions ? { ...baseState.regions, ...providedState.regions } : baseState.regions,

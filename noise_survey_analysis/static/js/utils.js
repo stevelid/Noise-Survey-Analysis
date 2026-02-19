@@ -38,7 +38,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (el.classList?.contains('bk-textareainput')) return true;
             return false;
         });
-        return inEditable;
+        if (inEditable) {
+            return true;
+        }
+
+        // Fallback for synthetic/test events that don't provide composedPath().
+        const target = ev && ev.target;
+        const targetTag = typeof target?.tagName === 'string'
+            ? target.tagName.toLowerCase()
+            : '';
+        if (targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select') {
+            return true;
+        }
+        if (target?.isContentEditable === true) {
+            return true;
+        }
+        if (target instanceof Element) {
+            if (target.matches?.('textarea, input, [contenteditable="true"]')) return true;
+            if (target.classList?.contains('bk-input')) return true;
+            if (target.classList?.contains('bk-textareainput')) return true;
+        }
+        return false;
     }
 
     app.utils = {

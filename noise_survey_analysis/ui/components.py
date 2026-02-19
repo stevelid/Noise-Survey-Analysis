@@ -1874,7 +1874,7 @@ class ControlsComponent:
         )
         spinner.js_on_change("value", CustomJS(code="""
             if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange) {
-                window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange(cb_obj.value * 60);
+                window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange(cb_obj.value);
             }
         """))
         label = Div(
@@ -2036,6 +2036,7 @@ class ControlsComponent:
                 ("Load Workspace", "load"),
                 ("Export Annotations (CSV)", "export_annotations_csv"),
                 ("Import Annotations (CSV)", "import_annotations_csv"),
+                ("Generate Static HTML (Offline)", "generate_static_html"),
             ],
         )
 
@@ -2169,10 +2170,10 @@ class RangeSelectorComponent:
             color = colors.get(metric, "#cccccc") 
             select_figure.line('Datetime', metric, source=source, line_width=1, color=color, alpha=0.6)
 
-        range_tool = RangeTool(x_range=self.attached_chart_figure.x_range)
-        range_tool.overlay.fill_color = "navy"
-        range_tool.overlay.fill_alpha = 0.2
-        select_figure.add_tools(range_tool)
+        self.range_tool = RangeTool(x_range=self.attached_chart_figure.x_range)
+        self.range_tool.overlay.fill_color = "navy"
+        self.range_tool.overlay.fill_alpha = 0.2
+        select_figure.add_tools(self.range_tool)
 
         select_figure.xaxis.formatter = CustomJSTickFormatter(code="""
             const d = new Date(tick);

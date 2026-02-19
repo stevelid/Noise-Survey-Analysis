@@ -2,6 +2,11 @@
 
 This handbook combines all project guidance to help contributors (especially LLMs) quickly understand the Noise Survey Analysis codebase and follow its conventions. The application follows a unidirectional data flow inspired by Redux: the UI is always a function of a central state object.
 
+## Environment Note (Google Drive Worktree)
+- This repository is often edited from a Google Drive path (for example `G:\My Drive\...`).
+- Node tooling can behave incorrectly in this environment (for example `npm`/`npx`/Vitest may produce empty output or fail to run properly).
+- For JavaScript test runs (`npm test`, Vitest, Playwright), copy/sync the repo to a local non-synced path first (for example `C:\dev\Noise Survey Analysis`) and run Node-based tests there.
+
 ## 1. Core Architectural Principles
 - **Single Source of Truth:** `app.store` is the sole, immutable source of truth for all UI state.
 - **State Is Read-Only:** State changes only occur via dispatched actions.
@@ -118,3 +123,43 @@ Follow consistent naming to make intent obvious:
 - **Implementation rule:** Keep this parser generic and low-assumption; do not add instrument-specific heuristics that belong in dedicated parser classes.
 
 By following this handbook, contributors maintain a clean, scalable, and predictable codebase that respects the project’s performance constraints and architectural conventions.
+
+## 9. Playwright Testing
+
+### Environment
+- Static HTML exports can be tested directly via `file://` URLs — no server needed.
+- Live Bokeh server tests require the server to be running first (port 5006 by default).
+- Node-based tools (npm, Vitest) must be run from a local non-synced path; Google Drive paths cause silent failures.
+- Use `python` with `playwright.sync_api` for all automation scripts.
+
+### Bokeh Model Access (Bokeh 3.x)
+In Bokeh 3.x, `doc._all_models` is a **`Map`**, not a plain object. Use the spread operator:
+```javascript
+const models = [...doc._all_models.values()];
+```
+`Object.values(doc._all_models)` returns `[]` and is a common pitfall.
+
+### Programmatic Zoom
+The dashboard has two linked datetime ranges that must both be updated to zoom the view:
+- `DataRange1d` — controls the main time series and spectrogram charts
+- `Range1d` — controls the range selector (navigator) at the top
+
+Filter for datetime ranges using `start > 1e12` (epoch ms values are > 1 trillion):
+```javascript
+// Zoom to a 6-hour window from the start of the survey
+const doc = Bokeh.documents[0];
+const models = [...doc._all_models.values()];
+const dateRanges = models.filter(
+    m => (m.type === ‘Range1d’ || m.type === ‘DataRange1d’) && m.start > 1e12
+);
+const newEnd = dateRanges[0].start + 6 * 3600 * 1000;
+dateRanges.forEach(r => { r.end = newEnd; });
+```
+In Playwright: `page.evaluate("""() => { ... }""")`.
+
+Setting only one range leaves the charts out of sync (navigator zooms but main charts don’t, or vice versa).
+
+### Log Data Streaming Threshold
+- The server streams high-resolution log data only when the viewport span is **< 86,400 s (24 hours)**.
+- Static HTML exports embed all data at export time; log-resolution data is embedded if the log file was loaded before export.
+- Use the zoom snippet above to programmatically trigger the log-data view for testing.

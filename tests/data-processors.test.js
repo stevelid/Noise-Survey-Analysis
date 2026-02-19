@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Import source files for side effects to enable coverage tracking.
+import '../noise_survey_analysis/static/js/features/view/viewResolution.js';
 import '../noise_survey_analysis/static/js/data-processors.js';
 
 describe('NoiseSurveyApp.data_processors', () => {
@@ -350,7 +351,7 @@ describe('NoiseSurveyApp.data_processors', () => {
         it('should cap user threshold to the server streaming max', () => {
             const viewState = {
                 globalViewType: 'log',
-                logViewThresholdSeconds: 600,
+                logViewThreshold: { mode: 'manual', seconds: 600 },
                 viewport: { min: 0, max: 500000 } // 500 seconds
             };
             const dataCache = { activeLineData: {} };
@@ -383,22 +384,16 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
         });
 
-        it('should honor configured log stream target points for auto-threshold', () => {
+        it('should use the new auto-threshold rule and ignore log_stream_target_points', () => {
             const viewState = {
                 globalViewType: 'log',
-                viewport: { min: 0, max: 7000 } // 7 seconds
+                viewport: { min: 0, max: 120000 } // 120 seconds
             };
             const dataCache = { activeLineData: {} };
             const models = {
                 config: {
                     log_stream_target_points: 5,
                     log_view_max_viewport_seconds: 300
-                },
-                spectrogramSources: {
-                    P1: {
-                        overview: { data: { time_step: [100] } },
-                        log: { data: { time_step: [1000] } }
-                    }
                 },
                 timeSeriesSources: {
                     P1: {

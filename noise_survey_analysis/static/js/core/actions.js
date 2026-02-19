@@ -128,9 +128,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         stepSizeCalculated: (stepSizeMs) => ({ type: actionTypes.STEP_SIZE_CALCULATED, payload: { stepSizeMs } }),
 
-        logViewThresholdSet: (seconds) => ({
+        logViewThresholdSet: (value, mode = null) => ({
             type: actionTypes.LOG_VIEW_THRESHOLD_SET,
-            payload: { seconds }
+            payload: (value && typeof value === 'object' && !Array.isArray(value))
+                ? value
+                : { seconds: value, mode }
         }),
 
         positionDisplayTitlesSet: (titles) => ({

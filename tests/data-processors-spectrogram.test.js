@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 // Import module for side-effects
+import '../noise_survey_analysis/static/js/features/view/viewResolution.js';
 import '../noise_survey_analysis/static/js/data-processors.js';
 
 describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram paths)', () => {
@@ -95,7 +96,7 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     expect(rep.image[0]).toEqual(overview.initial_glyph_data.image[0]);
   });
 
-  it('no log data: falls back to overview with specific reason', () => {
+  it('no log data: falls back to overview', () => {
     const position = 'P1';
     const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 0, max: 3 } };
     const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
@@ -105,7 +106,7 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
       config: { spectrogram_freq_range_hz: [100, 400] },
     };
     const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
-    expect(details.reason).toBe(' (No Log Data Available)');
+    expect(details.reason).toBe(' (Overview)');
     expect(details.type).toBe('overview');
     expect(viewState.displayDetails).toBeUndefined();
   });

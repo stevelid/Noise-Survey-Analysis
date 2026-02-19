@@ -12,6 +12,75 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const SESSION_FILE_VERSION = 1;
     let initialStateApplied = false;
+    let sessionStatusListenerAttached = false;
+    let lastSessionStatusUpdateAt = null;
+    let toastContainer = null;
+
+    function ensureToastContainer() {
+        if (toastContainer && document.body?.contains(toastContainer)) {
+            return toastContainer;
+        }
+
+        const container = document.createElement('div');
+        container.id = 'session-toast-container';
+        container.style.position = 'fixed';
+        container.style.top = '16px';
+        container.style.right = '16px';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.gap = '8px';
+        container.style.zIndex = '10000';
+        container.style.pointerEvents = 'none';
+        document.body.appendChild(container);
+        toastContainer = container;
+        return toastContainer;
+    }
+
+    function showToast(message, level = 'info', durationMs = 3200) {
+        if (!message || !document?.body) {
+            return;
+        }
+        const container = ensureToastContainer();
+        if (!container) {
+            return;
+        }
+
+        const toast = document.createElement('div');
+        toast.textContent = String(message);
+        toast.style.maxWidth = '420px';
+        toast.style.padding = '10px 12px';
+        toast.style.borderRadius = '6px';
+        toast.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.22)';
+        toast.style.fontSize = '12px';
+        toast.style.lineHeight = '1.35';
+        toast.style.color = '#ffffff';
+        toast.style.pointerEvents = 'auto';
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 160ms ease';
+
+        if (level === 'error') {
+            toast.style.background = '#b42318';
+        } else if (level === 'warning') {
+            toast.style.background = '#b54708';
+        } else {
+            toast.style.background = '#175cd3';
+        }
+
+        container.appendChild(toast);
+        requestAnimationFrame(() => {
+            toast.style.opacity = '1';
+        });
+
+        const timeoutMs = Number.isFinite(Number(durationMs)) ? Number(durationMs) : 3200;
+        window.setTimeout(() => {
+            toast.style.opacity = '0';
+            window.setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 180);
+        }, timeoutMs);
+    }
 
     function triggerJsonDownload(filename, jsonText) {
         try {
@@ -918,6 +987,96 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         fileInput.click();
     }
 
+    function getSessionActionSource() {
+        return app.registry?.models?.sessionActionSource || null;
+    }
+
+    function getSessionStatusSource() {
+        return app.registry?.models?.sessionStatusSource || null;
+    }
+
+    function reportSessionStatus(sourceData) {
+        if (!sourceData || typeof sourceData !== 'object') {
+            return;
+        }
+
+        const updatedAt = Number(sourceData.updated_at?.[0]);
+        if (Number.isFinite(updatedAt)) {
+            if (updatedAt === lastSessionStatusUpdateAt) {
+                return;
+            }
+            lastSessionStatusUpdateAt = updatedAt;
+        }
+
+        const level = typeof sourceData.level?.[0] === 'string' ? sourceData.level[0] : 'info';
+        const done = Boolean(sourceData.done?.[0]);
+        const message = typeof sourceData.message?.[0] === 'string' ? sourceData.message[0] : '';
+        if (!message) {
+            return;
+        }
+
+        if (level === 'error') {
+            console.error('[Session]', message);
+        } else if (level === 'warning') {
+            console.warn('[Session]', message);
+        } else {
+            console.info('[Session]', message);
+        }
+
+        if (done) {
+            const duration = level === 'error' ? 5500 : 3800;
+            showToast(message, level, duration);
+        }
+    }
+
+    function ensureSessionStatusListener() {
+        if (sessionStatusListenerAttached) {
+            return;
+        }
+        const statusSource = getSessionStatusSource();
+        if (!statusSource || !statusSource.change || typeof statusSource.change.connect !== 'function') {
+            return;
+        }
+
+        statusSource.change.connect(() => {
+            reportSessionStatus(statusSource.data);
+        });
+        sessionStatusListenerAttached = true;
+    }
+
+    function triggerServerSessionAction(command, payload) {
+        const actionSource = getSessionActionSource();
+        if (!actionSource || !actionSource.data) {
+            return false;
+        }
+
+        const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+        actionSource.data.command = [command];
+        actionSource.data.request_id = [requestId];
+        actionSource.data.payload = [payload ?? null];
+        if (actionSource.change && typeof actionSource.change.emit === 'function') {
+            actionSource.change.emit();
+        }
+        return true;
+    }
+
+    function handleGenerateStaticHtml() {
+        if (window.location?.protocol === 'file:') {
+            showToast('Static HTML generation is only available in live server mode.', 'warning', 4500);
+            return;
+        }
+
+        ensureSessionStatusListener();
+        const sent = triggerServerSessionAction('generate_static_html', null);
+        if (!sent) {
+            showToast('Static HTML export is unavailable in this session.', 'error', 5000);
+            console.error('[Session] Session action source is unavailable.');
+            return;
+        }
+        showToast('Static HTML export started. You can keep using the dashboard.', 'info', 3000);
+        console.info('[Session] Static HTML export requested.');
+    }
+
     function handleMenuAction(action) {
         switch (action) {
             case 'save':
@@ -933,6 +1092,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             case 'import_annotations_csv':
             case 'import_regions':
                 handleImportCsv();
+                break;
+            case 'generate_static_html':
+                handleGenerateStaticHtml();
                 break;
             default:
                 console.warn('[Session] Unhandled session menu action:', action);
@@ -1021,6 +1183,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function applyInitialWorkspaceState() {
+        ensureSessionStatusListener();
         if (initialStateApplied) {
             return false;
         }
@@ -1056,6 +1219,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         applyInitialWorkspaceState,
         handleExportCsv,
         handleImportCsv,
+        handleGenerateStaticHtml,
         handleImportAnnotations: handleImportCsv,
         __testHelpers: testHelpers,
     };

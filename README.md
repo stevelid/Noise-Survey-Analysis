@@ -213,6 +213,10 @@ The **Menu ▸ Save Workspace** option captures the full Redux-style UI state—
 
 The workspace loader rehydrates the UI while the `--config` argument points to the data to load. If you only need to restore layout choices without changing the dataset, you can omit `--config` and load sources from the selector after the workspace applies.
 
+### Static HTML export from the dashboard menu
+
+In live server sessions, use **Menu ▸ Generate Static HTML (Offline)** to create a self-contained HTML snapshot with overview/log data embedded for offline review. The export runs in the background and writes the file next to the auto-saved selector config.
+
 ## Project Structure
 
 ```

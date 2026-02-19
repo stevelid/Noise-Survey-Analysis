@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 // Load the full application stack to test integration
 import './loadCoreModules.js';
 import '../noise_survey_analysis/static/js/init.js';
+import '../noise_survey_analysis/static/js/services/eventHandlers/viewEventHandlers.js';
 import '../noise_survey_analysis/static/js/services/eventHandlers.js';
 
 describe('Application Integration Tests', () => {
@@ -46,7 +47,7 @@ describe('Application Integration Tests', () => {
 
   it('handleViewToggle should update the globalViewType in the store', () => {
     const initialView = store.getState().view.globalViewType;
-    expect(initialView).toBe('overview'); // Default is 'overview'
+    expect(initialView).toBe('log'); // Default is 'log'
 
     // Act: Simulate toggling the view to overview
     eventHandlers.handleViewToggle(false); // false for 'overview'

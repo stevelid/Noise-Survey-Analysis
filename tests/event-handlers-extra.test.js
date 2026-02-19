@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Load modules in order
 import './loadCoreModules.js';
+import '../noise_survey_analysis/static/js/services/eventHandlers/viewEventHandlers.js';
 import '../noise_survey_analysis/static/js/services/eventHandlers.js';
 
 describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
@@ -122,6 +123,35 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
   it('handleHoverToggle should dispatch the correct action', () => {
     window.NoiseSurveyApp.eventHandlers.handleHoverToggle(false);
     expect(dispatchAction).toHaveBeenCalledWith(window.NoiseSurveyApp.actions.hoverToggle(false));
+  });
+
+  it('handleLogViewThresholdChange should keep auto mode when value matches computed auto threshold', () => {
+    window.NoiseSurveyApp.store.getState = () => ({
+      view: {
+        availablePositions: [],
+        logViewThreshold: { mode: 'auto', seconds: null }
+      }
+    });
+
+    window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange(60);
+    expect(dispatchAction).not.toHaveBeenCalled();
+  });
+
+  it('handleLogViewThresholdChange should dispatch manual mode when value differs from computed auto threshold', () => {
+    window.NoiseSurveyApp.store.getState = () => ({
+      view: {
+        availablePositions: [],
+        logViewThreshold: { mode: 'auto', seconds: null }
+      }
+    });
+
+    window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange(30);
+    expect(dispatchAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: window.NoiseSurveyApp.actionTypes.LOG_VIEW_THRESHOLD_SET,
+        payload: { mode: 'manual', seconds: 1800 }
+      })
+    );
   });
 
   it('handlePlaybackRateChange should dispatch the intent thunk', () => {

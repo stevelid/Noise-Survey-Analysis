@@ -15,11 +15,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const MAX_LINE_POINTS_TO_RENDER = 5000;
     const MAX_SPECTRAL_POINTS_TO_RENDER = 5000;
     
-    // Log view threshold is calculated dynamically based on data time steps.
-    // The threshold is the larger of:
-    //   - overview_time_step * 10
-    //   - log_time_step * log_stream_target_points
-    // and then capped by the backend hard limit.
+    // Log view threshold default:
+    // min(1 hour, 10 overview steps, 360 log steps)
+    // capped by backend hard limit.
 
     const _models = app.models;
 
@@ -92,73 +90,25 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     };
 
-    function getServerLogViewportLimitSeconds(models) {
-        const rawLimit = Number(models?.config?.log_view_max_viewport_seconds);
-        const DEFAULT_SERVER_LIMIT_SECONDS = 300;
-        return (Number.isFinite(rawLimit) && rawLimit > 0)
-            ? rawLimit
-            : DEFAULT_SERVER_LIMIT_SECONDS;
-    }
-
-    function getLogStreamTargetPoints(models) {
-        const rawTarget = Number(models?.config?.log_stream_target_points);
-        return (Number.isFinite(rawTarget) && rawTarget > 0)
-            ? rawTarget
-            : 500;
-    }
-
     /**
      * Calculates the dynamic log view threshold in seconds.
-     * The threshold is the larger of:
-     *   - overview_time_step * 10 (converted to seconds)
-     *   - log_time_step * log_stream_target_points (converted to seconds)
-     * Falls back to 300 seconds if time steps cannot be determined.
-     * The final threshold is capped to the backend streaming max viewport.
+     * Uses the shared view resolution module so all callers use one policy.
      * 
-     * @param {Object} models - The models registry containing spectrogramSources
+     * @param {Object} models - The models registry
      * @param {string} position - The position identifier
+     * @param {Object|null} thresholdInput - Explicit threshold config ({ mode, seconds })
      * @returns {number} Threshold in seconds
      */
-    function calculateLogViewThreshold(models, position, userThresholdSeconds) {
-        const serverLimitSeconds = getServerLogViewportLimitSeconds(models);
-        const logStreamTargetPoints = getLogStreamTargetPoints(models);
-        if (Number.isFinite(userThresholdSeconds) && userThresholdSeconds > 0) {
-            return Math.min(userThresholdSeconds, serverLimitSeconds);
+    function calculateLogViewThreshold(models, position, thresholdInput) {
+        const resolution = app.features?.view?.resolution;
+        if (resolution?.resolveLogThresholdSeconds) {
+            const viewState = {
+                availablePositions: [position],
+                logViewThreshold: thresholdInput
+            };
+            return resolution.resolveLogThresholdSeconds(models, viewState, position);
         }
-        const DEFAULT_THRESHOLD_SECONDS = 300;
-
-        const spectrogramSources = models.spectrogramSources?.[position];
-        if (!spectrogramSources) {
-            return Math.min(DEFAULT_THRESHOLD_SECONDS, serverLimitSeconds);
-        }
-        
-        // Get overview time step from spectrogram data
-        let overviewTimeStepMs = 0;
-        const overviewSource = spectrogramSources?.overview;
-        if (overviewSource?.data) {
-            // time_step is wrapped in single-element list from Bokeh transport
-            const rawTimeStep = overviewSource.data.time_step;
-            overviewTimeStepMs = Array.isArray(rawTimeStep) ? (rawTimeStep[0] || 0) : (rawTimeStep || 0);
-        }
-        
-        // Get log time step from spectrogram data
-        let logTimeStepMs = 0;
-        const logSource = spectrogramSources?.log;
-        if (logSource?.data) {
-            // time_step is wrapped in single-element list from Bokeh transport
-            const rawTimeStep = logSource.data.time_step;
-            logTimeStepMs = Array.isArray(rawTimeStep) ? (rawTimeStep[0] || 0) : (rawTimeStep || 0);
-        }
-        
-        // Calculate thresholds: time_step is in ms, convert to seconds
-        const overviewThresholdSeconds = (overviewTimeStepMs * 10) / 1000;
-        const logThresholdSeconds = (logTimeStepMs * logStreamTargetPoints) / 1000;
-        
-        // Use the larger of the two, with fallback to default if both are 0
-        const calculatedThreshold = Math.max(overviewThresholdSeconds, logThresholdSeconds);
-        
-        const threshold = calculatedThreshold > 0 ? calculatedThreshold : DEFAULT_THRESHOLD_SECONDS;
-        return Math.min(threshold, serverLimitSeconds);
+        return 3600;
     }
 
     function cloneDataColumns(source) {
@@ -300,8 +250,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (viewType === 'log') {
                 if (hasLogData) {
                     // Check viewport width against dynamic threshold (in milliseconds)
-                    const userThreshold = viewState.logViewThresholdSeconds;
-                    const logViewThresholdSeconds = calculateLogViewThreshold(models, position, userThreshold);
+                    const thresholdConfig = viewState.logViewThreshold;
+                    const logViewThresholdSeconds = calculateLogViewThreshold(models, position, thresholdConfig);
                     const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
                         ? effectiveMax - effectiveMin : Infinity;
                     const viewportWidthSeconds = viewportWidthMs / 1000;
@@ -429,7 +379,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             
             // For log, reconstruct data from streaming source (Bokeh ColumnDataSource format)
             // Server wraps EVERYTHING in single-element lists to satisfy Bokeh constraint
-            const logData = logSourceData?.times_ms ? (() => {
+            const streamedLogData = logSourceData?.times_ms ? (() => {
                 // Unwrap arrays from single-element lists
                 // Arrays: logSourceData.times_ms = [[...actual array...]]
                 // Scalars: logSourceData.n_times = [scalar_value]
@@ -488,6 +438,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     initial_glyph_data
                 };
             })() : null;
+            const fallbackPreparedLogData = positionGlyphData?.log?.prepared_params?.[parameter] || null;
+            const logData = streamedLogData || fallbackPreparedLogData;
             
             const hasLogData = logData && logData.times_ms && logData.times_ms.length > 0;
             // Whether log data exists on disk (even if not yet lazy-loaded)
@@ -503,8 +455,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const effectiveMax = Number.isFinite(viewportMax) ? viewportMax - offsetMs : viewportMax;
             
             // Check viewport width against dynamic threshold (in milliseconds)
-            const userThreshold = viewState.logViewThresholdSeconds;
-            const logViewThresholdSeconds = calculateLogViewThreshold(models, position, userThreshold);
+            const thresholdConfig = viewState.logViewThreshold;
+            const logViewThresholdSeconds = calculateLogViewThreshold(models, position, thresholdConfig);
             const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
                 ? effectiveMax - effectiveMin : Infinity;
             const viewportWidthSeconds = viewportWidthMs / 1000;
@@ -900,7 +852,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateActiveLineChartData: updateActiveLineChartData,
         updateActiveSpectralData: updateActiveSpectralData,
         updateActiveFreqBarData: updateActiveFreqBarData,
-        calculateStepSize: calculateStepSize
+        calculateStepSize: calculateStepSize,
+        calculateLogViewThreshold: calculateLogViewThreshold
     };
 
 })(window.NoiseSurveyApp);

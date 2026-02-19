@@ -2,9 +2,11 @@
 
 import logging
 import time
+import threading
 from bokeh.plotting import curdoc
 from bokeh.models import ColumnDataSource, Button, Select, Div, CustomJS
 from datetime import datetime, timedelta, timezone
+from typing import Callable, Optional
 
 # Assuming AudioPlaybackHandler has been updated with set_amplification
 from .audio_handler import AudioPlaybackHandler
@@ -32,6 +34,9 @@ class AppCallbacks:
         audio_handler: AudioPlaybackHandler | None,
         audio_control_source: ColumnDataSource,
         audio_status_source: ColumnDataSource,
+        session_action_source: Optional[ColumnDataSource] = None,
+        session_status_source: Optional[ColumnDataSource] = None,
+        static_export_request_handler: Optional[Callable[..., dict]] = None,
         server_data_handler=None,
         streaming_enabled: bool = STREAMING_ENABLED,
         streaming_debounce_ms: int = STREAMING_DEBOUNCE_MS,
@@ -40,6 +45,9 @@ class AppCallbacks:
         self.audio_handler = audio_handler
         self.audio_control_source = audio_control_source
         self.audio_status_source = audio_status_source
+        self.session_action_source = session_action_source
+        self.session_status_source = session_status_source
+        self.static_export_request_handler = static_export_request_handler
         self.server_data_handler = server_data_handler
         self.streaming_enabled = streaming_enabled
         self.streaming_debounce_ms = streaming_debounce_ms
@@ -51,6 +59,7 @@ class AppCallbacks:
         self._last_seek_time = 0.0
         self._streaming_timeout_id = None
         self._pending_stream_range = None
+        self._static_export_in_progress = False
 
         if not self.audio_handler:
             logger.info("AppCallbacks initialized without audio handler. Audio features disabled.")
@@ -67,6 +76,9 @@ class AppCallbacks:
             self._start_periodic_update()
         else:
             logger.warning("Audio callbacks not attached: Audio handler missing or audio unavailable.")
+
+        if self.session_action_source is not None:
+            self.session_action_source.on_change('data', self._handle_session_action_command)
 
         self.attach_js_callbacks()
         logger.info("All callbacks attached.")
@@ -117,6 +129,145 @@ class AppCallbacks:
             self.doc.add_next_tick_callback(lambda: self.audio_control_source.patch({'command': [(0, None)]}))
         except Exception as e:
             logger.error(f"Error processing audio control command: {e}", exc_info=True)
+
+    def _publish_session_status(
+        self,
+        level: str,
+        message: str,
+        *,
+        done: bool = False,
+        output_path: str = '',
+        request_id: str | None = None,
+    ) -> None:
+        if self.session_status_source is None:
+            return
+
+        updated_at = int(time.time() * 1000)
+
+        def update_status():
+            try:
+                self.session_status_source.data = {
+                    'request_id': [request_id],
+                    'level': [str(level or 'info')],
+                    'message': [str(message or '')],
+                    'output_path': [str(output_path or '')],
+                    'done': [bool(done)],
+                    'updated_at': [updated_at],
+                }
+            except Exception as exc:
+                logger.error(f"Failed to publish session status: {exc}", exc_info=True)
+
+        self.doc.add_next_tick_callback(update_status)
+
+    def _clear_session_action_command(self) -> None:
+        if self.session_action_source is None:
+            return
+
+        def clear_command():
+            try:
+                self.session_action_source.data = {
+                    'command': [None],
+                    'request_id': [None],
+                    'payload': [None],
+                }
+            except Exception as exc:
+                logger.error(f"Failed to clear session action command: {exc}", exc_info=True)
+
+        self.doc.add_next_tick_callback(clear_command)
+
+    def _handle_session_action_command(self, attr, old, new):
+        try:
+            command = new.get('command', [None])[0]
+            request_id = new.get('request_id', [None])[0]
+            payload = new.get('payload', [None])[0]
+        except Exception:
+            self._clear_session_action_command()
+            return
+
+        if command is None:
+            return
+
+        logger.info(f"Received session action command: {command} (request_id={request_id})")
+
+        if command != 'generate_static_html':
+            self._publish_session_status(
+                'warning',
+                f"Unhandled session action '{command}'.",
+                done=True,
+                request_id=request_id,
+            )
+            self._clear_session_action_command()
+            return
+
+        if self._static_export_in_progress:
+            self._publish_session_status(
+                'warning',
+                'Static HTML export is already running. Please wait for it to finish.',
+                done=True,
+                request_id=request_id,
+            )
+            self._clear_session_action_command()
+            return
+
+        if not callable(self.static_export_request_handler):
+            self._publish_session_status(
+                'error',
+                'Static HTML export is unavailable in this session.',
+                done=True,
+                request_id=request_id,
+            )
+            self._clear_session_action_command()
+            return
+
+        self._static_export_in_progress = True
+        self._publish_session_status(
+            'info',
+            'Generating static HTML. This can take a minute for large datasets.',
+            done=False,
+            request_id=request_id,
+        )
+        self._clear_session_action_command()
+
+        def run_export():
+            try:
+                result = self.static_export_request_handler(payload=payload, request_id=request_id)
+                success = bool(result.get('success')) if isinstance(result, dict) else bool(result)
+                output_path = ''
+                if isinstance(result, dict):
+                    output_path = str(result.get('output_path') or '')
+                    message = result.get('message')
+                else:
+                    message = None
+
+                if not message:
+                    if success:
+                        message = (
+                            f"Static HTML export complete: {output_path}"
+                            if output_path
+                            else 'Static HTML export complete.'
+                        )
+                    else:
+                        message = 'Static HTML export failed.'
+
+                self._publish_session_status(
+                    'info' if success else 'error',
+                    str(message),
+                    done=True,
+                    output_path=output_path,
+                    request_id=request_id,
+                )
+            except Exception as exc:
+                logger.error(f"Static export request failed: {exc}", exc_info=True)
+                self._publish_session_status(
+                    'error',
+                    f"Static HTML export failed: {exc}",
+                    done=True,
+                    request_id=request_id,
+                )
+            finally:
+                self._static_export_in_progress = False
+
+        threading.Thread(target=run_export, daemon=True).start()
 
     def _periodic_update_audio_status(self):
         """Periodically updates the audio status source with current playback information."""

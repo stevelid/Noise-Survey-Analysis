@@ -1,0 +1,47 @@
+{
+  "url": "http://localhost:5006/noise_survey_analysis",
+  "config": "G:\\Shared drives\\Venta\\Jobs\\6237 Redcar Road, Towcester\\6237 Surveys\\noise_survey_config_6237.json",
+  "checks": [
+    {
+      "name": "spinner_default_matches_threshold",
+      "ok": true,
+      "details": {
+        "threshold": {
+          "mode": "manual",
+          "seconds": 3000
+        },
+        "spinnerValue": 50,
+        "autoSeconds": 3000
+      }
+    },
+    {
+      "name": "manual_threshold_change_via_handler",
+      "ok": true,
+      "details": {
+        "threshold": {
+          "mode": "manual",
+          "seconds": 1800
+        },
+        "spinnerValue": 30
+      }
+    },
+    {
+      "name": "legacy_rehydrate_migrates_threshold",
+      "ok": true,
+      "details": {
+        "mode": "manual",
+        "seconds": 420
+      }
+    },
+    {
+      "name": "structured_rehydrate_preserves_threshold",
+      "ok": true,
+      "details": {
+        "mode": "auto",
+        "seconds": null
+      }
+    }
+  ],
+  "timestamp": "2026-02-19 13:19:21",
+  "passed": true
+}

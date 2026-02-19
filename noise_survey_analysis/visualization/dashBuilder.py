@@ -1,7 +1,7 @@
 import logging
 from bokeh.plotting import curdoc
 from bokeh.layouts import column, row, LayoutDOM # Ensure column is imported
-from bokeh.models import Div, ColumnDataSource, CustomJS, Button # Import for assertions and error messages
+from bokeh.models import Div, ColumnDataSource, CustomJS, Button, Range1d # Import for assertions and error messages
 from bokeh.models import Panel
 import pandas as pd
 import numpy as np  # Import numpy for array operations
@@ -67,7 +67,9 @@ class DashBuilder:
 
     def __init__(self, 
                  audio_control_source: Optional[ColumnDataSource] = None, 
-                 audio_status_source: Optional[ColumnDataSource] = None):
+                 audio_status_source: Optional[ColumnDataSource] = None,
+                 session_action_source: Optional[ColumnDataSource] = None,
+                 session_status_source: Optional[ColumnDataSource] = None):
         """
         The constructor is lightweight. It only stores references to core handlers
         and initializes containers for the components it will create.
@@ -75,6 +77,8 @@ class DashBuilder:
        Args:
             audio_control_source: The shared CDS for sending commands. (Optional)
             audio_status_source: The shared CDS for receiving status. (Optional)
+            session_action_source: Shared CDS for JS->Python session commands. (Optional)
+            session_status_source: Shared CDS for Python->JS session status updates. (Optional)
         """ 
         self.audio_control_source = audio_control_source or ColumnDataSource(data={'command': [], 'position_id': [], 'value': []})
         self.audio_status_source = audio_status_source or ColumnDataSource(data={
@@ -87,6 +91,21 @@ class DashBuilder:
             'volume_boost': [False],
             'current_file_name': ['']
             })
+        self.session_action_source = session_action_source or ColumnDataSource(
+            data={'command': [None], 'request_id': [None], 'payload': [None]},
+            name='session_action_source'
+        )
+        self.session_status_source = session_status_source or ColumnDataSource(
+            data={
+                'request_id': [None],
+                'level': ['info'],
+                'message': [''],
+                'output_path': [''],
+                'done': [False],
+                'updated_at': [0],
+            },
+            name='session_status_source'
+        )
         
         # These will be populated by the build process
         self.components: Dict[str, Dict[str, Any]] = {}
@@ -115,6 +134,8 @@ class DashBuilder:
 
         # The sequence of operations is clear and logical
         self.server_mode = bool(server_mode)
+        if not self.server_mode:
+            self._load_deferred_log_data_for_static(app_data)
         prepared_glyph_data, available_params = self._prepare_glyph_data(app_data)
 
         self.prepared_glyph_data = prepared_glyph_data
@@ -172,6 +193,106 @@ class DashBuilder:
             titles.setdefault(position, stripped)
 
         return titles
+
+    def _load_deferred_log_data_for_static(self, app_data: DataManager) -> None:
+        """
+        Static exports need log datasets embedded up front because no server
+        callbacks will stream them after load.
+        """
+        loaded_positions = 0
+        for position_name in app_data.positions():
+            position_data = app_data[position_name]
+            log_paths = getattr(position_data, 'log_file_paths', None) or []
+            already_loaded = bool(getattr(position_data, '_log_data_loaded', False))
+            if not log_paths or already_loaded:
+                continue
+
+            try:
+                logger.info("Static mode: loading deferred log data for %s", position_name)
+                position_data.load_log_data_lazy(app_data.parser_factory, app_data.use_cache)
+                loaded_positions += 1
+            except Exception as exc:
+                logger.error("Failed to load deferred log data for %s: %s", position_name, exc, exc_info=True)
+
+        if loaded_positions:
+            logger.info("Static mode: loaded deferred log data for %d position(s).", loaded_positions)
+
+    @staticmethod
+    def _to_list(value: Any) -> list:
+        if value is None:
+            return []
+        if hasattr(value, 'tolist'):
+            value = value.tolist()
+        if isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        return [value]
+
+    def _build_static_spectrogram_log_source_data(
+        self,
+        position_glyph_data: Dict[str, Any],
+        preferred_param: str,
+    ) -> Optional[Dict[str, list]]:
+        log_mode_data = position_glyph_data.get('log') if isinstance(position_glyph_data, dict) else None
+        prepared_params = log_mode_data.get('prepared_params', {}) if isinstance(log_mode_data, dict) else {}
+        if not prepared_params:
+            return None
+
+        param_to_use = preferred_param if preferred_param in prepared_params else next(iter(prepared_params.keys()), None)
+        if not param_to_use:
+            return None
+
+        prepared = prepared_params.get(param_to_use)
+        if not isinstance(prepared, dict):
+            return None
+
+        initial_glyph_data = prepared.get('initial_glyph_data') or {}
+        image_values = initial_glyph_data.get('image') or []
+        if not image_values:
+            return None
+
+        image_matrix = image_values[0]
+        image_matrix_list = self._to_list(image_matrix)
+        levels_flat_list = self._to_list(prepared.get('levels_flat_transposed'))
+
+        return {
+            'levels_flat_transposed': [levels_flat_list],
+            'times_ms': [self._to_list(prepared.get('times_ms'))],
+            'frequency_labels': [self._to_list(prepared.get('frequency_labels'))],
+            'frequencies_hz': [self._to_list(prepared.get('frequencies_hz'))],
+            'n_times': [int(prepared.get('n_times', 0))],
+            'n_freqs': [int(prepared.get('n_freqs', 0))],
+            'chunk_time_length': [int(prepared.get('chunk_time_length', 0))],
+            'time_step': [prepared.get('time_step', 0)],
+            'min_val': [prepared.get('min_val', 0)],
+            'max_val': [prepared.get('max_val', 100)],
+            'min_time': [prepared.get('min_time', 0)],
+            'max_time': [prepared.get('max_time', 0)],
+            'initial_glyph_data_x': [self._to_list(initial_glyph_data.get('x'))],
+            'initial_glyph_data_y': [self._to_list(initial_glyph_data.get('y'))],
+            'initial_glyph_data_dw': [self._to_list(initial_glyph_data.get('dw'))],
+            'initial_glyph_data_dh': [self._to_list(initial_glyph_data.get('dh'))],
+            'initial_glyph_data_image': [image_matrix_list],
+        }
+
+    def _populate_static_log_sources(
+        self,
+        position_name: str,
+        spectrogram_component: SpectrogramComponent,
+        position_glyph_data: Dict[str, Any],
+        preferred_param: str,
+    ) -> None:
+        data = self._build_static_spectrogram_log_source_data(position_glyph_data, preferred_param)
+        if not data:
+            return
+
+        spectrogram_component.log_source.data = data
+        logger.debug(
+            "Static mode: pre-populated spectrogram log source for %s with keys=%s",
+            position_name,
+            list(data.keys()),
+        )
     
     
     def _create_components(self, app_data: DataManager, prepared_glyph_data: dict, available_params: list, chart_settings: dict):
@@ -216,6 +337,14 @@ class DashBuilder:
                 initial_display_mode=initial_mode,
                 initial_param=initial_param_spectrogram
             )
+
+            if not self.server_mode:
+                self._populate_static_log_sources(
+                    position_name=position_name,
+                    spectrogram_component=spec_component,
+                    position_glyph_data=position_specific_glyph_data,
+                    preferred_param=initial_param_spectrogram,
+                )
 
             # Create position title and offset controls for all positions
             # (Audio playback buttons are now global)
@@ -291,16 +420,37 @@ class DashBuilder:
             freq_bar = self.shared_components['freq_bar']
 
             if master_x_range is None:
-                master_x_range = ts_comp.figure.x_range
-                master_x_range.name = "master_x_range"
-                
-                # Set initial viewport to actual data range if we computed valid bounds
-                if global_min_time is not None and global_max_time is not None:
-                    logger.info(f"Setting master_x_range: start={global_min_time}, end={global_max_time}")
-                    master_x_range.start = global_min_time
-                    master_x_range.end = global_max_time
+                if self.server_mode:
+                    master_x_range = ts_comp.figure.x_range
+                    master_x_range.name = "master_x_range"
+                    if global_min_time is not None and global_max_time is not None:
+                        logger.info(f"Setting master_x_range: start={global_min_time}, end={global_max_time}")
+                        master_x_range.start = global_min_time
+                        master_x_range.end = global_max_time
+                    else:
+                        logger.warning("Using default Bokeh auto-range for initial viewport")
                 else:
-                    logger.warning("Using default Bokeh auto-range for initial viewport")
+                    # Use an explicit Range1d in static mode so scripted zoom updates persist.
+                    if global_min_time is not None and global_max_time is not None:
+                        logger.info(f"Setting master_x_range: start={global_min_time}, end={global_max_time}")
+                        initial_start = global_min_time
+                        initial_end = global_max_time
+                    else:
+                        logger.warning("Using default Bokeh auto-range for initial viewport")
+                        initial_start = ts_comp.figure.x_range.start
+                        initial_end = ts_comp.figure.x_range.end
+
+                    if initial_start is None or initial_end is None:
+                        initial_start = 0
+                        initial_end = 60000
+                    elif initial_start == initial_end:
+                        initial_end = initial_start + 60000
+
+                    master_x_range = Range1d(start=initial_start, end=initial_end, name="master_x_range")
+
+                    range_selector = self.shared_components.get('range_selector')
+                    if range_selector is not None and hasattr(range_selector, 'range_tool'):
+                        range_selector.range_tool.x_range = master_x_range
             
             ts_comp.figure.x_range = master_x_range
             spec_comp.figure.x_range = master_x_range
@@ -409,6 +559,7 @@ class DashBuilder:
         js_files_order = [
                 # 1. State Management Core (in dependency order)
                 'core/actions.js',
+                'features/view/viewResolution.js',
                 'features/view/viewReducer.js',
                 'features/view/viewSelectors.js',
                 'features/view/viewThunks.js',
@@ -438,8 +589,10 @@ class DashBuilder:
                 'data-processors.js', # (No hard dependencies on others)
                 'services/markers/markerPanelRenderer.js',
                 'services/regions/regionPanelRenderer.js',
+                'services/renderers/controlWidgetsRenderer.js',
                 'services/renderers.js',
                 'services/session/sessionManager.js',
+                'services/eventHandlers/viewEventHandlers.js',
                 'services/eventHandlers.js',
 
                 # 4. Main application entry point (loads last)
@@ -553,6 +706,8 @@ class DashBuilder:
             'viewToggle': self.shared_components['controls'].view_toggle,
             'hoverToggle': self.shared_components['controls'].hover_toggle,
             'sessionMenu': self.shared_components['controls'].session_menu,
+            'sessionActionSource': self.session_action_source,
+            'sessionStatusSource': self.session_status_source,
             #'audio_control_source': self.audio_control_source,
             #'audio_status_source': self.audio_status_source,
             'globalAudioControls': self.shared_components['controls'].global_audio_controls,

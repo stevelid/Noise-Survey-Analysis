@@ -24,9 +24,11 @@ beforeAll(() => {
 import './loadCoreModules.js';
 import '../noise_survey_analysis/static/js/init.js'; // Provides init.reInitializeStore
 import '../noise_survey_analysis/static/js/services/regions/regionPanelRenderer.js';
+import '../noise_survey_analysis/static/js/services/renderers/controlWidgetsRenderer.js';
 import '../noise_survey_analysis/static/js/services/renderers.js'; // Execute mocked factory, attach to app
 import '../noise_survey_analysis/static/js/data-processors.js'; // Execute real factory, attach to app
 import '../noise_survey_analysis/static/js/registry.js';
+import '../noise_survey_analysis/static/js/services/eventHandlers/viewEventHandlers.js';
 import '../noise_survey_analysis/static/js/services/eventHandlers.js';
 import '../noise_survey_analysis/static/js/app.js'; // Import app (defines side-effect handlers)
 

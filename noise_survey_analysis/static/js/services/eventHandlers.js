@@ -16,28 +16,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // --- Dependencies ---
     const { actions } = app;
 
-    const DEBOUNCE_DELAY = 200; // ms
-
     // --- Helper Functions ---
     const _getChartPositionByName = (chartName) => {
         if (!chartName) return null;
         const parts = chartName.split('_');
         return parts.length >= 2 ? parts[1] : null;
     };
-
-    /**
-     * Debounces a function call, ensuring it's only executed after a certain delay.
-     * @param {function} func - The function to debounce.
-     * @param {number} delay - The delay in milliseconds.
-     * @returns {function} The debounced function.
-     */
-    function debounce(func, delay) {
-        let timeout;
-        return function (...args) {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => func.apply(this, args), delay);
-        };
-    }
 
     // --- Event Handlers ---
 
@@ -141,12 +125,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
-    const debouncedRangeUpdate = debounce((min, max) => {
-        app.store.dispatch(actions.viewportChange(min, max));
-    }, DEBOUNCE_DELAY);
-
     function handleRangeUpdate(cb_obj) {
-        debouncedRangeUpdate(cb_obj.start, cb_obj.end);
+        const handler = app.services?.eventHandlers?.view?.handleRangeUpdate;
+        if (typeof handler === 'function') {
+            handler(cb_obj);
+        }
     }
 
     function handleDoubleClick(cb_obj) {
@@ -175,26 +158,31 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function handleParameterChange(value) {
-        const thunkCreator = app.thunks && app.thunks.selectParameterIntent;
-        if (typeof thunkCreator === 'function') {
-            app.store.dispatch(thunkCreator(value));
-            return;
+        const handler = app.services?.eventHandlers?.view?.handleParameterChange;
+        if (typeof handler === 'function') {
+            handler(value);
         }
-        app.store.dispatch(actions.paramChange(value));
     }
 
     function handleViewToggle(isActive) {
-        const newViewType = isActive ? 'log' : 'overview';
-        app.store.dispatch(actions.viewToggle(newViewType));
+        const handler = app.services?.eventHandlers?.view?.handleViewToggle;
+        if (typeof handler === 'function') {
+            handler(isActive);
+        }
     }
 
     function handleHoverToggle(isActive) {
-        app.store.dispatch(actions.hoverToggle(isActive));
+        const handler = app.services?.eventHandlers?.view?.handleHoverToggle;
+        if (typeof handler === 'function') {
+            handler(isActive);
+        }
     }
 
     function handleVisibilityChange(cb_obj, chartName) {
-        const isVisible = Array.isArray(cb_obj.active) ? cb_obj.active.includes(0) : Boolean(cb_obj.active);
-        app.store.dispatch(actions.visibilityChange(chartName, isVisible));
+        const handler = app.services?.eventHandlers?.view?.handleVisibilityChange;
+        if (typeof handler === 'function') {
+            handler(cb_obj, chartName);
+        }
     }
 
     function handleAutoRegions() {
@@ -366,10 +354,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function handleLogViewThresholdChange(value) {
-        const seconds = parseFloat(value);
-        app.store.dispatch(actions.logViewThresholdSet(
-            Number.isFinite(seconds) && seconds > 0 ? seconds : null
-        ));
+        const handler = app.services?.eventHandlers?.view?.handleLogViewThresholdChange;
+        if (typeof handler === 'function') {
+            handler(value);
+        }
     }
 
     function handleKeyPress(e) {
@@ -408,7 +396,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         if (isSpace || isEscape || isMarkerKey || isRegionKey || isArrowKey || isDeleteKey) {
-            e.preventDefault();
+            if (typeof e.preventDefault === 'function') {
+                e.preventDefault();
+            }
         }
 
         dispatch(thunkCreator({

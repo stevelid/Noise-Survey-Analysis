@@ -30,34 +30,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const logStepSizeByPosition = {};
     const lineDisplayTypeByPosition = {};
 
-    function computeMedianPositiveStep(datetime) {
-        if (!datetime || datetime.length < 2) {
-            return;
-        }
-
-        const diffs = [];
-        const maxPairs = Math.min(datetime.length - 1, 2000);
-        for (let i = 0; i < maxPairs; i++) {
-            const a = Number(datetime[i]);
-            const b = Number(datetime[i + 1]);
-            const diff = b - a;
-            if (Number.isFinite(diff) && diff > 0) {
-                diffs.push(diff);
-            }
-        }
-
-        if (!diffs.length) {
-            return;
-        }
-
-        diffs.sort((x, y) => x - y);
-        let step = diffs[Math.floor(diffs.length / 2)];
-
-        const oneHour = 3600000;
-        step = Math.min(step, oneHour);
-        return step;
-    }
-
     app.dataCache = dataCache;
 
     function handleDragToolKeyDown(event) {
@@ -100,19 +72,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const { models } = app.registry;
             initialStatePayload.availablePositions.forEach(pos => {
                 const datetime = models?.timeSeriesSources?.[pos]?.log?.data?.Datetime;
-                const step = computeMedianPositiveStep(datetime);
+                const stepCalculator = app.features?.view?.resolution?.computeMedianPositiveStepMs;
+                const step = typeof stepCalculator === 'function'
+                    ? stepCalculator(datetime, 2000)
+                    : undefined;
                 if (Number.isFinite(step)) {
-                    logStepSizeByPosition[pos] = step;
+                    logStepSizeByPosition[pos] = Math.min(step, 3600000);
                 }
             });
 
             app.store.dispatch(app.actions.initializeState(initialStatePayload));
-
-            // Read initial log threshold from spinner widget
-            const spinnerModel = bokehModels?.logThresholdSpinner;
-            if (spinnerModel && Number.isFinite(spinnerModel.value) && spinnerModel.value > 0) {
-                app.store.dispatch(app.actions.logViewThresholdSet(spinnerModel.value * 60));
-            }
 
             if (app.data_processors?.calculateStepSize) {
                 app.data_processors.calculateStepSize(app.store.getState(), dataCache);
@@ -220,7 +189,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
         const didActiveSidePanelTabChange = state.view.activeSidePanelTab !== previousState.view.activeSidePanelTab;
         const didDisplayTitlesChange = state.view.positionDisplayTitles !== previousState.view.positionDisplayTitles;
-        const didThresholdChange = state.view.logViewThresholdSeconds !== previousState.view.logViewThresholdSeconds;
+        const didThresholdChange = state.view.logViewThreshold !== previousState.view.logViewThreshold;
         const didPendingRegionChange = state.interaction.pendingRegionStart !== previousState.interaction.pendingRegionStart;
         const didTapChange = state.interaction.tap !== previousState.interaction.tap;
         const didAudioPositionChange = state.audio.activePositionId !== previousState.audio.activePositionId;
