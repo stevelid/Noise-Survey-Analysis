@@ -299,7 +299,10 @@ class DashBuilder:
         """Step 2: Instantiates all component classes for each position."""
         logger.info("DashboardBuilder: Creating individual UI components...")
 
-        self.shared_components['controls'] = ControlsComponent(available_params)
+        self.shared_components['controls'] = ControlsComponent(
+            available_params,
+            server_mode=getattr(self, 'server_mode', False)
+        )
         controls_comp = self.shared_components['controls']
         
         self.shared_components['freq_bar'] = FrequencyBarComponent()
@@ -485,7 +488,15 @@ class DashBuilder:
             pos_layout = column(
                 ts_layout_with_controls,
                 comp_dict['spectrogram'].layout(),
-                name=f"layout_{position_name}"
+                name=f"layout_{position_name}",
+                styles={
+                    "border": "1px solid #d7dde5",
+                    "border-radius": "10px",
+                    "padding": "8px 10px",
+                    "margin-bottom": "10px",
+                    "background-color": "#ffffff",
+                    "box-shadow": "0 1px 3px rgba(15, 23, 42, 0.08)",
+                }
             )
             position_layouts.append(pos_layout)
         
@@ -705,6 +716,8 @@ class DashBuilder:
             'logThresholdSpinner': self.shared_components['controls'].log_threshold_spinner_widget,
             'viewToggle': self.shared_components['controls'].view_toggle,
             'hoverToggle': self.shared_components['controls'].hover_toggle,
+            'viewStatusChip': self.shared_components['controls'].status_chips['view_status_chip'],
+            'focusStatusChip': self.shared_components['controls'].status_chips['focus_status_chip'],
             'sessionMenu': self.shared_components['controls'].session_menu,
             'sessionActionSource': self.session_action_source,
             'sessionStatusSource': self.session_status_source,

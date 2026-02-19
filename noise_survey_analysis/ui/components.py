@@ -268,9 +268,10 @@ class RegionPanelComponent:
 
         region_message_html = (
             "<div>"
-            "<strong>Region tips:</strong> Click on a chart to place the tap line, then press "
-            "<kbd>R</kbd> to start make region mode. Hold <kbd>Shift</kbd> and click to span from "
-            "the previous tap, and <kbd>Ctrl</kbd> + click inside a region to remove it."
+            "<strong>Region tips</strong><br>"
+            "1. Click chart then press <kbd>R</kbd> to start/end.<br>"
+            "2. Hold <kbd>Shift</kbd> + drag to create a span.<br>"
+            "3. <kbd>Ctrl</kbd> + click removes region under cursor."
             "</div>"
         )
         self.message_div = Div(
@@ -1258,7 +1259,9 @@ class TimeSeriesComponent:
                 logger.warning(f"Invalid 'timeseries_y_range' format: {self.chart_settings['timeseries_y_range']}. Using auto-range. Error: {e}")
 
         p = figure(**fig_kwargs)
-                
+        p.toolbar.autohide = True
+        p.toolbar.logo = None
+                 
         return p
 
     def _update_plot_lines(self):
@@ -1462,6 +1465,8 @@ class SpectrogramComponent:
             min_border_top=35,
             min_border_bottom=50,
         )
+        p.toolbar.autohide = True
+        p.toolbar.logo = None
         p.xaxis.formatter = CustomJSTickFormatter(args={"fig": p}, code="""
             const d = new Date(tick);
             const xstart = fig.x_range.start;
@@ -1691,9 +1696,10 @@ class SpectrogramComponent:
 
 class ControlsComponent:
     """A component that provides global controls for the dashboard."""
-    def __init__(self, available_params: List[str]): # Would take DataManager to access all positions' info
+    def __init__(self, available_params: List[str], server_mode: bool = False): # Would take DataManager to access all positions' info
         
         self.available_params = available_params
+        self.server_mode = bool(server_mode)
         self.visibility_checkboxes: Dict[str, list] = {} # Key: position_name, Value: list of (chart_name, checkbox_widget) tuples
         self.position_order: List[str] = []  # Track order of positions as checkboxes are added
         self.visibility_layout = None
@@ -1705,6 +1711,7 @@ class ControlsComponent:
         self.param_select = self.add_parameter_selector(available_params)
         self.global_audio_controls = self.add_global_audio_controls()
         self.log_threshold_spinner = self.add_log_threshold_spinner()
+        self.status_chips = self.add_status_chips()
 
         logger.info("ControlsComponent initialized.")
 
@@ -1886,6 +1893,52 @@ class ControlsComponent:
         self.log_threshold_spinner_widget = spinner
         return Row(label, spinner, name="log_threshold_group")
 
+    def add_status_chips(self):
+        view_status = Div(
+            text="<span style='font-size:11px;color:#0f172a;'>View: --</span>",
+            width=120,
+            height=28,
+            name="view_status_chip",
+            styles={
+                "display": "flex",
+                "align-items": "center",
+                "padding": "0 8px",
+                "border": "1px solid #cbd5e1",
+                "border-radius": "999px",
+                "background-color": "#f8fafc",
+            },
+        )
+        focus_status = Div(
+            text="<span style='font-size:11px;color:#0f172a;'>Focus: none</span>",
+            width=180,
+            height=28,
+            name="focus_status_chip",
+            styles={
+                "display": "flex",
+                "align-items": "center",
+                "padding": "0 8px",
+                "border": "1px solid #cbd5e1",
+                "border-radius": "999px",
+                "background-color": "#f8fafc",
+            },
+        )
+
+        chip_row = Row(
+            view_status,
+            focus_status,
+            name="status_chip_row",
+            styles={
+                "gap": "8px",
+                "align-items": "center",
+            }
+        )
+
+        return {
+            "layout": chip_row,
+            "view_status_chip": view_status,
+            "focus_status_chip": focus_status,
+        }
+
     def add_parameter_selector(self, available_params: List[str]):
         select = Select(
             options=available_params,
@@ -1970,18 +2023,35 @@ class ControlsComponent:
         if self.visibility_layout is None:
             self._build_visibility_layout()
 
-        controls_group = Row(
+        view_controls_group = Row(
             self.session_menu,
             self.param_select,
             self.view_toggle,
             self.log_threshold_spinner,
             self.hover_toggle,
-            self.global_audio_controls['layout'],
-            #self.clear_markers_button,
+            self.status_chips['layout'],
+            name="view_controls_group",
+            sizing_mode="scale_width",
+            styles={
+                "gap": "8px",
+                "align-items": "center",
+                "padding": "4px 8px",
+                "border": "1px solid #d1d5db",
+                "border-radius": "8px",
+                "background-color": "#ffffff"
+            }
+        )
+
+        controls_children = [view_controls_group]
+        if self.server_mode:
+            controls_children.append(self.global_audio_controls['layout'])
+
+        controls_group = Row(
+            *controls_children,
             sizing_mode="scale_width",
             name="primary_controls_row",
             styles={
-                "flex-wrap": "nowrap",
+                "flex-wrap": "wrap",
                 "gap": "8px",
                 "align-items": "center"
             }
@@ -2007,11 +2077,11 @@ class ControlsComponent:
             name="controls_component_layout",
             sizing_mode="scale_width",
             styles={
-                "gap": "12px",
+                "gap": "8px",
                 "position": "sticky",
                 "top": "0px",
-                "background": "#f5f5f5",
-                "padding": "12px 16px",
+                "background": "#f3f4f6",
+                "padding": "10px 12px",
                 "box-shadow": "0 2px 6px rgba(0, 0, 0, 0.08)",
                 "z-index": "10"
             }
@@ -2252,9 +2322,11 @@ class FrequencyBarComponent:
             x_range=self.x_range, # Use the FactorRange instance
             x_axis_label='Frequency Band', # Suffix (Hz) implied by labels
             y_axis_label='Level (dB)',
-            tools="pan,wheel_zoom,box_zoom,reset,save", # Standard tools
+            tools="pan,wheel_zoom,box_zoom,reset", # Standard tools
             name="frequency_bar_chart" # For identification
         )
+        p.toolbar.autohide = True
+        p.toolbar.logo = None
 
         # Add vertical bars
         p.vbar(
@@ -2607,7 +2679,7 @@ class ComparisonFrequencyBarComponent:
             x_range=self.x_range,
             x_axis_label='Frequency Band',
             y_axis_label='Level (dB)',
-            tools="pan,wheel_zoom,box_zoom,reset,save",
+            tools="pan,wheel_zoom,box_zoom,reset",
             name="comparison_frequency_chart"
         )
 
@@ -2615,6 +2687,8 @@ class ComparisonFrequencyBarComponent:
             figure_kwargs["width"] = chart_width
 
         p = figure(**figure_kwargs)
+        p.toolbar.autohide = True
+        p.toolbar.logo = None
 
         p.vbar(
             x='x',

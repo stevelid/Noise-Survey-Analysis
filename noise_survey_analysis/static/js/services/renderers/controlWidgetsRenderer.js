@@ -69,6 +69,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const positionAudioOffsets = viewState.positionAudioOffsets || {};
         const positionEffectiveOffsets = viewState.positionEffectiveOffsets || {};
         const displayTitles = viewState.positionDisplayTitles || {};
+        const isServerMode = models?.config?.server_mode !== false;
 
         const viewToggleModel = models.viewToggle;
         if (viewToggleModel) {
@@ -90,70 +91,90 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         syncLogThresholdSpinner(viewState, models.logThresholdSpinner);
 
+        const thresholdSeconds = app.features?.view?.resolution?.resolveLogThresholdSeconds
+            ? app.features.view.resolution.resolveLogThresholdSeconds(models, viewState)
+            : null;
+        if (models.viewStatusChip) {
+            const mode = viewState.globalViewType === 'log' ? 'Log' : 'Overview';
+            const thresholdText = Number.isFinite(thresholdSeconds) ? `${Math.round(thresholdSeconds / 60)}m` : '--';
+            models.viewStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>View: ${mode} | ${thresholdText}</span>`;
+        }
+        if (models.focusStatusChip) {
+            const activeLabel = (isPlaying && activePositionId)
+                ? (displayTitles[activePositionId] || activePositionId)
+                : 'none';
+            models.focusStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>Focus: ${activeLabel}</span>`;
+        }
+
         const globalAudioControls = models.globalAudioControls;
         if (globalAudioControls) {
-            if (globalAudioControls.play_toggle) {
-                if (globalAudioControls.play_toggle.active !== isPlaying) {
-                    globalAudioControls.play_toggle.active = isPlaying;
-                }
-                globalAudioControls.play_toggle.label = isPlaying ? "Pause" : "Play";
-                globalAudioControls.play_toggle.button_type = isPlaying ? 'primary' : 'success';
+            if (globalAudioControls.layout) {
+                globalAudioControls.layout.visible = isServerMode;
             }
-
-            if (globalAudioControls.playback_rate_button) {
-                globalAudioControls.playback_rate_button.label = `${playbackRate.toFixed(1)}x`;
-            }
-
-            if (globalAudioControls.volume_boost_button) {
-                const isBoostActive = isPlaying && volumeBoost;
-                if (globalAudioControls.volume_boost_button.active !== isBoostActive) {
-                    globalAudioControls.volume_boost_button.active = isBoostActive;
+            if (isServerMode) {
+                if (globalAudioControls.play_toggle) {
+                    if (globalAudioControls.play_toggle.active !== isPlaying) {
+                        globalAudioControls.play_toggle.active = isPlaying;
+                    }
+                    globalAudioControls.play_toggle.label = isPlaying ? "Pause" : "Play";
+                    globalAudioControls.play_toggle.button_type = isPlaying ? 'primary' : 'success';
                 }
-                globalAudioControls.volume_boost_button.button_type = isBoostActive ? 'warning' : 'light';
-            }
 
-            if (globalAudioControls.active_position_display) {
-                let displayText = "<span style='font-size: 11px; color: #666;'>No audio</span>";
-                if (isPlaying && activePositionId) {
-                    const displayName = typeof displayTitles[activePositionId] === 'string' && displayTitles[activePositionId].trim()
-                        ? displayTitles[activePositionId]
-                        : activePositionId;
-                    displayText = `<span style='font-size: 11px; color: #2c7bb6; font-weight: 600;'>&#9654; ${displayName}</span>`;
+                if (globalAudioControls.playback_rate_button) {
+                    globalAudioControls.playback_rate_button.label = `${playbackRate.toFixed(1)}x`;
                 }
-                if (globalAudioControls.active_position_display.text !== displayText) {
-                    globalAudioControls.active_position_display.text = displayText;
+
+                if (globalAudioControls.volume_boost_button) {
+                    const isBoostActive = isPlaying && volumeBoost;
+                    if (globalAudioControls.volume_boost_button.active !== isBoostActive) {
+                        globalAudioControls.volume_boost_button.active = isBoostActive;
+                    }
+                    globalAudioControls.volume_boost_button.button_type = isBoostActive ? 'warning' : 'light';
                 }
-            }
 
-            if (globalAudioControls.audio_file_info_display) {
-                let fileInfoText = "";
-                if (isPlaying && state.audio.currentFileName) {
-                    const fileName = state.audio.currentFileName;
-                    const currentTimeMs = state.audio.currentTime || 0;
-                    const fileStartTimeMs = state.audio.currentFileStartTime || 0;
-                    const positionInFileSec = Math.max(0, (currentTimeMs - fileStartTimeMs) / 1000);
-                    const posHours = Math.floor(positionInFileSec / 3600);
-                    const posMinutes = Math.floor((positionInFileSec % 3600) / 60);
-                    const posSeconds = Math.floor(positionInFileSec % 60);
-                    const positionFormatted = `${String(posHours).padStart(2, '0')}:${String(posMinutes).padStart(2, '0')}:${String(posSeconds).padStart(2, '0')}`;
-
-                    const fileStartDate = new Date(fileStartTimeMs);
-                    const startHours = String(fileStartDate.getHours()).padStart(2, '0');
-                    const startMinutes = String(fileStartDate.getMinutes()).padStart(2, '0');
-                    const startSeconds = String(fileStartDate.getSeconds()).padStart(2, '0');
-                    const startDay = String(fileStartDate.getDate()).padStart(2, '0');
-                    const startMonth = String(fileStartDate.getMonth() + 1).padStart(2, '0');
-                    const startYear = String(fileStartDate.getFullYear()).slice(-2);
-                    const startTimeFormatted = `${startHours}:${startMinutes}:${startSeconds} ${startDay}/${startMonth}/${startYear}`;
-
-                    fileInfoText = `<span style='font-size: 10px; color: #555;'>` +
-                        `<b>${fileName}</b> | ` +
-                        `${positionFormatted} | ` +
-                        `Start: ${startTimeFormatted}` +
-                        `</span>`;
+                if (globalAudioControls.active_position_display) {
+                    let displayText = "<span style='font-size: 11px; color: #666;'>No audio</span>";
+                    if (isPlaying && activePositionId) {
+                        const displayName = typeof displayTitles[activePositionId] === 'string' && displayTitles[activePositionId].trim()
+                            ? displayTitles[activePositionId]
+                            : activePositionId;
+                        displayText = `<span style='font-size: 11px; color: #2c7bb6; font-weight: 600;'>&#9654; ${displayName}</span>`;
+                    }
+                    if (globalAudioControls.active_position_display.text !== displayText) {
+                        globalAudioControls.active_position_display.text = displayText;
+                    }
                 }
-                if (globalAudioControls.audio_file_info_display.text !== fileInfoText) {
-                    globalAudioControls.audio_file_info_display.text = fileInfoText;
+
+                if (globalAudioControls.audio_file_info_display) {
+                    let fileInfoText = "";
+                    if (isPlaying && state.audio.currentFileName) {
+                        const fileName = state.audio.currentFileName;
+                        const currentTimeMs = state.audio.currentTime || 0;
+                        const fileStartTimeMs = state.audio.currentFileStartTime || 0;
+                        const positionInFileSec = Math.max(0, (currentTimeMs - fileStartTimeMs) / 1000);
+                        const posHours = Math.floor(positionInFileSec / 3600);
+                        const posMinutes = Math.floor((positionInFileSec % 3600) / 60);
+                        const posSeconds = Math.floor(positionInFileSec % 60);
+                        const positionFormatted = `${String(posHours).padStart(2, '0')}:${String(posMinutes).padStart(2, '0')}:${String(posSeconds).padStart(2, '0')}`;
+
+                        const fileStartDate = new Date(fileStartTimeMs);
+                        const startHours = String(fileStartDate.getHours()).padStart(2, '0');
+                        const startMinutes = String(fileStartDate.getMinutes()).padStart(2, '0');
+                        const startSeconds = String(fileStartDate.getSeconds()).padStart(2, '0');
+                        const startDay = String(fileStartDate.getDate()).padStart(2, '0');
+                        const startMonth = String(fileStartDate.getMonth() + 1).padStart(2, '0');
+                        const startYear = String(fileStartDate.getFullYear()).slice(-2);
+                        const startTimeFormatted = `${startHours}:${startMinutes}:${startSeconds} ${startDay}/${startMonth}/${startYear}`;
+
+                        fileInfoText = `<span style='font-size: 10px; color: #555;'>` +
+                            `<b>${fileName}</b> | ` +
+                            `${positionFormatted} | ` +
+                            `Start: ${startTimeFormatted}` +
+                            `</span>`;
+                    }
+                    if (globalAudioControls.audio_file_info_display.text !== fileInfoText) {
+                        globalAudioControls.audio_file_info_display.text = fileInfoText;
+                    }
                 }
             }
         }
