@@ -1,11 +1,12 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 from bokeh.models import ColumnDataSource
 
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
 from noise_survey_analysis.core.config import CHART_SETTINGS
+from noise_survey_analysis.core.data_parsers import ParsedData
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 from noise_survey_analysis.core.data_manager import PositionData
 from noise_survey_analysis.core.server_data_handler import ServerDataHandler
@@ -117,6 +118,36 @@ class StreamingBackendTests(unittest.TestCase):
             prepared["initial_glyph_data"]["image"][0][1].tolist(),
             [70, 70, 70, 71, 71, 72],
         )
+
+    def test_lazy_log_load_uses_cache_without_reparsing(self):
+        cached_data = ParsedData(
+            totals_df=self.position.log_totals.copy(),
+            spectral_df=self.position.log_spectral.copy(),
+            original_file_path="cached_log.csv",
+            parser_type="Svan",
+            data_profile="log",
+            spectral_data_type="third_octave",
+            sample_period_seconds=60.0,
+        )
+        cache = MagicMock()
+        cache.get.return_value = cached_data
+        parser_factory = MagicMock()
+        self.position.log_totals = None
+        self.position.log_spectral = None
+        self.position.log_file_paths = [{
+            "file_path": "cached_log.csv",
+            "parser_type": "Svan",
+            "return_all_cols": False,
+        }]
+
+        with patch("noise_survey_analysis.core.data_manager.get_parsed_data_cache", return_value=cache):
+            self.position.load_log_data_lazy(parser_factory, use_cache=True)
+
+        parser_factory.get_parser.assert_not_called()
+        cache.get.assert_called_once_with("cached_log.csv", False)
+        self.assertTrue(self.position._log_data_loaded)
+        self.assertEqual(self.position.log_totals["LAeq"].tolist(), [50, 52, 54])
+        self.assertEqual(self.position.log_spectral["LZeq_100"].tolist(), [60, 61, 62])
 
     def test_server_data_handler_updates_sources(self):
         timeseries_log_source = ColumnDataSource(data={})

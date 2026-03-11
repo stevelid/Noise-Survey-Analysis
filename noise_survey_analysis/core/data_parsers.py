@@ -330,12 +330,31 @@ class NoiseSentryFileParser(AbstractNoiseParser):
         'time', 'leq', 'lmax', 'l10', 'l90'
     )
 
+    def _find_header_line(self, lines):
+        first_non_blank = ''
+        first_non_blank_idx = 0
+        for idx, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if not first_non_blank:
+                first_non_blank = stripped
+                first_non_blank_idx = idx
+
+            tokens = [t.strip().strip('"') for t in re.split('[;\t,]', stripped) if t.strip()]
+            normalized = [token.lower() for token in tokens]
+            matches = sum(1 for keyword in self.EXPECTED_KEYWORDS if any(keyword in token for token in normalized))
+            if matches >= 2:
+                return stripped, idx
+
+        return first_non_blank, first_non_blank_idx
+
     def inspect_file_header(self, file_path: str, max_lines: int = 20) -> FileValidityHint:
         lines = self._read_file_head(file_path, max_lines=max_lines)
         if not lines:
             return FileValidityHint(status='unlikely_valid', reason='File appears to be empty.')
 
-        header_line = next((line for line in lines if line.strip()), '')
+        header_line, _ = self._find_header_line(lines)
         if not header_line:
             return FileValidityHint(status='unlikely_valid', reason='No header row detected in file head.')
 
@@ -372,32 +391,40 @@ class NoiseSentryFileParser(AbstractNoiseParser):
         )
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                header_line = ""
-                line_count = 0
-                for line in f:
-                    line_count += 1
-                    potential_header = line.strip()
-                    if potential_header:
-                        header_line = potential_header
-                        break
+                head_lines = [f.readline() for _ in range(20)]
+                header_line, line_count = self._find_header_line(head_lines)
                     
                 if not header_line:
                     parsed_data_obj.metadata['error'] = "File is empty or contains only blank lines"
                     return parsed_data_obj
             
-                raw_headers = [h.strip() for h in header_line.split(',')]
+                delimiter = '\t' if header_line.count('\t') > header_line.count(',') else ','
+                raw_headers = [h.strip() for h in re.split('[;\t,]' if delimiter == '\t' else ',', header_line)]
                 raw_headers = [h for h in raw_headers if h] 
             
                 sentry_map = {
                     'Time (Date hh:mm:ss.ms)': 'Datetime', 'LEQ dB-A': 'LAeq',
-                    'Lmax dB-A': 'LAFmax', 'L10 dB-A': 'LAF10', 'L90 dB-A': 'LAF90'
+                    'LEQ dB -A': 'LAeq', 'Lmax dB-A': 'LAFmax',
+                    'L-Max dB -A': 'LAFmax', 'L-Max dB-A': 'LAFmax',
+                    'L10 dB-A': 'LAF10', 'L90 dB-A': 'LAF90'
                 }
                 canonical_headers = [sentry_map.get(h, h.replace(' ', '_')) for h in raw_headers]
                 
-                df_raw = pd.read_csv(file_path, skiprows=line_count, header=None, names=canonical_headers, 
-                                     usecols=range(len(canonical_headers)), 
-                                     na_filter=False,
-                                     on_bad_lines='warn', low_memory=False)
+                read_csv_kwargs = dict(
+                    filepath_or_buffer=file_path,
+                    skiprows=line_count,
+                    header=None,
+                    names=canonical_headers,
+                    usecols=range(len(canonical_headers)),
+                    sep=delimiter,
+                    skipinitialspace=True,
+                    na_filter=False,
+                    on_bad_lines='warn',
+                    engine='python' if delimiter != ',' else 'c',
+                )
+                if delimiter == ',':
+                    read_csv_kwargs['low_memory'] = False
+                df_raw = pd.read_csv(**read_csv_kwargs)
                 
                 df_raw = df_raw.replace('', np.nan).dropna(how='all')
 

@@ -85,8 +85,12 @@ Follow consistent naming to make intent obvious:
 
 ### Python (`data_processors.py`)
 - `prepare_single_spectrogram_data` defines initial spectrogram data.
-- Uses `MAX_DATA_SIZE` to set a fixed `chunk_time_length`.
-- Pads all spectral data (overview and log) to this `chunk_time_length` before sending to the browser, ensuring consistent `ColumnDataSource` array sizes.
+- The buffer size (`chunk_time_length`) is chosen **once per position at initialization** and never changed — this is the invariant that keeps Bokeh's fixed-size image buffer intact.
+- When a position has log spectral data, `prepare_all_spectral_data` computes a `fixed_n_times` from the log step (100 ms → 9000 bins / 15 min; 1 s → 3600 bins / 1 h) and passes it in. Overview data is padded into that same buffer so both overview and log updates share identical dimensions.
+- When no log data is present, `MAX_DATA_SIZE = 95000` (a fallback cell budget) is used instead — `chunk_time_length = min(n_times, MAX_DATA_SIZE / n_freqs)`.
+- `dw = chunk_time_length * time_step` — each pixel maps to exactly one time step. For the padded overview, real data pixels land at the correct positions; padding pixels extend beyond the survey end, outside the visible x-axis range.
+- **Do NOT use** `dw = real_data_bins * time_step` — that compresses all pixels (including padding) into the real data span, squashing the image to ~25% of the canvas width.
+- Either way: one size, set once, all subsequent JS updates in-place only.
 
 ### JavaScript (`data-processors.js`)
 - `getTimeChunkFromSerialData` manages zoom-dependent display.

@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from collections import defaultdict # Not strictly needed with current PositionData, but good for other aggregations
 import logging
+import time
 from typing import List, Dict, Optional, Any, Set, Union, Tuple, Callable
 
 # Assuming your refactored parsers are in a file named 'data_parsers_refactored.py'
@@ -279,6 +280,15 @@ class PositionData:
             return
         
         logger.info(f"[LAZY LOAD] Loading log data for {self.name} from {len(self.log_file_paths)} file(s)")
+        load_started_at = time.perf_counter()
+        total_parse_ms = 0.0
+        total_merge_ms = 0.0
+        total_cache_lookup_ms = 0.0
+        total_parser_lookup_ms = 0.0
+        total_cache_put_ms = 0.0
+        cache_hits = 0
+        cache_misses = 0
+        cache = get_parsed_data_cache() if use_cache else None
         
         for file_info in self.log_file_paths:
             file_path = file_info['file_path']
@@ -286,18 +296,81 @@ class PositionData:
             return_all_cols = file_info.get('return_all_cols', False)
             
             try:
-                # Parse the file using the same logic as initial load
-                # (mirrors _parse_single_file: factory.get_parser → parser.parse)
+                file_started_at = time.perf_counter()
+                cache_lookup_ms = 0.0
+                parser_lookup_ms = 0.0
+                parse_ms = 0.0
+                merge_ms = 0.0
+                cache_put_ms = 0.0
+                cache_label = 'disabled'
+                parsed_data = None
+
+                if cache is not None:
+                    cache_lookup_started_at = time.perf_counter()
+                    parsed_data = cache.get(file_path, return_all_cols)
+                    cache_lookup_ms = (time.perf_counter() - cache_lookup_started_at) * 1000
+                    total_cache_lookup_ms += cache_lookup_ms
+                    if parsed_data is not None:
+                        cache_hits += 1
+                        cache_label = 'hit'
+                    else:
+                        cache_misses += 1
+                        cache_label = 'miss'
+
+                if parsed_data is not None:
+                    merge_started_at = time.perf_counter()
+                    self.add_parsed_file_data(parsed_data)
+                    merge_ms = (time.perf_counter() - merge_started_at) * 1000
+                    total_merge_ms += merge_ms
+                    logger.info(
+                        "[LAZY LOAD PERF] position=%s file=%s cache=%s cache_lookup_ms=%.1f merge_ms=%.1f total_ms=%.1f",
+                        self.name,
+                        os.path.basename(file_path),
+                        cache_label,
+                        cache_lookup_ms,
+                        merge_ms,
+                        (time.perf_counter() - file_started_at) * 1000,
+                    )
+                    logger.info(f"[LAZY LOAD] Loaded {file_path} for {self.name} (cache hit)")
+                    continue
+
+                parser_lookup_started_at = time.perf_counter()
                 parser = parser_factory.get_parser(file_path, parser_type=parser_type or 'auto')
+                parser_lookup_ms = (time.perf_counter() - parser_lookup_started_at) * 1000
+                total_parser_lookup_ms += parser_lookup_ms
                 if not parser:
                     logger.warning(f"[LAZY LOAD] No suitable parser for {file_path}")
                     continue
 
+                parse_started_at = time.perf_counter()
                 parsed_data = parser.parse(file_path, return_all_columns=return_all_cols)
+                parse_ms = (time.perf_counter() - parse_started_at) * 1000
+                total_parse_ms += parse_ms
                 
                 if parsed_data:
-                    # Use the same method as eager loading to maintain identical data format
+                    merge_started_at = time.perf_counter()
                     self.add_parsed_file_data(parsed_data)
+                    merge_ms = (time.perf_counter() - merge_started_at) * 1000
+                    total_merge_ms += merge_ms
+
+                    if cache is not None and 'error' not in parsed_data.metadata:
+                        cache_put_started_at = time.perf_counter()
+                        cache.put(file_path, parsed_data, return_all_cols)
+                        cache_put_ms = (time.perf_counter() - cache_put_started_at) * 1000
+                        total_cache_put_ms += cache_put_ms
+
+                    logger.info(
+                        "[LAZY LOAD PERF] position=%s file=%s cache=%s cache_lookup_ms=%.1f parser_lookup_ms=%.1f parse_ms=%.1f merge_ms=%.1f cache_put_ms=%.1f total_ms=%.1f",
+                        self.name,
+                        os.path.basename(file_path),
+                        cache_label,
+                        cache_lookup_ms,
+                        parser_lookup_ms,
+                        parse_ms,
+                        merge_ms,
+                        cache_put_ms,
+                        (time.perf_counter() - file_started_at) * 1000,
+                    )
                     logger.info(f"[LAZY LOAD] Loaded {file_path} for {self.name}")
                 else:
                     logger.warning(f"[LAZY LOAD] Failed to parse {file_path}")
@@ -306,6 +379,19 @@ class PositionData:
                 logger.error(f"[LAZY LOAD] Error loading {file_path}: {e}")
         
         self._log_data_loaded = True
+        logger.info(
+            "[LAZY LOAD PERF] position=%s files=%s cache_hits=%s cache_misses=%s cache_lookup_ms=%.1f parser_lookup_ms=%.1f parse_ms=%.1f merge_ms=%.1f cache_put_ms=%.1f total_ms=%.1f",
+            self.name,
+            len(self.log_file_paths),
+            cache_hits,
+            cache_misses,
+            total_cache_lookup_ms,
+            total_parser_lookup_ms,
+            total_parse_ms,
+            total_merge_ms,
+            total_cache_put_ms,
+            (time.perf_counter() - load_started_at) * 1000,
+        )
         logger.info(f"[LAZY LOAD] Completed for {self.name}. Log totals: {self.log_totals.shape if self.log_totals is not None else 'None'}, Log spectral: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
 
 

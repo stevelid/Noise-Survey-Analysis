@@ -112,6 +112,7 @@ server_output*.txt
 
 # Debug artifacts (screenshots, Playwright outputs, local logs)
 .playwright-mcp/
+output/playwright/
 dashboard_*.png
 before_*.png
 after_*.png

@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Dict, Optional
 
 import pandas as pd
@@ -77,6 +78,10 @@ class ServerDataHandler:
 
     def _update_position(self, position_id: str, start_ms: float, end_ms: float) -> None:
         position_data = self.app_data[position_id]
+        update_started_at = time.perf_counter()
+        lazy_load_ms = 0.0
+        totals_update_ms = 0.0
+        spectrogram_update_ms = 0.0
         
         # Lazy load log data if not already loaded
         # Use getattr for backward compatibility with cached PositionData objects
@@ -85,16 +90,30 @@ class ServerDataHandler:
         
         if not log_data_loaded and log_file_paths:
             logger.info(f"[LAZY LOAD] Triggering lazy load for {position_id}")
+            lazy_load_started_at = time.perf_counter()
             position_data.load_log_data_lazy(self.app_data.parser_factory, self.app_data.use_cache)
+            lazy_load_ms = (time.perf_counter() - lazy_load_started_at) * 1000
         
         model_bundle = self.position_models.get(position_id, {})
         logger.debug(f"[UPDATE] Position {position_id}: has_log_totals={position_data.has_log_totals}, has_log_spectral={position_data.has_log_spectral}")
         logger.debug(f"[UPDATE] Position {position_id}: model_bundle keys={list(model_bundle.keys())}")
         if position_data.has_log_totals:
+            totals_started_at = time.perf_counter()
             self._update_log_totals(position_data.log_totals, model_bundle, start_ms, end_ms)
+            totals_update_ms = (time.perf_counter() - totals_started_at) * 1000
         if position_data.has_log_spectral:
             logger.info(f"[UPDATE] Updating spectrogram for {position_id}")
+            spectrogram_started_at = time.perf_counter()
             self._update_log_spectrogram(position_data.log_spectral, model_bundle, start_ms, end_ms)
+            spectrogram_update_ms = (time.perf_counter() - spectrogram_started_at) * 1000
+        logger.info(
+            "[STREAM PERF] position=%s lazy_load_ms=%.1f totals_update_ms=%.1f spectrogram_update_ms=%.1f total_ms=%.1f",
+            position_id,
+            lazy_load_ms,
+            totals_update_ms,
+            spectrogram_update_ms,
+            (time.perf_counter() - update_started_at) * 1000,
+        )
 
     def _update_log_totals(self, df: pd.DataFrame, model_bundle: Dict[str, object], start_ms: float, end_ms: float) -> None:
         timeseries_source = model_bundle.get('timeseries_log_source')
@@ -104,7 +123,10 @@ class ServerDataHandler:
         if df is None or df.empty:
             logger.warning(f"[UPDATE] log_totals df is None/empty - cannot push")
             return
+        update_started_at = time.perf_counter()
+        slice_started_at = time.perf_counter()
         sliced = self._slice_by_time(df, start_ms, end_ms)
+        slice_ms = (time.perf_counter() - slice_started_at) * 1000
         if sliced.empty:
             logger.debug(f"[UPDATE] Sliced log_totals is empty for range {start_ms}-{end_ms}")
             return
@@ -122,22 +144,40 @@ class ServerDataHandler:
         
         # Stream full-resolution log data (no downsampling)
         # Resolution can be anything from 0.1s to 60s depending on the source data
+        build_started_at = time.perf_counter()
         data_dict = sliced.to_dict(orient='list')
         # Convert Datetime to int64 ms timestamps
         data_dict['Datetime'] = (pd.to_datetime(sliced['Datetime']).astype('int64') // 10**6).tolist()
+        build_ms = (time.perf_counter() - build_started_at) * 1000
         
+        push_started_at = time.perf_counter()
         timeseries_source.data = data_dict
+        push_ms = (time.perf_counter() - push_started_at) * 1000
+        logger.info(
+            "[TH PERF] rows=%s cols=%s slice_ms=%.1f build_ms=%.1f push_ms=%.1f total_ms=%.1f",
+            len(sliced),
+            len(data_dict),
+            slice_ms,
+            build_ms,
+            push_ms,
+            (time.perf_counter() - update_started_at) * 1000,
+        )
 
     def _update_log_spectrogram(self, df: pd.DataFrame, model_bundle: Dict[str, object], start_ms: float, end_ms: float) -> None:
         spectrogram_source = model_bundle.get('spectrogram_log_source')
         if spectrogram_source is None or df is None or df.empty:
             return
+        update_started_at = time.perf_counter()
         param = self.selected_parameter
+        subset_started_at = time.perf_counter()
         param_columns = [col for col in df.columns if col.startswith(f"{param}_")]
+        subset_ms = (time.perf_counter() - subset_started_at) * 1000
         if not param_columns:
             return
         subset = df[['Datetime', *param_columns]]
+        slice_started_at = time.perf_counter()
         sliced = self._slice_by_time(subset, start_ms, end_ms)
+        slice_ms = (time.perf_counter() - slice_started_at) * 1000
         if sliced.empty:
             return
         figure = model_bundle.get('spectrogram_figure')
@@ -154,9 +194,11 @@ class ServerDataHandler:
         
         # Stream full-resolution log spectrogram data (no downsampling)
         # Resolution can be anything from 0.1s to 60s depending on the source data
+        prepare_started_at = time.perf_counter()
         prepared = self.processor.prepare_single_spectrogram_data(
             sliced, param, self.chart_settings, use_dynamic_log_window=True
         )
+        prepare_ms = (time.perf_counter() - prepare_started_at) * 1000
         if prepared:
             # Validate that the log chunk buffer size matches the overview init buffer size.
             # The overview is initialized with fixed_n_times = log_window_bins, so
@@ -186,6 +228,7 @@ class ServerDataHandler:
             # BUT: Bokeh ColumnDataSource requires ALL values to be sequences
             # So wrap EVERYTHING (arrays AND scalars) in single-element lists
             # This creates a "1-row table" where each cell can hold an array or scalar value
+            build_started_at = time.perf_counter()
             new_data = {
                 # Array fields (wrap in single-element lists)
                 'levels_flat_transposed': [prepared['levels_flat_transposed'].tolist()],
@@ -208,12 +251,30 @@ class ServerDataHandler:
                 'initial_glyph_data_dh': [prepared['initial_glyph_data']['dh']],
                 'initial_glyph_data_image': [prepared['initial_glyph_data']['image'][0].tolist()],
             }
+            build_ms = (time.perf_counter() - build_started_at) * 1000
 
             # Log data structure for verification
             logger.debug(f"Pushing log spectrogram data: keys={list(new_data.keys())}")
             logger.debug(f"All columns have length 1 (Bokeh format): {all(len(v) == 1 for v in new_data.values())}")
 
+            push_started_at = time.perf_counter()
             spectrogram_source.data = new_data
+            push_ms = (time.perf_counter() - push_started_at) * 1000
+            logger.info(
+                "[SPEC PERF] param=%s rows=%s bands=%s chunk_time_length=%s levels_len=%s times_len=%s subset_ms=%.1f slice_ms=%.1f prepare_ms=%.1f build_ms=%.1f push_ms=%.1f total_ms=%.1f",
+                param,
+                len(sliced),
+                len(param_columns),
+                prepared['chunk_time_length'],
+                len(new_data['levels_flat_transposed'][0]),
+                len(new_data['times_ms'][0]),
+                subset_ms,
+                slice_ms,
+                prepare_ms,
+                build_ms,
+                push_ms,
+                (time.perf_counter() - update_started_at) * 1000,
+            )
 
     def _slice_by_time(self, df: pd.DataFrame, start_ms: float, end_ms: float) -> pd.DataFrame:
         if df is None or df.empty or 'Datetime' not in df.columns:
