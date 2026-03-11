@@ -419,14 +419,29 @@ class DashBuilder:
 
             if master_x_range is None:
                 if self.server_mode:
-                    master_x_range = ts_comp.figure.x_range
-                    master_x_range.name = "master_x_range"
                     if global_min_time is not None and global_max_time is not None:
                         logger.info(f"Setting master_x_range: start={global_min_time}, end={global_max_time}")
-                        master_x_range.start = global_min_time
-                        master_x_range.end = global_max_time
+                        initial_start = global_min_time
+                        initial_end = global_max_time
                     else:
                         logger.warning("Using default Bokeh auto-range for initial viewport")
+                        initial_start = ts_comp.figure.x_range.start
+                        initial_end = ts_comp.figure.x_range.end
+
+                    if initial_start is None or initial_end is None:
+                        initial_start = 0
+                        initial_end = 60000
+                    elif initial_start == initial_end:
+                        initial_end = initial_start + 60000
+
+                    master_x_range = Range1d(start=initial_start, end=initial_end, name="master_x_range")
+                    logger.debug(
+                        "Created explicit master_x_range for server_mode=%s: type=%s start=%s end=%s",
+                        self.server_mode,
+                        type(master_x_range).__name__,
+                        master_x_range.start,
+                        master_x_range.end,
+                    )
                 else:
                     # Use an explicit Range1d in static mode so scripted zoom updates persist.
                     if global_min_time is not None and global_max_time is not None:
@@ -446,9 +461,9 @@ class DashBuilder:
 
                     master_x_range = Range1d(start=initial_start, end=initial_end, name="master_x_range")
 
-                    range_selector = self.shared_components.get('range_selector')
-                    if range_selector is not None and hasattr(range_selector, 'range_tool'):
-                        range_selector.range_tool.x_range = master_x_range
+                range_selector = self.shared_components.get('range_selector')
+                if range_selector is not None and hasattr(range_selector, 'range_tool'):
+                    range_selector.range_tool.x_range = master_x_range
             
             ts_comp.figure.x_range = master_x_range
             spec_comp.figure.x_range = master_x_range

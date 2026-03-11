@@ -108,6 +108,22 @@ LOG_VIEW_THRESHOLD_POINTS = 50
 # Keeps streaming bounded for very low sample-rate datasets.
 LOG_VIEW_MAX_VIEWPORT_SECONDS = 86400
 
+# --- Step-size-aware streaming limits ---
+# Target row budget for log streaming (visible points only, excludes buffer).
+# At 100ms sample period: 36000 rows = 60 minutes visible.
+# At 1s sample period: 36000 rows = 10 hours visible.
+LOG_VIEW_TARGET_ROWS = 36000
+
+# Min/max viewport bounds (seconds) regardless of sample period.
+LOG_VIEW_MIN_VIEWPORT_SECONDS = 60  # At least 1 minute
+LOG_VIEW_MAX_VIEWPORT_SECONDS_HIGH_RATE = 3600  # Max 1 hour for high-rate data
+
+# Buffer multiplier as fraction of viewport (reduced for high-rate data).
+# Old: 0.5 (50% each side). New: adaptive based on sample period.
+LOG_VIEW_BUFFER_FRACTION_DEFAULT = 0.5
+LOG_VIEW_BUFFER_FRACTION_HIGH_RATE = 0.1  # 10% buffer for data faster than 1s
+LOG_VIEW_HIGH_RATE_THRESHOLD_SECONDS = 1.0  # Sample periods <= this are "high rate"
+
 # Default base directory for job files
 DEFAULT_BASE_JOB_DIR = "G:\\Shared drives\\Venta\\Jobs"
 

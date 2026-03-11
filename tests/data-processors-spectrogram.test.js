@@ -37,6 +37,38 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     };
   }
 
+  function buildStreamedLogSource({
+    start = 1000,
+    n_times = 3,
+    reported_n_times = n_times,
+    n_freqs = 4,
+    time_step = 100,
+    chunk_time_length = n_times,
+  } = {}) {
+    const times_ms = Array.from({ length: n_times }, (_, t) => start + (t * time_step));
+    const levels = Array.from({ length: n_freqs * chunk_time_length }, (_, idx) => idx + 1);
+    const frequencies_hz = [100, 200, 300, 400].slice(0, n_freqs);
+    const frequency_labels = frequencies_hz.map(hz => `${hz} Hz`);
+
+    return {
+      times_ms: [times_ms],
+      levels_flat_transposed: [levels],
+      frequency_labels: [frequency_labels],
+      frequencies_hz: [frequencies_hz],
+      n_times: [reported_n_times],
+      n_freqs: [n_freqs],
+      chunk_time_length: [chunk_time_length],
+      time_step: [time_step],
+      min_val: [0],
+      max_val: [100],
+      initial_glyph_data_x: [[times_ms[0]]],
+      initial_glyph_data_y: [[-0.5]],
+      initial_glyph_data_dw: [[chunk_time_length * time_step]],
+      initial_glyph_data_dh: [[n_freqs]],
+      initial_glyph_data_image: [levels],
+    };
+  }
+
   it('log happy path: uses chunked log data with freq slicing and sets y-range', () => {
     const position = 'P1';
     const viewState = {
@@ -143,5 +175,79 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     expect(rep.image[0].length).toBe(log.n_freqs * log.chunk_time_length);
     expect(rep.y_range_start).toBeUndefined();
     expect(rep.y_range_end).toBeUndefined();
+  });
+
+  it('streamed chunk-only payload reconstructs self-consistent chunk-local log data', () => {
+    const position = 'P_streamed';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const overview = buildSpectralPrepared(6, 4, 100, 3);
+    const streamedLogSource = buildStreamedLogSource();
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: streamedLogSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const active = dataState.activeSpectralData[position];
+
+    expect(details.type).toBe('log');
+    expect(active.n_times).toBe(active.times_ms.length);
+    expect(active.levels_flat_transposed.length).toBe(active.n_freqs * active.n_times);
+    expect(active.source_replacement.image[0].length).toBe(active.n_freqs * active.n_times);
+  });
+
+  it('streamed chunk-only payload must not leak mismatched full-buffer metadata into active state', () => {
+    const position = 'P_streamed_mismatch';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const overview = buildSpectralPrepared(6, 4, 100, 3);
+    const streamedLogSource = buildStreamedLogSource({ reported_n_times: 9, chunk_time_length: 3, n_times: 3 });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: streamedLogSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const active = dataState.activeSpectralData[position];
+
+    expect(active.n_times).toBe(active.times_ms.length);
+    expect(active.levels_flat_transposed.length).toBe(active.n_freqs * active.n_times);
+  });
+
+  it('streamed chunk-only payload outside viewport coverage falls back to overview', () => {
+    const position = 'P_streamed_fallback';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 4000, max: 4200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const overview = buildSpectralPrepared(6, 4, 100, 3);
+    overview.initial_glyph_data.image[0].fill(7);
+    const streamedLogSource = buildStreamedLogSource();
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: streamedLogSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+
+    expect(details.type).toBe('overview');
+    expect(dataState.activeSpectralData[position].source_replacement.image[0]).toEqual(overview.initial_glyph_data.image[0]);
   });
 });

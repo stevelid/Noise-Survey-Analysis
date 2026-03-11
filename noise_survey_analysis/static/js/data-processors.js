@@ -112,6 +112,29 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return 3600;
     }
 
+    function calculateSpectrogramLogViewThreshold(models, position, thresholdInput, logData) {
+        const baseThresholdSeconds = calculateLogViewThreshold(models, position, thresholdInput);
+        const glyphDw = Array.isArray(logData?.initial_glyph_data?.dw)
+            ? Number(logData.initial_glyph_data.dw[0])
+            : Number(logData?.initial_glyph_data?.dw);
+        const chunkTimeLength = Number(logData?.chunk_time_length);
+        const timeStep = Number(logData?.time_step);
+        const chunkWindowSeconds = Number.isFinite(glyphDw) && glyphDw > 0
+            ? glyphDw / 1000
+            : (
+                Number.isFinite(chunkTimeLength)
+                && chunkTimeLength > 0
+                && Number.isFinite(timeStep)
+                && timeStep > 0
+                    ? (chunkTimeLength * timeStep) / 1000
+                    : null
+            );
+
+        return Number.isFinite(chunkWindowSeconds) && chunkWindowSeconds > 0
+            ? Math.min(baseThresholdSeconds, chunkWindowSeconds)
+            : baseThresholdSeconds;
+    }
+
     function cloneDataColumns(source) {
         if (!source || typeof source !== 'object') {
             return {};
@@ -388,16 +411,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const freqLabels = logSourceData.frequency_labels ? (Array.isArray(logSourceData.frequency_labels[0]) ? logSourceData.frequency_labels[0] : logSourceData.frequency_labels) : null;
                 const freqHz = logSourceData.frequencies_hz ? (Array.isArray(logSourceData.frequencies_hz[0]) ? logSourceData.frequencies_hz[0] : logSourceData.frequencies_hz) : null;
 
-                if (viewType === 'log') {
-                    debugSpectrogram(position, 'unwrapped-log-source', {
-                        timesLen: times?.length,
-                        levelsLen: levels?.length,
-                        freqLabelsLen: freqLabels?.length,
-                        firstTime: times?.[0],
-                        lastTime: times?.[times?.length - 1]
-                    });
-                }
-
                 // Unwrap scalar metadata from single-element lists (Bokeh transport format)
                 // Use server-provided metadata (ensures consistency with buffer sizing)
                 const n_times = logSourceData.n_times ? logSourceData.n_times[0] : times.length;
@@ -406,6 +419,25 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const chunk_time_length = logSourceData.chunk_time_length ? logSourceData.chunk_time_length[0] : (n_times > 0 ? times[n_times - 1] - times[0] + time_step : 0);
                 const min_val = logSourceData.min_val ? logSourceData.min_val[0] : 0;
                 const max_val = logSourceData.max_val ? logSourceData.max_val[0] : 100;
+
+                // Phase 2: Detect chunk-only payload from server
+                // Server sends exactly n_freqs * chunk_time_length elements instead of full backing array
+                const expectedChunkCells = n_freqs * chunk_time_length;
+                const isChunkOnlyPayload = levels.length === expectedChunkCells;
+
+                if (viewType === 'log') {
+                    debugSpectrogram(position, 'unwrapped-log-source', {
+                        timesLen: times?.length,
+                        levelsLen: levels?.length,
+                        freqLabelsLen: freqLabels?.length,
+                        firstTime: times?.[0],
+                        lastTime: times?.[times?.length - 1],
+                        isChunkOnlyPayload,
+                        expectedChunkCells,
+                        n_freqs,
+                        chunk_time_length
+                    });
+                }
 
                 // Reconstruct initial_glyph_data from flattened transport fields
                 // These fields are wrapped: [[x], [y], [dw], [dh]] format
@@ -435,7 +467,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     frequencies_hz: freqHz,
                     min_val,
                     max_val,
-                    initial_glyph_data
+                    initial_glyph_data,
+                    // Phase 2: Flag for chunk-only payload optimization
+                    _isChunkOnlyPayload: isChunkOnlyPayload
                 };
             })() : null;
             const fallbackPreparedLogData = positionGlyphData?.log?.prepared_params?.[parameter] || null;
@@ -456,7 +490,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             
             // Check viewport width against dynamic threshold (in milliseconds)
             const thresholdConfig = viewState.logViewThreshold;
-            const logViewThresholdSeconds = calculateLogViewThreshold(models, position, thresholdConfig);
+            const logViewThresholdSeconds = calculateSpectrogramLogViewThreshold(models, position, thresholdConfig, logData);
             const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
                 ? effectiveMax - effectiveMin : Infinity;
             const viewportWidthSeconds = viewportWidthMs / 1000;
@@ -519,70 +553,97 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             finalDataToUse = logData;
                             displayMetadata = { type: 'log', reason: ' (Log Data)' }; // Explicitly label the log view
 
-                            const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs } = finalDataToUse;
-                            const safeTimeStep = Number.isFinite(time_step) && time_step > 0 ? time_step : 1000;
-                            const rawViewportPoints = Number.isFinite(viewportWidth) && viewportWidth > 0
-                                ? Math.ceil(viewportWidth / safeTimeStep)
-                                : chunk_time_length;
-                            const viewportPoints = Math.max(
-                                1,
-                                Math.min(n_times, Number.isFinite(rawViewportPoints) ? rawViewportPoints : chunk_time_length)
-                            );
-                            const bufferPoints = Math.ceil(viewportPoints * LOG_SPECTROGRAM_BUFFER_RATIO);
-                            // Keep the log spectrogram glyph at its initialized fixed size.
-                            const targetChunkPoints = Math.max(
-                                1,
-                                Math.min(n_times, Math.floor(chunk_time_length || viewportPoints))
-                            );
+                            const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs, _isChunkOnlyPayload } = finalDataToUse;
 
-                            let viewportCenter = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
-                                ? (effectiveMax + effectiveMin) / 2
-                                : times_ms[Math.max(0, Math.floor(n_times / 2))];
-                            if (!Number.isFinite(viewportCenter)) {
-                                viewportCenter = times_ms[Math.max(0, Math.floor(n_times / 2))];
+                            // Phase 2: Fast path for chunk-only payloads from server
+                            // Server already extracted the exact chunk we need - use directly
+                            if (_isChunkOnlyPayload) {
+                                debugSpectrogram(position, 'chunk-only-fast-path', {
+                                    levelsLen: levels_flat_transposed.length,
+                                    n_freqs,
+                                    chunk_time_length,
+                                    expectedCells: n_freqs * chunk_time_length
+                                });
+
+                                // Use initial_glyph_data directly - server already prepared it
+                                finalGlyphData = finalDataToUse.initial_glyph_data;
+
+                                // Apply frequency slicing if needed
+                                finalGlyphData = tryApplySpectrogramSlice(
+                                    finalDataToUse,
+                                    levels_flat_transposed,
+                                    0,  // Server chunk starts at index 0
+                                    chunk_time_length,
+                                    position,
+                                    dataCache,
+                                    models
+                                );
+                            } else {
+                                // Legacy path: Extract chunk from full backing array
+                                const safeTimeStep = Number.isFinite(time_step) && time_step > 0 ? time_step : 1000;
+                                const rawViewportPoints = Number.isFinite(viewportWidth) && viewportWidth > 0
+                                    ? Math.ceil(viewportWidth / safeTimeStep)
+                                    : chunk_time_length;
+                                const viewportPoints = Math.max(
+                                    1,
+                                    Math.min(n_times, Number.isFinite(rawViewportPoints) ? rawViewportPoints : chunk_time_length)
+                                );
+                                const bufferPoints = Math.ceil(viewportPoints * LOG_SPECTROGRAM_BUFFER_RATIO);
+                                // Keep the log spectrogram glyph at its initialized fixed size.
+                                const targetChunkPoints = Math.max(
+                                    1,
+                                    Math.min(n_times, Math.floor(chunk_time_length || viewportPoints))
+                                );
+
+                                let viewportCenter = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
+                                    ? (effectiveMax + effectiveMin) / 2
+                                    : times_ms[Math.max(0, Math.floor(n_times / 2))];
+                                if (!Number.isFinite(viewportCenter)) {
+                                    viewportCenter = times_ms[Math.max(0, Math.floor(n_times / 2))];
+                                }
+                                const targetChunkStartTimeStamp = viewportCenter - (targetChunkPoints * safeTimeStep / 2);
+
+                                // A more robust way to find the index, defaulting to 0 if the view is before the data starts.
+                                let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
+                                if (chunkStartTimeIdx === -1) {
+                                    // If the view is past the end of the data, show the last possible chunk.
+                                    chunkStartTimeIdx = Math.max(0, n_times - targetChunkPoints);
+                                }
+                                chunkStartTimeIdx = Math.min(
+                                    Math.max(0, chunkStartTimeIdx),
+                                    Math.max(0, n_times - targetChunkPoints)
+                                );
+                                const actualChunkPoints = Math.max(1, Math.min(targetChunkPoints, n_times - chunkStartTimeIdx));
+                                debugSpectrogram(position, 'chunk-selection', {
+                                    n_times,
+                                    time_step: safeTimeStep,
+                                    viewportMin: effectiveMin,
+                                    viewportMax: effectiveMax,
+                                    viewportWidth,
+                                    viewportPoints,
+                                    bufferPoints,
+                                    targetChunkPoints,
+                                    viewportCenter,
+                                    targetChunkStartTimeStamp,
+                                    chunkStartTimeIdx,
+                                    actualChunkPoints,
+                                    chunkStartTime: times_ms?.[chunkStartTimeIdx],
+                                    chunkEndTime: times_ms?.[Math.min(n_times - 1, chunkStartTimeIdx + actualChunkPoints - 1)]
+                                });
+
+                                const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, actualChunkPoints);
+
+                                // Apply paint-on-canvas frequency slicing for spectrogram
+                                finalGlyphData = tryApplySpectrogramSlice(
+                                    finalDataToUse,
+                                    chunk_image_full_freqs,
+                                    chunkStartTimeIdx,
+                                    actualChunkPoints,
+                                    position,
+                                    dataCache,
+                                    models
+                                );
                             }
-                            const targetChunkStartTimeStamp = viewportCenter - (targetChunkPoints * safeTimeStep / 2);
-
-                            // A more robust way to find the index, defaulting to 0 if the view is before the data starts.
-                            let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
-                            if (chunkStartTimeIdx === -1) {
-                                // If the view is past the end of the data, show the last possible chunk.
-                                chunkStartTimeIdx = Math.max(0, n_times - targetChunkPoints);
-                            }
-                            chunkStartTimeIdx = Math.min(
-                                Math.max(0, chunkStartTimeIdx),
-                                Math.max(0, n_times - targetChunkPoints)
-                            );
-                            const actualChunkPoints = Math.max(1, Math.min(targetChunkPoints, n_times - chunkStartTimeIdx));
-                            debugSpectrogram(position, 'chunk-selection', {
-                                n_times,
-                                time_step: safeTimeStep,
-                                viewportMin: effectiveMin,
-                                viewportMax: effectiveMax,
-                                viewportWidth,
-                                viewportPoints,
-                                bufferPoints,
-                                targetChunkPoints,
-                                viewportCenter,
-                                targetChunkStartTimeStamp,
-                                chunkStartTimeIdx,
-                                actualChunkPoints,
-                                chunkStartTime: times_ms?.[chunkStartTimeIdx],
-                                chunkEndTime: times_ms?.[Math.min(n_times - 1, chunkStartTimeIdx + actualChunkPoints - 1)]
-                            });
-
-                            const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, actualChunkPoints);
-
-                            // Apply paint-on-canvas frequency slicing for spectrogram
-                            finalGlyphData = tryApplySpectrogramSlice(
-                                finalDataToUse,
-                                chunk_image_full_freqs,
-                                chunkStartTimeIdx,
-                                actualChunkPoints,
-                                position,
-                                dataCache,
-                                models
-                            );
 
                         } else {
                             // Log view active, but current streamed source does not cover viewport.

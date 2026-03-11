@@ -346,9 +346,31 @@ class AppCallbacks:
             logger.warning("Streaming enabled but 'master_x_range' model not found.")
             return
 
+        logger.debug(
+            "[STREAM CALLBACK] Attached to master_x_range type=%s start=%s end=%s debounce_ms=%s",
+            type(master_x_range).__name__,
+            getattr(master_x_range, 'start', None),
+            getattr(master_x_range, 'end', None),
+            self.streaming_debounce_ms,
+        )
+
         def schedule_range_update(attr, old, new):
             self._pending_stream_range = (master_x_range.start, master_x_range.end)
+            logger.debug(
+                "[STREAM CALLBACK] schedule attr=%s old=%s new=%s current=(%s, %s) timeout_pending=%s",
+                attr,
+                old,
+                new,
+                master_x_range.start,
+                master_x_range.end,
+                self._streaming_timeout_id is not None,
+            )
             if self._streaming_timeout_id is not None:
+                logger.debug(
+                    "[STREAM CALLBACK] coalesced pending range=(%s, %s)",
+                    master_x_range.start,
+                    master_x_range.end,
+                )
                 return
 
             def run_update():
@@ -356,13 +378,25 @@ class AppCallbacks:
                 pending = self._pending_stream_range
                 self._pending_stream_range = None
                 if not pending:
+                    logger.debug("[STREAM CALLBACK] run_update skipped because no pending range remained")
                     return
                 start_ms, end_ms = pending
+                logger.debug(
+                    "[STREAM CALLBACK] run_update dispatching range=(%s, %s)",
+                    start_ms,
+                    end_ms,
+                )
                 self.server_data_handler.handle_range_update(start_ms, end_ms)
 
             self._streaming_timeout_id = self.doc.add_timeout_callback(
                 run_update,
                 self.streaming_debounce_ms,
+            )
+            logger.debug(
+                "[STREAM CALLBACK] scheduled timeout id=%s pending_range=(%s, %s)",
+                self._streaming_timeout_id,
+                master_x_range.start,
+                master_x_range.end,
             )
 
         master_x_range.on_change('start', schedule_range_update)
@@ -376,6 +410,11 @@ class AppCallbacks:
 
             param_select.on_change('value', on_param_change)
 
+        logger.debug(
+            "[STREAM CALLBACK] initial dispatch range=(%s, %s)",
+            master_x_range.start,
+            master_x_range.end,
+        )
         self.server_data_handler.handle_range_update(master_x_range.start, master_x_range.end)
 
     def attach_js_callbacks(self):
