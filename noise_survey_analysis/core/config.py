@@ -43,6 +43,10 @@ CHART_SETTINGS = {
     'high_freq_width': 1600,
     'spectrogram_height': 360,
     'spectrogram_width': 1600,
+    'spectrogram_log_window_min_step_ms': 100,
+    'spectrogram_log_window_min_ms': 15 * 60 * 1000,
+    'spectrogram_log_window_max_step_ms': 1000,
+    'spectrogram_log_window_max_ms': 60 * 60 * 1000,
     'sync_charts': True,
     'tools': 'xzoom_in,xzoom_out,xpan,reset,xwheel_zoom,xbox_select',  # X-axis only tools
     'active_scroll': 'xwheel_zoom',

@@ -10,6 +10,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
 (function (app) {
     'use strict';
+    const DEBUG_POSITION = 'Residential boundary (971-2, 440 m)';
 
     const DEFAULT_REGION_COLOR = '#1e88e5';
     const DEFAULT_REGION_FILL_ALPHA = 0.08;
@@ -36,11 +37,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // Removed styleMarkerSpan - markers now use glyph-based rendering
 
     function _updateBokehImageData(existingImageData, newData) {
+        if (!existingImageData || !newData) {
+            return false;
+        }
         if (existingImageData.length !== newData.length) {
             console.error(`Mismatched image data lengths. Existing: ${existingImageData.length}, New: ${newData.length}. Cannot update.`);
-            return;
+            return false;
         }
-        existingImageData.set(newData);
+        if (typeof existingImageData.set === 'function') {
+            existingImageData.set(newData);
+            return true;
+        }
+        return false;
     }
 
     class Chart {
@@ -573,22 +581,32 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.hoverDivModel = hoverDivModel;
             this.lastDisplayDetails = { reason: '' };
             this.displayName = this.positionId;
-            this._lastGlyphX = null; // For change detection
-            this._lastOffsetMs = null;
-            this._lastParameter = null;
+            this._lastReplacementSignature = null;
+        }
+
+        _buildReplacementSignature(replacement, selectedParameter) {
+            if (!replacement) return false;
+            return [
+                selectedParameter,
+                replacement._offsetMs ?? 0,
+                replacement.x?.[0] ?? 'x',
+                replacement.dw?.[0] ?? 'dw',
+                replacement.y?.[0] ?? 'y',
+                replacement.dh?.[0] ?? 'dh',
+                replacement.y_range_start ?? 'ys',
+                replacement.y_range_end ?? 'ye',
+                replacement.times_ms?.length ?? 0,
+                replacement.image?.[0]?.length ?? 0
+            ].join('|');
         }
 
         _hasGlyphChanged(replacement, selectedParameter) {
-            if (!replacement) return false;
-            const newX = replacement.x?.[0];
-            const newOffset = replacement._offsetMs ?? 0;
-            if (newX === this._lastGlyphX && newOffset === this._lastOffsetMs
-                && selectedParameter === this._lastParameter) {
+            const nextSignature = this._buildReplacementSignature(replacement, selectedParameter);
+            if (!nextSignature) return false;
+            if (nextSignature === this._lastReplacementSignature) {
                 return false;
             }
-            this._lastGlyphX = newX;
-            this._lastOffsetMs = newOffset;
-            this._lastParameter = selectedParameter;
+            this._lastReplacementSignature = nextSignature;
             return true;
         }
 
@@ -615,8 +633,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
                 const glyph = this.imageRenderer.glyph;
 
-                // The image data MUST be updated first, using our special function.
-                _updateBokehImageData(this.source.data.image[0], replacement.image[0]);
+                const existingImage = this.source.data.image?.[0];
+                const replacementImage = replacement.image?.[0];
+                const patchedInPlace = _updateBokehImageData(existingImage, replacementImage);
+                if (!patchedInPlace) {
+                    console.error('[SpecDebug] Skipping spectrogram update because replacement image shape does not match the initialized glyph buffer.');
+                    return;
+                }
 
                 // Update the glyph's position and size on the "canvas"
                 glyph.x = replacement.x[0];
@@ -640,6 +663,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     replacement.visible_freq_indices.forEach((tickIndex, i) => {
                         const labelText = replacement.visible_frequency_labels[i].split(' ')[0];
                         this.model.yaxis.major_label_overrides[tickIndex] = labelText;
+                    });
+                }
+
+                if (this.positionId === DEBUG_POSITION) {
+                    console.log('[SpecDebug] chart-update', {
+                        selectedParameter,
+                        replacementX: replacement.x?.[0],
+                        replacementDw: replacement.dw?.[0],
+                        replacementY: replacement.y?.[0],
+                        replacementDh: replacement.dh?.[0],
+                        replacementTimesFirst: replacement.times_ms?.[0],
+                        replacementTimesLast: replacement.times_ms?.[replacement.times_ms?.length - 1],
+                        replacementTimesLen: replacement.times_ms?.length,
+                        glyphX: glyph.x,
+                        glyphDw: glyph.dw,
+                        xRangeStart: this.model.x_range?.start,
+                        xRangeEnd: this.model.x_range?.end
                     });
                 }
 

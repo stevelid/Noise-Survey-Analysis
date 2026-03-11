@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 import logging
@@ -15,6 +16,186 @@ from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETT
 from noise_survey_analysis.core.data_manager import PositionData
 
 logger = logging.getLogger(__name__)
+
+
+def _peek_log_file_time_step_ms(log_file_paths: list) -> float:
+    """
+    Read just enough of the first log file to estimate its native time step in ms.
+    Used at dashboard init time when the log file has been deferred (lazy load) and
+    the full data is not yet available.  Reads at most ~30 data rows — fast even on
+    network drives.
+
+    Returns the estimated step in ms, or 0.0 if the file cannot be read or parsed.
+    """
+    if not log_file_paths:
+        return 0.0
+
+    file_path = log_file_paths[0].get('file_path', '')
+    if not file_path or not os.path.exists(file_path):
+        return 0.0
+
+    try:
+        # Read a small chunk to find the header row and first data rows.
+        # 8 KB covers any reasonable header block (Svan has ~5 header rows, NTi ~20+).
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as fh:
+            raw = fh.read(8192)
+
+        lines = raw.splitlines()
+
+        # Detect delimiter: prefer tab (NTi), fall back to comma (Svan, NoiseSentry)
+        delimiter = '\t' if any('\t' in l for l in lines[:20]) else ','
+
+        # Find the header row and relevant column indices.
+        # Handles two layouts:
+        #   A. Single combined column: 'Date & time', 'Start date & time',
+        #      'Time (Date hh:mm:ss.ms)', 'DateTime', 'Timestamp', etc.
+        #      -> datetime_col_idx set; date_col_idx / time_col_idx left None
+        #   B. Split columns: separate 'Date'/'Start Date' + 'Time'/'Start Time'
+        #      -> date_col_idx and time_col_idx set; datetime_col_idx left None
+        header_idx = None
+        datetime_col_idx = None
+        date_col_idx = None
+        time_col_idx = None
+
+        for i, line in enumerate(lines):
+            cols = [c.strip().strip('"').lower() for c in line.split(delimiter)]
+            # Case A: single combined column containing both 'date' and 'time'
+            for j, col in enumerate(cols):
+                if 'date' in col and 'time' in col:
+                    header_idx = i
+                    datetime_col_idx = j
+                    break
+            if header_idx is not None:
+                break
+            # Case B: separate date and time columns (NTi layout)
+            date_j = next((j for j, c in enumerate(cols) if c in ('date', 'start date')), None)
+            time_j = next((j for j, c in enumerate(cols) if c in ('time', 'start time')), None)
+            if date_j is not None and time_j is not None:
+                header_idx = i
+                date_col_idx = date_j
+                time_col_idx = time_j
+                break
+
+        if header_idx is None:
+            return 0.0
+
+        # Parse up to 32 data rows after the header
+        times_ms = []
+        for line in lines[header_idx + 1: header_idx + 34]:
+            parts = [p.strip().strip('"') for p in line.split(delimiter)]
+            try:
+                if datetime_col_idx is not None:
+                    raw_dt = parts[datetime_col_idx] if len(parts) > datetime_col_idx else ''
+                else:
+                    # Combine split date + time columns
+                    raw_date = parts[date_col_idx] if len(parts) > date_col_idx else ''
+                    raw_time = parts[time_col_idx] if len(parts) > time_col_idx else ''
+                    raw_dt = f"{raw_date} {raw_time}".strip()
+                if not raw_dt:
+                    continue
+                dt = pd.Timestamp(raw_dt)
+                times_ms.append(dt.value // 10**6)
+            except Exception:
+                continue
+
+        if len(times_ms) < 2:
+            return 0.0
+
+        return _estimate_time_step_ms(np.array(times_ms, dtype=np.int64))
+
+    except Exception as exc:
+        logger.debug(f"_peek_log_file_time_step_ms: could not read '{file_path}': {exc}")
+        return 0.0
+
+
+def _estimate_time_step_ms(times_ms: np.ndarray) -> float:
+    """Estimate the native log interval from the first few valid timestamp gaps."""
+    if times_ms is None or len(times_ms) < 2:
+        return 0.0
+
+    probe = np.asarray(times_ms[: min(len(times_ms), 32)], dtype=np.int64)
+    diffs = np.diff(probe)
+    positive_diffs = diffs[diffs > 0]
+    if positive_diffs.size == 0:
+        return 0.0
+
+    return float(np.median(positive_diffs))
+
+
+def _calculate_spectrogram_log_window_ms(time_step_ms: float, chart_settings: Dict) -> float:
+    """Scale the spectrogram log window from 15 min at 100 ms up to 1 h at 1 s."""
+    min_step_ms = float(chart_settings.get('spectrogram_log_window_min_step_ms', 100))
+    min_window_ms = float(chart_settings.get('spectrogram_log_window_min_ms', 15 * 60 * 1000))
+    max_step_ms = float(chart_settings.get('spectrogram_log_window_max_step_ms', 1000))
+    max_window_ms = float(chart_settings.get('spectrogram_log_window_max_ms', 60 * 60 * 1000))
+
+    if not math.isfinite(time_step_ms) or time_step_ms <= 0:
+        return min_window_ms
+    if time_step_ms <= min_step_ms:
+        return min_window_ms
+    if time_step_ms >= max_step_ms:
+        return max_window_ms
+
+    ratio = (time_step_ms - min_step_ms) / (max_step_ms - min_step_ms)
+    return min_window_ms + (ratio * (max_window_ms - min_window_ms))
+
+
+def _rasterize_spectrogram_to_fixed_canvas(levels_transposed: np.ndarray,
+                                           times_ms: np.ndarray,
+                                           target_n_times: int,
+                                           fill_value: int,
+                                           source_step_ms: float) -> Tuple[np.ndarray, np.ndarray, float]:
+    if (levels_transposed is None or times_ms is None or target_n_times <= 0 or
+            levels_transposed.size == 0 or len(times_ms) == 0):
+        return levels_transposed, times_ms, source_step_ms
+
+    n_freqs, n_source_times = levels_transposed.shape
+    if target_n_times == n_source_times:
+        step_ms = float(source_step_ms) if math.isfinite(source_step_ms) and source_step_ms > 0 else 0.0
+        return levels_transposed, np.asarray(times_ms, dtype=np.float64), step_ms
+
+    start_ms = float(times_ms[0])
+    end_ms = float(times_ms[-1])
+
+    if n_source_times == 1 or not math.isfinite(end_ms - start_ms) or end_ms <= start_ms:
+        step_ms = float(source_step_ms) if math.isfinite(source_step_ms) and source_step_ms > 0 else 1.0
+        canvas = np.repeat(levels_transposed[:, :1], target_n_times, axis=1).astype(levels_transposed.dtype, copy=False)
+        canvas_times = start_ms + (np.arange(target_n_times, dtype=np.float64) * step_ms)
+        return canvas, canvas_times, step_ms
+
+    span_ms = end_ms - start_ms
+    step_ms = span_ms / float(target_n_times)
+    if not math.isfinite(step_ms) or step_ms <= 0:
+        positive_diffs = np.diff(np.asarray(times_ms, dtype=np.float64))
+        positive_diffs = positive_diffs[positive_diffs > 0]
+        if positive_diffs.size:
+            step_ms = float(np.median(positive_diffs))
+        else:
+            step_ms = 1.0
+
+    canvas = np.full((n_freqs, target_n_times), fill_value, dtype=levels_transposed.dtype)
+    canvas_times = start_ms + (np.arange(target_n_times, dtype=np.float64) * step_ms)
+
+    source_starts = np.asarray(times_ms, dtype=np.float64)
+    source_ends = np.empty_like(source_starts)
+    if n_source_times > 1:
+        source_ends[:-1] = source_starts[1:]
+        last_step = float(source_step_ms) if math.isfinite(source_step_ms) and source_step_ms > 0 else max(source_starts[-1] - source_starts[-2], step_ms, 1.0)
+        source_ends[-1] = source_starts[-1] + last_step
+    else:
+        source_ends[0] = source_starts[0] + step_ms
+
+    for source_idx in range(n_source_times):
+        interval_start = source_starts[source_idx]
+        interval_end = source_ends[source_idx]
+        start_idx = int(math.floor((interval_start - start_ms) / step_ms)) if step_ms > 0 else 0
+        end_idx = int(math.ceil((interval_end - start_ms) / step_ms)) if step_ms > 0 else 1
+        start_idx = min(max(0, start_idx), target_n_times - 1)
+        end_idx = min(max(start_idx + 1, end_idx), target_n_times)
+        source_column = levels_transposed[:, source_idx:source_idx + 1]
+        canvas[:, start_idx:end_idx] = np.maximum(canvas[:, start_idx:end_idx], source_column)
+
+    return canvas, canvas_times, step_ms
 
 
 def downsample_dataframe_max(df: pd.DataFrame, target_points: int) -> pd.DataFrame:
@@ -93,7 +274,35 @@ class GlyphDataProcessor:
 
         final_prepared_data: Dict[str, Dict[str, Any]] = {}
         logger.info(f"Processor: Preparing all spectral data for position '{position_data_obj.name}'")
-        
+
+        # Determine the fixed buffer width for overview init.
+        # The overview buffer must be padded to log-window size so that log updates
+        # (which are always log_window_bins wide) can be written in-place into the
+        # same fixed Bokeh ColumnDataSource buffer.
+        # dw for the overview is set to chunk_time_length * overview_time_step so that
+        # each pixel maps to exactly one overview time step; the padding pixels extend
+        # beyond the survey end and are outside the visible x-axis range.
+        # Source: peek at the log file header (fast, ~8KB read) to get the log time step.
+        overview_fixed_n_times: Optional[int] = None
+        log_time_step: float = 0.0
+
+        if position_data_obj.has_log_spectral:
+            log_df_probe = position_data_obj.log_spectral
+            if log_df_probe is not None and not log_df_probe.empty and 'Datetime' in log_df_probe.columns:
+                probe_times_ms = (pd.to_datetime(log_df_probe['Datetime']).astype('int64') // 10**6).values
+                log_time_step = _estimate_time_step_ms(probe_times_ms)
+        elif getattr(position_data_obj, 'log_file_paths', None):
+            log_time_step = _peek_log_file_time_step_ms(position_data_obj.log_file_paths)
+            if log_time_step > 0:
+                logger.info(f"Peeked log file for '{position_data_obj.name}': time_step={log_time_step:.1f} ms")
+
+        if log_time_step > 0:
+            log_window_ms = _calculate_spectrogram_log_window_ms(log_time_step, chart_settings)
+            log_window_bins = max(1, math.ceil(log_window_ms / log_time_step))
+            overview_fixed_n_times = log_window_bins
+            logger.info(f"Overview buffer for '{position_data_obj.name}': fixed to {log_window_bins} bins "
+                        f"(log step={log_time_step:.1f} ms, window={log_window_ms/1000:.0f} s)")
+
         # Process overview spectral data
         if position_data_obj.has_overview_spectral:
             df = position_data_obj.overview_spectral
@@ -101,7 +310,10 @@ class GlyphDataProcessor:
             if params:
                 prepared_params_dict = {}
                 for param in params:
-                    prepared_data = self.prepare_single_spectrogram_data(df, param, chart_settings)
+                    prepared_data = self.prepare_single_spectrogram_data(
+                        df, param, chart_settings, use_dynamic_log_window=False,
+                        fixed_n_times=overview_fixed_n_times
+                    )
                     if prepared_data:
                         prepared_params_dict[param] = prepared_data
                 if prepared_params_dict: # Only add if some params were successfully processed
@@ -125,7 +337,9 @@ class GlyphDataProcessor:
                             df, param, chart_settings, log_target_points
                         )
                     else:
-                        prepared_data = self.prepare_single_spectrogram_data(df, param, chart_settings)
+                        prepared_data = self.prepare_single_spectrogram_data(
+                            df, param, chart_settings, use_dynamic_log_window=True
+                        )
                     if prepared_data:
                         prepared_params_dict[param] = prepared_data
                 if prepared_params_dict:
@@ -139,8 +353,10 @@ class GlyphDataProcessor:
         return final_prepared_data
 
     
-    def prepare_single_spectrogram_data(self, df: pd.DataFrame, param_prefix: str, 
-                                        chart_settings: Dict) -> Optional[Dict[str, Any]]:
+    def prepare_single_spectrogram_data(self, df: pd.DataFrame, param_prefix: str,
+                                        chart_settings: Dict,
+                                        use_dynamic_log_window: bool = False,
+                                        fixed_n_times: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """
         Process spectral data from a DataFrame for a single parameter into the format
         needed for Bokeh image spectrogram visualization. If the size of the data is larger than a 
@@ -156,7 +372,21 @@ class GlyphDataProcessor:
         """
         logger.debug(f"Preparing single spectrogram data for parameter: {param_prefix} from DF shape {df.shape}")
         
-        MAX_DATA_SIZE = 95000 # this should be (MAX_SPECTRAL_POINTS_TO_RENDER from app.js  + buffer) * num_freqs # TODO: Make this a config parameter
+        # MAX_DATA_SIZE is a fallback cell budget for positions that have no log data.
+        # It is NOT a global constant — the real rule is: choose one buffer size at
+        # initialization time and never change it.  When log data is present the caller
+        # passes fixed_n_times (derived from log_window_bins in prepare_all_spectral_data)
+        # and MAX_DATA_SIZE is bypassed entirely.  Both paths respect the same contract:
+        # one size, set once, all JS updates in-place only.
+        #
+        # CHANGE LOG (Mar 2026): Previously MAX_DATA_SIZE was the sole governing constant
+        # for all positions.  It was replaced by a per-position fixed_n_times derived from
+        # the log step (100 ms → 15 min → 9000 bins; 1 s → 1 h → 3600 bins) so that the
+        # overview init buffer matches the log update size without requiring MAX_DATA_SIZE
+        # to be large enough to cover every possible log window.  Revert by removing the
+        # fixed_n_times parameter and the pre-processing block in prepare_all_spectral_data,
+        # restoring MAX_DATA_SIZE as the sole size for all positions.
+        MAX_DATA_SIZE = 95000
         n_freqs = 0 # Initialize n_freqs
 
         if df is None or df.empty:
@@ -235,6 +465,10 @@ class GlyphDataProcessor:
         
         times_ms = pd.to_datetime(times_dt).astype('int64') // 10**6 # Bokeh image x-coords
         freq_indices = np.arange(n_freqs) # Bokeh image y-coords (categorical)
+        time_step = _estimate_time_step_ms(times_ms)
+        data_min_time = times_ms[0] if n_times > 0 else 0
+        data_max_time = times_ms[-1] if n_times > 0 else 0
+        source_n_times = n_times
         
         valid_levels = levels_matrix[~pd.isna(levels_matrix) & np.isfinite(levels_matrix)]
         if len(valid_levels) > 0:
@@ -252,10 +486,32 @@ class GlyphDataProcessor:
         levels_matrix_clean = np.round(levels_matrix_clean).astype(np.int16)
 
         levels_transposed = levels_matrix_clean.T
+
+        if fixed_n_times is not None and not use_dynamic_log_window:
+            levels_transposed, times_ms, time_step = _rasterize_spectrogram_to_fixed_canvas(
+                levels_transposed,
+                times_ms,
+                max(1, int(fixed_n_times)),
+                levels_transposed.dtype.type(round(nan_replace_val)),
+                time_step,
+            )
+            n_times = levels_transposed.shape[1]
         
 
-        #get the correct size for the first chunk. If data is smaller than MAX_DATA_SIZE, this will be the full data.
-        chunk_time_length = math.ceil(MAX_DATA_SIZE / n_freqs) #TODO: set the max value to the smaller of MAX_DATA_SIZE and the size of the overview spectrogram (avoid padding out the overview)
+        if use_dynamic_log_window:
+            target_window_ms = _calculate_spectrogram_log_window_ms(time_step, chart_settings)
+            chunk_time_length = max(1, math.ceil(target_window_ms / time_step)) if time_step > 0 else n_times
+        elif fixed_n_times is not None:
+            # Use the caller-supplied fixed buffer width (e.g. log_window_bins) so that the
+            # overview init buffer is the same size as subsequent log update chunks.
+            # This is required because source.data.image is a fixed-size browser buffer and
+            # Bokeh rejects in-place updates when the replacement array length differs.
+            chunk_time_length = max(1, fixed_n_times)
+        else:
+            # Preserve the existing overview/static behaviour: use the historical fixed
+            # cell budget so the full overview spectrogram still initializes across the
+            # whole survey when the downsampled data fits.
+            chunk_time_length = min(n_times, math.ceil(MAX_DATA_SIZE / n_freqs))
 
         #pad the data
         pad_width = 0
@@ -263,9 +519,6 @@ class GlyphDataProcessor:
             pad_width = chunk_time_length - n_times
         elif n_times % chunk_time_length != 0:
             pad_width = chunk_time_length - (n_times % chunk_time_length)
-        
-        max_time = times_ms[-1] if n_times > 0 else 0
-        min_time = times_ms[0] if n_times > 0 else 0
         
         if pad_width > 0:
             # Pad the transposed matrix along the time axis (axis=1)
@@ -285,18 +538,27 @@ class GlyphDataProcessor:
         
         first_data_chunk = levels_transposed_padded[:, :chunk_time_length]
 
-        time_step = (times_ms_padded[10] - times_ms_padded[5]) / 5 if final_n_times > 10 else (times_ms_padded[1] - times_ms_padded[0] if final_n_times > 1 else 0)
-        
+        if time_step <= 0:
+            time_step = (times_ms_padded[10] - times_ms_padded[5]) / 5 if final_n_times > 10 else (times_ms_padded[1] - times_ms_padded[0] if final_n_times > 1 else 0)
+
         # Image glyph parameters
         x_coord = times_ms_padded[0] if final_n_times > 0 else 0
         y_coord = -0.5 # Image covers cells from y to y+dh; -0.5 to n_freqs-0.5
+        # When the buffer is padded to fixed_n_times (to match the log update size), dw must
+        # dw = full buffer width in time units (chunk_time_length * time_step).
+        # Each pixel maps to exactly one time_step.  For overview padded to log-window
+        # size, the real data pixels land at the correct positions and the padding pixels
+        # extend beyond the survey end — outside the visible x-axis range, not visible.
+        # Do NOT use real_data_bins * time_step: that compresses all pixels (including
+        # padding) into the real data span, squashing the image to ~25% of the canvas.
         dw_val = chunk_time_length * time_step
         dh_val = n_freqs
           
         return {
             'frequency_labels': frequency_labels_str,         # Formatted string labels for ticks
             'frequencies_hz': selected_frequencies.tolist(),  # Numeric frequency values for robust JS indexing
-            'n_times': int(final_n_times),                    # total number of times
+            'n_times': int(final_n_times),                    # total number of times (includes padding)
+            'n_times_real': int(source_n_times),              # real (unpadded) data bin count
             'n_freqs': int(n_freqs),                          # total number of frequencies
             'chunk_time_length': int(chunk_time_length),      # number of times in a chunk
             'time_step': time_step,                           # time step in ms
@@ -307,8 +569,8 @@ class GlyphDataProcessor:
             'min_val': min_val,
             'max_val': max_val,
 
-            'min_time': min_time,
-            'max_time': max_time,
+            'min_time': data_min_time,
+            'max_time': data_max_time,
             
             'initial_glyph_data': {
                 'x': [float(x_coord)],    # For image glyph 'x'
@@ -324,7 +586,9 @@ class GlyphDataProcessor:
         if df is None or df.empty:
             return None
         downsampled = downsample_dataframe_max(df, target_points)
-        return self.prepare_single_spectrogram_data(downsampled, param_prefix, chart_settings)
+        return self.prepare_single_spectrogram_data(
+            downsampled, param_prefix, chart_settings, use_dynamic_log_window=True
+        )
 
     def _extract_spectral_parameters(self, df: Optional[pd.DataFrame]) -> List[str]:
         """

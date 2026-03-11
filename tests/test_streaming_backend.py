@@ -6,6 +6,7 @@ from bokeh.models import ColumnDataSource
 
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
 from noise_survey_analysis.core.config import CHART_SETTINGS
+from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 from noise_survey_analysis.core.data_manager import PositionData
 from noise_survey_analysis.core.server_data_handler import ServerDataHandler
 
@@ -77,6 +78,45 @@ class StreamingBackendTests(unittest.TestCase):
             "LZeq_100": [60, 61, 62],
             "LZeq_200": [63, 64, 65],
         })
+
+    def test_prepare_single_spectrogram_data_rasterizes_overview_into_fixed_canvas(self):
+        base_time = pd.Timestamp("2024-01-01T00:00:00Z")
+        overview_df = pd.DataFrame({
+            "Datetime": [
+                base_time,
+                base_time + pd.Timedelta(seconds=10),
+                base_time + pd.Timedelta(seconds=20),
+            ],
+            "LZeq_100": [60, 61, 62],
+            "LZeq_200": [70, 71, 72],
+        })
+
+        prepared = GlyphDataProcessor().prepare_single_spectrogram_data(
+            overview_df,
+            "LZeq",
+            CHART_SETTINGS,
+            use_dynamic_log_window=False,
+            fixed_n_times=6,
+        )
+
+        self.assertIsNotNone(prepared)
+        self.assertEqual(prepared["n_times"], 6)
+        self.assertEqual(prepared["chunk_time_length"], 6)
+        self.assertEqual(prepared["n_times_real"], 3)
+        self.assertEqual(prepared["initial_glyph_data"]["image"][0].shape, (2, 6))
+        self.assertAlmostEqual(
+            prepared["initial_glyph_data"]["dw"][0],
+            prepared["max_time"] - prepared["min_time"],
+            places=6,
+        )
+        self.assertEqual(
+            prepared["initial_glyph_data"]["image"][0][0].tolist(),
+            [60, 60, 60, 61, 61, 62],
+        )
+        self.assertEqual(
+            prepared["initial_glyph_data"]["image"][0][1].tolist(),
+            [70, 70, 70, 71, 71, 72],
+        )
 
     def test_server_data_handler_updates_sources(self):
         timeseries_log_source = ColumnDataSource(data={})

@@ -11,6 +11,7 @@ from noise_survey_analysis.core.data_manager import DataManager
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 
 logger = logging.getLogger(__name__)
+DEBUG_POSITION = 'Residential boundary (971-2, 440 m)'
 
 
 class ServerDataHandler:
@@ -108,6 +109,16 @@ class ServerDataHandler:
             logger.debug(f"[UPDATE] Sliced log_totals is empty for range {start_ms}-{end_ms}")
             return
         logger.info(f"[UPDATE] Pushing {len(sliced)} log totals rows to timeseries source")
+        figure = model_bundle.get('timeseries_figure')
+        if figure is not None and getattr(figure, 'name', '') == f'figure_{DEBUG_POSITION}_timeseries':
+            logger.info(
+                "[TH DEBUG] rows=%s first=%s last=%s requested_start_ms=%s requested_end_ms=%s",
+                len(sliced),
+                sliced['Datetime'].iloc[0],
+                sliced['Datetime'].iloc[-1],
+                start_ms,
+                end_ms,
+            )
         
         # Stream full-resolution log data (no downsampling)
         # Resolution can be anything from 0.1s to 60s depending on the source data
@@ -129,11 +140,48 @@ class ServerDataHandler:
         sliced = self._slice_by_time(subset, start_ms, end_ms)
         if sliced.empty:
             return
+        figure = model_bundle.get('spectrogram_figure')
+        if figure is not None and getattr(figure, 'name', '') == f'figure_{DEBUG_POSITION}_spectrogram':
+            logger.info(
+                "[SPEC DEBUG] rows=%s first=%s last=%s requested_start_ms=%s requested_end_ms=%s param=%s",
+                len(sliced),
+                sliced['Datetime'].iloc[0],
+                sliced['Datetime'].iloc[-1],
+                start_ms,
+                end_ms,
+                param,
+            )
         
         # Stream full-resolution log spectrogram data (no downsampling)
         # Resolution can be anything from 0.1s to 60s depending on the source data
-        prepared = self.processor.prepare_single_spectrogram_data(sliced, param, self.chart_settings)
+        prepared = self.processor.prepare_single_spectrogram_data(
+            sliced, param, self.chart_settings, use_dynamic_log_window=True
+        )
         if prepared:
+            # Validate that the log chunk buffer size matches the overview init buffer size.
+            # The overview is initialized with fixed_n_times = log_window_bins, so
+            # chunk_time_length here must equal that same value.
+            # n_freqs × chunk_time_length must equal the browser buffer cell count.
+            log_cells = prepared['n_freqs'] * prepared['chunk_time_length']
+            logger.debug(
+                "[SPEC] Log chunk: n_times=%s chunk_time_length=%s n_freqs=%s cells=%s",
+                prepared['n_times'],
+                prepared['chunk_time_length'],
+                prepared['n_freqs'],
+                log_cells,
+            )
+            if figure is not None and getattr(figure, 'name', '') == f'figure_{DEBUG_POSITION}_spectrogram':
+                logger.info(
+                    "[SPEC DEBUG] prepared n_times=%s chunk_time_length=%s time_step=%s min_time=%s max_time=%s initial_x=%s initial_dw=%s cells=%s",
+                    prepared['n_times'],
+                    prepared['chunk_time_length'],
+                    prepared['time_step'],
+                    prepared['min_time'],
+                    prepared['max_time'],
+                    prepared['initial_glyph_data']['x'][0],
+                    prepared['initial_glyph_data']['dw'][0],
+                    log_cells,
+                )
             # Send COMPLETE prepared data structure matching preparedGlyphData format
             # BUT: Bokeh ColumnDataSource requires ALL values to be sequences
             # So wrap EVERYTHING (arrays AND scalars) in single-element lists

@@ -94,10 +94,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const thresholdSeconds = app.features?.view?.resolution?.resolveLogThresholdSeconds
             ? app.features.view.resolution.resolveLogThresholdSeconds(models, viewState)
             : null;
+        const streamingReasons = [];
+        const detailEntries = displayDetailsByPosition ? Object.values(displayDetailsByPosition) : [];
+        detailEntries.forEach(details => {
+            const lineReason = details?.line?.reason;
+            const specReason = details?.spec?.reason || details?.spectrogram?.reason;
+            if (typeof lineReason === 'string' && lineReason.includes('Streaming Log Data')) {
+                streamingReasons.push(lineReason);
+            }
+            if (typeof specReason === 'string' && specReason.includes('Streaming Log Data')) {
+                streamingReasons.push(specReason);
+            }
+        });
+        const isStreamingInBackground = streamingReasons.length > 0;
         if (models.viewStatusChip) {
             const mode = viewState.globalViewType === 'log' ? 'Log' : 'Overview';
             const thresholdText = Number.isFinite(thresholdSeconds) ? `${Math.round(thresholdSeconds / 60)}m` : '--';
-            models.viewStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>View: ${mode} | ${thresholdText}</span>`;
+            const streamingSuffix = isStreamingInBackground
+                ? ` <span style='color:#9a3412;'>| Streaming log data...</span>`
+                : '';
+            models.viewStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>View: ${mode} | ${thresholdText}${streamingSuffix}</span>`;
         }
         if (models.focusStatusChip) {
             const activeLabel = (isPlaying && activePositionId)
@@ -215,12 +231,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 }
                 if (specChart?.model) {
-                    const specDetails = displayDetailsByPosition?.[pos]?.spectrogram?.reason
+                    const specDetails = displayDetailsByPosition?.[pos]?.spec?.reason
+                        || displayDetailsByPosition?.[pos]?.spectrogram?.reason
                         || specChart?.lastDisplayDetails?.reason
                         || '';
                     specChart.model.title.text = `${displayName} - Spectrogram${specDetails}`;
                     specChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
-                    if (displayDetailsByPosition?.[pos]?.spectrogram?.reason) {
+                    if (displayDetailsByPosition?.[pos]?.spec?.reason) {
+                        specChart.lastDisplayDetails = displayDetailsByPosition[pos].spec;
+                    } else if (displayDetailsByPosition?.[pos]?.spectrogram?.reason) {
                         specChart.lastDisplayDetails = displayDetailsByPosition[pos].spectrogram;
                     }
                 }
