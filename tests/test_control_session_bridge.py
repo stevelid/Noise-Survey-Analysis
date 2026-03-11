@@ -195,18 +195,18 @@ class TestSessionBridgeJsBridgeFallback(unittest.TestCase):
         result = bridge.set_parameter("LAeq")
         self.assertFalse(result.success)
 
-    def test_set_parameter_no_cmd_source_fires_without_error(self):
+    def test_set_parameter_no_cmd_source_returns_error(self):
         bridge = SessionBridge()
         bridge.register(_ImmediateDoc())  # no cmd source
         result = bridge.set_parameter("LAeq", timeout=0.0)
-        # With no cmd source a warning is logged but the call doesn't crash.
-        # The implementation schedules the callback; since doc is immediate the
-        # callback runs, logs a warning, and returns a "scheduled" success.
-        self.assertTrue(result.success)
+        # With no automation_command_source the call must fail, not silently succeed.
+        self.assertFalse(result.success)
+        self.assertIn("automation_command_source", result.message)
 
     def test_set_view_mode_invalid_rejects(self):
         bridge = SessionBridge()
-        bridge.register(_ImmediateDoc())
+        cmd_source = _FakeCmdSource()
+        bridge.register(_ImmediateDoc(), automation_command_source=cmd_source)
         result = bridge.set_view_mode("bad_value", timeout=0.0)
         self.assertFalse(result.success)
 
