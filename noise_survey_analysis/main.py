@@ -489,11 +489,19 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
             except Exception as _exc:
                 logger.warning("Could not register session bridge: %s", _exc)
 
-            # --- Apply deep-link viewport override ---
+            # --- Apply deep-link startup overrides ---
             _start_override = _overrides.get('start')
             _end_override = _overrides.get('end')
             if _start_override is not None and _end_override is not None:
                 _session_bridge.set_viewport(_start_override, _end_override)
+
+            _view_override = _overrides.get('view')
+            if _view_override is not None:
+                _session_bridge.set_view_mode(_view_override, timeout=0.0)
+
+            _param_override = _overrides.get('param')
+            if _param_override is not None:
+                _session_bridge.set_parameter(_param_override, timeout=0.0)
 
         doc.add_next_tick_callback(build_dashboard)
     
@@ -554,7 +562,11 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
             doc.clear()  # Remove loading div
             selector = create_data_source_selector(doc, on_data_sources_selected)
             doc.add_root(selector.get_layout())
-    doc.on_session_destroyed(session_destroyed)
+    def _on_session_destroyed(session_context):
+        session_destroyed(session_context)
+        _session_bridge.unregister()
+
+    doc.on_session_destroyed(_on_session_destroyed)
 
     logger.info("--- Live application setup complete for this session. ---")
     

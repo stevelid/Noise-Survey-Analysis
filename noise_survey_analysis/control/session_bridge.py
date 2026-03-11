@@ -323,31 +323,30 @@ class SessionBridge:
         if doc is None:
             return ControlResult.error("no active session", request_id=request_id)
 
-        wait_for_ack = cmd_source is not None
+        if cmd_source is None:
+            return ControlResult.error(
+                f"automation_command_source not registered; cannot send {command!r}",
+                request_id=request_id,
+            )
+
         event: Optional[threading.Event] = None
 
-        if wait_for_ack and request_id:
+        if request_id:
             event = threading.Event()
             with self._lock:
                 self._pending[request_id] = event
 
         def _send() -> None:
             try:
-                if cmd_source is not None:
-                    cmd_source.data = {
-                        "command": [command],
-                        "request_id": [request_id],
-                        "payload": [json.dumps(payload)],
-                    }
-                    logger.debug(
-                        "SessionBridge: sent JS command %r (request_id=%s)",
-                        command, request_id,
-                    )
-                else:
-                    logger.warning(
-                        "SessionBridge: automation_command_source not registered; "
-                        "cannot send %r", command
-                    )
+                cmd_source.data = {
+                    "command": [command],
+                    "request_id": [request_id],
+                    "payload": [json.dumps(payload)],
+                }
+                logger.debug(
+                    "SessionBridge: sent JS command %r (request_id=%s)",
+                    command, request_id,
+                )
             except Exception as exc:
                 logger.error("SessionBridge._send_js_command callback error: %s", exc)
 
