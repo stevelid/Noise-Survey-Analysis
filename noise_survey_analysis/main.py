@@ -24,6 +24,13 @@ from noise_survey_analysis.core.app_callbacks import AppCallbacks, session_destr
 from noise_survey_analysis.core.server_data_handler import ServerDataHandler
 from noise_survey_analysis.visualization.dashBuilder import DashBuilder
 from noise_survey_analysis.ui.data_source_selector import create_data_source_selector
+from noise_survey_analysis.control.validation import parse_deep_link_params
+from noise_survey_analysis.control.session_bridge import SessionBridge
+from noise_survey_analysis.control.control_server import ControlServer
+
+# Process-level singletons for the control system.
+_session_bridge = SessionBridge()
+_control_server: ControlServer | None = None
 
 
 def _decode_argument_value(raw_value):
@@ -214,9 +221,16 @@ def _get_cache_key(source_configs):
         return None
 
 
-def create_app(doc, config_path=None, state_path=None, create_static=False):
+def create_app(doc, config_path=None, state_path=None, create_static=False,
+               startup_overrides=None):
     """
     This function is the entry point for the LIVE Bokeh server application.
+
+    Args:
+        startup_overrides: Optional dict with validated deep-link overrides.
+            Supported keys: ``start`` (float), ``end`` (float),
+            ``param`` (str), ``view`` (str).  These override workspace/default
+            state at startup (applied after workspace restore).
     """
     # Configure logging for Bokeh server environment
     # Bokeh pre-configures logging, so we need explicit handlers to ensure visibility
@@ -230,7 +244,14 @@ def create_app(doc, config_path=None, state_path=None, create_static=False):
     logger.propagate = False  # Prevent duplicate output
     
     logger.info("--- New client session started. Creating live application instance. ---")
-    
+
+    _overrides: dict = startup_overrides or {}
+    if _overrides:
+        _ov_errors = _overrides.pop("_errors", {})
+        if _ov_errors:
+            logger.warning("Deep-link parameter errors ignored at startup: %s", _ov_errors)
+        logger.info("Deep-link startup overrides: %s", _overrides)
+
     initial_saved_workspace_state = None
     source_configs_from_state = None
     current_job_number = None
@@ -454,6 +475,26 @@ def create_app(doc, config_path=None, state_path=None, create_static=False):
             setattr(doc.session_context, '_app_callback_manager', app_callbacks)
             initial_saved_workspace_state = None
 
+            # --- Register session with the control bridge ---
+            try:
+                master_x_range = doc.get_model_by_name('master_x_range')
+                automation_command_source = doc.get_model_by_name('automation_command_source')
+                automation_result_source = doc.get_model_by_name('automation_result_source')
+                _session_bridge.register(
+                    doc,
+                    master_x_range=master_x_range,
+                    automation_command_source=automation_command_source,
+                    automation_result_source=automation_result_source,
+                )
+            except Exception as _exc:
+                logger.warning("Could not register session bridge: %s", _exc)
+
+            # --- Apply deep-link viewport override ---
+            _start_override = _overrides.get('start')
+            _end_override = _overrides.get('end')
+            if _start_override is not None and _end_override is not None:
+                _session_bridge.set_viewport(_start_override, _end_override)
+
         doc.add_next_tick_callback(build_dashboard)
     
     # IMPORTANT: Add loading div synchronously BEFORE any async callbacks
@@ -569,7 +610,7 @@ if doc.session_context:
 
     if state_file_path is None:
         state_file_path = _extract_argv_argument('--state', '--workspace', '--savedworkspace')
-    
+
     # Handle positional argument from bokeh serve --args "path/to/config.json"
     if config_file_path is None and len(sys.argv) > 1:
         # Check if first argument after script name looks like a config file path
@@ -579,7 +620,31 @@ if doc.session_context:
                 config_file_path = potential_config
                 logger.info(f"Using positional argument as config path: {config_file_path}")
 
-    create_app(doc, config_path=config_file_path, state_path=state_file_path, create_static=create_static)
+    # --- Deep-link startup overrides ---
+    _deep_link_overrides = parse_deep_link_params(request_arguments)
+    _dl_errors = _deep_link_overrides.get('_errors', {})
+    if _dl_errors:
+        logger.warning("Deep-link URL parameter validation errors: %s", _dl_errors)
+
+    # --- Optional control server startup (first session only) ---
+    _raw_control_port = _extract_argv_argument('--control-port', '--control_port')
+    if _raw_control_port is not None:
+        global _control_server
+        if _control_server is None or not _control_server.is_running:
+            try:
+                _control_port_int = int(_raw_control_port)
+                _control_server = ControlServer(_session_bridge)
+                _control_server.start(port=_control_port_int)
+            except Exception as _cs_exc:
+                logger.error("Failed to start control server: %s", _cs_exc)
+
+    create_app(
+        doc,
+        config_path=config_file_path,
+        state_path=state_file_path,
+        create_static=create_static,
+        startup_overrides=_deep_link_overrides,
+    )
 else:
     # No session context, so we're running as a standalone script.
     # This block will be executed when running `python main.py ...`
