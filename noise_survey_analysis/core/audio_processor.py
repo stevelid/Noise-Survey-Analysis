@@ -119,7 +119,12 @@ class AudioDataProcessor:
         if 'modified_time' not in working_df.columns:
             working_df['modified_time'] = working_df.get('Datetime')
 
-        working_df['anchored_datetime'] = pd.NaT
+        anchor_dtype = self._anchor_datetime_dtype(working_df)
+        working_df['anchored_datetime'] = pd.Series(
+            pd.NaT,
+            index=working_df.index,
+            dtype=anchor_dtype,
+        )
         working_df['anchor_confidence'] = 'low'
         working_df['anchor_warning'] = ''
         working_df['segment_index'] = pd.NA
@@ -188,3 +193,13 @@ class AudioDataProcessor:
 
         working_df['Datetime'] = working_df['anchored_datetime']
         return working_df
+
+    @staticmethod
+    def _anchor_datetime_dtype(working_df: pd.DataFrame) -> str:
+        for column_name in ('modified_time', 'Datetime'):
+            if column_name not in working_df.columns:
+                continue
+            series = working_df[column_name]
+            if isinstance(series.dtype, pd.DatetimeTZDtype):
+                return str(series.dtype)
+        return 'datetime64[ns]'

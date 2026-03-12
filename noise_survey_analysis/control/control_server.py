@@ -48,6 +48,7 @@ class _ControlHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/")
 
         if path != "/control":
+            self._discard_request_body()
             self._send_json(404, {"success": False, "message": "Not found"})
             return
 
@@ -124,6 +125,15 @@ class _ControlHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _discard_request_body(self) -> None:
+        length_str = self.headers.get("Content-Length", "")
+        try:
+            content_length = int(length_str) if length_str else 0
+        except ValueError:
+            return
+        if content_length > 0:
+            self.rfile.read(content_length)
 
 
 def _dispatch(

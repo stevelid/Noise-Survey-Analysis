@@ -5,7 +5,7 @@ import './loadCoreModules.js';
 const resolution = window.NoiseSurveyApp.features.view.resolution;
 
 describe('view resolution utilities', () => {
-    it('computes auto threshold as min(1h, 10 overview steps, 360 log steps)', () => {
+    it('uses the server viewport cap as the auto threshold default', () => {
         const models = {
             config: { log_view_max_viewport_seconds: 86400 },
             timeSeriesSources: {
@@ -16,7 +16,7 @@ describe('view resolution utilities', () => {
             }
         };
         const threshold = resolution.calculatePositionAutoLogThresholdSeconds(models, 'P1');
-        expect(threshold).toBe(100);
+        expect(threshold).toBe(86400);
     });
 
     it('resolves manual threshold and caps to server max', () => {

@@ -133,7 +133,7 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
       }
     });
 
-    window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange(60);
+    window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange(1440);
     expect(dispatchAction).not.toHaveBeenCalled();
   });
 

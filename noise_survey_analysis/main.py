@@ -641,7 +641,6 @@ if doc.session_context:
     # --- Optional control server startup (first session only) ---
     _raw_control_port = _extract_argv_argument('--control-port', '--control_port')
     if _raw_control_port is not None:
-        global _control_server
         if _control_server is None or not _control_server.is_running:
             try:
                 _control_port_int = int(_raw_control_port)

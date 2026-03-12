@@ -416,8 +416,8 @@ describe('NoiseSurveyApp.classes', () => {
     const spec = new classes.SpectrogramChart(chartModel, {}, {}, { text: '' }, 'P1');
     const replacement = { image: [new Float32Array([1, 2, 3])], x: [1], dw: [1], y: [0], dh: [1], visible_freq_indices: [0], visible_frequency_labels: ['1000 Hz'], y_range_start: 0, y_range_end: 0.5 };
     spec.update({ source_replacement: replacement }, { reason: ' (Log Data)' }, 'LAeq');
-    // still updates glyph and y_range despite mismatch
-    expect(spec.imageRenderer.glyph.x).toBe(1);
-    expect(chartModel.y_range.end).toBe(0.5);
+    expect(spec.imageRenderer.glyph.x).toBe(0);
+    expect(chartModel.y_range.end).toBe(1);
+    expect(spec.source.data.image[0]).toEqual(srcArray);
   });
 });

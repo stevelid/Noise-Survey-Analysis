@@ -255,10 +255,10 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(viewState.displayDetails).toBeUndefined();
         });
 
-        it('should show overview data when in log view but zoomed out', () => {
+        it('should show overview data when in log view beyond the server cap', () => {
             const viewState = {
                 globalViewType: 'log',
-                viewport: { min: 0, max: 5001000 } // Large range
+                viewport: { min: 0, max: 90000000 } // 25 hours
             };
             const dataCache = { activeLineData: {} };
             const models = {
@@ -384,7 +384,7 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
         });
 
-        it('should use the new auto-threshold rule and ignore log_stream_target_points', () => {
+        it('should use the server viewport cap and ignore log_stream_target_points', () => {
             const viewState = {
                 globalViewType: 'log',
                 viewport: { min: 0, max: 120000 } // 120 seconds
@@ -415,9 +415,9 @@ describe('NoiseSurveyApp.data_processors', () => {
 
             const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
 
-            expect(details?.type).toBe('overview');
-            expect(details?.reason).toBe(' - Overview - zoom in for Log');
-            expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
+            expect(details?.type).toBe('log');
+            expect(details?.reason).toBe(' (Log Data)');
+            expect(dataCache.activeLineData.P1.LAeq).toEqual(Array.from({ length: 20 }, (_, i) => 40 + i));
         });
 
         it('should fall back to overview when viewport is outside current log chunk', () => {
