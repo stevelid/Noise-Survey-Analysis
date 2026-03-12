@@ -3,6 +3,7 @@ import time
 from bisect import bisect_left
 from typing import Dict, Optional
 
+import numpy as np
 import pandas as pd
 
 from noise_survey_analysis.core.config import (
@@ -185,27 +186,16 @@ class ServerDataHandler:
                 self._buffer_bounds[position_id] = (buffer_start, buffer_end)
                 continue
 
-            if (
-                position_data.has_log_spectral
-                and spectrogram_max_viewport_seconds is not None
-                and viewport_width_seconds > spectrogram_max_viewport_seconds
-            ):
-                logger.debug(
-                    "[RANGE] request=%s position=%s action=reuse_existing_stream reason=spectrogram_viewport_too_wide viewport_width_s=%.3f spectrogram_max_viewport_s=%.3f buffer_bounds=%s chunk_bounds=%s",
-                    request_id,
-                    position_id,
-                    viewport_width_seconds,
-                    spectrogram_max_viewport_seconds,
-                    buffer_bounds,
-                    chunk_bounds,
-                )
-                continue
-
-            chunk_coverage_ratio = self._spectrogram_chunk_coverage_ratio(position_id, start_ms, end_ms)
-            if position_data.has_log_spectral and chunk_coverage_ratio < 0.8:
+            # Reservoir coverage check: refresh reservoir when viewport is not
+            # adequately covered by the current reservoir bounds.  Unlike the old
+            # chunk-window gate, the viewport no longer has to fit inside one
+            # fixed display chunk — the browser extracts the display chunk from
+            # the wider reservoir client-side.
+            reservoir_coverage = self._spectrogram_chunk_coverage_ratio(position_id, start_ms, end_ms)
+            if position_data.has_log_spectral and reservoir_coverage < 0.8:
                 buffer_start, buffer_end = self._buffer_bounds[position_id]
                 logger.debug(
-                    "[RANGE] request=%s position=%s action=refresh_chunk viewport=(%s, %s) buffer=(%s, %s) chunk_bounds=%s chunk_coverage_ratio=%.3f",
+                    "[RANGE] request=%s position=%s action=refresh_reservoir viewport=(%s, %s) buffer=(%s, %s) reservoir_bounds=%s reservoir_coverage=%.3f",
                     request_id,
                     position_id,
                     start_ms,
@@ -213,7 +203,7 @@ class ServerDataHandler:
                     buffer_start,
                     buffer_end,
                     chunk_bounds,
-                    chunk_coverage_ratio,
+                    reservoir_coverage,
                 )
                 self._update_position(
                     position_id,
@@ -226,12 +216,12 @@ class ServerDataHandler:
                 )
             else:
                 logger.debug(
-                    "[RANGE] request=%s position=%s action=reuse_existing_stream buffer_bounds=%s chunk_bounds=%s chunk_coverage_ratio=%.3f",
+                    "[RANGE] request=%s position=%s action=reuse_existing_reservoir buffer_bounds=%s reservoir_bounds=%s reservoir_coverage=%.3f",
                     request_id,
                     position_id,
                     buffer_bounds,
                     chunk_bounds,
-                    chunk_coverage_ratio,
+                    reservoir_coverage,
                 )
 
     def _update_position(
@@ -383,25 +373,6 @@ class ServerDataHandler:
             viewport_start_ms = start_ms
         if viewport_end_ms is None:
             viewport_end_ms = end_ms
-        viewport_width_seconds = abs(viewport_end_ms - viewport_start_ms) / 1000.0
-        spectrogram_max_viewport_seconds = self._position_max_spectrogram_viewport_seconds(
-            position_data,
-            sample_period_seconds,
-        )
-        if spectrogram_max_viewport_seconds is not None and viewport_width_seconds > spectrogram_max_viewport_seconds:
-            logger.debug(
-                "[SPEC SKIP] position=%s reason=viewport_exceeds_chunk_window viewport_width_s=%.3f max_chunk_window_s=%.3f range=(%s, %s) viewport=(%s, %s)",
-                position_id,
-                viewport_width_seconds,
-                spectrogram_max_viewport_seconds,
-                start_ms,
-                end_ms,
-                viewport_start_ms,
-                viewport_end_ms,
-            )
-            if position_id is not None:
-                self._spectrogram_chunk_bounds.pop(position_id, None)
-            return
         subset_started_at = time.perf_counter()
         param_columns = [col for col in df.columns if col.startswith(f"{param}_")]
         subset_ms = (time.perf_counter() - subset_started_at) * 1000
@@ -437,24 +408,19 @@ class ServerDataHandler:
                 end_ms,
                 param,
             )
-        
-        # Stream chunk-only log spectrogram data (Phase 2 optimization)
-        # Instead of sending full backing arrays, send only the fixed-size chunk
-        # that matches the browser's buffer. This reduces payload from 35M+ elements
-        # to just the fixed chunk_time_length * n_freqs cells.
+
+        # Stream reservoir payload: send the full prepared data as NumPy arrays.
+        # The browser extracts the visible display chunk from this reservoir,
+        # allowing panning within the reservoir without a new server round-trip.
         prepare_started_at = time.perf_counter()
         prepared = self.processor.prepare_single_spectrogram_data(
             sliced, param, self.chart_settings, use_dynamic_log_window=True
         )
         prepare_ms = (time.perf_counter() - prepare_started_at) * 1000
         if prepared:
-            # Validate that the log chunk buffer size matches the overview init buffer size.
-            # The overview is initialized with fixed_n_times = log_window_bins, so
-            # chunk_time_length here must equal that same value.
-            # n_freqs × chunk_time_length must equal the browser buffer cell count.
             log_cells = prepared['n_freqs'] * prepared['chunk_time_length']
             logger.debug(
-                "[SPEC] Log chunk: n_times=%s chunk_time_length=%s n_freqs=%s cells=%s",
+                "[SPEC] Reservoir: n_times=%s chunk_time_length=%s n_freqs=%s cells=%s",
                 prepared['n_times'],
                 prepared['chunk_time_length'],
                 prepared['n_freqs'],
@@ -472,109 +438,68 @@ class ServerDataHandler:
                     prepared['initial_glyph_data']['dw'][0],
                     log_cells,
                 )
-            
-            # Phase 2: Send CHUNK-ONLY payload instead of full backing arrays
-            # The initial_glyph_data.image already contains exactly the fixed-size chunk
-            # that the browser buffer expects. We send only this plus positioning metadata.
+
             build_started_at = time.perf_counter()
-            
-            # Determine which chunk to send based on viewport position within the buffered slice
-            # The prepared data may contain multiple chunks worth of data (buffered slice > fixed chunk)
+
+            # Build reservoir payload: send full prepared backing data as NumPy arrays.
+            # The browser will extract the display chunk client-side.
+            reservoir_times = np.asarray(prepared['times_ms'], dtype=np.float64)
+            reservoir_levels = np.asarray(prepared['levels_flat_transposed'], dtype=np.float32)
+            reservoir_n_times = len(reservoir_times)
+            reservoir_n_freqs = prepared['n_freqs']
             chunk_time_length = prepared['chunk_time_length']
-            prepared_times = prepared['times_ms']
-            total_prepared_times = len(prepared_times)
-            viewport_center_ms = (viewport_start_ms + viewport_end_ms) / 2
-            center_time_idx = bisect_left(prepared_times, viewport_center_ms)
-            center_time_idx = min(max(0, center_time_idx), max(0, total_prepared_times - 1))
 
-            chunk_idx = min(
-                max(0, center_time_idx // chunk_time_length),
-                max(0, (total_prepared_times - 1) // chunk_time_length)
-            )
-            chunk_start_idx = chunk_idx * chunk_time_length
-            chunk_end_idx = min(chunk_start_idx + chunk_time_length, total_prepared_times)
-            actual_chunk_length = chunk_end_idx - chunk_start_idx
-            if actual_chunk_length <= 0:
-                logger.debug(
-                    "[SPEC SKIP] position=%s reason=empty_chunk chunk_idx=%s total_prepared_times=%s chunk_time_length=%s",
-                    position_id,
-                    chunk_idx,
-                    total_prepared_times,
-                    chunk_time_length,
-                )
-                if position_id is not None:
-                    self._spectrogram_chunk_bounds.pop(position_id, None)
-                return
-
-            chunk_times = prepared_times[chunk_start_idx:chunk_end_idx]
-            chunk_n_freqs = prepared['n_freqs']
-            if chunk_idx == 0:
-                chunk_image = prepared['initial_glyph_data']['image'][0]
-            else:
-                full_matrix = prepared['levels_flat_transposed'].reshape((chunk_n_freqs, total_prepared_times))
-                chunk_image = full_matrix[:, chunk_start_idx:chunk_end_idx]
-
-            chunk_x = [float(chunk_times[0])]
-            chunk_y = prepared['initial_glyph_data']['y']
-            chunk_dw = prepared['initial_glyph_data']['dw']
-            chunk_dh = prepared['initial_glyph_data']['dh']
             logger.debug(
-                "[SPEC CHUNK] position=%s viewport=(%s, %s) slice=(%s, %s) prepared=(%s, %s) center_ms=%s center_idx=%s chunk_idx=%s chunk_bounds=(%s, %s) chunk_len=%s total_prepared_times=%s",
+                "[SPEC RESERVOIR] position=%s viewport=(%s, %s) slice=(%s, %s) reservoir_n_times=%s chunk_time_length=%s n_freqs=%s",
                 position_id,
                 viewport_start_ms,
                 viewport_end_ms,
                 start_ms,
                 end_ms,
-                prepared_times[0] if prepared_times else None,
-                prepared_times[-1] if prepared_times else None,
-                viewport_center_ms,
-                center_time_idx,
-                chunk_idx,
-                chunk_times[0],
-                chunk_times[-1],
-                actual_chunk_length,
-                total_prepared_times,
+                reservoir_n_times,
+                chunk_time_length,
+                reservoir_n_freqs,
             )
 
-            chunk_n_times = len(chunk_times)
             new_data = {
-                'levels_flat_transposed': [chunk_image.ravel().tolist()],
-                'times_ms': [chunk_times],
+                'levels_flat_transposed': [reservoir_levels],
+                'times_ms': [reservoir_times],
                 'frequency_labels': [prepared['frequency_labels']],
                 'frequencies_hz': [prepared['frequencies_hz']],
-                'n_times': [chunk_n_times],
-                'n_freqs': [chunk_n_freqs],
-                'chunk_time_length': [prepared['chunk_time_length']],
+                'n_times': [reservoir_n_times],
+                'n_freqs': [reservoir_n_freqs],
+                'chunk_time_length': [chunk_time_length],
                 'time_step': [prepared['time_step']],
                 'min_val': [prepared['min_val']],
                 'max_val': [prepared['max_val']],
-                'min_time': [chunk_times[0]],
-                'max_time': [chunk_times[-1]],
-                'initial_glyph_data_x': [chunk_x],
-                'initial_glyph_data_y': [chunk_y],
-                'initial_glyph_data_dw': [chunk_dw],
-                'initial_glyph_data_dh': [chunk_dh],
-                'initial_glyph_data_image': [chunk_image.tolist()],
+                'min_time': [float(reservoir_times[0])],
+                'max_time': [float(reservoir_times[-1])],
+                'initial_glyph_data_x': [prepared['initial_glyph_data']['x']],
+                'initial_glyph_data_y': [prepared['initial_glyph_data']['y']],
+                'initial_glyph_data_dw': [prepared['initial_glyph_data']['dw']],
+                'initial_glyph_data_dh': [prepared['initial_glyph_data']['dh']],
+                'initial_glyph_data_image': [prepared['initial_glyph_data']['image'][0].tolist()],
+                'is_reservoir_payload': [True],
             }
             build_ms = (time.perf_counter() - build_started_at) * 1000
 
             # Log data structure for verification
-            logger.debug(f"Pushing log spectrogram data: keys={list(new_data.keys())}")
+            logger.debug(f"Pushing reservoir spectrogram data: keys={list(new_data.keys())}")
             logger.debug(f"All columns have length 1 (Bokeh format): {all(len(v) == 1 for v in new_data.values())}")
 
             push_started_at = time.perf_counter()
             spectrogram_source.data = new_data
             if position_id is not None:
-                self._spectrogram_chunk_bounds[position_id] = (chunk_times[0], chunk_times[-1])
+                self._spectrogram_chunk_bounds[position_id] = (float(reservoir_times[0]), float(reservoir_times[-1]))
             push_ms = (time.perf_counter() - push_started_at) * 1000
             logger.info(
-                "[SPEC PERF] param=%s rows=%s bands=%s chunk_time_length=%s levels_len=%s times_len=%s subset_ms=%.1f slice_ms=%.1f prepare_ms=%.1f build_ms=%.1f push_ms=%.1f total_ms=%.1f",
+                "[SPEC PERF] param=%s rows=%s bands=%s chunk_time_length=%s reservoir_n_times=%s levels_len=%s subset_ms=%.1f slice_ms=%.1f prepare_ms=%.1f build_ms=%.1f push_ms=%.1f total_ms=%.1f",
                 param,
                 len(sliced),
                 len(param_columns),
-                prepared['chunk_time_length'],
-                len(new_data['levels_flat_transposed'][0]),
-                len(new_data['times_ms'][0]),
+                chunk_time_length,
+                reservoir_n_times,
+                len(reservoir_levels),
                 subset_ms,
                 slice_ms,
                 prepare_ms,

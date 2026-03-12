@@ -401,18 +401,29 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const overviewData = positionGlyphData?.overview?.prepared_params?.[parameter];
             
             // For log, reconstruct data from streaming source (Bokeh ColumnDataSource format)
-            // Server wraps EVERYTHING in single-element lists to satisfy Bokeh constraint
+            // Server wraps EVERYTHING in single-element lists to satisfy Bokeh constraint.
+            // Payloads may contain typed arrays (Float32Array, Float64Array) from NumPy
+            // or plain arrays from JSON serialization. We normalize both forms here.
             const streamedLogData = logSourceData?.times_ms ? (() => {
-                // Unwrap arrays from single-element lists
-                // Arrays: logSourceData.times_ms = [[...actual array...]]
-                // Scalars: logSourceData.n_times = [scalar_value]
-                const times = Array.isArray(logSourceData.times_ms[0]) ? logSourceData.times_ms[0] : logSourceData.times_ms;
-                const levels = Array.isArray(logSourceData.levels_flat_transposed[0]) ? logSourceData.levels_flat_transposed[0] : logSourceData.levels_flat_transposed;
-                const freqLabels = logSourceData.frequency_labels ? (Array.isArray(logSourceData.frequency_labels[0]) ? logSourceData.frequency_labels[0] : logSourceData.frequency_labels) : null;
-                const freqHz = logSourceData.frequencies_hz ? (Array.isArray(logSourceData.frequencies_hz[0]) ? logSourceData.frequencies_hz[0] : logSourceData.frequencies_hz) : null;
+                // Normalize helper: unwrap from single-element Bokeh list wrapper,
+                // handling both plain arrays and typed arrays.
+                const unwrapArray = (field) => {
+                    if (!field) return null;
+                    const inner = field[0];
+                    // Typed arrays (Float32Array, Float64Array etc.) are not plain arrays
+                    // but are valid numeric buffers — return them directly.
+                    if (inner != null && typeof inner === 'object' && ArrayBuffer.isView(inner)) return inner;
+                    if (Array.isArray(inner)) return inner;
+                    // Already unwrapped (no wrapping list)
+                    return field;
+                };
+
+                const times = unwrapArray(logSourceData.times_ms);
+                const levels = unwrapArray(logSourceData.levels_flat_transposed);
+                const freqLabels = logSourceData.frequency_labels ? unwrapArray(logSourceData.frequency_labels) : null;
+                const freqHz = logSourceData.frequencies_hz ? unwrapArray(logSourceData.frequencies_hz) : null;
 
                 // Unwrap scalar metadata from single-element lists (Bokeh transport format)
-                // Use server-provided metadata (ensures consistency with buffer sizing)
                 const n_times = logSourceData.n_times ? logSourceData.n_times[0] : times.length;
                 const n_freqs = logSourceData.n_freqs ? logSourceData.n_freqs[0] : (freqLabels?.length || freqHz?.length || 0);
                 const time_step = logSourceData.time_step ? logSourceData.time_step[0] : (n_times > 1 ? (times[n_times - 1] - times[0]) / (n_times - 1) : 0);
@@ -420,10 +431,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const min_val = logSourceData.min_val ? logSourceData.min_val[0] : 0;
                 const max_val = logSourceData.max_val ? logSourceData.max_val[0] : 100;
 
-                // Phase 2: Detect chunk-only payload from server
-                // Server sends exactly n_freqs * chunk_time_length elements instead of full backing array
+                // Detect payload type: reservoir (wider than display chunk) or legacy chunk-only
+                const isReservoirPayload = logSourceData.is_reservoir_payload
+                    ? !!logSourceData.is_reservoir_payload[0]
+                    : false;
                 const expectedChunkCells = n_freqs * chunk_time_length;
-                const isChunkOnlyPayload = levels.length === expectedChunkCells;
+                const isChunkOnlyPayload = !isReservoirPayload && levels.length === expectedChunkCells;
 
                 if (viewType === 'log') {
                     debugSpectrogram(position, 'unwrapped-log-source', {
@@ -432,6 +445,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         freqLabelsLen: freqLabels?.length,
                         firstTime: times?.[0],
                         lastTime: times?.[times?.length - 1],
+                        isReservoirPayload,
                         isChunkOnlyPayload,
                         expectedChunkCells,
                         n_freqs,
@@ -440,13 +454,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
 
                 // Reconstruct initial_glyph_data from flattened transport fields
-                // These fields are wrapped: [[x], [y], [dw], [dh]] format
                 let initial_glyph_data = null;
                 if (logSourceData.initial_glyph_data_image) {
-                    const imageData = Array.isArray(logSourceData.initial_glyph_data_image[0])
-                        ? logSourceData.initial_glyph_data_image[0]
-                        : logSourceData.initial_glyph_data_image;
-
+                    const imageData = unwrapArray(logSourceData.initial_glyph_data_image);
                     initial_glyph_data = {
                         x: logSourceData.initial_glyph_data_x ? logSourceData.initial_glyph_data_x[0] : [0],
                         y: logSourceData.initial_glyph_data_y ? logSourceData.initial_glyph_data_y[0] : [-0.5],
@@ -468,8 +478,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     min_val,
                     max_val,
                     initial_glyph_data,
-                    // Phase 2: Flag for chunk-only payload optimization
-                    _isChunkOnlyPayload: isChunkOnlyPayload
+                    _isChunkOnlyPayload: isChunkOnlyPayload,
+                    _isReservoirPayload: isReservoirPayload
                 };
             })() : null;
             const fallbackPreparedLogData = positionGlyphData?.log?.prepared_params?.[parameter] || null;
@@ -553,10 +563,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             finalDataToUse = logData;
                             displayMetadata = { type: 'log', reason: ' (Log Data)' }; // Explicitly label the log view
 
-                            const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs, _isChunkOnlyPayload } = finalDataToUse;
+                            const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs, _isChunkOnlyPayload, _isReservoirPayload } = finalDataToUse;
 
-                            // Phase 2: Fast path for chunk-only payloads from server
-                            // Server already extracted the exact chunk we need - use directly
+                            // Legacy fast path for chunk-only payloads (server already extracted the exact chunk)
                             if (_isChunkOnlyPayload) {
                                 debugSpectrogram(position, 'chunk-only-fast-path', {
                                     levelsLen: levels_flat_transposed.length,
@@ -565,21 +574,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                                     expectedCells: n_freqs * chunk_time_length
                                 });
 
-                                // Use initial_glyph_data directly - server already prepared it
-                                finalGlyphData = finalDataToUse.initial_glyph_data;
-
-                                // Apply frequency slicing if needed
                                 finalGlyphData = tryApplySpectrogramSlice(
                                     finalDataToUse,
                                     levels_flat_transposed,
-                                    0,  // Server chunk starts at index 0
+                                    0,
                                     chunk_time_length,
                                     position,
                                     dataCache,
                                     models
                                 );
                             } else {
-                                // Legacy path: Extract chunk from full backing array
+                                // Reservoir path (new) and legacy full-backing-array path:
+                                // Extract the fixed-size display chunk from the wider backing data client-side.
+                                // This is the same extraction logic used in static mode.
                                 const safeTimeStep = Number.isFinite(time_step) && time_step > 0 ? time_step : 1000;
                                 const rawViewportPoints = Number.isFinite(viewportWidth) && viewportWidth > 0
                                     ? Math.ceil(viewportWidth / safeTimeStep)
@@ -603,10 +610,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                                 }
                                 const targetChunkStartTimeStamp = viewportCenter - (targetChunkPoints * safeTimeStep / 2);
 
-                                // A more robust way to find the index, defaulting to 0 if the view is before the data starts.
                                 let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
                                 if (chunkStartTimeIdx === -1) {
-                                    // If the view is past the end of the data, show the last possible chunk.
                                     chunkStartTimeIdx = Math.max(0, n_times - targetChunkPoints);
                                 }
                                 chunkStartTimeIdx = Math.min(
@@ -628,12 +633,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                                     chunkStartTimeIdx,
                                     actualChunkPoints,
                                     chunkStartTime: times_ms?.[chunkStartTimeIdx],
-                                    chunkEndTime: times_ms?.[Math.min(n_times - 1, chunkStartTimeIdx + actualChunkPoints - 1)]
+                                    chunkEndTime: times_ms?.[Math.min(n_times - 1, chunkStartTimeIdx + actualChunkPoints - 1)],
+                                    isReservoir: _isReservoirPayload
                                 });
 
                                 const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, actualChunkPoints);
 
-                                // Apply paint-on-canvas frequency slicing for spectrogram
                                 finalGlyphData = tryApplySpectrogramSlice(
                                     finalDataToUse,
                                     chunk_image_full_freqs,
@@ -909,7 +914,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function _extractTimeChunkFromFlatData(flatData, n_freqs, n_times_total, start_time_idx, chunk_time_length) {
         try {
-            const typedFlatData = (flatData instanceof Float32Array) ? flatData : new Float32Array(flatData);
+            // Accept any typed array (Float32Array, Int16Array, etc.) or plain array.
+            // Only convert plain arrays; typed arrays already support .subarray().
+            const typedFlatData = ArrayBuffer.isView(flatData) ? flatData : new Float32Array(flatData);
             const chunk_data = new Float32Array(n_freqs * chunk_time_length);
             const end_time_idx = Math.min(start_time_idx + chunk_time_length, n_times_total);
             const actual_slice_width = end_time_idx - start_time_idx;
