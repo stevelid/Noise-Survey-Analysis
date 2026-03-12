@@ -424,10 +424,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const freqHz = logSourceData.frequencies_hz ? unwrapArray(logSourceData.frequencies_hz) : null;
 
                 // Unwrap scalar metadata from single-element lists (Bokeh transport format)
-                const n_times = logSourceData.n_times ? logSourceData.n_times[0] : times.length;
-                const n_freqs = logSourceData.n_freqs ? logSourceData.n_freqs[0] : (freqLabels?.length || freqHz?.length || 0);
+                const rawNTimes = Number(logSourceData.n_times ? logSourceData.n_times[0] : times?.length);
+                const rawNFreqs = Number(logSourceData.n_freqs ? logSourceData.n_freqs[0] : (freqLabels?.length || freqHz?.length || 0));
+                const safeNFreqs = Number.isFinite(rawNFreqs) && rawNFreqs > 0 ? Math.floor(rawNFreqs) : 0;
+                const inferredNTimes = safeNFreqs > 0 && levels?.length
+                    ? Math.floor(levels.length / safeNFreqs)
+                    : (times?.length || 0);
+                const n_times = Number.isFinite(rawNTimes) && rawNTimes > 0
+                    ? Math.min(Math.floor(rawNTimes), inferredNTimes || Math.floor(rawNTimes))
+                    : inferredNTimes;
+                const n_freqs = safeNFreqs;
                 const time_step = logSourceData.time_step ? logSourceData.time_step[0] : (n_times > 1 ? (times[n_times - 1] - times[0]) / (n_times - 1) : 0);
-                const chunk_time_length = logSourceData.chunk_time_length ? logSourceData.chunk_time_length[0] : (n_times > 0 ? times[n_times - 1] - times[0] + time_step : 0);
+                const rawChunkTimeLength = Number(logSourceData.chunk_time_length ? logSourceData.chunk_time_length[0] : n_times);
+                const chunk_time_length = Number.isFinite(rawChunkTimeLength) && rawChunkTimeLength > 0
+                    ? Math.min(Math.floor(rawChunkTimeLength), n_times || Math.floor(rawChunkTimeLength))
+                    : n_times;
                 const min_val = logSourceData.min_val ? logSourceData.min_val[0] : 0;
                 const max_val = logSourceData.max_val ? logSourceData.max_val[0] : 100;
 
@@ -435,13 +446,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const isReservoirPayload = logSourceData.is_reservoir_payload
                     ? !!logSourceData.is_reservoir_payload[0]
                     : false;
+                const levelsLength = levels?.length || 0;
                 const expectedChunkCells = n_freqs * chunk_time_length;
-                const isChunkOnlyPayload = !isReservoirPayload && levels.length === expectedChunkCells;
+                const isChunkOnlyPayload = !isReservoirPayload && levelsLength > 0 && levelsLength === expectedChunkCells;
 
                 if (viewType === 'log') {
                     debugSpectrogram(position, 'unwrapped-log-source', {
                         timesLen: times?.length,
-                        levelsLen: levels?.length,
+                        levelsLen: levelsLength,
                         freqLabelsLen: freqLabels?.length,
                         firstTime: times?.[0],
                         lastTime: times?.[times?.length - 1],
@@ -915,18 +927,50 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function _extractTimeChunkFromFlatData(flatData, n_freqs, n_times_total, start_time_idx, chunk_time_length) {
         try {
             // Accept any typed array (Float32Array, Int16Array, etc.) or plain array.
-            // Only convert plain arrays; typed arrays already support .subarray().
+            // Bokeh may hydrate NumPy buffers into custom typed-array wrappers whose
+            // `subarray()` implementation returns the full buffer, so copy by index.
             const typedFlatData = ArrayBuffer.isView(flatData) ? flatData : new Float32Array(flatData);
-            const chunk_data = new Float32Array(n_freqs * chunk_time_length);
-            const end_time_idx = Math.min(start_time_idx + chunk_time_length, n_times_total);
-            const actual_slice_width = end_time_idx - start_time_idx;
-            for (let i = 0; i < n_freqs; i++) {
-                const row_offset = i * n_times_total;
-                const slice_start_in_flat_array = row_offset + start_time_idx;
-                const source_row_start = slice_start_in_flat_array;
-                const source_row_end = slice_start_in_flat_array + actual_slice_width;
-                const row_slice = typedFlatData.subarray(source_row_start, source_row_end);
-                chunk_data.set(row_slice, i * chunk_time_length);
+            const safeFreqs = Number.isFinite(Number(n_freqs)) && Number(n_freqs) > 0
+                ? Math.floor(Number(n_freqs))
+                : 0;
+            if (!safeFreqs || !typedFlatData.length) {
+                return new Float32Array(0);
+            }
+
+            const inferredTotalTimes = Math.floor(typedFlatData.length / safeFreqs);
+            const requestedTotalTimes = Number.isFinite(Number(n_times_total)) && Number(n_times_total) > 0
+                ? Math.floor(Number(n_times_total))
+                : inferredTotalTimes;
+            const safeTotalTimes = Math.max(0, Math.min(requestedTotalTimes, inferredTotalTimes));
+            if (!safeTotalTimes) {
+                return new Float32Array(0);
+            }
+
+            const safeStart = Math.max(0, Math.min(
+                Number.isFinite(Number(start_time_idx)) ? Math.floor(Number(start_time_idx)) : 0,
+                Math.max(0, safeTotalTimes - 1)
+            ));
+            const requestedChunkLength = Number.isFinite(Number(chunk_time_length)) && Number(chunk_time_length) > 0
+                ? Math.floor(Number(chunk_time_length))
+                : safeTotalTimes;
+            const safeChunkLength = Math.max(1, Math.min(requestedChunkLength, safeTotalTimes - safeStart));
+            const chunk_data = new Float32Array(safeFreqs * safeChunkLength);
+
+            for (let i = 0; i < safeFreqs; i++) {
+                const source_row_start = (i * safeTotalTimes) + safeStart;
+                const remainingCells = typedFlatData.length - source_row_start;
+                if (remainingCells <= 0) {
+                    break;
+                }
+                const rowWidth = Math.min(safeChunkLength, remainingCells, safeTotalTimes - safeStart);
+                if (rowWidth <= 0) {
+                    continue;
+                }
+
+                const target_row_start = i * safeChunkLength;
+                for (let j = 0; j < rowWidth; j++) {
+                    chunk_data[target_row_start + j] = typedFlatData[source_row_start + j];
+                }
             }
             return chunk_data;
         }

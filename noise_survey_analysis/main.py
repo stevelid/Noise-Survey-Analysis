@@ -405,6 +405,28 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
                 },
                 name='session_status_source'
             )
+            control_state_source = ColumnDataSource(
+                data={
+                    'parameter': [None],
+                    'view_mode': [None],
+                    'updated_at': [0],
+                },
+                name='control_state_source'
+            )
+            automation_command_source = ColumnDataSource(
+                data={'command': [None], 'request_id': [None], 'payload': [None]},
+                name='automation_command_source'
+            )
+            automation_result_source = ColumnDataSource(
+                data={
+                    'request_id': [None],
+                    'success': [False],
+                    'message': [''],
+                    'data': [None],
+                    'updated_at': [0],
+                },
+                name='automation_result_source'
+            )
 
             def handle_static_export_request(payload=None, request_id=None):
                 logger.info(f"Session static export requested (request_id={request_id})")
@@ -454,6 +476,9 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
                 audio_status_source,
                 session_action_source=session_action_source,
                 session_status_source=session_status_source,
+                control_state_source=control_state_source,
+                automation_command_source=automation_command_source,
+                automation_result_source=automation_result_source,
             )
             dash_builder.build_layout(
                 doc,
@@ -468,6 +493,9 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
             doc.add_root(audio_status_source)
             doc.add_root(session_action_source)
             doc.add_root(session_status_source)
+            doc.add_root(control_state_source)
+            doc.add_root(automation_command_source)
+            doc.add_root(automation_result_source)
             if STREAMING_ENABLED:
                 server_data_handler = ServerDataHandler(doc, app_data, CHART_SETTINGS)
                 app_callbacks.set_server_data_handler(server_data_handler)
@@ -478,14 +506,45 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
             # --- Register session with the control bridge ---
             try:
                 master_x_range = doc.get_model_by_name('master_x_range')
+                param_select = doc.get_model_by_name('global_parameter_selector')
+                view_toggle = doc.get_model_by_name('global_view_toggle')
+                control_state_source = doc.get_model_by_name('control_state_source')
                 automation_command_source = doc.get_model_by_name('automation_command_source')
                 automation_result_source = doc.get_model_by_name('automation_result_source')
                 _session_bridge.register(
                     doc,
                     master_x_range=master_x_range,
+                    param_select=param_select,
+                    view_toggle=view_toggle,
+                    control_state_source=control_state_source,
                     automation_command_source=automation_command_source,
                     automation_result_source=automation_result_source,
                 )
+
+                def _handle_automation_result(attr, old, new):
+                    try:
+                        request_id = new.get('request_id', [None])[0]
+                        if not request_id:
+                            return
+
+                        payload_raw = new.get('data', [None])[0]
+                        payload = payload_raw
+                        if isinstance(payload_raw, str) and payload_raw:
+                            try:
+                                payload = json.loads(payload_raw)
+                            except Exception:
+                                payload = payload_raw
+
+                        _session_bridge.record_js_result({
+                            'request_id': str(request_id),
+                            'success': bool(new.get('success', [False])[0]),
+                            'message': str(new.get('message', [''])[0] or ''),
+                            'data': payload,
+                        })
+                    except Exception as _result_exc:
+                        logger.warning("Could not process automation result payload: %s", _result_exc)
+
+                automation_result_source.on_change('data', _handle_automation_result)
             except Exception as _exc:
                 logger.warning("Could not register session bridge: %s", _exc)
 

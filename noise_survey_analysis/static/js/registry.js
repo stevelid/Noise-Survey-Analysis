@@ -50,6 +50,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (bokehModels?.sessionStatusSource) {
             models.sessionStatusSource = bokehModels.sessionStatusSource;
         }
+        if (bokehModels?.controlStateSource) {
+            models.controlStateSource = bokehModels.controlStateSource;
+        }
+        if (bokehModels?.automationCommandSource) {
+            models.automationCommandSource = bokehModels.automationCommandSource;
+        }
+        if (bokehModels?.automationResultSource) {
+            models.automationResultSource = bokehModels.automationResultSource;
+        }
 
         //Robustly find essential models by name from the Bokeh document
         if (window.Bokeh && Bokeh.documents[0]) {

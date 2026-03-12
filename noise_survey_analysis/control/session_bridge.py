@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import threading
+import time
 from typing import Any, Optional
 
 from .commands import ControlResult
@@ -31,6 +32,9 @@ class SessionBridge:
         self._lock = threading.Lock()
         self._doc: Any = None  # bokeh.document.Document
         self._master_x_range: Any = None  # bokeh Range1d or DataRange1d
+        self._param_select: Any = None  # Bokeh Select
+        self._view_toggle: Any = None  # Bokeh Toggle
+        self._control_state_source: Any = None  # ColumnDataSource
         self._automation_command_source: Any = None  # ColumnDataSource
         self._automation_result_source: Any = None  # ColumnDataSource
         # Pending result futures keyed by request_id
@@ -45,6 +49,9 @@ class SessionBridge:
         self,
         doc: Any,
         master_x_range: Any = None,
+        param_select: Any = None,
+        view_toggle: Any = None,
+        control_state_source: Any = None,
         automation_command_source: Any = None,
         automation_result_source: Any = None,
     ) -> None:
@@ -55,6 +62,9 @@ class SessionBridge:
         with self._lock:
             self._doc = doc
             self._master_x_range = master_x_range
+            self._param_select = param_select
+            self._view_toggle = view_toggle
+            self._control_state_source = control_state_source
             self._automation_command_source = automation_command_source
             self._automation_result_source = automation_result_source
         logger.info("SessionBridge: session registered (doc=%s)", type(doc).__name__)
@@ -64,6 +74,9 @@ class SessionBridge:
         with self._lock:
             self._doc = None
             self._master_x_range = None
+            self._param_select = None
+            self._view_toggle = None
+            self._control_state_source = None
             self._automation_command_source = None
             self._automation_result_source = None
         logger.info("SessionBridge: session unregistered")
@@ -82,6 +95,8 @@ class SessionBridge:
         with self._lock:
             active = self._doc is not None
             viewport: Optional[dict] = None
+            parameter: Optional[str] = None
+            view_mode: Optional[str] = None
             if active and self._master_x_range is not None:
                 try:
                     viewport = {
@@ -90,10 +105,25 @@ class SessionBridge:
                     }
                 except Exception:
                     pass
+            if active and self._param_select is not None:
+                try:
+                    parameter = str(self._param_select.value)
+                except Exception:
+                    pass
+            if active and self._view_toggle is not None:
+                try:
+                    view_mode = "log" if bool(self._view_toggle.active) else "overview"
+                except Exception:
+                    pass
 
         return ControlResult.ok(
             message="active" if active else "no active session",
-            data={"active": active, "viewport": viewport},
+            data={
+                "active": active,
+                "viewport": viewport,
+                "parameter": parameter,
+                "view_mode": view_mode,
+            },
             request_id=request_id,
         )
 
@@ -181,45 +211,87 @@ class SessionBridge:
         return self.set_viewport(start_f, end_f, request_id=request_id)
 
     # ------------------------------------------------------------------
-    # JS / store-backed commands (routed through automation_command_source)
+    # UI widget-backed commands
     # ------------------------------------------------------------------
 
     def set_parameter(
         self,
         value: str,
         request_id: str = "",
-        timeout: float = 5.0,
     ) -> ControlResult:
-        """Send a ``set_parameter`` command through the JS automation bridge."""
+        """Set the global parameter selector on the active Bokeh document."""
         try:
             value = validate_parameter(value)
         except ValueError as exc:
             return ControlResult.error(str(exc), request_id=request_id)
 
-        return self._send_js_command(
-            "set_parameter",
-            {"value": value},
+        with self._lock:
+            doc = self._doc
+            control_state_source = self._control_state_source
+
+        if doc is None:
+            return ControlResult.error("no active session", request_id=request_id)
+        if control_state_source is None:
+            return ControlResult.error(
+                "control_state_source not registered",
+                request_id=request_id,
+            )
+
+        def _apply() -> None:
+            try:
+                current = dict(control_state_source.data or {})
+                current["parameter"] = [value]
+                current["updated_at"] = [int(time.time() * 1000)]
+                control_state_source.data = current
+                logger.debug("SessionBridge.set_parameter: applied value=%s", value)
+            except Exception as exc:
+                logger.error("SessionBridge.set_parameter callback error: %s", exc)
+
+        doc.add_next_tick_callback(_apply)
+        return ControlResult.ok(
+            message=f"Parameter update scheduled: {value}",
+            data={"parameter": value},
             request_id=request_id,
-            timeout=timeout,
         )
 
     def set_view_mode(
         self,
         value: str,
         request_id: str = "",
-        timeout: float = 5.0,
     ) -> ControlResult:
-        """Send a ``set_view_mode`` command through the JS automation bridge."""
+        """Set the global log/overview toggle on the active Bokeh document."""
         try:
             value = validate_view_mode(value)
         except ValueError as exc:
             return ControlResult.error(str(exc), request_id=request_id)
 
-        return self._send_js_command(
-            "set_view_mode",
-            {"value": value},
+        with self._lock:
+            doc = self._doc
+            control_state_source = self._control_state_source
+
+        if doc is None:
+            return ControlResult.error("no active session", request_id=request_id)
+        if control_state_source is None:
+            return ControlResult.error(
+                "control_state_source not registered",
+                request_id=request_id,
+            )
+
+        def _apply() -> None:
+            try:
+                current = dict(control_state_source.data or {})
+                current["view_mode"] = [value]
+                current["updated_at"] = [int(time.time() * 1000)]
+                control_state_source.data = current
+                logger.debug("SessionBridge.set_view_mode: applied value=%s", value)
+            except Exception as exc:
+                logger.error("SessionBridge.set_view_mode callback error: %s", exc)
+
+        doc.add_next_tick_callback(_apply)
+        return ControlResult.ok(
+            message=f"View mode update scheduled: {value}",
+            data={"view_mode": value},
             request_id=request_id,
-            timeout=timeout,
         )
 
     def apply_workspace(
@@ -289,7 +361,7 @@ class SessionBridge:
         )
 
     # ------------------------------------------------------------------
-    # JS-bridge acknowledgement handling
+    # JS-bridge acknowledgement handling (workspace actions only)
     # ------------------------------------------------------------------
 
     def record_js_result(self, result_dict: dict) -> None:

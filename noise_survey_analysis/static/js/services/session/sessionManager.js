@@ -13,8 +13,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const SESSION_FILE_VERSION = 1;
     let initialStateApplied = false;
     let sessionStatusListenerAttached = false;
+    let automationListenerAttached = false;
+    let automationAttachRetryTimer = null;
+    let automationAttachRetryCount = 0;
     let lastSessionStatusUpdateAt = null;
+    let lastAutomationRequestId = null;
     let toastContainer = null;
+    const AUTOMATION_ATTACH_RETRY_DELAY_MS = 150;
+    const AUTOMATION_ATTACH_MAX_RETRIES = 40;
 
     function ensureToastContainer() {
         if (toastContainer && document.body?.contains(toastContainer)) {
@@ -995,6 +1001,25 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return app.registry?.models?.sessionStatusSource || null;
     }
 
+    function getAutomationCommandSource() {
+        return app.registry?.models?.automationCommandSource || null;
+    }
+
+    function getAutomationResultSource() {
+        return app.registry?.models?.automationResultSource || null;
+    }
+
+    function scheduleAutomationBridgeRetry() {
+        if (automationListenerAttached || automationAttachRetryTimer || automationAttachRetryCount >= AUTOMATION_ATTACH_MAX_RETRIES) {
+            return;
+        }
+        automationAttachRetryCount += 1;
+        automationAttachRetryTimer = window.setTimeout(() => {
+            automationAttachRetryTimer = null;
+            ensureAutomationBridge();
+        }, AUTOMATION_ATTACH_RETRY_DELAY_MS);
+    }
+
     function reportSessionStatus(sourceData) {
         if (!sourceData || typeof sourceData !== 'object') {
             return;
@@ -1042,6 +1067,127 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             reportSessionStatus(statusSource.data);
         });
         sessionStatusListenerAttached = true;
+    }
+
+    function publishAutomationResult(requestId, success, message, data = null) {
+        const resultSource = getAutomationResultSource();
+        if (!resultSource) {
+            return;
+        }
+
+        let serializedData = data;
+        if (data !== null && data !== undefined) {
+            try {
+                serializedData = JSON.stringify(data);
+            } catch (error) {
+                serializedData = String(data);
+            }
+        }
+
+        resultSource.data = {
+            request_id: [requestId || null],
+            success: [Boolean(success)],
+            message: [typeof message === 'string' ? message : String(message || '')],
+            data: [serializedData ?? null],
+            updated_at: [Date.now()]
+        };
+        if (resultSource.change && typeof resultSource.change.emit === 'function') {
+            resultSource.change.emit();
+        }
+    }
+
+    function executeAutomationCommand(command, payload) {
+        if (command === 'set_parameter') {
+            const value = typeof payload?.value === 'string' ? payload.value : null;
+            if (!value) {
+                throw new Error('set_parameter requires a value.');
+            }
+            const handler = app.services?.eventHandlers?.view?.handleParameterChange;
+            if (typeof handler !== 'function') {
+                throw new Error('Parameter change handler is unavailable.');
+            }
+            handler(value);
+            return { message: `Parameter updated to ${value}.` };
+        }
+
+        if (command === 'set_view_mode') {
+            const value = typeof payload?.value === 'string' ? payload.value : null;
+            if (value !== 'log' && value !== 'overview') {
+                throw new Error("set_view_mode requires 'log' or 'overview'.");
+            }
+            const handler = app.services?.eventHandlers?.view?.handleViewToggle;
+            if (typeof handler !== 'function') {
+                throw new Error('View toggle handler is unavailable.');
+            }
+            handler(value === 'log');
+            return { message: `View mode updated to ${value}.` };
+        }
+
+        if (command === 'apply_workspace') {
+            const workspacePayload = payload?.payload;
+            if (!workspacePayload || typeof workspacePayload !== 'object') {
+                throw new Error('apply_workspace requires a workspace payload.');
+            }
+            const applied = applyWorkspaceState(workspacePayload);
+            if (!applied) {
+                throw new Error('Workspace payload could not be applied.');
+            }
+            return { message: 'Workspace applied.' };
+        }
+
+        throw new Error(`Unsupported automation command '${command}'.`);
+    }
+
+    function handleAutomationCommand(sourceData) {
+        const requestId = typeof sourceData?.request_id?.[0] === 'string'
+            ? sourceData.request_id[0]
+            : '';
+        if (!requestId || requestId === lastAutomationRequestId) {
+            return;
+        }
+        lastAutomationRequestId = requestId;
+
+        const command = typeof sourceData?.command?.[0] === 'string'
+            ? sourceData.command[0]
+            : '';
+        try {
+            const rawPayload = sourceData?.payload?.[0];
+            let payload = {};
+            if (typeof rawPayload === 'string' && rawPayload) {
+                payload = JSON.parse(rawPayload);
+            } else if (rawPayload && typeof rawPayload === 'object') {
+                payload = rawPayload;
+            }
+            const result = executeAutomationCommand(command, payload);
+            publishAutomationResult(requestId, true, result?.message || 'OK', result?.data ?? null);
+        } catch (error) {
+            console.error('[Session] Automation command failed:', error);
+            publishAutomationResult(requestId, false, error?.message || String(error));
+        }
+    }
+
+    function ensureAutomationBridge() {
+        if (automationListenerAttached) {
+            return true;
+        }
+        const commandSource = getAutomationCommandSource();
+        if (!commandSource || !commandSource.change || typeof commandSource.change.connect !== 'function') {
+            scheduleAutomationBridgeRetry();
+            return false;
+        }
+
+        if (automationAttachRetryTimer) {
+            window.clearTimeout(automationAttachRetryTimer);
+            automationAttachRetryTimer = null;
+        }
+        automationAttachRetryCount = 0;
+
+        commandSource.change.connect(() => {
+            handleAutomationCommand(commandSource.data);
+        });
+        automationListenerAttached = true;
+        handleAutomationCommand(commandSource.data);
+        return true;
     }
 
     function triggerServerSessionAction(command, payload) {
@@ -1221,6 +1367,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleImportCsv,
         handleGenerateStaticHtml,
         handleImportAnnotations: handleImportCsv,
+        ensureSessionStatusListener,
+        ensureAutomationBridge,
         __testHelpers: testHelpers,
     };
 })(window.NoiseSurveyApp);

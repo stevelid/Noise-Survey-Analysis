@@ -33,6 +33,32 @@ logger = logging.getLogger(__name__)
 _TOKEN_FILE_SUFFIX = "nsa_control_token.txt"
 
 
+def _json_safe(value: Any) -> Any:
+    """Convert control payloads into JSON-serializable builtin types."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+
+    if hasattr(value, "item"):
+        try:
+            return _json_safe(value.item())
+        except Exception:
+            pass
+
+    if hasattr(value, "tolist"):
+        try:
+            return _json_safe(value.tolist())
+        except Exception:
+            pass
+
+    return str(value)
+
+
 class _ControlHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the control server."""
 
@@ -119,7 +145,7 @@ class _ControlHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"success": False, "message": "Not found"})
 
     def _send_json(self, code: int, payload: dict) -> None:
-        body = json.dumps(payload).encode("utf-8")
+        body = json.dumps(_json_safe(payload)).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))

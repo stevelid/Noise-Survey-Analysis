@@ -67,7 +67,10 @@ class DashBuilder:
                  audio_control_source: Optional[ColumnDataSource] = None, 
                  audio_status_source: Optional[ColumnDataSource] = None,
                  session_action_source: Optional[ColumnDataSource] = None,
-                 session_status_source: Optional[ColumnDataSource] = None):
+                 session_status_source: Optional[ColumnDataSource] = None,
+                 control_state_source: Optional[ColumnDataSource] = None,
+                 automation_command_source: Optional[ColumnDataSource] = None,
+                 automation_result_source: Optional[ColumnDataSource] = None):
         """
         The constructor is lightweight. It only stores references to core handlers
         and initializes containers for the components it will create.
@@ -77,6 +80,9 @@ class DashBuilder:
             audio_status_source: The shared CDS for receiving status. (Optional)
             session_action_source: Shared CDS for JS->Python session commands. (Optional)
             session_status_source: Shared CDS for Python->JS session status updates. (Optional)
+            control_state_source: Shared CDS for desired simple UI control state. (Optional)
+            automation_command_source: Shared CDS for Python->JS automation commands. (Optional)
+            automation_result_source: Shared CDS for JS->Python automation acknowledgements. (Optional)
         """ 
         self.audio_control_source = audio_control_source or ColumnDataSource(data={'command': [], 'position_id': [], 'value': []})
         self.audio_status_source = audio_status_source or ColumnDataSource(data={
@@ -103,6 +109,28 @@ class DashBuilder:
                 'updated_at': [0],
             },
             name='session_status_source'
+        )
+        self.control_state_source = control_state_source or ColumnDataSource(
+            data={
+                'parameter': [None],
+                'view_mode': [None],
+                'updated_at': [0],
+            },
+            name='control_state_source'
+        )
+        self.automation_command_source = automation_command_source or ColumnDataSource(
+            data={'command': [None], 'request_id': [None], 'payload': [None]},
+            name='automation_command_source'
+        )
+        self.automation_result_source = automation_result_source or ColumnDataSource(
+            data={
+                'request_id': [None],
+                'success': [False],
+                'message': [''],
+                'data': [None],
+                'updated_at': [0],
+            },
+            name='automation_result_source'
         )
         
         # These will be populated by the build process
@@ -730,6 +758,9 @@ class DashBuilder:
             'sessionMenu': self.shared_components['controls'].session_menu,
             'sessionActionSource': self.session_action_source,
             'sessionStatusSource': self.session_status_source,
+            'controlStateSource': self.control_state_source,
+            'automationCommandSource': self.automation_command_source,
+            'automationResultSource': self.automation_result_source,
             #'audio_control_source': self.audio_control_source,
             #'audio_status_source': self.audio_status_source,
             'globalAudioControls': self.shared_components['controls'].global_audio_controls,

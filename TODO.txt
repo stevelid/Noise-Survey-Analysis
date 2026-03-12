@@ -1,3 +1,16 @@
+# COMPLETED (2026-03)
+- ✅ Hybrid control system — CLI (`nsa-ctl`) and HTTP API for programmatic dashboard control
+- ✅ URL deep-link parameters — `start`, `end`, `param`, `view` for initial state
+
+# MANUAL TEST FINDINGS (2026-03-12)
+- Confirm the new single-frontend control path is the default architecture to keep:
+  - `status` JSON serialization is fixed.
+  - streamed spectrogram chunk extraction is fixed.
+  - `set-parameter` / `set-view` now use dedicated mirrored `control_state_source` state instead of the generic JS command/ack bridge.
+- Decide whether to retain the generic JS automation bridge only for `apply-workspace`, or replace that with a similarly dedicated state path later.
+- Fix startup hover wiring noise: browser console can still log `NoiseSurveyApp.eventHandlers.handleChartHover not defined!` before app init completes.
+- Investigate remaining non-fatal initial render warning: `Cannot read properties of undefined (reading 'render')`.
+
 1. compare mode - allow comparison of events in a single chart or between different / multiple positions. 
     If in the same chart, it will be two regions. 
     Perhaps this will automatically copy the same region to the other charts if doing a vertical rather than horizontal comparison. UI is important here. 

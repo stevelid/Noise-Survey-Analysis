@@ -29,6 +29,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const logStepSizeByPosition = {};
     const lineDisplayTypeByPosition = {};
+    let lastAppliedControlStateUpdateAt = null;
 
     app.dataCache = dataCache;
 
@@ -50,6 +51,79 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (state?.interaction?.activeDragTool !== 'pan') {
             app.store.dispatch(app.actions.dragToolChanged('pan'));
         }
+    }
+
+    function syncControlModelsToStore(models) {
+        const scheduleSync = (callback) => {
+            window.setTimeout(() => {
+                try {
+                    callback();
+                } catch (error) {
+                    console.error('[App]', 'Control model sync failed:', error);
+                }
+            }, 0);
+        };
+
+        if (models?.paramSelect?.change && typeof models.paramSelect.change.connect === 'function') {
+            models.paramSelect.change.connect(() => {
+                scheduleSync(() => {
+                    const nextValue = models.paramSelect?.value;
+                    const currentValue = app.store?.getState?.()?.view?.selectedParameter;
+                    if (typeof nextValue === 'string' && nextValue && nextValue !== currentValue) {
+                        app.eventHandlers.handleParameterChange(nextValue);
+                    }
+                });
+            });
+        }
+
+        if (models?.viewToggle?.change && typeof models.viewToggle.change.connect === 'function') {
+            models.viewToggle.change.connect(() => {
+                scheduleSync(() => {
+                    const nextIsLog = Boolean(models.viewToggle?.active);
+                    const currentViewType = app.store?.getState?.()?.view?.globalViewType;
+                    const nextViewType = nextIsLog ? 'log' : 'overview';
+                    if (nextViewType !== currentViewType) {
+                        app.eventHandlers.handleViewToggle(nextIsLog);
+                    }
+                });
+            });
+        }
+    }
+
+    function attachControlStateSource(models) {
+        const source = models?.controlStateSource;
+        if (!source?.change || typeof source.change.connect !== 'function') {
+            return;
+        }
+
+        source.change.connect(() => {
+            const sourceData = source.data || {};
+            const updatedAt = Number(sourceData.updated_at?.[0]);
+            if (Number.isFinite(updatedAt) && updatedAt === lastAppliedControlStateUpdateAt) {
+                return;
+            }
+            if (Number.isFinite(updatedAt)) {
+                lastAppliedControlStateUpdateAt = updatedAt;
+            }
+
+            const desiredParameter = typeof sourceData.parameter?.[0] === 'string'
+                ? sourceData.parameter[0]
+                : null;
+            const desiredViewMode = typeof sourceData.view_mode?.[0] === 'string'
+                ? sourceData.view_mode[0]
+                : null;
+
+            if (desiredParameter && models?.paramSelect?.value !== desiredParameter) {
+                models.paramSelect.value = desiredParameter;
+            }
+
+            if ((desiredViewMode === 'log' || desiredViewMode === 'overview') && models?.viewToggle) {
+                const desiredActive = desiredViewMode === 'log';
+                if (Boolean(models.viewToggle.active) !== desiredActive) {
+                    models.viewToggle.active = desiredActive;
+                }
+            }
+        });
     }
 
     /**
@@ -91,6 +165,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (models.audio_status_source) {
                 models.audio_status_source.patching.connect(app.eventHandlers.handleAudioStatusUpdate);
             }
+            attachControlStateSource(models);
+            syncControlModelsToStore(models);
 
             // Listen for server-pushed data updates to log sources (reservoir streaming)
             Object.keys(models.timeSeriesSources || {}).forEach(positionId => {
@@ -152,6 +228,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     app.session.applyInitialWorkspaceState();
                 } catch (error) {
                     console.error('[App]', 'Failed to apply initial workspace state:', error);
+                }
+            }
+            if (app.session && typeof app.session.ensureAutomationBridge === 'function') {
+                try {
+                    app.session.ensureAutomationBridge();
+                } catch (error) {
+                    console.error('[App]', 'Failed to attach automation bridge:', error);
                 }
             }
 
