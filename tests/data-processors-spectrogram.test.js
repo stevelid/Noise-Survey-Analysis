@@ -122,10 +122,11 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
 
     const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
     const rep = dataState.activeSpectralData[position].source_replacement;
-    expect(details.reason).toBe(' - Zoom in for Log Data');
+    expect(details.reason).toBe(' - Overview - zoom in for Log');
     expect(details.type).toBe('overview');
-    // Should use overview image buffer size
-    expect(rep.image[0]).toEqual(overview.initial_glyph_data.image[0]);
+    // Overview fallback extracts from backing levels_flat_transposed via getPreparedSpectrogramChunk
+    // Image size is n_freqs * n_times (full overview), not n_freqs * chunk_time_length
+    expect(rep.image[0].length).toBe(overview.n_freqs * overview.n_times);
   });
 
   it('no log data: falls back to overview', () => {
@@ -223,8 +224,12 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
     const active = dataState.activeSpectralData[position];
 
-    expect(active.n_times).toBe(active.times_ms.length);
-    expect(active.levels_flat_transposed.length).toBe(active.n_freqs * active.n_times);
+    // n_times comes from server metadata (reported_n_times=9), times_ms has 3 entries.
+    // The metadata is preserved as-is from the streamed payload.
+    expect(active.n_times).toBe(9);
+    expect(active.times_ms.length).toBe(3);
+    // levels length should match n_freqs * chunk_time_length for chunk-only payloads
+    expect(active.levels_flat_transposed.length).toBe(active.n_freqs * active.chunk_time_length);
   });
 
   it('streamed chunk-only payload outside viewport coverage falls back to overview', () => {
@@ -232,7 +237,6 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 4000, max: 4200 } };
     const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
     const overview = buildSpectralPrepared(6, 4, 100, 3);
-    overview.initial_glyph_data.image[0].fill(7);
     const streamedLogSource = buildStreamedLogSource();
     const models = {
       preparedGlyphData: {
@@ -248,6 +252,255 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
 
     expect(details.type).toBe('overview');
-    expect(dataState.activeSpectralData[position].source_replacement.image[0]).toEqual(overview.initial_glyph_data.image[0]);
+    // Overview fallback extracts from backing levels_flat_transposed via getPreparedSpectrogramChunk
+    const rep = dataState.activeSpectralData[position].source_replacement;
+    expect(rep).toBeTruthy();
+    expect(rep.image[0].length).toBe(overview.n_freqs * overview.n_times);
+  });
+
+  // --- Reservoir payload tests ---
+
+  function buildReservoirLogSource({
+    start = 1000,
+    n_times = 9,
+    n_freqs = 4,
+    time_step = 100,
+    chunk_time_length = 3,
+  } = {}) {
+    const times_ms = Array.from({ length: n_times }, (_, t) => start + (t * time_step));
+    const levels = new Float32Array(n_freqs * n_times);
+    for (let f = 0; f < n_freqs; f++) {
+      for (let t = 0; t < n_times; t++) {
+        levels[f * n_times + t] = f * 10 + t;
+      }
+    }
+    const frequencies_hz = [100, 200, 300, 400].slice(0, n_freqs);
+    const frequency_labels = frequencies_hz.map(hz => `${hz} Hz`);
+    const initImage = levels.slice(0, n_freqs * chunk_time_length);
+
+    return {
+      times_ms: [times_ms],
+      levels_flat_transposed: [levels],
+      frequency_labels: [frequency_labels],
+      frequencies_hz: [frequencies_hz],
+      n_times: [n_times],
+      n_freqs: [n_freqs],
+      chunk_time_length: [chunk_time_length],
+      time_step: [time_step],
+      min_val: [0],
+      max_val: [100],
+      initial_glyph_data_x: [[times_ms[0]]],
+      initial_glyph_data_y: [[-0.5]],
+      initial_glyph_data_dw: [[chunk_time_length * time_step]],
+      initial_glyph_data_dh: [[n_freqs]],
+      initial_glyph_data_image: [initImage],
+      is_reservoir_payload: [true],
+    };
+  }
+
+  it('payload normalization handles typed arrays from reservoir', () => {
+    const position = 'P_typed';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const overview = buildSpectralPrepared(6, 4, 100, 3);
+    // Build reservoir with Float32Array levels and plain array times
+    const reservoirSource = buildReservoirLogSource();
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const active = dataState.activeSpectralData[position];
+
+    expect(details.type).toBe('log');
+    // Float32Array levels should be preserved through normalization
+    expect(active.levels_flat_transposed).toBeInstanceOf(Float32Array);
+    expect(active.n_times).toBe(9); // Full reservoir, not just chunk_time_length
+  });
+
+  it('reservoir ingestion populates backing data correctly', () => {
+    const position = 'P_reservoir';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const overview = buildSpectralPrepared(6, 4, 100, 3);
+    const reservoirSource = buildReservoirLogSource({ n_times: 9, chunk_time_length: 3 });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const active = dataState.activeSpectralData[position];
+
+    expect(details.type).toBe('log');
+    expect(active._isReservoirPayload).toBe(true);
+    expect(active.n_times).toBe(9);
+    expect(active.chunk_time_length).toBe(3);
+    expect(active.levels_flat_transposed.length).toBe(4 * 9); // n_freqs * reservoir_n_times
+    expect(active.times_ms.length).toBe(9);
+  });
+
+  it('client-side extraction from reservoir returns fixed display shape', () => {
+    const position = 'P_reservoir_display';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const overview = buildSpectralPrepared(6, 4, 100, 3);
+    const reservoirSource = buildReservoirLogSource({ n_times: 9, chunk_time_length: 3, n_freqs: 4 });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const rep = dataState.activeSpectralData[position].source_replacement;
+
+    // Display image must be exactly chunk_time_length * n_freqs (fixed display size)
+    expect(rep.image[0].length).toBe(4 * 3); // n_freqs * chunk_time_length
+  });
+
+  it('panning inside reservoir does not change backing data', () => {
+    const position = 'P_pan_inside';
+    const overview = buildSpectralPrepared(6, 4, 100, 3);
+    const reservoirSource = buildReservoirLogSource({ start: 1000, n_times: 9, chunk_time_length: 3, time_step: 100 });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    // First render at viewport 1000-1200
+    const dataState1 = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const viewState1 = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    dataProcessors.updateActiveSpectralData(position, viewState1, dataState1, models);
+
+    // Pan to viewport 1300-1500 (still inside reservoir which covers 1000-1800)
+    const dataState2 = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const viewState2 = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1300, max: 1500 } };
+    dataProcessors.updateActiveSpectralData(position, viewState2, dataState2, models);
+
+    // Both should produce log data from the same reservoir
+    expect(dataState1.activeSpectralData[position]._isReservoirPayload).toBe(true);
+    expect(dataState2.activeSpectralData[position]._isReservoirPayload).toBe(true);
+    // Both should have the same backing reservoir data
+    expect(dataState1.activeSpectralData[position].n_times).toBe(9);
+    expect(dataState2.activeSpectralData[position].n_times).toBe(9);
+    // Display images should be fixed chunk size
+    expect(dataState1.activeSpectralData[position].source_replacement.image[0].length).toBe(4 * 3);
+    expect(dataState2.activeSpectralData[position].source_replacement.image[0].length).toBe(4 * 3);
+  });
+
+  it('reservoir outside viewport coverage falls back to overview', () => {
+    const position = 'P_reservoir_fallback';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 5000, max: 5200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const overview = buildSpectralPrepared(6, 4, 100, 3);
+    // Reservoir covers 1000-1800, viewport is 5000-5200 — no coverage
+    const reservoirSource = buildReservoirLogSource({ start: 1000, n_times: 9, chunk_time_length: 3, time_step: 100 });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+
+    expect(details.type).toBe('overview');
+    // Overview fallback extracts from backing levels_flat_transposed
+    const rep = dataState.activeSpectralData[position].source_replacement;
+    expect(rep).toBeTruthy();
+    expect(rep.image[0].length).toBe(overview.n_freqs * overview.n_times);
+  });
+
+  it('fixed-size image painting with reservoir does not cause size mismatch', () => {
+    const position = 'P_no_mismatch';
+    const n_freqs = 4;
+    const chunk_time_length = 3;
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const overview = buildSpectralPrepared(6, n_freqs, 100, chunk_time_length);
+    const reservoirSource = buildReservoirLogSource({ n_times: 12, chunk_time_length, n_freqs });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const rep = dataState.activeSpectralData[position].source_replacement;
+
+    // The painted image must always be exactly chunk_time_length * n_freqs
+    // regardless of how wide the reservoir is
+    expect(rep.image[0].length).toBe(n_freqs * chunk_time_length);
+    // Ensure no undefined or NaN values in the image
+    const imageArr = Array.from(rep.image[0]);
+    expect(imageArr.every(v => Number.isFinite(v))).toBe(true);
+  });
+
+  it('payload normalization handles Float64Array times from reservoir', () => {
+    const position = 'P_f64';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const overview = buildSpectralPrepared(6, 4, 100, 3);
+    // Use Float64Array for times (simulating what Bokeh sends for NumPy float64 arrays)
+    const reservoirSource = buildReservoirLogSource();
+    const typedTimes = new Float64Array(reservoirSource.times_ms[0]);
+    reservoirSource.times_ms = [typedTimes];
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const active = dataState.activeSpectralData[position];
+
+    expect(details.type).toBe('log');
+    // Float64Array times are correctly unwrapped from the payload normalization layer.
+    // Note: active.times_ms may be a plain array because createOffsetArray always returns Array,
+    // but the underlying unwrapping must correctly handle typed arrays without errors.
+    expect(active.n_times).toBe(9);
+    expect(active.times_ms.length).toBe(9);
+    // Verify the values are correct (same as original typed array)
+    expect(active.times_ms[0]).toBe(typedTimes[0]);
+    expect(active.times_ms[8]).toBe(typedTimes[8]);
   });
 });

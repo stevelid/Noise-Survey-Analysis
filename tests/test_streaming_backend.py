@@ -3,6 +3,7 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pandas as pd
 from bokeh.models import ColumnDataSource, Range1d
 
@@ -566,29 +567,29 @@ class StreamingBackendTests(unittest.TestCase):
 
         self.assertTrue(handler._buffer_covers_viewport("P_buffer_reuse", start_ms, end_ms))
 
-    def test_handle_range_update_refreshes_spectrogram_chunk_within_existing_buffer(self):
+    def test_handle_range_update_refreshes_reservoir_within_existing_buffer(self):
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
-        position = PositionData(name="P_chunk_refresh")
+        position = PositionData(name="P_reservoir_refresh")
         position.sample_periods_seconds = {0.1}
         position.log_spectral = pd.DataFrame({
             "Datetime": [base_time],
             "LZeq_100": [60],
             "LZeq_200": [65],
         })
-        handler = ServerDataHandler(FakeDoc({}), DummyDataManager({"P_chunk_refresh": position}), CHART_SETTINGS)
+        handler = ServerDataHandler(FakeDoc({}), DummyDataManager({"P_reservoir_refresh": position}), CHART_SETTINGS)
 
         viewport_start_ms = 30 * 60 * 1000
         viewport_end_ms = 42 * 60 * 1000
         buffer_start_ms = 24 * 60 * 1000
         buffer_end_ms = 96 * 60 * 1000
-        handler._buffer_bounds["P_chunk_refresh"] = (buffer_start_ms, buffer_end_ms)
-        handler._spectrogram_chunk_bounds["P_chunk_refresh"] = (24 * 60 * 1000, 36 * 60 * 1000)
+        handler._buffer_bounds["P_reservoir_refresh"] = (buffer_start_ms, buffer_end_ms)
+        handler._spectrogram_chunk_bounds["P_reservoir_refresh"] = (24 * 60 * 1000, 36 * 60 * 1000)
         handler._update_position = MagicMock()
 
         handler.handle_range_update(viewport_start_ms, viewport_end_ms)
 
         handler._update_position.assert_called_once_with(
-            "P_chunk_refresh",
+            "P_reservoir_refresh",
             buffer_start_ms,
             buffer_end_ms,
             viewport_start_ms=viewport_start_ms,
@@ -597,33 +598,46 @@ class StreamingBackendTests(unittest.TestCase):
             refresh_totals=False,
         )
 
-    def test_handle_range_update_skips_chunk_refresh_when_viewport_exceeds_spectrogram_window(self):
+    def test_handle_range_update_refreshes_reservoir_when_coverage_low_even_for_wide_viewport(self):
+        """With reservoir mode, the viewport-exceeds-chunk-window gate is removed.
+
+        Instead, the reservoir coverage ratio determines whether a refresh is needed.
+        A wide viewport that has low reservoir coverage should trigger a refresh.
+        """
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
-        position = PositionData(name="P_chunk_window_gate")
+        position = PositionData(name="P_reservoir_gate")
         position.sample_periods_seconds = {0.1}
         position.log_spectral = pd.DataFrame({
             "Datetime": [base_time],
             "LZeq_100": [60],
             "LZeq_200": [65],
         })
-        handler = ServerDataHandler(FakeDoc({}), DummyDataManager({"P_chunk_window_gate": position}), CHART_SETTINGS)
+        handler = ServerDataHandler(FakeDoc({}), DummyDataManager({"P_reservoir_gate": position}), CHART_SETTINGS)
 
         viewport_start_ms = 0
         viewport_end_ms = 40 * 60 * 1000
         buffer_start_ms = -4 * 60 * 1000
         buffer_end_ms = 44 * 60 * 1000
-        handler._buffer_bounds["P_chunk_window_gate"] = (buffer_start_ms, buffer_end_ms)
-        handler._spectrogram_chunk_bounds["P_chunk_window_gate"] = (10 * 60 * 1000, 25 * 60 * 1000)
+        handler._buffer_bounds["P_reservoir_gate"] = (buffer_start_ms, buffer_end_ms)
+        # Reservoir covers only 10-25 min out of 0-40 min viewport → ~37.5% coverage → refresh
+        handler._spectrogram_chunk_bounds["P_reservoir_gate"] = (10 * 60 * 1000, 25 * 60 * 1000)
         handler._update_position = MagicMock()
 
         handler.handle_range_update(viewport_start_ms, viewport_end_ms)
 
-        handler._update_position.assert_not_called()
+        # Should trigger a reservoir refresh (coverage < 80%)
+        handler._update_position.assert_called_once()
 
-    def test_update_log_spectrogram_skips_viewport_wider_than_fixed_chunk_window(self):
+    def test_update_log_spectrogram_streams_reservoir_for_wide_viewport(self):
+        """With reservoir mode, wide viewports are no longer skipped by _update_log_spectrogram.
+
+        The old chunk-window gate that blocked streaming when viewport exceeded
+        the fixed chunk window has been removed. The reservoir covers the full
+        prepared data and the browser extracts the display chunk client-side.
+        """
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
         times = pd.date_range(base_time, periods=20000, freq="100ms")
-        position = PositionData(name="P_spec_window_skip")
+        position = PositionData(name="P_spec_reservoir_wide")
         position.sample_periods_seconds = {0.1}
         position.log_spectral = pd.DataFrame({
             "Datetime": times,
@@ -632,36 +646,37 @@ class StreamingBackendTests(unittest.TestCase):
         })
         spectrogram_log_source = ColumnDataSource(data={})
         doc = FakeDoc({
-            "source_P_spec_window_skip_spectrogram_log": spectrogram_log_source,
-            "figure_P_spec_window_skip_spectrogram": DummyFigure(width=320),
+            "source_P_spec_reservoir_wide_spectrogram_log": spectrogram_log_source,
+            "figure_P_spec_reservoir_wide_spectrogram": DummyFigure(width=320),
         })
-        handler = ServerDataHandler(doc, DummyDataManager({"P_spec_window_skip": position}), CHART_SETTINGS)
-        handler._spectrogram_chunk_bounds["P_spec_window_skip"] = (1, 2)
+        handler = ServerDataHandler(doc, DummyDataManager({"P_spec_reservoir_wide": position}), CHART_SETTINGS)
 
         slice_start_ms = int(times[0].value // 10**6)
-        slice_end_ms = int((base_time + pd.Timedelta(minutes=44)).value // 10**6)
+        slice_end_ms = int((base_time + pd.Timedelta(minutes=33)).value // 10**6)
         viewport_start_ms = int((base_time + pd.Timedelta(minutes=4)).value // 10**6)
-        viewport_end_ms = int((base_time + pd.Timedelta(minutes=44)).value // 10**6)
+        viewport_end_ms = int((base_time + pd.Timedelta(minutes=33)).value // 10**6)
 
         handler._update_log_spectrogram(
             position.log_spectral,
-            handler.position_models["P_spec_window_skip"],
+            handler.position_models["P_spec_reservoir_wide"],
             slice_start_ms,
             slice_end_ms,
             viewport_start_ms=viewport_start_ms,
             viewport_end_ms=viewport_end_ms,
-            position_id="P_spec_window_skip",
+            position_id="P_spec_reservoir_wide",
             position_data=position,
             sample_period_seconds=0.1,
         )
 
-        self.assertEqual(spectrogram_log_source.data, {})
-        self.assertNotIn("P_spec_window_skip", handler._spectrogram_chunk_bounds)
+        # Reservoir streaming should succeed
+        self.assertNotEqual(spectrogram_log_source.data, {})
+        self.assertTrue(spectrogram_log_source.data["is_reservoir_payload"][0])
+        self.assertIn("P_spec_reservoir_wide", handler._spectrogram_chunk_bounds)
 
-    def test_streamed_chunk_payload_reports_chunk_local_lengths(self):
+    def test_streamed_reservoir_payload_reports_consistent_lengths(self):
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
         times = pd.date_range(base_time, periods=10000, freq="100ms")
-        position = PositionData(name="P_long_chunk")
+        position = PositionData(name="P_long_reservoir")
         position.log_spectral = pd.DataFrame({
             "Datetime": times,
             "LZeq_100": [60 + (idx % 5) for idx in range(len(times))],
@@ -669,31 +684,32 @@ class StreamingBackendTests(unittest.TestCase):
         })
         spectrogram_log_source = ColumnDataSource(data={})
         doc = FakeDoc({
-            "source_P_long_chunk_spectrogram_log": spectrogram_log_source,
-            "figure_P_long_chunk_spectrogram": DummyFigure(width=320),
+            "source_P_long_reservoir_spectrogram_log": spectrogram_log_source,
+            "figure_P_long_reservoir_spectrogram": DummyFigure(width=320),
         })
-        handler = ServerDataHandler(doc, DummyDataManager({"P_long_chunk": position}), CHART_SETTINGS)
+        handler = ServerDataHandler(doc, DummyDataManager({"P_long_reservoir": position}), CHART_SETTINGS)
 
         start_ms = int(times[0].value // 10**6)
         end_ms = int(times[-1].value // 10**6)
-        handler._update_log_spectrogram(position.log_spectral, handler.position_models["P_long_chunk"], start_ms, end_ms)
+        handler._update_log_spectrogram(position.log_spectral, handler.position_models["P_long_reservoir"], start_ms, end_ms)
 
         payload = spectrogram_log_source.data
         times_len = len(payload["times_ms"][0])
         levels_len = len(payload["levels_flat_transposed"][0])
         n_times = payload["n_times"][0]
         n_freqs = payload["n_freqs"][0]
-        chunk_time_length = payload["chunk_time_length"][0]
 
+        # Reservoir payload: n_times matches the full reservoir, not just one chunk
         self.assertEqual(times_len, n_times)
         self.assertEqual(levels_len, n_freqs * n_times)
-        self.assertEqual(n_times, chunk_time_length)
+        # Reservoir is flagged
+        self.assertTrue(payload["is_reservoir_payload"][0])
 
-    def test_streamed_later_chunk_payload_uses_chunk_local_metadata(self):
+    def test_streamed_reservoir_payload_covers_full_slice(self):
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
         periods = 72 * 60 * 10
         times = pd.date_range(base_time, periods=periods, freq="100ms")
-        position = PositionData(name="P_later_chunk")
+        position = PositionData(name="P_reservoir_full")
         position.sample_periods_seconds = {0.1}
         position.log_spectral = pd.DataFrame({
             "Datetime": times,
@@ -702,10 +718,10 @@ class StreamingBackendTests(unittest.TestCase):
         })
         spectrogram_log_source = ColumnDataSource(data={})
         doc = FakeDoc({
-            "source_P_later_chunk_spectrogram_log": spectrogram_log_source,
-            "figure_P_later_chunk_spectrogram": DummyFigure(width=320),
+            "source_P_reservoir_full_spectrogram_log": spectrogram_log_source,
+            "figure_P_reservoir_full_spectrogram": DummyFigure(width=320),
         })
-        handler = ServerDataHandler(doc, DummyDataManager({"P_later_chunk": position}), CHART_SETTINGS)
+        handler = ServerDataHandler(doc, DummyDataManager({"P_reservoir_full": position}), CHART_SETTINGS)
 
         slice_start_ms = int(times[0].value // 10**6)
         slice_end_ms = int(times[-1].value // 10**6)
@@ -714,34 +730,37 @@ class StreamingBackendTests(unittest.TestCase):
 
         handler._update_log_spectrogram(
             position.log_spectral,
-            handler.position_models["P_later_chunk"],
+            handler.position_models["P_reservoir_full"],
             slice_start_ms,
             slice_end_ms,
             viewport_start_ms=viewport_start_ms,
             viewport_end_ms=viewport_end_ms,
-            position_id="P_later_chunk",
+            position_id="P_reservoir_full",
         )
 
         payload = spectrogram_log_source.data
-        chunk_times = payload["times_ms"][0]
-        chunk_time_length = payload["chunk_time_length"][0]
-        levels = payload["levels_flat_transposed"][0]
+        reservoir_times = payload["times_ms"][0]
+        reservoir_levels = payload["levels_flat_transposed"][0]
+        n_times = payload["n_times"][0]
+        n_freqs = payload["n_freqs"][0]
 
-        self.assertGreaterEqual(chunk_times[0], viewport_start_ms)
-        self.assertEqual(payload["initial_glyph_data_x"][0][0], chunk_times[0])
-        self.assertEqual(payload["min_time"][0], chunk_times[0])
-        self.assertEqual(payload["max_time"][0], chunk_times[-1])
-        self.assertEqual(levels[0], 60)
-        self.assertEqual(levels[chunk_time_length], 65)
-        self.assertEqual(handler._spectrogram_chunk_bounds["P_later_chunk"], (chunk_times[0], chunk_times[-1]))
+        # Reservoir covers the full buffered slice, not just a viewport chunk
+        self.assertEqual(len(reservoir_times), n_times)
+        self.assertEqual(len(reservoir_levels), n_freqs * n_times)
+        # Reservoir starts at the beginning of the prepared data
+        self.assertEqual(payload["min_time"][0], float(reservoir_times[0]))
+        self.assertEqual(payload["max_time"][0], float(reservoir_times[-1]))
+        # Reservoir bounds tracked
+        self.assertEqual(
+            handler._spectrogram_chunk_bounds["P_reservoir_full"],
+            (float(reservoir_times[0]), float(reservoir_times[-1]))
+        )
+        self.assertTrue(payload["is_reservoir_payload"][0])
 
-    def test_wide_buffer_slice_sends_chunk_covering_viewport_center(self):
+    def test_wide_buffer_reservoir_covers_viewport(self):
         """
-        Contract test: When buffered slice exceeds one fixed chunk,
-        the streamed chunk must cover the viewport center, not just the first chunk.
-        
-        Example: 2s data, 60 min viewport, 50% buffer = 120 min buffered slice.
-        Fixed chunk = 60 min. The chunk at viewport center must be sent.
+        Contract test: The streamed reservoir must cover the viewport.
+        With reservoir mode, the full prepared data is sent — not just one chunk.
         """
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
         periods = 120 * 30
@@ -760,12 +779,9 @@ class StreamingBackendTests(unittest.TestCase):
         })
         handler = ServerDataHandler(doc, DummyDataManager({"P_wide_buffer": position}), CHART_SETTINGS)
 
-        # Viewport: 30-90 minutes (60 min viewport, centered at 60 min mark)
         viewport_start_ms = int((base_time + pd.Timedelta(minutes=30)).value // 10**6)
         viewport_end_ms = int((base_time + pd.Timedelta(minutes=90)).value // 10**6)
-        viewport_center_ms = (viewport_start_ms + viewport_end_ms) / 2
-        
-        # Update with buffer (will be 120 min total: 60 min viewport + 30 min buffer each side)
+
         buffer_start, buffer_end = handler._calculate_buffer(viewport_start_ms, viewport_end_ms, position)
         handler._update_position(
             "P_wide_buffer",
@@ -778,14 +794,166 @@ class StreamingBackendTests(unittest.TestCase):
 
         payload = spectrogram_log_source.data
         times_array = payload["times_ms"][0]
-        chunk_start_ms = times_array[0]
-        chunk_end_ms = times_array[-1]
+        n_times = payload["n_times"][0]
+        n_freqs = payload["n_freqs"][0]
 
-        # The streamed chunk must cover the viewport center
-        self.assertLessEqual(chunk_start_ms, viewport_center_ms,
-            f"Chunk start {chunk_start_ms} should be <= viewport center {viewport_center_ms}")
-        self.assertGreaterEqual(chunk_end_ms, viewport_center_ms,
-            f"Chunk end {chunk_end_ms} should be >= viewport center {viewport_center_ms}")
+        # Reservoir should have data
+        self.assertGreater(len(times_array), 0, "Reservoir should contain time points")
+        # Reservoir n_times matches actual times array length
+        self.assertEqual(len(times_array), n_times)
+        # Reservoir levels are consistent
+        self.assertEqual(len(payload["levels_flat_transposed"][0]), n_freqs * n_times)
+        self.assertTrue(payload["is_reservoir_payload"][0])
+        # Reservoir bounds should be tracked
+        bounds = handler._spectrogram_chunk_bounds.get("P_wide_buffer")
+        self.assertIsNotNone(bounds, "Reservoir bounds should be tracked")
+        self.assertEqual(bounds[0], float(times_array[0]))
+        self.assertEqual(bounds[1], float(times_array[-1]))
+
+
+    def test_reservoir_payload_uses_numpy_arrays_not_lists(self):
+        """Assert reservoir payload preserves NumPy arrays instead of .tolist()."""
+        base_time = pd.Timestamp("2024-01-01T00:00:00Z")
+        times = pd.date_range(base_time, periods=500, freq="100ms")
+        position = PositionData(name="P_numpy_check")
+        position.log_spectral = pd.DataFrame({
+            "Datetime": times,
+            "LZeq_100": [60 + (idx % 5) for idx in range(len(times))],
+            "LZeq_200": [65 + (idx % 5) for idx in range(len(times))],
+        })
+        spectrogram_log_source = ColumnDataSource(data={})
+        doc = FakeDoc({
+            "source_P_numpy_check_spectrogram_log": spectrogram_log_source,
+            "figure_P_numpy_check_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({"P_numpy_check": position}), CHART_SETTINGS)
+
+        start_ms = int(times[0].value // 10**6)
+        end_ms = int(times[-1].value // 10**6)
+        handler._update_log_spectrogram(
+            position.log_spectral,
+            handler.position_models["P_numpy_check"],
+            start_ms, end_ms,
+            position_id="P_numpy_check",
+        )
+
+        payload = spectrogram_log_source.data
+        levels = payload["levels_flat_transposed"][0]
+        times_data = payload["times_ms"][0]
+
+        self.assertIsInstance(levels, np.ndarray, "levels_flat_transposed should be NumPy array")
+        self.assertIsInstance(times_data, np.ndarray, "times_ms should be NumPy array")
+        self.assertEqual(levels.dtype, np.float32, "levels should be float32")
+        self.assertEqual(times_data.dtype, np.float64, "times should be float64")
+
+    def test_reservoir_column_data_source_outer_lengths_valid(self):
+        """Assert all ColumnDataSource columns have length 1 (Bokeh single-row format)."""
+        base_time = pd.Timestamp("2024-01-01T00:00:00Z")
+        times = pd.date_range(base_time, periods=200, freq="100ms")
+        position = PositionData(name="P_cds_check")
+        position.log_spectral = pd.DataFrame({
+            "Datetime": times,
+            "LZeq_100": [60 + (idx % 5) for idx in range(len(times))],
+            "LZeq_200": [65 + (idx % 5) for idx in range(len(times))],
+        })
+        spectrogram_log_source = ColumnDataSource(data={})
+        doc = FakeDoc({
+            "source_P_cds_check_spectrogram_log": spectrogram_log_source,
+            "figure_P_cds_check_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({"P_cds_check": position}), CHART_SETTINGS)
+
+        start_ms = int(times[0].value // 10**6)
+        end_ms = int(times[-1].value // 10**6)
+        handler._update_log_spectrogram(
+            position.log_spectral,
+            handler.position_models["P_cds_check"],
+            start_ms, end_ms,
+            position_id="P_cds_check",
+        )
+
+        payload = spectrogram_log_source.data
+        for key, val in payload.items():
+            self.assertEqual(len(val), 1, f"Column '{key}' should have outer length 1, got {len(val)}")
+
+    def test_reservoir_streaming_not_blocked_by_old_chunk_window_gate(self):
+        """Assert spectrogram streaming is allowed even when viewport exceeds old chunk window.
+
+        The old gating logic blocked streaming when viewport_width > spectrogram_max_viewport_seconds.
+        With reservoir mode, the viewport no longer has to fit inside one fixed chunk window.
+        """
+        base_time = pd.Timestamp("2024-01-01T00:00:00Z")
+        times = pd.date_range(base_time, periods=20000, freq="100ms")
+        position = PositionData(name="P_gate_check")
+        position.sample_periods_seconds = {0.1}
+        position.log_spectral = pd.DataFrame({
+            "Datetime": times,
+            "LZeq_100": [60 + (idx % 5) for idx in range(len(times))],
+            "LZeq_200": [65 + (idx % 5) for idx in range(len(times))],
+        })
+        spectrogram_log_source = ColumnDataSource(data={})
+        doc = FakeDoc({
+            "source_P_gate_check_spectrogram_log": spectrogram_log_source,
+            "figure_P_gate_check_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({"P_gate_check": position}), CHART_SETTINGS)
+
+        slice_start_ms = int(times[0].value // 10**6)
+        slice_end_ms = int((base_time + pd.Timedelta(minutes=33)).value // 10**6)
+        # Viewport wider than old 15-minute chunk window but narrower than max viewport
+        viewport_start_ms = int((base_time + pd.Timedelta(minutes=4)).value // 10**6)
+        viewport_end_ms = int((base_time + pd.Timedelta(minutes=24)).value // 10**6)
+
+        handler._update_log_spectrogram(
+            position.log_spectral,
+            handler.position_models["P_gate_check"],
+            slice_start_ms,
+            slice_end_ms,
+            viewport_start_ms=viewport_start_ms,
+            viewport_end_ms=viewport_end_ms,
+            position_id="P_gate_check",
+            position_data=position,
+            sample_period_seconds=0.1,
+        )
+
+        # With reservoir mode, this should NOT be skipped
+        self.assertNotEqual(spectrogram_log_source.data, {},
+            "Reservoir streaming should not be blocked by old chunk window gate")
+        self.assertTrue(spectrogram_log_source.data["is_reservoir_payload"][0])
+
+    def test_reservoir_refresh_on_coverage_drop(self):
+        """Assert reservoir is refreshed when coverage drops below 80%."""
+        base_time = pd.Timestamp("2024-01-01T00:00:00Z")
+        position = PositionData(name="P_refresh")
+        position.sample_periods_seconds = {0.1}
+        position.log_spectral = pd.DataFrame({
+            "Datetime": [base_time],
+            "LZeq_100": [60],
+            "LZeq_200": [65],
+        })
+        handler = ServerDataHandler(FakeDoc({}), DummyDataManager({"P_refresh": position}), CHART_SETTINGS)
+
+        # Set up existing buffer and reservoir bounds
+        viewport_start_ms = 30 * 60 * 1000
+        viewport_end_ms = 42 * 60 * 1000
+        buffer_start_ms = 24 * 60 * 1000
+        buffer_end_ms = 96 * 60 * 1000
+        handler._buffer_bounds["P_refresh"] = (buffer_start_ms, buffer_end_ms)
+        # Old reservoir covers 24-36 min, new viewport 30-42 min (< 80% coverage)
+        handler._spectrogram_chunk_bounds["P_refresh"] = (24 * 60 * 1000, 36 * 60 * 1000)
+        handler._update_position = MagicMock()
+
+        handler.handle_range_update(viewport_start_ms, viewport_end_ms)
+
+        handler._update_position.assert_called_once_with(
+            "P_refresh",
+            buffer_start_ms,
+            buffer_end_ms,
+            viewport_start_ms=viewport_start_ms,
+            viewport_end_ms=viewport_end_ms,
+            sample_period_seconds=0.1,
+            refresh_totals=False,
+        )
 
 
 if __name__ == "__main__":
