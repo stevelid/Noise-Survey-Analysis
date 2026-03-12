@@ -105,6 +105,7 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     const position = 'P1';
     const viewState = {
       globalViewType: 'log',
+      availablePositions: [position],
       selectedParameter: 'LAeq',
       viewport: { min: 0, max: 6000 }, // pointsInView = 6000 > MAX_SPECTRAL_POINTS_TO_RENDER
     };

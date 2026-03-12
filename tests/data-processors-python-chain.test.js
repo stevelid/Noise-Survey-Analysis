@@ -86,6 +86,7 @@ describe('Python -> JS spectrogram streaming contract', () => {
     const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
     const viewState = {
       globalViewType: 'log',
+      availablePositions: [fixture.position],
       selectedParameter: fixture.parameter,
       viewport: { min: caseSpec.min, max: caseSpec.max },
     };

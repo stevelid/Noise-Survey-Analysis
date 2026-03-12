@@ -10,7 +10,10 @@ from bokeh.models import ColumnDataSource, Range1d
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
 from noise_survey_analysis.core.config import CHART_SETTINGS
 from noise_survey_analysis.core.data_parsers import ParsedData
-from noise_survey_analysis.core.data_processors import GlyphDataProcessor
+from noise_survey_analysis.core.data_processors import (
+    GlyphDataProcessor,
+    estimate_log_spectral_threshold_seconds,
+)
 from noise_survey_analysis.core.data_manager import PositionData
 from noise_survey_analysis.core.server_data_handler import ServerDataHandler
 from noise_survey_analysis.visualization.dashBuilder import DashBuilder
@@ -987,6 +990,62 @@ class StreamingBackendTests(unittest.TestCase):
         handler.handle_range_update(viewport_start_ms, viewport_end_ms)
 
         handler._update_position.assert_not_called()
+
+    def test_estimate_log_spectral_threshold_seconds_detects_spectral_log_header(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "spectral_log.csv")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "Time (Date hh:mm:ss.ms),LZeq_8,LZeq_10,LZeq_12.5\n"
+                    "2026-03-02 16:22:30.000,40,41,42\n"
+                    "2026-03-02 16:22:30.100,43,44,45\n"
+                    "2026-03-02 16:22:30.200,46,47,48\n"
+                )
+
+            threshold = estimate_log_spectral_threshold_seconds(
+                [{"file_path": path}],
+                CHART_SETTINGS,
+            )
+
+        self.assertEqual(threshold, CHART_SETTINGS["spectrogram_log_window_min_ms"] / 1000.0)
+
+    def test_estimate_log_spectral_threshold_seconds_detects_svan_frequency_header(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "svan_log.csv")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "L348\n"
+                    "Serial: 143568  Meter: 971-2\n\n"
+                    ",,P3,1/3 Octave,1/3 Octave,1/3 Octave\n"
+                    ",,LZeq (TH) [dB],1/3 Oct LZeq (TH) [dB],1/3 Oct LZeq (TH) [dB],1/3 Oct LZeq (TH) [dB]\n"
+                    "Date & time,flags,,8 Hz,10 Hz,12.5 Hz\n"
+                    "2026-03-02 16:15:00.000,0.0,61.13,47.82,53.81,49.84\n"
+                    "2026-03-02 16:15:00.100,0.0,61.66,49.09,47.72,47.53\n"
+                )
+
+            threshold = estimate_log_spectral_threshold_seconds(
+                [{"file_path": path}],
+                CHART_SETTINGS,
+            )
+
+        self.assertEqual(threshold, CHART_SETTINGS["spectrogram_log_window_min_ms"] / 1000.0)
+
+    def test_estimate_log_spectral_threshold_seconds_ignores_totals_only_log_header(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "totals_only_log.csv")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "Time (Date hh:mm:ss.ms),LEQ dB-A,Lmax dB-A,L10 dB-A,L90 dB-A\n"
+                    "2026-03-02 16:22:30,44.9,46.6,46.7,42.5\n"
+                    "2026-03-02 16:22:31,44.8,46.4,46.5,42.4\n"
+                )
+
+            threshold = estimate_log_spectral_threshold_seconds(
+                [{"file_path": path}],
+                CHART_SETTINGS,
+            )
+
+        self.assertIsNone(threshold)
 
 
 if __name__ == "__main__":

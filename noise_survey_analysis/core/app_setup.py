@@ -78,32 +78,37 @@ def load_config_and_prepare_sources(config_path='config.json'):
         logger.info(f"Using config file's directory as the base path for sources: {base_path}")
 
 
-    # Group files by position, as the saved config has one entry per file
+    # Group files by position and parser type so mixed-position sources
+    # (for example totals + audio directory on the same position) retain the
+    # correct parser for each path bundle.
     grouped_sources = {}
     for source in config.get("sources", []):
         position = source.get("position")
         if not position:
             continue
 
-        if position not in grouped_sources:
-            grouped_sources[position] = {
+        parser_type = source.get("parser_type", "auto")
+        group_key = (position, parser_type)
+
+        if group_key not in grouped_sources:
+            grouped_sources[group_key] = {
                 "position_name": position,
                 "file_paths": set(),
-                "parser_type": source.get("parser_type", "auto"), # Assume parser is consistent per position
+                "parser_type": parser_type,
             }
 
         display_title = source.get("display_title") or source.get("display_name")
         if isinstance(display_title, str):
             stripped = display_title.strip()
             if stripped:
-                grouped_sources[position].setdefault("display_title", stripped)
+                grouped_sources[group_key].setdefault("display_title", stripped)
 
         # Resolve the relative path from the config file's location
         relative_path = source.get("path")
         if relative_path:
             absolute_path = os.path.abspath(os.path.join(base_path, relative_path))
             if os.path.exists(absolute_path):
-                grouped_sources[position]["file_paths"].add(absolute_path)
+                grouped_sources[group_key]["file_paths"].add(absolute_path)
             else:
                 logger.warning(f"File not found and will be skipped: {absolute_path}")
 

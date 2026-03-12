@@ -34,7 +34,10 @@ from noise_survey_analysis.ui.components import (
     MarkerPanelComponent,
     SidePanelComponent,
 )
-from noise_survey_analysis.core.data_processors import GlyphDataProcessor
+from noise_survey_analysis.core.data_processors import (
+    GlyphDataProcessor,
+    estimate_log_spectral_threshold_seconds,
+)
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
 from noise_survey_analysis.core.data_manager import DataManager, PositionData # Ensure PositionData is imported
 from noise_survey_analysis.core.config import (
@@ -384,6 +387,10 @@ class DashBuilder:
                 'spectrogram': spec_component,
                 'position_controls': position_controls,
                 'has_log_spectral': position_data_obj.has_log_spectral,
+                'log_spectral_threshold_seconds': estimate_log_spectral_threshold_seconds(
+                    getattr(position_data_obj, 'log_file_paths', []),
+                    chart_settings
+                ),
             }
 
             controls_comp.add_visibility_checkbox(
@@ -742,6 +749,7 @@ class DashBuilder:
             'uiPositionElements': {},
             'positionHasLogData': {},  # per-position flag: whether log data exists (even if not yet loaded)
             'positionHasLogSpectral': {},  # per-position flag: whether log spectrogram data exists
+            'positionLogSpectralThresholdSeconds': {},  # per-position shared log switch threshold from deferred log metadata
             'clickLines': [],
             'hoverLines': [],
             'labels': [],
@@ -828,6 +836,7 @@ class DashBuilder:
             }
             js_models['positionHasLogData'][pos] = comp_dict['timeseries'].has_log_data
             js_models['positionHasLogSpectral'][pos] = bool(comp_dict.get('has_log_spectral'))
+            js_models['positionLogSpectralThresholdSeconds'][pos] = comp_dict.get('log_spectral_threshold_seconds')
 
             js_models['spectrogramSources'][pos] = {
                 'overview': comp_dict['spectrogram'].overview_source,

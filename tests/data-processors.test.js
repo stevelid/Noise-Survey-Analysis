@@ -452,9 +452,10 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
         });
 
-        it('should keep time history in overview when spectrogram is unavailable for the position in lockstep mode', () => {
+        it('should keep log time history active when spectrogram is unavailable for the position', () => {
             const viewState = {
                 globalViewType: 'log',
+                availablePositions: ['NS2'],
                 viewport: { min: 1000, max: 1600 }
             };
             const mockDataCache = { activeLineData: {} };
@@ -485,31 +486,25 @@ describe('NoiseSurveyApp.data_processors', () => {
                 positionHasLogData: { NS2: true },
                 config: { log_view_max_viewport_seconds: 3600 }
             };
-            const spectralDetails = {
-                requestedViewType: 'log',
-                type: 'overview',
-                reason: ' (Overview)',
-                statusCode: 'overview_only',
-                statusLabel: 'Overview data only'
-            };
+            const details = dataProcessors.updateActiveLineChartData('NS2', viewState, mockDataCache, models);
 
-            const details = dataProcessors.updateActiveLineChartData('NS2', viewState, mockDataCache, models, 0, spectralDetails);
-
-            expect(details.type).toBe('overview');
-            expect(details.statusCode).toBe('overview_only');
-            expect(mockDataCache.activeLineData.NS2.dataViewType).toBe('overview');
-            expect(mockDataCache.activeLineData.NS2.LAeq).toEqual([50, 51, 52]);
+            expect(details.type).toBe('log');
+            expect(details.statusCode).toBe('log_displayed');
+            expect(mockDataCache.activeLineData.NS2.dataViewType).toBe('log');
+            expect(mockDataCache.activeLineData.NS2.Datetime.length).toBe(7);
+            expect(mockDataCache.activeLineData.NS2.LAeq[0]).toBe(56);
         });
 
-        it('should mirror spectrogram fallback when log spectrogram exists for the position', () => {
+        it('should use the shared spectrogram threshold to keep line data in overview until all log-capable data can switch', () => {
             const viewState = {
                 globalViewType: 'log',
-                viewport: { min: 1000, max: 1600 }
+                availablePositions: ['P1', 'NS2'],
+                viewport: { min: 1000, max: 1201000 }
             };
             const mockDataCache = { activeLineData: {} };
             const models = {
                 timeSeriesSources: {
-                    P1: {
+                    NS2: {
                         overview: {
                             data: {
                                 Datetime: [0, 1000, 2000],
@@ -524,30 +519,119 @@ describe('NoiseSurveyApp.data_processors', () => {
                         }
                     }
                 },
-                spectrogramSources: {
+                preparedGlyphData: {
                     P1: {
-                        overview: { data: { image: [[1]] } },
-                        log: { data: {} }
+                        log: {
+                            prepared_params: {
+                                LZeq: {
+                                    initial_glyph_data: { dw: [900000] },
+                                    chunk_time_length: 9000,
+                                    time_step: 100
+                                }
+                            }
+                        }
                     }
                 },
-                positionHasLogData: { P1: true },
+                positionHasLogData: { NS2: true, P1: false },
                 config: { log_view_max_viewport_seconds: 3600 }
             };
-            const spectralDetails = {
-                requestedViewType: 'log',
-                type: 'overview',
-                reason: ' (Overview - Waiting for aligned Log Data...)',
-                statusCode: 'loading_log',
-                statusLabel: 'Waiting for aligned log data',
-                isLoading: true
-            };
 
-            const details = dataProcessors.updateActiveLineChartData('P1', viewState, mockDataCache, models, 0, spectralDetails);
+            const details = dataProcessors.updateActiveLineChartData('NS2', viewState, mockDataCache, models);
 
             expect(details.type).toBe('overview');
-            expect(details.statusCode).toBe('loading_log');
-            expect(mockDataCache.activeLineData.P1.dataViewType).toBe('overview');
-            expect(mockDataCache.activeLineData.P1.LAeq).toEqual([50, 51, 52]);
+            expect(details.statusCode).toBe('zoom_required');
+            expect(mockDataCache.activeLineData.NS2.dataViewType).toBe('overview');
+            expect(mockDataCache.activeLineData.NS2.LAeq).toEqual([50, 51, 52]);
+        });
+
+        it('should switch log time history once the shared spectrogram threshold is crossed', () => {
+            const viewState = {
+                globalViewType: 'log',
+                availablePositions: ['P1', 'NS2'],
+                viewport: { min: 1000, max: 601000 }
+            };
+            const mockDataCache = { activeLineData: {} };
+            const models = {
+                timeSeriesSources: {
+                    NS2: {
+                        overview: {
+                            data: {
+                                Datetime: [0, 1000, 2000],
+                                LAeq: [50, 51, 52]
+                            }
+                        },
+                        log: {
+                            data: {
+                                Datetime: [900, 1000, 1100, 1200, 1300, 1400, 1500, 1600],
+                                LAeq: [55, 56, 57, 58, 59, 60, 61, 62],
+                                LAFmax: [60, 61, 62, 63, 64, 65, 66, 67]
+                            }
+                        }
+                    }
+                },
+                preparedGlyphData: {
+                    P1: {
+                        log: {
+                            prepared_params: {
+                                LZeq: {
+                                    initial_glyph_data: { dw: [900000] },
+                                    chunk_time_length: 9000,
+                                    time_step: 100
+                                }
+                            }
+                        }
+                    }
+                },
+                positionHasLogData: { NS2: true, P1: false },
+                config: { log_view_max_viewport_seconds: 3600 }
+            };
+
+            const details = dataProcessors.updateActiveLineChartData('NS2', viewState, mockDataCache, models);
+
+            expect(details.type).toBe('log');
+            expect(details.statusCode).toBe('log_displayed');
+            expect(mockDataCache.activeLineData.NS2.dataViewType).toBe('log');
+            expect(mockDataCache.activeLineData.NS2.Datetime.length).toBe(7);
+        });
+
+        it('should honor the server-provided shared threshold before any spectrogram reservoir has been streamed', () => {
+            const viewState = {
+                globalViewType: 'log',
+                availablePositions: ['Residential', 'NS2'],
+                viewport: { min: 1000, max: 1201000 }
+            };
+            const mockDataCache = { activeLineData: {} };
+            const models = {
+                timeSeriesSources: {
+                    NS2: {
+                        overview: {
+                            data: {
+                                Datetime: [0, 1000, 2000],
+                                LAeq: [50, 51, 52]
+                            }
+                        },
+                        log: {
+                            data: {
+                                Datetime: [1000, 1100, 1200, 1300, 1400],
+                                LAeq: [55, 56, 57, 58, 59]
+                            }
+                        }
+                    }
+                },
+                positionHasLogData: { Residential: false, NS2: true },
+                positionLogSpectralThresholdSeconds: {
+                    Residential: 900,
+                    NS2: null
+                },
+                config: { log_view_max_viewport_seconds: 3600 }
+            };
+
+            const details = dataProcessors.updateActiveLineChartData('NS2', viewState, mockDataCache, models);
+
+            expect(details.type).toBe('overview');
+            expect(details.statusCode).toBe('zoom_required');
+            expect(mockDataCache.activeLineData.NS2.dataViewType).toBe('overview');
+            expect(mockDataCache.activeLineData.NS2.LAeq).toEqual([50, 51, 52]);
         });
     });
 });

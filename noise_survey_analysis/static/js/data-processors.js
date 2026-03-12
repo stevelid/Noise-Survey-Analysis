@@ -134,6 +134,69 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             : baseThresholdSeconds;
     }
 
+    function calculateSharedLogDisplayThreshold(models, viewState) {
+        const resolution = app.features?.view?.resolution;
+        let sharedThresholdSeconds = null;
+
+        if (resolution?.resolveLogThresholdSeconds) {
+            sharedThresholdSeconds = resolution.resolveLogThresholdSeconds(models, viewState, null);
+        }
+
+        if (!Number.isFinite(sharedThresholdSeconds) || sharedThresholdSeconds <= 0) {
+            const positions = Array.isArray(viewState?.availablePositions) ? viewState.availablePositions : [];
+            const fallbackThresholds = positions
+                .map(positionId => calculateLogViewThreshold(models, positionId, viewState?.logViewThreshold))
+                .filter(value => Number.isFinite(value) && value > 0);
+            sharedThresholdSeconds = fallbackThresholds.length ? Math.min(...fallbackThresholds) : Infinity;
+        }
+
+        const positions = Array.isArray(viewState?.availablePositions) ? viewState.availablePositions : [];
+        positions.forEach(positionId => {
+            const serverThresholdSeconds = Number(models?.positionLogSpectralThresholdSeconds?.[positionId]);
+            if (Number.isFinite(serverThresholdSeconds) && serverThresholdSeconds > 0) {
+                sharedThresholdSeconds = Math.min(sharedThresholdSeconds, serverThresholdSeconds);
+                return;
+            }
+
+            const preparedLogParams = models?.preparedGlyphData?.[positionId]?.log?.prepared_params;
+            let representativeLogData = preparedLogParams && typeof preparedLogParams === 'object'
+                ? Object.values(preparedLogParams).find(Boolean)
+                : null;
+            if (!representativeLogData) {
+                const sourceData = models?.spectrogramSources?.[positionId]?.log?.data;
+                const glyphDw = unwrapScalarValue(sourceData?.initial_glyph_data_dw)
+                    ?? unwrapScalarValue(sourceData?.initial_glyph_data?.dw);
+                const chunkTimeLength = unwrapScalarValue(sourceData?.chunk_time_length);
+                const timeStep = unwrapScalarValue(sourceData?.time_step);
+                if (Number.isFinite(Number(glyphDw)) || (Number.isFinite(Number(chunkTimeLength)) && Number.isFinite(Number(timeStep)))) {
+                    representativeLogData = {
+                        initial_glyph_data: { dw: [Number(glyphDw)] },
+                        chunk_time_length: Number(chunkTimeLength),
+                        time_step: Number(timeStep),
+                    };
+                }
+            }
+            if (!representativeLogData) {
+                return;
+            }
+
+            const spectralThresholdSeconds = calculateSpectrogramLogViewThreshold(
+                models,
+                positionId,
+                viewState?.logViewThreshold,
+                representativeLogData
+            );
+
+            if (Number.isFinite(spectralThresholdSeconds) && spectralThresholdSeconds > 0) {
+                sharedThresholdSeconds = Math.min(sharedThresholdSeconds, spectralThresholdSeconds);
+            }
+        });
+
+        return Number.isFinite(sharedThresholdSeconds) && sharedThresholdSeconds > 0
+            ? sharedThresholdSeconds
+            : Infinity;
+    }
+
     function cloneDataColumns(source) {
         if (!source || typeof source !== 'object') {
             return {};
@@ -459,17 +522,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             let nextActiveLine = null;
 
-            const shouldMirrorSpectrogramFallback = viewType === 'log'
-                && spectralDetails
-                && spectralDetails.requestedViewType === 'log'
-                && spectralDetails.type !== 'log'
-                && Boolean(models.spectrogramSources?.[position]);
-
             if (viewType === 'log') {
                 if (hasLogData) {
                     // Check viewport width against dynamic threshold (in milliseconds)
-                    const thresholdConfig = viewState.logViewThreshold;
-                    const logViewThresholdSeconds = calculateLogViewThreshold(models, position, thresholdConfig);
+                    const logViewThresholdSeconds = calculateSharedLogDisplayThreshold(models, viewState);
                     const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
                         ? effectiveMax - effectiveMin : Infinity;
                     const viewportWidthSeconds = viewportWidthMs / 1000;
@@ -488,25 +544,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             requestedViewType: viewType,
                             logDataExists,
                             requiresZoom: true,
-                        });
-                    } else if (shouldMirrorSpectrogramFallback) {
-                        const overviewClone = cloneDataColumns(overviewData || {});
-                        applyDatetimeOffset(overviewClone, positionOffsetMs);
-                        nextActiveLine = overviewClone;
-                        displayDetails = createDisplayMetadata({
-                            type: 'overview',
-                            reason: spectralDetails.reason || ' (Overview - Waiting for aligned Log Data...)',
-                            statusCode: spectralDetails.statusCode || 'loading_log',
-                            statusLabel: spectralDetails.statusLabel || 'Waiting for aligned log data',
-                            requestedViewType: viewType,
-                            logDataExists,
-                            isLoading: Boolean(spectralDetails.isLoading),
-                            requiresZoom: Boolean(spectralDetails.requiresZoom),
-                            coverageRatio: spectralDetails.coverageRatio,
-                            centeredChunkReady: spectralDetails.centeredChunkReady,
-                            selectedParameter: spectralDetails.selectedParameter,
-                            displayedParameter: spectralDetails.displayedParameter,
-                            parameterMismatch: Boolean(spectralDetails.parameterMismatch),
                         });
                     } else {
                         const startIndex = logData.Datetime.findIndex(t => t >= effectiveMin);
@@ -777,8 +814,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const effectiveMax = Number.isFinite(viewportMax) ? viewportMax - offsetMs : viewportMax;
             
             // Check viewport width against dynamic threshold (in milliseconds)
-            const thresholdConfig = viewState.logViewThreshold;
-            const logViewThresholdSeconds = calculateSpectrogramLogViewThreshold(models, position, thresholdConfig, logData);
+            const logViewThresholdSeconds = calculateSharedLogDisplayThreshold(models, viewState);
             const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
                 ? effectiveMax - effectiveMin : Infinity;
             const viewportWidthSeconds = viewportWidthMs / 1000;

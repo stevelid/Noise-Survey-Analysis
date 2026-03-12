@@ -4,6 +4,7 @@ import numpy as np
 import logging
 from typing import List, Dict, Optional, Set, Tuple, Any
 import math
+import re
 
 # Assuming PositionData is defined elsewhere and imported (e.g., from data_manager)
 import sys
@@ -106,6 +107,81 @@ def _peek_log_file_time_step_ms(log_file_paths: list) -> float:
     except Exception as exc:
         logger.debug(f"_peek_log_file_time_step_ms: could not read '{file_path}': {exc}")
         return 0.0
+
+
+def _peek_log_file_header_columns(log_file_paths: list) -> List[str]:
+    """
+    Read just enough of the first deferred log file to recover the header columns.
+    Returns an empty list if the file cannot be read or no header row is detected.
+    """
+    if not log_file_paths:
+        return []
+
+    file_path = log_file_paths[0].get('file_path', '')
+    if not file_path or not os.path.exists(file_path):
+        return []
+
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as fh:
+            raw = fh.read(8192)
+
+        lines = raw.splitlines()
+        delimiter = '\t' if any('\t' in l for l in lines[:20]) else ','
+
+        for line in lines[:40]:
+            cols = [c.strip().strip('"') for c in line.split(delimiter)]
+            normalized = [c.lower() for c in cols]
+            has_datetime = any('date' in col and 'time' in col for col in normalized)
+            has_split_date_time = any(col in ('date', 'start date') for col in normalized) and any(
+                col in ('time', 'start time') for col in normalized
+            )
+            if has_datetime or has_split_date_time:
+                return cols
+    except Exception as exc:
+        logger.debug(f"_peek_log_file_header_columns: could not read '{file_path}': {exc}")
+
+    return []
+
+
+def _header_has_spectral_log_columns(columns: List[str]) -> bool:
+    """
+    Detect third-octave style spectral columns from a deferred log-file header.
+    """
+    if not columns:
+        return False
+
+    spectral_pattern = re.compile(
+        r'^(?:l[a-z0-9]+|lc[a-z0-9]+|lz[a-z0-9]+)_[0-9]+(?:\.[0-9]+)?$',
+        re.IGNORECASE
+    )
+    hz_pattern = re.compile(r'^[0-9]+(?:\.[0-9]+)?\s*hz$', re.IGNORECASE)
+    for column in columns:
+        stripped = column.strip().strip('"')
+        normalized = stripped.replace(' ', '')
+        if spectral_pattern.match(normalized) or hz_pattern.match(stripped):
+            return True
+    return False
+
+
+def estimate_log_spectral_threshold_seconds(log_file_paths: list,
+                                            chart_settings: Optional[Dict] = None) -> Optional[float]:
+    """
+    Estimate the shared log-spectrogram switch threshold from a deferred log file.
+
+    Returns None when the deferred file does not appear to contain spectral bands.
+    """
+    if chart_settings is None:
+        chart_settings = CHART_SETTINGS.copy()
+
+    header_columns = _peek_log_file_header_columns(log_file_paths)
+    if not _header_has_spectral_log_columns(header_columns):
+        return None
+
+    log_time_step = _peek_log_file_time_step_ms(log_file_paths)
+    if log_time_step <= 0:
+        return None
+
+    return _calculate_spectrogram_log_window_ms(log_time_step, chart_settings) / 1000.0
 
 
 def _estimate_time_step_ms(times_ms: np.ndarray) -> float:

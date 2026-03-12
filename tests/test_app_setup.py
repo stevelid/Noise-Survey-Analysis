@@ -78,6 +78,51 @@ class AppSetupTests(unittest.TestCase):
             self.assertEqual(source["display_title"], "Living Room")
             self.assertEqual(source["file_paths"], {str(file_a.resolve()), str(file_b.resolve())})
 
+    def test_keeps_mixed_parser_sources_separate_for_one_position(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data_dir = root / "data"
+            config_dir = root / "configs"
+            data_dir.mkdir()
+            config_dir.mkdir()
+
+            summary_file = data_dir / "summary.csv"
+            audio_dir = data_dir / "audio"
+            summary_file.write_text("summary", encoding="utf-8")
+            audio_dir.mkdir()
+
+            config_path = config_dir / "job_config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "output_filename": "dashboard.html",
+                        "job_number": "5678",
+                        "sources": [
+                            {
+                                "position": "P1",
+                                "path": "../data/summary.csv",
+                                "parser_type": "svan",
+                            },
+                            {
+                                "position": "P1",
+                                "path": "../data/audio",
+                                "parser_type": "audio",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            _, sources, _ = load_config_and_prepare_sources(str(config_path))
+
+            self.assertEqual(len(sources), 2)
+            by_parser = {source["parser_type"]: source for source in sources}
+            self.assertEqual(by_parser["svan"]["position_name"], "P1")
+            self.assertEqual(by_parser["svan"]["file_paths"], {str(summary_file.resolve())})
+            self.assertEqual(by_parser["audio"]["position_name"], "P1")
+            self.assertEqual(by_parser["audio"]["file_paths"], {str(audio_dir.resolve())})
+
     def test_missing_or_invalid_config_returns_nones(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             missing_path = Path(temp_dir) / "missing.json"
