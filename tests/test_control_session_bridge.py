@@ -47,6 +47,16 @@ class _FakeCmdSource:
         self.data = {}
 
 
+class _FakeSelect:
+    def __init__(self, value=""):
+        self.value = value
+
+
+class _FakeToggle:
+    def __init__(self, active=False):
+        self.active = active
+
+
 # ---------------------------------------------------------------------------
 # Test cases
 # ---------------------------------------------------------------------------
@@ -186,48 +196,49 @@ class TestSessionBridgeFitFullRange(unittest.TestCase):
         self.assertTrue(result.success)
 
 
-class TestSessionBridgeJsBridgeFallback(unittest.TestCase):
-    """When no automation_command_source is registered, JS commands succeed
-    (fire-and-forget with a best-effort message)."""
+class TestSessionBridgeWidgetControls(unittest.TestCase):
+    """Simple UI controls are widget-backed and mirrored through control_state_source."""
 
     def test_set_parameter_no_session(self):
         bridge = SessionBridge()
         result = bridge.set_parameter("LAeq")
         self.assertFalse(result.success)
 
-    def test_set_parameter_no_cmd_source_returns_error(self):
+    def test_set_parameter_without_widget_or_control_state_returns_error(self):
         bridge = SessionBridge()
-        bridge.register(_ImmediateDoc())  # no cmd source
-        result = bridge.set_parameter("LAeq", timeout=0.0)
-        # With no automation_command_source the call must fail, not silently succeed.
+        bridge.register(_ImmediateDoc())
+        result = bridge.set_parameter("LAeq")
         self.assertFalse(result.success)
-        self.assertIn("automation_command_source", result.message)
+        self.assertIn("not registered", result.message)
 
     def test_set_view_mode_invalid_rejects(self):
         bridge = SessionBridge()
-        cmd_source = _FakeCmdSource()
-        bridge.register(_ImmediateDoc(), automation_command_source=cmd_source)
-        result = bridge.set_view_mode("bad_value", timeout=0.0)
+        toggle = _FakeToggle()
+        bridge.register(_ImmediateDoc(), view_toggle=toggle)
+        result = bridge.set_view_mode("bad_value")
         self.assertFalse(result.success)
 
-    def test_set_view_mode_valid(self):
+    def test_set_view_mode_valid_updates_widget_and_control_state(self):
         bridge = SessionBridge()
-        cmd_source = _FakeCmdSource()
-        bridge.register(_ImmediateDoc(), automation_command_source=cmd_source)
-        result = bridge.set_view_mode("overview", request_id="r1", timeout=0.0)
+        toggle = _FakeToggle(active=True)
+        control_state = _FakeCmdSource()
+        control_state.data = {"view_mode": [None], "updated_at": [0]}
+        bridge.register(_ImmediateDoc(), view_toggle=toggle, control_state_source=control_state)
+        result = bridge.set_view_mode("overview", request_id="r1")
         self.assertTrue(result.success)
-        self.assertEqual(cmd_source.data["command"], ["set_view_mode"])
+        self.assertFalse(toggle.active)
+        self.assertEqual(control_state.data["view_mode"], ["overview"])
 
-    def test_set_parameter_valid_writes_cmd_source(self):
+    def test_set_parameter_valid_updates_widget_and_control_state(self):
         bridge = SessionBridge()
-        cmd_source = _FakeCmdSource()
-        bridge.register(_ImmediateDoc(), automation_command_source=cmd_source)
-        result = bridge.set_parameter("LAeq", request_id="r2", timeout=0.0)
+        select = _FakeSelect(value="LAFmax")
+        control_state = _FakeCmdSource()
+        control_state.data = {"parameter": [None], "updated_at": [0]}
+        bridge.register(_ImmediateDoc(), param_select=select, control_state_source=control_state)
+        result = bridge.set_parameter("LAeq", request_id="r2")
         self.assertTrue(result.success)
-        self.assertEqual(cmd_source.data["command"], ["set_parameter"])
-        payload_raw = cmd_source.data["payload"][0]
-        payload = json.loads(payload_raw)
-        self.assertEqual(payload["value"], "LAeq")
+        self.assertEqual(select.value, "LAeq")
+        self.assertEqual(control_state.data["parameter"], ["LAeq"])
 
 
 class TestSessionBridgeApplyWorkspace(unittest.TestCase):
@@ -272,10 +283,9 @@ class TestSessionBridgeApplyWorkspace(unittest.TestCase):
 
 class TestSessionBridgeJsAcknowledgement(unittest.TestCase):
     def test_record_js_result_notifies_waiting_thread(self):
-        """record_js_result should unblock a waiting set_parameter call."""
+        """record_js_result should unblock a waiting apply_workspace call."""
         bridge = SessionBridge()
         cmd_source = _FakeCmdSource()
-        doc = _ImmediateDoc()
 
         # Override add_next_tick_callback to be truly async so the thread waits
         call_events = []
@@ -295,7 +305,11 @@ class TestSessionBridgeJsAcknowledgement(unittest.TestCase):
         results = []
 
         def _call():
-            r = bridge.set_parameter("LAeq", request_id="ack-test", timeout=2.0)
+            r = bridge.apply_workspace(
+                payload={"appState": {"selectedParameter": "LAeq"}},
+                request_id="ack-test",
+                timeout=2.0,
+            )
             results.append(r)
 
         t = threading.Thread(target=_call)
@@ -327,7 +341,11 @@ class TestSessionBridgeJsAcknowledgement(unittest.TestCase):
         results = []
 
         def _call():
-            r = bridge.set_view_mode("log", request_id="fail-ack", timeout=2.0)
+            r = bridge.apply_workspace(
+                payload={"appState": {"globalViewType": "log"}},
+                request_id="fail-ack",
+                timeout=2.0,
+            )
             results.append(r)
 
         t = threading.Thread(target=_call)

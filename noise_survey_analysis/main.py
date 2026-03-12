@@ -556,11 +556,11 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
 
             _view_override = _overrides.get('view')
             if _view_override is not None:
-                _session_bridge.set_view_mode(_view_override, timeout=0.0)
+                _session_bridge.set_view_mode(_view_override)
 
             _param_override = _overrides.get('param')
             if _param_override is not None:
-                _session_bridge.set_parameter(_param_override, timeout=0.0)
+                _session_bridge.set_parameter(_param_override)
 
         doc.add_next_tick_callback(build_dashboard)
     

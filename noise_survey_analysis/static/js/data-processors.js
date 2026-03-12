@@ -13,7 +13,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     const MAX_LOG_SPECTROGRAM_TIME_POINTS = 30000;
-    const LOG_SPECTROGRAM_BUFFER_RATIO = 0.5;
     const DEBUG_POSITION = 'Residential boundary (971-2, 440 m)';
 
     // Log view threshold default:
@@ -212,6 +211,170 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
+    function createDisplayMetadata(options = {}) {
+        const requestedViewType = options.requestedViewType === 'log' ? 'log' : 'overview';
+        const selectedParameter = typeof options.selectedParameter === 'string' && options.selectedParameter
+            ? options.selectedParameter
+            : null;
+        const displayedParameter = typeof options.displayedParameter === 'string' && options.displayedParameter
+            ? options.displayedParameter
+            : selectedParameter;
+
+        return {
+            type: typeof options.type === 'string' ? options.type : 'none',
+            reason: typeof options.reason === 'string' ? options.reason : '',
+            statusCode: typeof options.statusCode === 'string' ? options.statusCode : 'unknown',
+            statusLabel: typeof options.statusLabel === 'string' ? options.statusLabel : '',
+            requestedViewType,
+            displayedViewType: typeof options.type === 'string' ? options.type : 'none',
+            selectedParameter,
+            displayedParameter,
+            isLoading: Boolean(options.isLoading),
+            requiresZoom: Boolean(options.requiresZoom),
+            logDataExists: Boolean(options.logDataExists),
+            coverageRatio: Number.isFinite(options.coverageRatio) ? options.coverageRatio : null,
+            centeredChunkReady: options.centeredChunkReady === undefined ? null : Boolean(options.centeredChunkReady),
+            parameterMismatch: Boolean(options.parameterMismatch),
+        };
+    }
+
+    function unwrapScalarValue(value) {
+        if (Array.isArray(value)) {
+            return value.length ? unwrapScalarValue(value[0]) : null;
+        }
+        return value;
+    }
+
+    function buildOverviewSpectrogramFallback(overviewData, position, dataCache, models, metadataOptions = {}) {
+        const displayMetadata = createDisplayMetadata({
+            type: 'overview',
+            ...metadataOptions
+        });
+        const baseImage = getPreparedSpectrogramChunk(
+            overviewData,
+            0,
+            overviewData?.n_times
+        );
+        const finalGlyphData = tryApplySpectrogramSlice(
+            overviewData,
+            baseImage,
+            0,
+            overviewData?.n_times,
+            position,
+            dataCache,
+            models
+        );
+
+        return {
+            finalDataToUse: overviewData,
+            finalGlyphData,
+            displayMetadata
+        };
+    }
+
+    function assessSpectrogramLogReadiness(logData, viewportStart, viewportEnd) {
+        const times_ms = logData?.times_ms;
+        const n_times = Number(logData?.n_times);
+        const chunk_time_length = Number(logData?.chunk_time_length);
+        const time_step = Number(logData?.time_step);
+        if (!times_ms?.length || !Number.isFinite(n_times) || n_times <= 0) {
+            return {
+                coverageRatio: 0,
+                hasAdequateCoverage: false,
+                canCenterChunk: false,
+                chunkStartTimeIdx: 0,
+                actualChunkPoints: 0,
+                safeTimeStep: Number.isFinite(time_step) && time_step > 0 ? time_step : 1000,
+                targetChunkPoints: 0,
+                viewportWidth: 0,
+                logDataStart: null,
+                logDataEnd: null,
+            };
+        }
+
+        const safeViewportStart = Math.min(viewportStart, viewportEnd);
+        const safeViewportEnd = Math.max(viewportStart, viewportEnd);
+        const viewportWidth = Math.max(0, safeViewportEnd - safeViewportStart);
+        const logDataStart = Number(times_ms[0]);
+        const logDataEnd = Number(times_ms[times_ms.length - 1]);
+        const rawReservoirDisplayStart = unwrapScalarValue(logData?.initial_glyph_data_x)
+            ?? unwrapScalarValue(logData?.initial_glyph_data?.x);
+        const reservoirDisplayStart = Number.isFinite(Number(rawReservoirDisplayStart))
+            ? Number(rawReservoirDisplayStart)
+            : logDataStart;
+        const rawReservoirDisplayWidth = unwrapScalarValue(logData?.initial_glyph_data_dw)
+            ?? unwrapScalarValue(logData?.initial_glyph_data?.dw);
+        const reservoirDisplayWidth = Number.isFinite(Number(rawReservoirDisplayWidth)) && Number(rawReservoirDisplayWidth) > 0
+            ? Number(rawReservoirDisplayWidth)
+            : (Number.isFinite(time_step) && time_step > 0 && Number.isFinite(chunk_time_length) && chunk_time_length > 0
+                ? chunk_time_length * time_step
+                : Math.max(0, logDataEnd - logDataStart));
+        const reservoirDisplayEnd = reservoirDisplayStart + reservoirDisplayWidth;
+        const overlapStart = Math.max(safeViewportStart, logDataStart);
+        const overlapEnd = Math.min(safeViewportEnd, logDataEnd);
+        const overlapWidth = Math.max(0, overlapEnd - overlapStart);
+        const coverageRatio = viewportWidth > 0 ? (overlapWidth / viewportWidth) : 1;
+        const MIN_COVERAGE_RATIO = 0.98;
+        const hasAdequateCoverage = coverageRatio >= MIN_COVERAGE_RATIO;
+
+        const safeTimeStep = Number.isFinite(time_step) && time_step > 0 ? time_step : 1000;
+        const rawViewportPoints = viewportWidth > 0
+            ? Math.ceil(viewportWidth / safeTimeStep)
+            : chunk_time_length;
+        const viewportPoints = Math.max(
+            1,
+            Math.min(n_times, Number.isFinite(rawViewportPoints) ? rawViewportPoints : chunk_time_length)
+        );
+        const targetChunkPoints = Math.max(
+            1,
+            Math.min(n_times, Number.isFinite(chunk_time_length) && chunk_time_length > 0 ? Math.floor(chunk_time_length) : viewportPoints)
+        );
+        let viewportCenter = Number.isFinite(safeViewportStart) && Number.isFinite(safeViewportEnd)
+            ? (safeViewportStart + safeViewportEnd) / 2
+            : Number(times_ms[Math.max(0, Math.floor(n_times / 2))]);
+        if (!Number.isFinite(viewportCenter)) {
+            viewportCenter = Number(times_ms[Math.max(0, Math.floor(n_times / 2))]);
+        }
+
+        const targetChunkStartTimeStamp = viewportCenter - (targetChunkPoints * safeTimeStep / 2);
+        const targetChunkEndTimeStamp = viewportCenter + (targetChunkPoints * safeTimeStep / 2);
+        const centeredTolerance = safeTimeStep * 0.5;
+
+        let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
+        if (chunkStartTimeIdx === -1) {
+            chunkStartTimeIdx = Math.max(0, n_times - targetChunkPoints);
+        }
+        chunkStartTimeIdx = Math.min(
+            Math.max(0, chunkStartTimeIdx),
+            Math.max(0, n_times - targetChunkPoints)
+        );
+        const actualChunkPoints = Math.max(1, Math.min(targetChunkPoints, n_times - chunkStartTimeIdx));
+        const viewportWithinReservoir = safeViewportStart >= (reservoirDisplayStart - centeredTolerance)
+            && safeViewportEnd <= (reservoirDisplayEnd + safeTimeStep + centeredTolerance);
+        const canCenterChunk = viewportWithinReservoir && actualChunkPoints >= targetChunkPoints;
+
+        return {
+            coverageRatio,
+            hasAdequateCoverage,
+            canCenterChunk,
+            viewportWithinReservoir,
+            chunkStartTimeIdx,
+            actualChunkPoints,
+            safeTimeStep,
+            targetChunkPoints,
+            viewportWidth,
+            viewportCenter,
+            targetChunkStartTimeStamp,
+            targetChunkEndTimeStamp,
+            logDataStart,
+            logDataEnd,
+            reservoirDisplayStart,
+            reservoirDisplayEnd,
+            chunkStartTime: times_ms?.[chunkStartTimeIdx],
+            chunkEndTime: times_ms?.[Math.min(n_times - 1, chunkStartTimeIdx + actualChunkPoints - 1)],
+        };
+    }
+
 
     /**
      * _updateActiveData()
@@ -234,8 +397,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // Only process data for charts that are currently visible
             if (viewState.chartVisibility[tsChartName] || viewState.chartVisibility[specChartName]) {
                 const offsetMs = getChartOffsetMs(viewState, position);
-                const lineDetails = updateActiveLineChartData(position, viewState, dataCache, models, offsetMs);
                 const spectralDetails = updateActiveSpectralData(position, viewState, dataCache, models, offsetMs);
+                const lineDetails = updateActiveLineChartData(position, viewState, dataCache, models, offsetMs, spectralDetails);
 
                 if (lineDetails || spectralDetails) {
                     displayDetailsByPosition[position] = {
@@ -259,7 +422,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * @param {string} position - The position identifier for which the line chart data is updated.
      * @param {string} viewType - The type of view ('overview' or 'log') to determine data selection.
      */
-    function updateActiveLineChartData(position, viewState, dataCache, models, positionOffsetMs = 0) {
+    function updateActiveLineChartData(position, viewState, dataCache, models, positionOffsetMs = 0, spectralDetails = null) {
         try {
             if (!dataCache.activeLineData) {
                 dataCache.activeLineData = {};
@@ -273,7 +436,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // Whether log data exists on disk (even if not yet lazy-loaded)
             const logDataExists = models.positionHasLogData?.[position] ?? hasLogData;
 
-            let displayDetails = { type: 'overview', reason: ' (Overview - Enable Log View for detail)' }; // Default reason
+            let displayDetails = createDisplayMetadata({
+                type: 'overview',
+                reason: ' (Overview - Enable Log View for detail)',
+                statusCode: 'overview_selected',
+                statusLabel: logDataExists ? 'Overview selected' : 'Overview data only',
+                requestedViewType: viewType,
+                logDataExists,
+            });
 
             const viewportMin = Number(viewState.viewport?.min);
             const viewportMax = Number(viewState.viewport?.max);
@@ -281,6 +451,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const effectiveMax = Number.isFinite(viewportMax) ? viewportMax - positionOffsetMs : viewportMax;
 
             let nextActiveLine = null;
+
+            const shouldMirrorSpectrogramFallback = viewType === 'log'
+                && spectralDetails
+                && spectralDetails.requestedViewType === 'log'
+                && spectralDetails.type !== 'log'
+                && Boolean(models.spectrogramSources?.[position]);
 
             if (viewType === 'log') {
                 if (hasLogData) {
@@ -297,7 +473,34 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         const overviewClone = cloneDataColumns(overviewData || {});
                         applyDatetimeOffset(overviewClone, positionOffsetMs);
                         nextActiveLine = overviewClone;
-                        displayDetails = { type: 'overview', reason: ' - Overview - zoom in for Log' };
+                        displayDetails = createDisplayMetadata({
+                            type: 'overview',
+                            reason: ' - Overview - zoom in for Log',
+                            statusCode: 'zoom_required',
+                            statusLabel: 'Zoom in for log data',
+                            requestedViewType: viewType,
+                            logDataExists,
+                            requiresZoom: true,
+                        });
+                    } else if (shouldMirrorSpectrogramFallback) {
+                        const overviewClone = cloneDataColumns(overviewData || {});
+                        applyDatetimeOffset(overviewClone, positionOffsetMs);
+                        nextActiveLine = overviewClone;
+                        displayDetails = createDisplayMetadata({
+                            type: 'overview',
+                            reason: spectralDetails.reason || ' (Overview - Waiting for aligned Log Data...)',
+                            statusCode: spectralDetails.statusCode || 'loading_log',
+                            statusLabel: spectralDetails.statusLabel || 'Waiting for aligned log data',
+                            requestedViewType: viewType,
+                            logDataExists,
+                            isLoading: Boolean(spectralDetails.isLoading),
+                            requiresZoom: Boolean(spectralDetails.requiresZoom),
+                            coverageRatio: spectralDetails.coverageRatio,
+                            centeredChunkReady: spectralDetails.centeredChunkReady,
+                            selectedParameter: spectralDetails.selectedParameter,
+                            displayedParameter: spectralDetails.displayedParameter,
+                            parameterMismatch: Boolean(spectralDetails.parameterMismatch),
+                        });
                     } else {
                         const startIndex = logData.Datetime.findIndex(t => t >= effectiveMin);
                         const endIndex = logData.Datetime.findLastIndex(t => t <= effectiveMax);
@@ -307,7 +510,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             const overviewClone = cloneDataColumns(overviewData || {});
                             applyDatetimeOffset(overviewClone, positionOffsetMs);
                             nextActiveLine = overviewClone;
-                            displayDetails = { type: 'overview', reason: ' (Overview - Streaming Log Data...)' };
+                            displayDetails = createDisplayMetadata({
+                                type: 'overview',
+                                reason: ' (Overview - Streaming Log Data...)',
+                                statusCode: 'loading_log',
+                                statusLabel: 'Loading log data',
+                                requestedViewType: viewType,
+                                logDataExists,
+                                isLoading: true,
+                            });
                         } else {
                             // Log view: keep full-resolution data and only slice by viewport.
                             const sliceStart = startIndex;
@@ -325,7 +536,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             }
                             applyDatetimeOffset(chunk, positionOffsetMs);
                             nextActiveLine = chunk;
-                            displayDetails = { type: 'log', reason: ' (Log Data)' };
+                            displayDetails = createDisplayMetadata({
+                                type: 'log',
+                                reason: ' (Log Data)',
+                                statusCode: 'log_displayed',
+                                statusLabel: 'Showing log data',
+                                requestedViewType: viewType,
+                                logDataExists,
+                            });
                         }
                     }
                 } else {
@@ -333,24 +551,42 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     const overviewClone = cloneDataColumns(overviewData || {});
                     applyDatetimeOffset(overviewClone, positionOffsetMs);
                     nextActiveLine = overviewClone;
-                    displayDetails = { type: 'overview', reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)' };
+                    displayDetails = createDisplayMetadata({
+                        type: 'overview',
+                        reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)',
+                        statusCode: logDataExists ? 'loading_log' : 'overview_only',
+                        statusLabel: logDataExists ? 'Waiting for log data' : 'Overview data only',
+                        requestedViewType: viewType,
+                        logDataExists,
+                        isLoading: logDataExists,
+                    });
                 }
             } else {
                 // Overview view is explicitly active
                 const overviewClone = cloneDataColumns(overviewData || {});
                 applyDatetimeOffset(overviewClone, positionOffsetMs);
                 nextActiveLine = overviewClone;
-                displayDetails = { type: 'overview', reason: logDataExists ? ' (Overview - Enable Log View for detail)' : ' (Overview)' };
+                displayDetails = createDisplayMetadata({
+                    type: 'overview',
+                    reason: logDataExists ? ' (Overview - Enable Log View for detail)' : ' (Overview)',
+                    statusCode: 'overview_selected',
+                    statusLabel: logDataExists ? 'Overview selected' : 'Overview data only',
+                    requestedViewType: viewType,
+                    logDataExists,
+                });
             }
 
             if (nextActiveLine) {
                 dataCache.activeLineData[position] = {
                     ...nextActiveLine,
+                    dataViewType: displayDetails.type,
+                    displayDetails,
                     _offsetMs: positionOffsetMs
                 };
             } else {
                 dataCache.activeLineData[position] = {
-                    dataViewType: 'none'
+                    dataViewType: 'none',
+                    displayDetails
                 };
             }
 
@@ -422,6 +658,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const levels = unwrapArray(logSourceData.levels_flat_transposed);
                 const freqLabels = logSourceData.frequency_labels ? unwrapArray(logSourceData.frequency_labels) : null;
                 const freqHz = logSourceData.frequencies_hz ? unwrapArray(logSourceData.frequencies_hz) : null;
+                const payloadParameter = logSourceData.parameter ? logSourceData.parameter[0] : null;
 
                 // Unwrap scalar metadata from single-element lists (Bokeh transport format)
                 const rawNTimes = Number(logSourceData.n_times ? logSourceData.n_times[0] : times?.length);
@@ -479,6 +716,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
 
                 return {
+                    parameter: typeof payloadParameter === 'string' && payloadParameter ? payloadParameter : null,
                     times_ms: times,
                     levels_flat_transposed: levels,
                     n_freqs,
@@ -495,14 +733,30 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             })() : null;
             const fallbackPreparedLogData = positionGlyphData?.log?.prepared_params?.[parameter] || null;
-            const logData = streamedLogData || fallbackPreparedLogData;
+            const streamedParameterMismatch = Boolean(
+                streamedLogData
+                && streamedLogData.parameter
+                && streamedLogData.parameter !== parameter
+            );
+            const logData = streamedParameterMismatch
+                ? fallbackPreparedLogData
+                : (streamedLogData || fallbackPreparedLogData);
             
             const hasLogData = logData && logData.times_ms && logData.times_ms.length > 0;
             // Whether log data exists on disk (even if not yet lazy-loaded)
             const logDataExists = models.positionHasLogData?.[position] ?? hasLogData;
 
             let finalDataToUse, finalGlyphData;
-            let displayMetadata = { type: 'none', reason: ' (No Data Available)' };
+            let displayMetadata = createDisplayMetadata({
+                type: 'none',
+                reason: ' (No Data Available)',
+                statusCode: 'no_data',
+                statusLabel: 'No data available',
+                requestedViewType: viewType,
+                selectedParameter: parameter,
+                displayedParameter: null,
+                logDataExists,
+            });
 
             const offsetMs = positionOffsetMs;
             const viewportMin = Number(viewState.viewport?.min);
@@ -521,59 +775,77 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (viewType === 'log') {
                 if (hasLogData) {
                     if (viewportTooLarge) {
-                        // Viewport too large for log data - use overview at its natural size.
-                        // If the buffer sizes differ (overview vs log), chart-classes.js will
-                        // replace .data entirely (AGENTS.md §6 option 1) rather than skip.
-                        finalDataToUse = overviewData;
-                        displayMetadata = { type: 'overview', reason: ' - Overview - zoom in for Log' };
-                        const baseImage = getPreparedSpectrogramChunk(
-                            finalDataToUse,
-                            0,
-                            finalDataToUse?.n_times
-                        );
-                        finalGlyphData = tryApplySpectrogramSlice(
-                            finalDataToUse,
-                            baseImage,
-                            0,
-                            finalDataToUse?.n_times,
+                        ({ finalDataToUse, finalGlyphData, displayMetadata } = buildOverviewSpectrogramFallback(
+                            overviewData,
                             position,
                             dataCache,
-                            models
-                        );
-                    } else {
-                        const viewportWidth = viewState.viewport.max - viewState.viewport.min;
-
-                        // Verify log data actually covers the viewport
-                        const logDataStart = logData.times_ms[0];
-                        const logDataEnd = logData.times_ms[logData.times_ms.length - 1];
-                        
-                        // Calculate actual coverage: how much of the viewport is covered by log data
-                        const viewportStart = effectiveMin;
-                        const viewportEnd = effectiveMax;
-                        const overlapStart = Math.max(viewportStart, logDataStart);
-                        const overlapEnd = Math.min(viewportEnd, logDataEnd);
-                        const overlapWidth = Math.max(0, overlapEnd - overlapStart);
-                        const coverageRatio = overlapWidth / viewportWidth;
-                        debugSpectrogram(position, 'coverage-check', {
-                            viewportStart,
-                            viewportEnd,
-                            viewportWidth,
-                            logDataStart,
-                            logDataEnd,
-                            overlapStart,
-                            overlapEnd,
-                            overlapWidth,
-                            coverageRatio
+                            models,
+                            {
+                                reason: ' - Overview - zoom in for Log',
+                                statusCode: 'zoom_required',
+                                statusLabel: 'Zoom in for log spectrogram',
+                                requestedViewType: viewType,
+                                selectedParameter: parameter,
+                                displayedParameter: parameter,
+                                logDataExists,
+                                requiresZoom: true,
+                            }
+                        ));
+                    } else if (streamedParameterMismatch) {
+                        debugSpectrogram(position, 'parameter-mismatch', {
+                            selectedParameter: parameter,
+                            streamedParameter: streamedLogData?.parameter
                         });
-                        
-                        // Only use log data when it covers most of the viewport.
-                        const MIN_COVERAGE_RATIO = 0.8;
-                        const hasAdequateCoverage = coverageRatio >= MIN_COVERAGE_RATIO;
+                        ({ finalDataToUse, finalGlyphData, displayMetadata } = buildOverviewSpectrogramFallback(
+                            overviewData,
+                            position,
+                            dataCache,
+                            models,
+                            {
+                                reason: ' (Overview - Waiting for selected Log parameter...)',
+                                statusCode: 'parameter_sync',
+                                statusLabel: `Waiting for ${parameter} log data`,
+                                requestedViewType: viewType,
+                                selectedParameter: parameter,
+                                displayedParameter: parameter,
+                                logDataExists,
+                                isLoading: true,
+                                parameterMismatch: true,
+                            }
+                        ));
+                    } else {
+                        const readiness = assessSpectrogramLogReadiness(logData, effectiveMin, effectiveMax);
+                        debugSpectrogram(position, 'coverage-check', {
+                            viewportStart: effectiveMin,
+                            viewportEnd: effectiveMax,
+                            viewportWidth: readiness.viewportWidth,
+                            logDataStart: readiness.logDataStart,
+                            logDataEnd: readiness.logDataEnd,
+                            reservoirDisplayStart: readiness.reservoirDisplayStart,
+                            reservoirDisplayEnd: readiness.reservoirDisplayEnd,
+                            coverageRatio: readiness.coverageRatio,
+                            viewportWithinReservoir: readiness.viewportWithinReservoir,
+                            canCenterChunk: readiness.canCenterChunk,
+                            targetChunkPoints: readiness.targetChunkPoints,
+                            targetChunkStartTimeStamp: readiness.targetChunkStartTimeStamp,
+                            targetChunkEndTimeStamp: readiness.targetChunkEndTimeStamp,
+                        });
 
-                        if (hasAdequateCoverage) {
+                        if (readiness.hasAdequateCoverage && readiness.canCenterChunk) {
                             // Happy Path: Show chunked LOG data
                             finalDataToUse = logData;
-                            displayMetadata = { type: 'log', reason: ' (Log Data)' }; // Explicitly label the log view
+                            displayMetadata = createDisplayMetadata({
+                                type: 'log',
+                                reason: ' (Log Data)',
+                                statusCode: 'log_displayed',
+                                statusLabel: 'Showing log spectrogram',
+                                requestedViewType: viewType,
+                                selectedParameter: parameter,
+                                displayedParameter: logData.parameter || parameter,
+                                logDataExists,
+                                coverageRatio: readiness.coverageRatio,
+                                centeredChunkReady: true,
+                            });
 
                             const { n_times, chunk_time_length, times_ms, time_step, levels_flat_transposed, n_freqs, _isChunkOnlyPayload, _isReservoirPayload } = finalDataToUse;
 
@@ -599,63 +871,35 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                                 // Reservoir path (new) and legacy full-backing-array path:
                                 // Extract the fixed-size display chunk from the wider backing data client-side.
                                 // This is the same extraction logic used in static mode.
-                                const safeTimeStep = Number.isFinite(time_step) && time_step > 0 ? time_step : 1000;
-                                const rawViewportPoints = Number.isFinite(viewportWidth) && viewportWidth > 0
-                                    ? Math.ceil(viewportWidth / safeTimeStep)
-                                    : chunk_time_length;
-                                const viewportPoints = Math.max(
-                                    1,
-                                    Math.min(n_times, Number.isFinite(rawViewportPoints) ? rawViewportPoints : chunk_time_length)
-                                );
-                                const bufferPoints = Math.ceil(viewportPoints * LOG_SPECTROGRAM_BUFFER_RATIO);
-                                // Keep the log spectrogram glyph at its initialized fixed size.
-                                const targetChunkPoints = Math.max(
-                                    1,
-                                    Math.min(n_times, Math.floor(chunk_time_length || viewportPoints))
-                                );
-
-                                let viewportCenter = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
-                                    ? (effectiveMax + effectiveMin) / 2
-                                    : times_ms[Math.max(0, Math.floor(n_times / 2))];
-                                if (!Number.isFinite(viewportCenter)) {
-                                    viewportCenter = times_ms[Math.max(0, Math.floor(n_times / 2))];
-                                }
-                                const targetChunkStartTimeStamp = viewportCenter - (targetChunkPoints * safeTimeStep / 2);
-
-                                let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
-                                if (chunkStartTimeIdx === -1) {
-                                    chunkStartTimeIdx = Math.max(0, n_times - targetChunkPoints);
-                                }
-                                chunkStartTimeIdx = Math.min(
-                                    Math.max(0, chunkStartTimeIdx),
-                                    Math.max(0, n_times - targetChunkPoints)
-                                );
-                                const actualChunkPoints = Math.max(1, Math.min(targetChunkPoints, n_times - chunkStartTimeIdx));
                                 debugSpectrogram(position, 'chunk-selection', {
                                     n_times,
-                                    time_step: safeTimeStep,
+                                    time_step: readiness.safeTimeStep,
                                     viewportMin: effectiveMin,
                                     viewportMax: effectiveMax,
-                                    viewportWidth,
-                                    viewportPoints,
-                                    bufferPoints,
-                                    targetChunkPoints,
-                                    viewportCenter,
-                                    targetChunkStartTimeStamp,
-                                    chunkStartTimeIdx,
-                                    actualChunkPoints,
-                                    chunkStartTime: times_ms?.[chunkStartTimeIdx],
-                                    chunkEndTime: times_ms?.[Math.min(n_times - 1, chunkStartTimeIdx + actualChunkPoints - 1)],
+                                    viewportWidth: readiness.viewportWidth,
+                                    targetChunkPoints: readiness.targetChunkPoints,
+                                    viewportCenter: readiness.viewportCenter,
+                                    targetChunkStartTimeStamp: readiness.targetChunkStartTimeStamp,
+                                    chunkStartTimeIdx: readiness.chunkStartTimeIdx,
+                                    actualChunkPoints: readiness.actualChunkPoints,
+                                    chunkStartTime: readiness.chunkStartTime,
+                                    chunkEndTime: readiness.chunkEndTime,
                                     isReservoir: _isReservoirPayload
                                 });
 
-                                const chunk_image_full_freqs = _extractTimeChunkFromFlatData(levels_flat_transposed, n_freqs, n_times, chunkStartTimeIdx, actualChunkPoints);
+                                const chunk_image_full_freqs = _extractTimeChunkFromFlatData(
+                                    levels_flat_transposed,
+                                    n_freqs,
+                                    n_times,
+                                    readiness.chunkStartTimeIdx,
+                                    readiness.actualChunkPoints
+                                );
 
                                 finalGlyphData = tryApplySpectrogramSlice(
                                     finalDataToUse,
                                     chunk_image_full_freqs,
-                                    chunkStartTimeIdx,
-                                    actualChunkPoints,
+                                    readiness.chunkStartTimeIdx,
+                                    readiness.actualChunkPoints,
                                     position,
                                     dataCache,
                                     models
@@ -664,61 +908,69 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
                         } else {
                             // Log view active, but current streamed source does not cover viewport.
-                            finalDataToUse = overviewData;
-                            displayMetadata = { type: 'overview', reason: ' (Overview - Streaming Log Data...)' };
-                            const baseImage = getPreparedSpectrogramChunk(
-                                finalDataToUse,
-                                0,
-                                finalDataToUse?.n_times
-                            );
-                            finalGlyphData = tryApplySpectrogramSlice(
-                                finalDataToUse,
-                                baseImage,
-                                0,
-                                finalDataToUse?.n_times,
+                            const loadingReason = readiness.hasAdequateCoverage
+                                ? ' (Overview - Waiting for centered Log chunk...)'
+                                : ' (Overview - Streaming Log Data...)';
+                            const loadingLabel = readiness.hasAdequateCoverage
+                                ? 'Waiting for aligned log spectrogram'
+                                : 'Loading log spectrogram';
+                            debugSpectrogram(position, 'edge-guard-fallback', readiness);
+                            ({ finalDataToUse, finalGlyphData, displayMetadata } = buildOverviewSpectrogramFallback(
+                                overviewData,
                                 position,
                                 dataCache,
-                                models
-                            );
+                                models,
+                                {
+                                    reason: loadingReason,
+                                    statusCode: readiness.hasAdequateCoverage ? 'edge_guard' : 'loading_log',
+                                    statusLabel: loadingLabel,
+                                    requestedViewType: viewType,
+                                    selectedParameter: parameter,
+                                    displayedParameter: parameter,
+                                    logDataExists,
+                                    isLoading: true,
+                                    coverageRatio: readiness.coverageRatio,
+                                    centeredChunkReady: readiness.canCenterChunk,
+                                }
+                            ));
                         }
                     }
                 } else {
                     // Log view active, but no log data exists
-                    finalDataToUse = overviewData;
-                    displayMetadata = { type: 'overview', reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)' };
-                    const baseImage = getPreparedSpectrogramChunk(
-                        finalDataToUse,
-                        0,
-                        finalDataToUse?.n_times
-                    );
-                    finalGlyphData = tryApplySpectrogramSlice(
-                        finalDataToUse,
-                        baseImage,
-                        0,
-                        finalDataToUse?.n_times,
+                    ({ finalDataToUse, finalGlyphData, displayMetadata } = buildOverviewSpectrogramFallback(
+                        overviewData,
                         position,
                         dataCache,
-                        models
-                    );
+                        models,
+                        {
+                            reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)',
+                            statusCode: logDataExists ? 'loading_log' : 'overview_only',
+                            statusLabel: logDataExists ? 'Waiting for log spectrogram' : 'Overview data only',
+                            requestedViewType: viewType,
+                            selectedParameter: parameter,
+                            displayedParameter: parameter,
+                            logDataExists,
+                            isLoading: logDataExists,
+                        }
+                    ));
                 }
             } else {
                 // Overview view is explicitly active
-                finalDataToUse = overviewData;
-                displayMetadata = { type: 'overview', reason: logDataExists ? ' (Overview - Enable Log View for detail)' : ' (Overview)' };
-                const baseImage = getPreparedSpectrogramChunk(
-                    finalDataToUse,
-                    0,
-                    finalDataToUse?.n_times
-                );
-                finalGlyphData = tryApplySpectrogramSlice(
-                    finalDataToUse,
-                    baseImage,
-                    0,
-                    finalDataToUse?.n_times,
+                ({ finalDataToUse, finalGlyphData, displayMetadata } = buildOverviewSpectrogramFallback(
+                    overviewData,
                     position,
                     dataCache,
-                    models
-                );
+                    models,
+                    {
+                        reason: logDataExists ? ' (Overview - Enable Log View for detail)' : ' (Overview)',
+                        statusCode: 'overview_selected',
+                        statusLabel: logDataExists ? 'Overview selected' : 'Overview data only',
+                        requestedViewType: viewType,
+                        selectedParameter: parameter,
+                        displayedParameter: parameter,
+                        logDataExists,
+                    }
+                ));
             }
 
             // --- Final state update ---
@@ -743,6 +995,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 
                 dataCache.activeSpectralData[position] = {
                     ...finalDataToUse,
+                    dataViewType: displayMetadata.type,
+                    displayDetails: displayMetadata,
+                    displayedParameter: displayMetadata.displayedParameter,
+                    selectedParameter: displayMetadata.selectedParameter,
                     times_ms: adjustedTimes,
                     source_replacement: adjustedReplacement
                 };
@@ -752,10 +1008,29 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     source_replacement: null,
                     reason: 'No Data Available',
                     times_ms: [],
-                    dataViewType: 'none'
+                    dataViewType: 'none',
+                    displayDetails: createDisplayMetadata({
+                        type: 'none',
+                        statusCode: 'no_data',
+                        statusLabel: 'No data available',
+                        requestedViewType: viewType,
+                        selectedParameter: parameter,
+                        displayedParameter: null,
+                    }),
+                    displayedParameter: null,
+                    selectedParameter: parameter
                 };
                 // If we ended up with no data, this reason overrides any previous one.
-                displayMetadata = { type: 'none', reason: ' (No Data Available)' };
+                displayMetadata = createDisplayMetadata({
+                    type: 'none',
+                    reason: ' (No Data Available)',
+                    statusCode: 'no_data',
+                    statusLabel: 'No data available',
+                    requestedViewType: viewType,
+                    selectedParameter: parameter,
+                    displayedParameter: null,
+                    logDataExists,
+                });
             }
             return displayMetadata;
         }

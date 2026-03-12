@@ -192,7 +192,7 @@ class ServerDataHandler:
             # fixed display chunk — the browser extracts the display chunk from
             # the wider reservoir client-side.
             reservoir_coverage = self._spectrogram_chunk_coverage_ratio(position_id, start_ms, end_ms)
-            if position_data.has_log_spectral and reservoir_coverage < 0.8:
+            if position_data.has_log_spectral and reservoir_coverage < 0.98:
                 buffer_start, buffer_end = self._buffer_bounds[position_id]
                 logger.debug(
                     "[RANGE] request=%s position=%s action=refresh_reservoir viewport=(%s, %s) buffer=(%s, %s) reservoir_bounds=%s reservoir_coverage=%.3f",
@@ -464,6 +464,7 @@ class ServerDataHandler:
             new_data = {
                 'levels_flat_transposed': [reservoir_levels],
                 'times_ms': [reservoir_times],
+                'parameter': [param],
                 'frequency_labels': [prepared['frequency_labels']],
                 'frequencies_hz': [prepared['frequencies_hz']],
                 'n_times': [reservoir_n_times],
@@ -551,7 +552,7 @@ class ServerDataHandler:
         return overlap_width / viewport_width
 
     def _spectrogram_chunk_covers_viewport(self, position_id: str, start_ms: float, end_ms: float) -> bool:
-        return self._spectrogram_chunk_coverage_ratio(position_id, start_ms, end_ms) >= 0.8
+        return self._spectrogram_chunk_coverage_ratio(position_id, start_ms, end_ms) >= 0.98
 
     def _infer_log_file_sample_period_seconds(self, position_data):
         log_file_paths = getattr(position_data, 'log_file_paths', None)

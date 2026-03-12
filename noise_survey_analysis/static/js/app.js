@@ -30,6 +30,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const logStepSizeByPosition = {};
     const lineDisplayTypeByPosition = {};
     let lastAppliedControlStateUpdateAt = null;
+    let lastDisplayDetailsByPosition = {};
 
     app.dataCache = dataCache;
 
@@ -54,38 +55,32 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function syncControlModelsToStore(models) {
-        const scheduleSync = (callback) => {
-            window.setTimeout(() => {
-                try {
-                    callback();
-                } catch (error) {
-                    console.error('[App]', 'Control model sync failed:', error);
-                }
-            }, 0);
-        };
-
         if (models?.paramSelect?.change && typeof models.paramSelect.change.connect === 'function') {
             models.paramSelect.change.connect(() => {
-                scheduleSync(() => {
+                try {
                     const nextValue = models.paramSelect?.value;
                     const currentValue = app.store?.getState?.()?.view?.selectedParameter;
                     if (typeof nextValue === 'string' && nextValue && nextValue !== currentValue) {
                         app.eventHandlers.handleParameterChange(nextValue);
                     }
-                });
+                } catch (error) {
+                    console.error('[App]', 'Control model sync failed:', error);
+                }
             });
         }
 
         if (models?.viewToggle?.change && typeof models.viewToggle.change.connect === 'function') {
             models.viewToggle.change.connect(() => {
-                scheduleSync(() => {
+                try {
                     const nextIsLog = Boolean(models.viewToggle?.active);
                     const currentViewType = app.store?.getState?.()?.view?.globalViewType;
                     const nextViewType = nextIsLog ? 'log' : 'overview';
                     if (nextViewType !== currentViewType) {
                         app.eventHandlers.handleViewToggle(nextIsLog);
                     }
-                });
+                } catch (error) {
+                    console.error('[App]', 'Control model sync failed:', error);
+                }
             });
         }
     }
@@ -112,6 +107,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const desiredViewMode = typeof sourceData.view_mode?.[0] === 'string'
                 ? sourceData.view_mode[0]
                 : null;
+            const currentState = app.store?.getState?.();
+            const currentParameter = currentState?.view?.selectedParameter;
+            const currentViewType = currentState?.view?.globalViewType;
+
+            if (desiredParameter && desiredParameter !== currentParameter) {
+                app.eventHandlers.handleParameterChange(desiredParameter);
+            }
+            if ((desiredViewMode === 'log' || desiredViewMode === 'overview') && desiredViewMode !== currentViewType) {
+                app.eventHandlers.handleViewToggle(desiredViewMode === 'log');
+            }
 
             if (desiredParameter && models?.paramSelect?.value !== desiredParameter) {
                 models.paramSelect.value = desiredParameter;
@@ -321,6 +326,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         if (displayDetailsUpdates) {
+            lastDisplayDetailsByPosition = displayDetailsUpdates;
             Object.keys(displayDetailsUpdates).forEach(positionId => {
                 const lineType = displayDetailsUpdates?.[positionId]?.line?.type;
                 if (typeof lineType === 'string') {
@@ -369,7 +375,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         app.renderers.renderOverlays(state, dataCache);
 
         // Always keep UI widgets in sync with the state
-        app.renderers.renderControlWidgets(state, displayDetailsUpdates);
+        app.renderers.renderControlWidgets(state, displayDetailsUpdates || lastDisplayDetailsByPosition);
 
         // render the side panel
         if (didMarkersChange || didRegionsChange || didActiveSidePanelTabChange || didPendingRegionChange) {

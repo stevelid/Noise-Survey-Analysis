@@ -227,22 +227,26 @@ class SessionBridge:
 
         with self._lock:
             doc = self._doc
+            param_select = self._param_select
             control_state_source = self._control_state_source
 
         if doc is None:
             return ControlResult.error("no active session", request_id=request_id)
-        if control_state_source is None:
+        if control_state_source is None and param_select is None:
             return ControlResult.error(
-                "control_state_source not registered",
+                "control_state_source and param_select not registered",
                 request_id=request_id,
             )
 
         def _apply() -> None:
             try:
-                current = dict(control_state_source.data or {})
-                current["parameter"] = [value]
-                current["updated_at"] = [int(time.time() * 1000)]
-                control_state_source.data = current
+                if param_select is not None and getattr(param_select, "value", None) != value:
+                    param_select.value = value
+                if control_state_source is not None:
+                    current = dict(control_state_source.data or {})
+                    current["parameter"] = [value]
+                    current["updated_at"] = [int(time.time() * 1000)]
+                    control_state_source.data = current
                 logger.debug("SessionBridge.set_parameter: applied value=%s", value)
             except Exception as exc:
                 logger.error("SessionBridge.set_parameter callback error: %s", exc)
@@ -267,22 +271,27 @@ class SessionBridge:
 
         with self._lock:
             doc = self._doc
+            view_toggle = self._view_toggle
             control_state_source = self._control_state_source
 
         if doc is None:
             return ControlResult.error("no active session", request_id=request_id)
-        if control_state_source is None:
+        if control_state_source is None and view_toggle is None:
             return ControlResult.error(
-                "control_state_source not registered",
+                "control_state_source and view_toggle not registered",
                 request_id=request_id,
             )
 
         def _apply() -> None:
             try:
-                current = dict(control_state_source.data or {})
-                current["view_mode"] = [value]
-                current["updated_at"] = [int(time.time() * 1000)]
-                control_state_source.data = current
+                desired_active = value == "log"
+                if view_toggle is not None and bool(getattr(view_toggle, "active", False)) != desired_active:
+                    view_toggle.active = desired_active
+                if control_state_source is not None:
+                    current = dict(control_state_source.data or {})
+                    current["view_mode"] = [value]
+                    current["updated_at"] = [int(time.time() * 1000)]
+                    control_state_source.data = current
                 logger.debug("SessionBridge.set_view_mode: applied value=%s", value)
             except Exception as exc:
                 logger.error("SessionBridge.set_view_mode callback error: %s", exc)

@@ -622,7 +622,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.lastDisplayDetails = displayDetails || { reason: '' };
             const suffix = this.lastDisplayDetails.reason || '';
             const baseName = this.displayName || this.positionId;
-            this.model.title.text = `${baseName} - ${selectedParameter} Spectrogram${suffix}`;
+            const displayedParameter = displayDetails?.displayedParameter || activeSpectralData?.displayedParameter || selectedParameter;
+            this.model.title.text = `${baseName} - ${displayedParameter} Spectrogram${suffix}`;
 
             const replacement = activeSpectralData?.source_replacement;
             if (replacement && this.imageRenderer) {

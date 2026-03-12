@@ -25,6 +25,12 @@
 
 # UI/UX Improvement Suggestions (Analysis)
 
+## Live Log Streaming Notes (2026-03-12)
+- Keep the spectrogram reservoir guard based on viewport coverage plus reservoir span, not strict chunk centering.
+- Refresh spectrogram reservoirs before they get close to stale edges; current server-side refresh threshold is `0.98` viewport coverage.
+- Status chips should persist the last heavy-update display state so light renders do not regress to `Display: None`.
+- For job `5931`, residential-boundary live log spectrogram streaming is currently reliable with `LZeq`; `LZmax` still has no streamed log spectral columns and should continue to fall back cleanly.
+
 ## 1. General UI/UX Polish
 - **Suggestion**: Introduce consistent spacing, a modern color palette, and improved typography.
 - **Difficulty**: Low

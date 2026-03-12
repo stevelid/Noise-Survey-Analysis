@@ -10,6 +10,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const PLAYING_BACKGROUND_COLOR = '#e6f0ff';
     const DEFAULT_BACKGROUND_COLOR = '#ffffff';
+    let lastLoggedStatusSignature = null;
+
+    function escapeInlineText(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function titleCaseMode(value) {
+        if (value === 'log') return 'Log';
+        if (value === 'overview') return 'Overview';
+        if (value === 'none') return 'None';
+        return 'Unknown';
+    }
 
     function isChartVisibleFactory(chartVisibility) {
         return function isChartVisible(chartName) {
@@ -53,6 +70,54 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
+    function resolveStatusPosition(state, availablePositions, isChartVisible) {
+        const candidates = [
+            state?.interaction?.tap?.position,
+            state?.audio?.activePositionId,
+        ].filter(Boolean);
+        for (const candidate of candidates) {
+            if (availablePositions.includes(candidate)) {
+                return candidate;
+            }
+        }
+        const firstVisible = availablePositions.find(pos =>
+            isChartVisible(`figure_${pos}_timeseries`) || isChartVisible(`figure_${pos}_spectrogram`)
+        );
+        return firstVisible || availablePositions[0] || null;
+    }
+
+    function buildStatusSummary(positionId, details, viewState, displayTitles) {
+        const spec = details?.spec || details?.spectrogram || null;
+        const line = details?.line || null;
+        const primary = spec || line || null;
+        const selectedParameter = viewState.selectedParameter || '--';
+        const displayedParameter = spec?.displayedParameter || primary?.displayedParameter || selectedParameter;
+        const requestedMode = titleCaseMode(viewState.globalViewType);
+        const displayedMode = titleCaseMode(primary?.type || 'none');
+        const statusLabel = primary?.statusLabel || 'No data available';
+        const focusLabel = positionId
+            ? (displayTitles[positionId] || positionId)
+            : 'none';
+        const parameterLabel = displayedParameter && displayedParameter !== selectedParameter
+            ? `${displayedParameter} shown (selected ${selectedParameter})`
+            : selectedParameter;
+
+        return {
+            focusLabel,
+            requestedMode,
+            displayedMode,
+            statusLabel,
+            parameterLabel,
+            signature: [
+                positionId || 'none',
+                requestedMode,
+                displayedMode,
+                statusLabel,
+                parameterLabel
+            ].join('|')
+        };
+    }
+
     function renderControlWidgets(state, displayDetailsByPosition = null) {
         const { models, controllers } = app.registry || {};
         if (!models || !controllers) return;
@@ -94,6 +159,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const thresholdSeconds = app.features?.view?.resolution?.resolveLogThresholdSeconds
             ? app.features.view.resolution.resolveLogThresholdSeconds(models, viewState)
             : null;
+        const isChartVisible = isChartVisibleFactory(chartVisibility);
         const streamingReasons = [];
         const detailEntries = displayDetailsByPosition ? Object.values(displayDetailsByPosition) : [];
         detailEntries.forEach(details => {
@@ -107,19 +173,35 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         });
         const isStreamingInBackground = streamingReasons.length > 0;
+        const statusPosition = resolveStatusPosition(state, availablePositions, isChartVisible);
+        const statusSummary = buildStatusSummary(
+            statusPosition,
+            statusPosition ? displayDetailsByPosition?.[statusPosition] : null,
+            viewState,
+            displayTitles
+        );
+
+        if (statusSummary.signature && statusSummary.signature !== lastLoggedStatusSignature) {
+            lastLoggedStatusSignature = statusSummary.signature;
+            console.info('[DisplayStatus]', {
+                position: statusPosition,
+                requestedMode: statusSummary.requestedMode,
+                displayedMode: statusSummary.displayedMode,
+                statusLabel: statusSummary.statusLabel,
+                parameter: statusSummary.parameterLabel
+            });
+        }
+
         if (models.viewStatusChip) {
             const mode = viewState.globalViewType === 'log' ? 'Log' : 'Overview';
             const thresholdText = Number.isFinite(thresholdSeconds) ? `${Math.round(thresholdSeconds / 60)}m` : '--';
             const streamingSuffix = isStreamingInBackground
                 ? ` <span style='color:#9a3412;'>| Streaming log data...</span>`
                 : '';
-            models.viewStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>View: ${mode} | ${thresholdText}${streamingSuffix}</span>`;
+            models.viewStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>Requested: ${escapeInlineText(mode)} | Display: ${escapeInlineText(statusSummary.displayedMode)} | ${escapeInlineText(thresholdText)} | ${escapeInlineText(statusSummary.statusLabel)}${streamingSuffix}</span>`;
         }
         if (models.focusStatusChip) {
-            const activeLabel = (isPlaying && activePositionId)
-                ? (displayTitles[activePositionId] || activePositionId)
-                : 'none';
-            models.focusStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>Focus: ${activeLabel}</span>`;
+            models.focusStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>Focus: ${escapeInlineText(statusSummary.focusLabel)} | Param: ${escapeInlineText(statusSummary.parameterLabel)}</span>`;
         }
 
         const globalAudioControls = models.globalAudioControls;
@@ -195,7 +277,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
 
-        const isChartVisible = isChartVisibleFactory(chartVisibility);
         const jobNumber = models.jobNumber;
 
         availablePositions.forEach(pos => {
