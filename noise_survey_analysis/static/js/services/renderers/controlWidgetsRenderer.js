@@ -156,9 +156,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         syncLogThresholdSpinner(viewState, models.logThresholdSpinner);
 
-        const thresholdSeconds = app.features?.view?.resolution?.resolveLogThresholdSeconds
-            ? app.features.view.resolution.resolveLogThresholdSeconds(models, viewState)
-            : null;
         const isChartVisible = isChartVisibleFactory(chartVisibility);
         const streamingReasons = [];
         const detailEntries = displayDetailsByPosition ? Object.values(displayDetailsByPosition) : [];
@@ -193,15 +190,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         if (models.viewStatusChip) {
-            const mode = viewState.globalViewType === 'log' ? 'Log' : 'Overview';
-            const thresholdText = Number.isFinite(thresholdSeconds) ? `${Math.round(thresholdSeconds / 60)}m` : '--';
-            const streamingSuffix = isStreamingInBackground
-                ? ` <span style='color:#9a3412;'>| Streaming log data...</span>`
+            let displayText = `${statusSummary.displayedMode} shown`;
+            if (statusSummary.displayedMode === 'None') {
+                displayText = statusSummary.statusLabel;
+            } else if (statusSummary.requestedMode !== statusSummary.displayedMode) {
+                displayText = `${statusSummary.displayedMode} shown`;
+            }
+            const suffix = isStreamingInBackground
+                ? ` <span style='color:#9a3412;'>· Loading log</span>`
                 : '';
-            models.viewStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>Requested: ${escapeInlineText(mode)} | Display: ${escapeInlineText(statusSummary.displayedMode)} | ${escapeInlineText(thresholdText)} | ${escapeInlineText(statusSummary.statusLabel)}${streamingSuffix}</span>`;
+            models.viewStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>${escapeInlineText(displayText)}${suffix}</span>`;
         }
         if (models.focusStatusChip) {
-            models.focusStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>Focus: ${escapeInlineText(statusSummary.focusLabel)} | Param: ${escapeInlineText(statusSummary.parameterLabel)}</span>`;
+            models.focusStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>${escapeInlineText(statusSummary.focusLabel)}</span>`;
         }
 
         const globalAudioControls = models.globalAudioControls;

@@ -526,6 +526,53 @@ class DashBuilder:
         for position_name, comp_dict in self.components.items():
             # Add position title and offset controls above the timeseries
             ts_layout = comp_dict['timeseries'].layout()
+            spec_layout = comp_dict['spectrogram'].layout()
+            collapse_toggle = comp_dict['position_controls'].get('collapse_toggle')
+            if collapse_toggle is not None:
+                collapse_toggle.js_on_change("active", CustomJS(
+                    args=dict(
+                        timeseries_figure=comp_dict['timeseries'].figure,
+                        spectrogram_layout=spec_layout,
+                        chart_offset_label=comp_dict['position_controls']['chart_offset_label'],
+                        chart_offset_spinner=comp_dict['position_controls']['chart_offset_spinner'],
+                        audio_offset_label=comp_dict['position_controls']['audio_offset_label'],
+                        audio_offset_spinner=comp_dict['position_controls']['audio_offset_spinner'],
+                        effective_offset_display=comp_dict['position_controls']['effective_offset_display'],
+                    ),
+                    code="""
+                        const collapsed = Boolean(cb_obj.active);
+                        cb_obj.label = collapsed ? 'Expand' : 'Collapse';
+                        cb_obj.button_type = collapsed ? 'primary' : 'default';
+
+                        chart_offset_label.visible = !collapsed;
+                        chart_offset_spinner.visible = !collapsed;
+                        audio_offset_label.visible = !collapsed;
+                        audio_offset_spinner.visible = !collapsed;
+                        effective_offset_display.visible = !collapsed;
+                        spectrogram_layout.visible = !collapsed;
+
+                        timeseries_figure.height = collapsed ? 88 : 340;
+                        timeseries_figure.min_border_top = collapsed ? 16 : 55;
+                        timeseries_figure.min_border_bottom = collapsed ? 12 : 50;
+
+                        const legends = Array.isArray(timeseries_figure.legend) ? timeseries_figure.legend : [];
+                        legends.forEach(legend => {
+                            legend.visible = !collapsed;
+                        });
+
+                        const xaxes = Array.isArray(timeseries_figure.xaxis) ? timeseries_figure.xaxis : [];
+                        xaxes.forEach(axis => {
+                            axis.visible = !collapsed;
+                        });
+
+                        const yaxes = Array.isArray(timeseries_figure.yaxis) ? timeseries_figure.yaxis : [];
+                        yaxes.forEach(axis => {
+                            axis.visible = !collapsed;
+                        });
+
+                        timeseries_figure.change.emit();
+                    """
+                ))
             ts_layout_with_controls = column(
                 comp_dict['position_controls']['layout'],
                 ts_layout
@@ -533,7 +580,7 @@ class DashBuilder:
 
             pos_layout = column(
                 ts_layout_with_controls,
-                comp_dict['spectrogram'].layout(),
+                spec_layout,
                 name=f"layout_{position_name}",
                 styles={
                     "border": "1px solid #d7dde5",
@@ -562,16 +609,7 @@ class DashBuilder:
         comparison_frequency_layout.visible = False
         self.shared_components['comparison_frequency_layout'] = comparison_frequency_layout
 
-        main_layout = column(
-            controls_layout,
-            range_selector_layout,
-            *position_layouts,
-            freq_bar_layout,
-            comparison_frequency_layout,
-            self.shared_components['summary_table'].layout(),
-            self.js_init_trigger,
-            name="main_layout",
-        )
+        charts_stack_layout = column(*position_layouts, name="charts_stack_layout")
 
         region_panel_layout = self.shared_components['region_panel'].layout()
         region_panel_layout.name = "region_panel_layout"
@@ -597,14 +635,34 @@ class DashBuilder:
             comparison_panel_layout,
             name="side_panel_container",
             width=SIDE_PANEL_WIDTH + 32,
+            styles={
+                "margin-top": "2px",
+            }
         )
         self.shared_components['side_panel_container'] = side_panel_container
 
-        final_layout = row(
-            main_layout,
+        chart_content_row = row(
+            charts_stack_layout,
             side_panel_container,
-            name="root_layout",
+            name="chart_content_row",
+            styles={
+                "align-items": "flex-start",
+                "gap": "12px",
+            }
         )
+
+        main_layout = column(
+            controls_layout,
+            range_selector_layout,
+            chart_content_row,
+            freq_bar_layout,
+            comparison_frequency_layout,
+            self.shared_components['summary_table'].layout(),
+            self.js_init_trigger,
+            name="main_layout",
+        )
+
+        final_layout = main_layout
 
         doc.add_root(final_layout)
         doc.title = "Noise Survey Analysis Dashboard"

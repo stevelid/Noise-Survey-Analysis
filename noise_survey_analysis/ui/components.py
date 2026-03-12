@@ -1245,7 +1245,7 @@ class TimeSeriesComponent:
             "active_drag": pan_tool,
             "active_scroll": "xwheel_zoom",
             "name": f"figure_{self.name_id}",
-            "min_border_top": 35,
+            "min_border_top": 55,
             "min_border_bottom": 50,
         }
 
@@ -1896,7 +1896,7 @@ class ControlsComponent:
     def add_status_chips(self):
         view_status = Div(
             text="<span style='font-size:11px;color:#0f172a;'>View: --</span>",
-            width=120,
+            width=170,
             height=28,
             name="view_status_chip",
             styles={
@@ -1910,7 +1910,7 @@ class ControlsComponent:
         )
         focus_status = Div(
             text="<span style='font-size:11px;color:#0f172a;'>Focus: none</span>",
-            width=180,
+            width=200,
             height=28,
             name="focus_status_chip",
             styles={
@@ -1966,7 +1966,7 @@ class ControlsComponent:
             logger.warning(f"Could not determine position from chart name: '{chart_name}'. Grouping as 'unknown'.")
             position_name = "unknown"
 
-        checkbox = CheckboxGroup(labels=[chart_label], active=[0] if initial_state else [], width=150, name=f"visibility_{chart_name}")
+        checkbox = CheckboxGroup(labels=[chart_label], active=[0] if initial_state else [], width=200, name=f"visibility_{chart_name}")
         
         if position_name not in self.visibility_checkboxes:
             self.visibility_checkboxes[position_name] = []
@@ -2008,21 +2008,15 @@ class ControlsComponent:
         self.visibility_layout = Row(
             *position_columns,
             name="visibility_controls_row",
-            sizing_mode="stretch_width",
             styles={
                 "flex-wrap": "wrap",
                 "gap": "8px",
-                "justify-content": "flex-end",
-                "margin-left": "auto"
+                "align-items": "flex-start"
             }
         )
 
 
     def layout(self):
-        # Ensure visibility layout is built before returning the main layout
-        if self.visibility_layout is None:
-            self._build_visibility_layout()
-
         view_controls_group = Row(
             self.session_menu,
             self.param_select,
@@ -2031,14 +2025,15 @@ class ControlsComponent:
             self.hover_toggle,
             self.status_chips['layout'],
             name="view_controls_group",
-            sizing_mode="scale_width",
             styles={
                 "gap": "8px",
                 "align-items": "center",
                 "padding": "4px 8px",
                 "border": "1px solid #d1d5db",
                 "border-radius": "8px",
-                "background-color": "#ffffff"
+                "background-color": "#ffffff",
+                "flex-wrap": "wrap",
+                "overflow": "visible"
             }
         )
 
@@ -2048,7 +2043,6 @@ class ControlsComponent:
 
         controls_group = Row(
             *controls_children,
-            sizing_mode="scale_width",
             name="primary_controls_row",
             styles={
                 "flex-wrap": "wrap",
@@ -2057,25 +2051,9 @@ class ControlsComponent:
             }
         )
 
-        # Main controls row combines primary controls with visibility toggles aligned to the right
-        main_controls_row = Row(
-            controls_group,
-            self.visibility_layout,
-            sizing_mode="scale_width", # Or "stretch_width"
-            name="main_controls_row",
-            styles={
-                "flex-wrap": "wrap",
-                "gap": "16px",
-                "justify-content": "space-between",
-                "align-items": "flex-start"
-            }
-        )
-
-        # Return a column wrapping the combined controls row to maintain sticky positioning and styling
         return column(
-            main_controls_row,
+            controls_group,
             name="controls_component_layout",
-            sizing_mode="scale_width",
             styles={
                 "gap": "8px",
                 "position": "sticky",
@@ -2083,7 +2061,7 @@ class ControlsComponent:
                 "background": "#f3f4f6",
                 "padding": "10px 12px",
                 "box-shadow": "0 2px 6px rgba(0, 0, 0, 0.08)",
-                "z-index": "10"
+                "z-index": "100"
             }
         )
 
@@ -2965,11 +2943,20 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
     
     # Position title display
     title_div = Div(
-        text=f"<strong style='font-size: 13px; color: #2c3e50;'>{display_title}</strong>",
-        width=100,
+        text=f"<strong style='font-size: 13px; color: #2c3e50; white-space: nowrap;'>{display_title}</strong>",
+        width=220,
         height=35,
         name=f"position_title_{position_id}",
-        styles={"display": "flex", "align-items": "center", "justify-content": "flex-start"}
+        styles={"display": "flex", "align-items": "center", "justify-content": "flex-start", "flex-shrink": "0"}
+    )
+
+    collapse_toggle = Toggle(
+        label="Collapse",
+        active=False,
+        width=92,
+        height=28,
+        button_type="default",
+        name=f"collapse_toggle_{position_id}",
     )
     
     # Chart Offset controls
@@ -3032,39 +3019,52 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
         """
     ))
 
-    # Effective offset display
+    # Effective offset display (text is overwritten by JS; styles here control its appearance)
     effective_offset_display = Div(
-        text="<span style='font-size: 10px; color: #666; font-weight: 500;'>Effective: +0.00 s</span>",
-        width=110,
+        text="Effective offset: +0.00 s",
+        width=135,
         height=35,
         name=f"effective_offset_display_{position_id}",
-        styles={"display": "flex", "align-items": "center", "padding-left": "8px"}
+        styles={
+            "display": "flex",
+            "align-items": "center",
+            "padding-left": "8px",
+            "white-space": "nowrap",
+            "font-size": "10px",
+            "color": "#555"
+        }
     )
 
     controls_layout = Row(
         title_div,
+        collapse_toggle,
         chart_offset_label,
         chart_offset_spinner,
         audio_offset_label,
         audio_offset_spinner,
         effective_offset_display,
         name=f"position_controls_{position_id}",
-        sizing_mode="stretch_width",
         styles={
-            "gap": "2px",
+            "gap": "6px",
             "background-color": "#f5f5f5",
             "border-top": "1px solid #e0e0e0",
             "border-bottom": "1px solid #e0e0e0",
             "padding": "4px 12px",
             "align-items": "center",
-            "height": "35px"
+            "justify-content": "space-between",
+            "flex-wrap": "wrap",
+            "row-gap": "4px",
+            "min-height": "38px"
         }
     )
 
     logger.debug(f"Position title and offset controls created for '{position_id}'.")
     return {
         "title_div": title_div,
+        "collapse_toggle": collapse_toggle,
+        "chart_offset_label": chart_offset_label,
         "chart_offset_spinner": chart_offset_spinner,
+        "audio_offset_label": audio_offset_label,
         "audio_offset_spinner": audio_offset_spinner,
         "effective_offset_display": effective_offset_display,
         "layout": controls_layout
