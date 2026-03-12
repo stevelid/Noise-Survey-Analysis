@@ -451,5 +451,103 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(details?.reason).toBe(' (Overview - Streaming Log Data...)');
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
         });
+
+        it('should keep time history in overview when spectrogram is unavailable for the position in lockstep mode', () => {
+            const viewState = {
+                globalViewType: 'log',
+                viewport: { min: 1000, max: 1600 }
+            };
+            const mockDataCache = { activeLineData: {} };
+            const models = {
+                timeSeriesSources: {
+                    NS2: {
+                        overview: {
+                            data: {
+                                Datetime: [0, 1000, 2000],
+                                LAeq: [50, 51, 52]
+                            }
+                        },
+                        log: {
+                            data: {
+                                Datetime: [900, 1000, 1100, 1200, 1300, 1400, 1500, 1600],
+                                LAeq: [55, 56, 57, 58, 59, 60, 61, 62],
+                                LAFmax: [60, 61, 62, 63, 64, 65, 66, 67]
+                            }
+                        }
+                    }
+                },
+                spectrogramSources: {
+                    NS2: {
+                        overview: { data: { image: [[1]] } },
+                        log: { data: {} }
+                    }
+                },
+                positionHasLogData: { NS2: true },
+                config: { log_view_max_viewport_seconds: 3600 }
+            };
+            const spectralDetails = {
+                requestedViewType: 'log',
+                type: 'overview',
+                reason: ' (Overview)',
+                statusCode: 'overview_only',
+                statusLabel: 'Overview data only'
+            };
+
+            const details = dataProcessors.updateActiveLineChartData('NS2', viewState, mockDataCache, models, 0, spectralDetails);
+
+            expect(details.type).toBe('overview');
+            expect(details.statusCode).toBe('overview_only');
+            expect(mockDataCache.activeLineData.NS2.dataViewType).toBe('overview');
+            expect(mockDataCache.activeLineData.NS2.LAeq).toEqual([50, 51, 52]);
+        });
+
+        it('should mirror spectrogram fallback when log spectrogram exists for the position', () => {
+            const viewState = {
+                globalViewType: 'log',
+                viewport: { min: 1000, max: 1600 }
+            };
+            const mockDataCache = { activeLineData: {} };
+            const models = {
+                timeSeriesSources: {
+                    P1: {
+                        overview: {
+                            data: {
+                                Datetime: [0, 1000, 2000],
+                                LAeq: [50, 51, 52]
+                            }
+                        },
+                        log: {
+                            data: {
+                                Datetime: [900, 1000, 1100, 1200, 1300, 1400, 1500, 1600],
+                                LAeq: [55, 56, 57, 58, 59, 60, 61, 62],
+                            }
+                        }
+                    }
+                },
+                spectrogramSources: {
+                    P1: {
+                        overview: { data: { image: [[1]] } },
+                        log: { data: {} }
+                    }
+                },
+                positionHasLogData: { P1: true },
+                config: { log_view_max_viewport_seconds: 3600 }
+            };
+            const spectralDetails = {
+                requestedViewType: 'log',
+                type: 'overview',
+                reason: ' (Overview - Waiting for aligned Log Data...)',
+                statusCode: 'loading_log',
+                statusLabel: 'Waiting for aligned log data',
+                isLoading: true
+            };
+
+            const details = dataProcessors.updateActiveLineChartData('P1', viewState, mockDataCache, models, 0, spectralDetails);
+
+            expect(details.type).toBe('overview');
+            expect(details.statusCode).toBe('loading_log');
+            expect(mockDataCache.activeLineData.P1.dataViewType).toBe('overview');
+            expect(mockDataCache.activeLineData.P1.LAeq).toEqual([50, 51, 52]);
+        });
     });
 });

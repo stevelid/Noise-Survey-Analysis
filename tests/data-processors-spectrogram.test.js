@@ -224,9 +224,9 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
     const active = dataState.activeSpectralData[position];
 
-    // n_times comes from server metadata (reported_n_times=9), times_ms has 3 entries.
-    // The metadata is preserved as-is from the streamed payload.
-    expect(active.n_times).toBe(9);
+    // Chunk-only payloads normalize inconsistent server metadata down to the
+    // actual chunk-local backing data that can be rendered safely.
+    expect(active.n_times).toBe(3);
     expect(active.times_ms.length).toBe(3);
     // levels length should match n_freqs * chunk_time_length for chunk-only payloads
     expect(active.levels_flat_transposed.length).toBe(active.n_freqs * active.chunk_time_length);
@@ -266,8 +266,17 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     n_freqs = 4,
     time_step = 100,
     chunk_time_length = 3,
+    parameter = 'LAeq',
+    initial_dw = null,
+    repeated_tail_count = 0,
   } = {}) {
     const times_ms = Array.from({ length: n_times }, (_, t) => start + (t * time_step));
+    if (repeated_tail_count > 0 && repeated_tail_count < n_times) {
+      const repeatValue = times_ms[n_times - repeated_tail_count - 1];
+      for (let idx = n_times - repeated_tail_count; idx < n_times; idx += 1) {
+        times_ms[idx] = repeatValue;
+      }
+    }
     const levels = new Float32Array(n_freqs * n_times);
     for (let f = 0; f < n_freqs; f++) {
       for (let t = 0; t < n_times; t++) {
@@ -277,10 +286,12 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     const frequencies_hz = [100, 200, 300, 400].slice(0, n_freqs);
     const frequency_labels = frequencies_hz.map(hz => `${hz} Hz`);
     const initImage = levels.slice(0, n_freqs * chunk_time_length);
+    const initialDw = initial_dw ?? (chunk_time_length * time_step);
 
     return {
       times_ms: [times_ms],
       levels_flat_transposed: [levels],
+      parameter: [parameter],
       frequency_labels: [frequency_labels],
       frequencies_hz: [frequencies_hz],
       n_times: [n_times],
@@ -291,7 +302,7 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
       max_val: [100],
       initial_glyph_data_x: [[times_ms[0]]],
       initial_glyph_data_y: [[-0.5]],
-      initial_glyph_data_dw: [[chunk_time_length * time_step]],
+      initial_glyph_data_dw: [[initialDw]],
       initial_glyph_data_dh: [[n_freqs]],
       initial_glyph_data_image: [initImage],
       is_reservoir_payload: [true],
@@ -413,6 +424,118 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     expect(dataState2.activeSpectralData[position].source_replacement.image[0].length).toBe(4 * 3);
   });
 
+  it('uses full reservoir bounds instead of initial display chunk for readiness', () => {
+    const position = 'P_reservoir_bounds';
+    const overview = buildSpectralPrepared(60, 4, 100, 9);
+    const reservoirSource = buildReservoirLogSource({
+      start: 1000,
+      n_times: 45,
+      chunk_time_length: 9,
+      n_freqs: 4,
+      time_step: 100,
+      // Initial glyph only describes the fixed display chunk, not the full reservoir.
+      initial_dw: 900,
+    });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 3600 },
+    };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const viewState = {
+      globalViewType: 'log',
+      selectedParameter: 'LAeq',
+      // Inside the full reservoir (1000-5400 ms) but outside the initial 900 ms chunk.
+      viewport: { min: 2800, max: 3600 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+
+    expect(details.type).toBe('log');
+    expect(details.statusCode).toBe('log_displayed');
+    expect(dataState.activeSpectralData[position].dataViewType).toBe('log');
+    expect(dataState.activeSpectralData[position].source_replacement.image[0].length).toBe(4 * 9);
+  });
+
+  it('allows log display near the far edge when viewport still fits inside the reservoir', () => {
+    const position = 'P_reservoir_far_edge';
+    const overview = buildSpectralPrepared(60, 4, 100, 9);
+    const reservoirSource = buildReservoirLogSource({
+      start: 1000,
+      n_times: 45,
+      chunk_time_length: 9,
+      n_freqs: 4,
+      time_step: 100,
+      initial_dw: 900,
+    });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 3600 },
+    };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const viewState = {
+      globalViewType: 'log',
+      selectedParameter: 'LAeq',
+      // Near the far edge, but still within the full reservoir.
+      viewport: { min: 4600, max: 5400 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+
+    expect(details.type).toBe('log');
+    expect(details.statusCode).toBe('log_displayed');
+    expect(dataState.activeSpectralData[position].dataViewType).toBe('log');
+  });
+
+  it('preserves fixed chunk width when a reservoir tail is padded', () => {
+    const position = 'P_reservoir_padded_tail';
+    const overview = buildSpectralPrepared(60, 4, 100, 9);
+    const reservoirSource = buildReservoirLogSource({
+      start: 1000,
+      n_times: 9,
+      chunk_time_length: 9,
+      n_freqs: 4,
+      time_step: 100,
+      repeated_tail_count: 2,
+      initial_dw: 900,
+    });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 3600 },
+    };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const viewState = {
+      globalViewType: 'log',
+      selectedParameter: 'LAeq',
+      viewport: { min: 1100, max: 1500 },
+    };
+
+    dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const replacement = dataState.activeSpectralData[position].source_replacement;
+
+    expect(replacement.x[0]).toBe(1000);
+    expect(replacement.dw[0]).toBe(900);
+    expect(replacement.times_ms[0]).toBe(1000);
+    expect(replacement.times_ms[replacement.times_ms.length - 1]).toBe(1800);
+  });
+
   it('reservoir outside viewport coverage falls back to overview', () => {
     const position = 'P_reservoir_fallback';
     const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 5000, max: 5200 } };
@@ -438,6 +561,66 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     const rep = dataState.activeSpectralData[position].source_replacement;
     expect(rep).toBeTruthy();
     expect(rep.image[0].length).toBe(overview.n_freqs * overview.n_times);
+  });
+
+  it('partial reservoir overlap falls back instead of stretching stale log data', () => {
+    const position = 'P_reservoir_partial_overlap';
+    const overview = buildSpectralPrepared(60, 4, 100, 9);
+    const reservoirSource = buildReservoirLogSource({
+      start: 1000,
+      n_times: 45,
+      chunk_time_length: 9,
+      n_freqs: 4,
+      time_step: 100,
+      initial_dw: 900,
+    });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 3600 },
+    };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const viewState = {
+      globalViewType: 'log',
+      selectedParameter: 'LAeq',
+      // Partial overlap with the full reservoir should conservatively fall back.
+      viewport: { min: 5000, max: 5800 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+
+    expect(details.type).toBe('overview');
+    expect(details.statusCode).toBe('loading_log');
+    expect(dataState.activeSpectralData[position].dataViewType).toBe('overview');
+  });
+
+  it('streamed parameter mismatch falls back with parameter_sync status', () => {
+    const position = 'P_parameter_mismatch';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const overview = buildSpectralPrepared(6, 4, 100, 3);
+    const reservoirSource = buildReservoirLogSource({ parameter: 'LZeq' });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: {
+        [position]: { log: { data: reservoirSource } },
+      },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+
+    expect(details.type).toBe('overview');
+    expect(details.statusCode).toBe('parameter_sync');
+    expect(details.parameterMismatch).toBe(true);
   });
 
   it('fixed-size image painting with reservoir does not cause size mismatch', () => {

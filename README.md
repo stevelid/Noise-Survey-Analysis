@@ -279,6 +279,19 @@ In live server sessions, use **Menu ▸ Generate Static HTML (Offline)** to crea
 └── requirements.txt          # Python dependencies
 ```
 
+## Additional Documentation
+
+- **`.claude.md`** — Quick reference for Claude AI assistant (architecture summary, common patterns, launch modes)
+- **`AGENTS.md`** — Comprehensive developer handbook (architectural principles, layer responsibilities, naming conventions)
+- **`CONTROL_API.md`** — CLI and HTTP API reference for programmatic dashboard control
+- **`DEPLOYMENT.md`** — Deployment guide for production environments
+- **`HYBRID_CONTROL_PLAN.md`** — Historical design document for the control system (✅ completed)
+- **`GLYPH_REFACTOR_OPTIONS.md`** — Architecture decision record for spectrogram streaming
+- **`TODO.txt`** — Feature roadmap and improvement ideas
+- **`USER_GUIDE.txt`** — Detailed user manual
+
+---
+
 ## Core Architectural Concepts
 
 ### Data Flow
@@ -306,5 +319,11 @@ The front-end interactivity is managed by a self-contained JavaScript applicatio
 *   **services/renderers.js** consumes the latest state plus derived data to update the visible Bokeh models.
 
 This pattern keeps the code organized, predictable, and easier to debug and extend.
+
+## Testing Notes
+
+- Run Node-based tests from a local non-synced clone such as `C:\Dev\Noise Survey Analysis`; Vitest output is unreliable from the Google Drive worktree.
+- `tests/data-processors-python-chain.test.js` is the seam test for spectrogram streaming. It generates a real Python reservoir payload with `tests/helpers/generate_spectrogram_chain_fixture.py` and feeds that payload into the JS selector logic.
+- The chain test covers the edge cases that previously needed slow browser smoke tests: viewport inside the reservoir but outside the initial display chunk, near-edge pans that should still show log data, partial-overlap fallback, and oversized viewport fallback.
 
 

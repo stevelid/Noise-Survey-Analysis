@@ -382,7 +382,8 @@ class DashBuilder:
             self.components[position_name] = {
                 'timeseries': ts_component,
                 'spectrogram': spec_component,
-                'position_controls': position_controls
+                'position_controls': position_controls,
+                'has_log_spectral': position_data_obj.has_log_spectral,
             }
 
             controls_comp.add_visibility_checkbox(
@@ -740,6 +741,7 @@ class DashBuilder:
             'savedWorkspaceState': getattr(self, 'saved_workspace_state', None),
             'uiPositionElements': {},
             'positionHasLogData': {},  # per-position flag: whether log data exists (even if not yet loaded)
+            'positionHasLogSpectral': {},  # per-position flag: whether log spectrogram data exists
             'clickLines': [],
             'hoverLines': [],
             'labels': [],
@@ -825,6 +827,7 @@ class DashBuilder:
                 'log': comp_dict['timeseries'].log_source,
             }
             js_models['positionHasLogData'][pos] = comp_dict['timeseries'].has_log_data
+            js_models['positionHasLogSpectral'][pos] = bool(comp_dict.get('has_log_spectral'))
 
             js_models['spectrogramSources'][pos] = {
                 'overview': comp_dict['spectrogram'].overview_source,

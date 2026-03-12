@@ -299,17 +299,24 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const logDataEnd = Number(times_ms[times_ms.length - 1]);
         const rawReservoirDisplayStart = unwrapScalarValue(logData?.initial_glyph_data_x)
             ?? unwrapScalarValue(logData?.initial_glyph_data?.x);
-        const reservoirDisplayStart = Number.isFinite(Number(rawReservoirDisplayStart))
-            ? Number(rawReservoirDisplayStart)
-            : logDataStart;
         const rawReservoirDisplayWidth = unwrapScalarValue(logData?.initial_glyph_data_dw)
             ?? unwrapScalarValue(logData?.initial_glyph_data?.dw);
-        const reservoirDisplayWidth = Number.isFinite(Number(rawReservoirDisplayWidth)) && Number(rawReservoirDisplayWidth) > 0
+        const initialChunkStart = Number.isFinite(Number(rawReservoirDisplayStart))
+            ? Number(rawReservoirDisplayStart)
+            : logDataStart;
+        const initialChunkWidth = Number.isFinite(Number(rawReservoirDisplayWidth)) && Number(rawReservoirDisplayWidth) > 0
             ? Number(rawReservoirDisplayWidth)
             : (Number.isFinite(time_step) && time_step > 0 && Number.isFinite(chunk_time_length) && chunk_time_length > 0
                 ? chunk_time_length * time_step
                 : Math.max(0, logDataEnd - logDataStart));
-        const reservoirDisplayEnd = reservoirDisplayStart + reservoirDisplayWidth;
+        // For reservoir payloads, the safe pan/zoom span is the full backing reservoir,
+        // not the initial fixed-size display chunk described by initial_glyph_data.dw.
+        const reservoirDisplayStart = logData?._isReservoirPayload
+            ? logDataStart
+            : initialChunkStart;
+        const reservoirDisplayEnd = logData?._isReservoirPayload
+            ? (logDataEnd + (Number.isFinite(time_step) && time_step > 0 ? time_step : 0))
+            : (initialChunkStart + initialChunkWidth);
         const overlapStart = Math.max(safeViewportStart, logDataStart);
         const overlapEnd = Math.min(safeViewportEnd, logDataEnd);
         const overlapWidth = Math.max(0, overlapEnd - overlapStart);
@@ -733,8 +740,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             })() : null;
             const fallbackPreparedLogData = positionGlyphData?.log?.prepared_params?.[parameter] || null;
-            const streamedParameterMismatch = Boolean(
+            const hasStreamedLogData = Boolean(
                 streamedLogData
+                && streamedLogData.times_ms
+                && streamedLogData.times_ms.length > 0
+            );
+            const streamedParameterMismatch = Boolean(
+                hasStreamedLogData
                 && streamedLogData.parameter
                 && streamedLogData.parameter !== parameter
             );
@@ -744,7 +756,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             
             const hasLogData = logData && logData.times_ms && logData.times_ms.length > 0;
             // Whether log data exists on disk (even if not yet lazy-loaded)
-            const logDataExists = models.positionHasLogData?.[position] ?? hasLogData;
+            const logDataExists = models.positionHasLogData?.[position] ?? (hasStreamedLogData || hasLogData);
 
             let finalDataToUse, finalGlyphData;
             let displayMetadata = createDisplayMetadata({
@@ -773,7 +785,29 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const viewportTooLarge = viewportWidthSeconds > logViewThresholdSeconds;
 
             if (viewType === 'log') {
-                if (hasLogData) {
+                if (streamedParameterMismatch) {
+                    debugSpectrogram(position, 'parameter-mismatch', {
+                        selectedParameter: parameter,
+                        streamedParameter: streamedLogData?.parameter
+                    });
+                    ({ finalDataToUse, finalGlyphData, displayMetadata } = buildOverviewSpectrogramFallback(
+                        overviewData,
+                        position,
+                        dataCache,
+                        models,
+                        {
+                            reason: ' (Overview - Waiting for selected Log parameter...)',
+                            statusCode: 'parameter_sync',
+                            statusLabel: `Waiting for ${parameter} log data`,
+                            requestedViewType: viewType,
+                            selectedParameter: parameter,
+                            displayedParameter: parameter,
+                            logDataExists,
+                            isLoading: true,
+                            parameterMismatch: true,
+                        }
+                    ));
+                } else if (hasLogData) {
                     if (viewportTooLarge) {
                         ({ finalDataToUse, finalGlyphData, displayMetadata } = buildOverviewSpectrogramFallback(
                             overviewData,
@@ -789,28 +823,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                                 displayedParameter: parameter,
                                 logDataExists,
                                 requiresZoom: true,
-                            }
-                        ));
-                    } else if (streamedParameterMismatch) {
-                        debugSpectrogram(position, 'parameter-mismatch', {
-                            selectedParameter: parameter,
-                            streamedParameter: streamedLogData?.parameter
-                        });
-                        ({ finalDataToUse, finalGlyphData, displayMetadata } = buildOverviewSpectrogramFallback(
-                            overviewData,
-                            position,
-                            dataCache,
-                            models,
-                            {
-                                reason: ' (Overview - Waiting for selected Log parameter...)',
-                                statusCode: 'parameter_sync',
-                                statusLabel: `Waiting for ${parameter} log data`,
-                                requestedViewType: viewType,
-                                selectedParameter: parameter,
-                                displayedParameter: parameter,
-                                logDataExists,
-                                isLoading: true,
-                                parameterMismatch: true,
                             }
                         ));
                     } else {
@@ -1299,6 +1311,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return Math.max(0, span) + safeStep;
     }
 
+    function _buildDisplayChunkTimes(finalDataToUse, chunkStartTimeIdx, effectiveChunkTimeLength) {
+        const baseTimes = finalDataToUse?.times_ms;
+        const safeStart = Math.max(0, Math.floor(chunkStartTimeIdx || 0));
+        const safeLength = Math.max(1, Math.floor(effectiveChunkTimeLength || 1));
+        const firstTime = Number(baseTimes?.[safeStart]);
+        const safeTimeStep = Number.isFinite(finalDataToUse?.time_step) && finalDataToUse.time_step > 0
+            ? Number(finalDataToUse.time_step)
+            : 0;
+
+        if (!Number.isFinite(firstTime)) {
+            return [];
+        }
+
+        // Use a synthetic monotonic time grid for display chunks so padded tail bins
+        // preserve the native bin width instead of collapsing repeated padded timestamps.
+        if (safeTimeStep > 0) {
+            return Array.from({ length: safeLength }, (_, idx) => firstTime + (idx * safeTimeStep));
+        }
+
+        return baseTimes?.slice(safeStart, safeStart + safeLength) || [];
+    }
+
     /**
      * Apply paint-on-canvas frequency slicing for spectrogram display.
      */
@@ -1308,8 +1342,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 1,
                 Number.isFinite(chunkTimeLength) ? Math.floor(chunkTimeLength) : Math.floor(finalDataToUse?.chunk_time_length || 1)
             );
-            const chunkTimes = finalDataToUse?.times_ms?.slice(chunkStartTimeIdx, chunkStartTimeIdx + effectiveChunkTimeLength) || [];
-            const chunkDw = _calculateSpectrogramChunkWidth(chunkTimes, finalDataToUse?.time_step);
+            const chunkTimes = _buildDisplayChunkTimes(finalDataToUse, chunkStartTimeIdx, effectiveChunkTimeLength);
+            const safeTimeStep = Number.isFinite(finalDataToUse?.time_step) && finalDataToUse.time_step > 0
+                ? Number(finalDataToUse.time_step)
+                : 0;
+            const chunkDw = safeTimeStep > 0
+                ? effectiveChunkTimeLength * safeTimeStep
+                : _calculateSpectrogramChunkWidth(chunkTimes, finalDataToUse?.time_step);
             if (!finalDataToUse || !finalDataToUse.frequencies_hz || !models.config) {
                 return {
                     ...finalDataToUse.initial_glyph_data,

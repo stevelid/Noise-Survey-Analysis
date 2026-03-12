@@ -750,12 +750,17 @@ class StreamingBackendTests(unittest.TestCase):
         # Reservoir starts at the beginning of the prepared data
         self.assertEqual(payload["min_time"][0], float(reservoir_times[0]))
         self.assertEqual(payload["max_time"][0], float(reservoir_times[-1]))
+        self.assertEqual(payload["parameter"][0], "LZeq")
         # Reservoir bounds tracked
         self.assertEqual(
             handler._spectrogram_chunk_bounds["P_reservoir_full"],
             (float(reservoir_times[0]), float(reservoir_times[-1]))
         )
         self.assertTrue(payload["is_reservoir_payload"][0])
+        # The initial glyph metadata describes the fixed display chunk, not the
+        # full reservoir backing span.
+        reservoir_span_ms = float(reservoir_times[-1]) - float(reservoir_times[0])
+        self.assertLess(payload["initial_glyph_data_dw"][0][0], reservoir_span_ms)
 
     def test_wide_buffer_reservoir_covers_viewport(self):
         """
@@ -922,7 +927,7 @@ class StreamingBackendTests(unittest.TestCase):
         self.assertTrue(spectrogram_log_source.data["is_reservoir_payload"][0])
 
     def test_reservoir_refresh_on_coverage_drop(self):
-        """Assert reservoir is refreshed when coverage drops below 80%."""
+        """Assert reservoir is refreshed when coverage drops below 98%."""
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
         position = PositionData(name="P_refresh")
         position.sample_periods_seconds = {0.1}
@@ -939,7 +944,7 @@ class StreamingBackendTests(unittest.TestCase):
         buffer_start_ms = 24 * 60 * 1000
         buffer_end_ms = 96 * 60 * 1000
         handler._buffer_bounds["P_refresh"] = (buffer_start_ms, buffer_end_ms)
-        # Old reservoir covers 24-36 min, new viewport 30-42 min (< 80% coverage)
+        # Old reservoir covers 24-36 min, new viewport 30-42 min (~50% coverage)
         handler._spectrogram_chunk_bounds["P_refresh"] = (24 * 60 * 1000, 36 * 60 * 1000)
         handler._update_position = MagicMock()
 
@@ -954,6 +959,34 @@ class StreamingBackendTests(unittest.TestCase):
             sample_period_seconds=0.1,
             refresh_totals=False,
         )
+
+    def test_reservoir_not_refreshed_when_coverage_meets_threshold(self):
+        """Assert reservoir is reused when viewport coverage remains above 98%."""
+        base_time = pd.Timestamp("2024-01-01T00:00:00Z")
+        position = PositionData(name="P_refresh_ok")
+        position.sample_periods_seconds = {0.1}
+        position.log_spectral = pd.DataFrame({
+            "Datetime": [base_time],
+            "LZeq_100": [60],
+            "LZeq_200": [65],
+        })
+        handler = ServerDataHandler(FakeDoc({}), DummyDataManager({"P_refresh_ok": position}), CHART_SETTINGS)
+
+        viewport_start_ms = 30 * 60 * 1000
+        viewport_end_ms = 42 * 60 * 1000
+        buffer_start_ms = 24 * 60 * 1000
+        buffer_end_ms = 96 * 60 * 1000
+        handler._buffer_bounds["P_refresh_ok"] = (buffer_start_ms, buffer_end_ms)
+        # Coverage = 11.95 / 12.0 = 0.9958..., which should reuse the reservoir.
+        handler._spectrogram_chunk_bounds["P_refresh_ok"] = (
+            (30 * 60 * 1000) - 60 * 1000,
+            (42 * 60 * 1000) - 3 * 1000,
+        )
+        handler._update_position = MagicMock()
+
+        handler.handle_range_update(viewport_start_ms, viewport_end_ms)
+
+        handler._update_position.assert_not_called()
 
 
 if __name__ == "__main__":

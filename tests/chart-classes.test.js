@@ -184,6 +184,121 @@ describe('NoiseSurveyApp.classes', () => {
     expect(chartModel.title.text.startsWith('Conference Room - LAeq Spectrogram')).toBe(true);
   });
 
+  it('PositionController.updateAllCharts should prefer active data displayDetails over stale external details', () => {
+    const imageRenderer = {
+      glyph: { type: 'Image', x: 0, y: 0, dw: 0, dh: 0 },
+      data_source: { data: { image: [new Float32Array(4)] }, change: { emit: vi.fn() } },
+    };
+    const timeSeriesModel = { name: 'figure_P1_timeseries', title: { text: '' }, x_range: { start: 0, end: 100 }, y_range: { start: 0, end: 1 } };
+    const spectrogramModel = {
+      name: 'figure_P1_spectrogram',
+      title: { text: '' },
+      renderers: [imageRenderer],
+      yaxis: { ticker: {}, major_label_overrides: {} },
+      y_range: { start: 0, end: 3 },
+    };
+
+    const controller = Object.create(classes.PositionController.prototype);
+    controller.id = 'P1';
+    controller.displayName = 'P1';
+    controller.timeSeriesChart = new classes.TimeSeriesChart(
+      timeSeriesModel,
+      { data: {}, change: { emit: vi.fn() } },
+      {},
+      {},
+      'P1'
+    );
+    controller.spectrogramChart = new classes.SpectrogramChart(
+      spectrogramModel,
+      {},
+      {},
+      { text: '' },
+      'P1'
+    );
+
+    const state = { view: { selectedParameter: 'LZeq' } };
+    const dataCache = {
+      activeLineData: {
+        P1: {
+          Datetime: [1000, 1100],
+          LAeq: [50, 60],
+          displayDetails: { type: 'log', reason: ' (Log Data)' },
+        },
+      },
+      activeSpectralData: {
+        P1: {
+          displayedParameter: 'LZeq',
+          displayDetails: { type: 'log', reason: ' (Log Data)', displayedParameter: 'LZeq' },
+          source_replacement: { image: [new Float32Array([1, 2, 3, 4])], x: [1000], dw: [400], y: [0], dh: [1] },
+        },
+      },
+    };
+
+    controller.updateAllCharts(state, dataCache, {
+      line: { type: 'overview', reason: ' (No Data Available)' },
+      spec: { type: 'overview', reason: ' (No Data Available)', displayedParameter: 'LZeq' },
+    });
+
+    expect(timeSeriesModel.title.text).toContain('Time History (Log Data)');
+    expect(spectrogramModel.title.text).toContain('LZeq Spectrogram (Log Data)');
+  });
+
+  it('PositionController.updateAllCharts should support mixed capability states per chart', () => {
+    const imageRenderer = {
+      glyph: { type: 'Image', x: 0, y: 0, dw: 0, dh: 0 },
+      data_source: { data: { image: [new Float32Array(4)] }, change: { emit: vi.fn() } },
+    };
+    const timeSeriesModel = { name: 'figure_NS2_timeseries', title: { text: '' }, x_range: { start: 0, end: 100 }, y_range: { start: 0, end: 1 } };
+    const spectrogramModel = {
+      name: 'figure_NS2_spectrogram',
+      title: { text: '' },
+      renderers: [imageRenderer],
+      yaxis: { ticker: {}, major_label_overrides: {} },
+      y_range: { start: 0, end: 3 },
+    };
+
+    const controller = Object.create(classes.PositionController.prototype);
+    controller.id = 'NS2';
+    controller.displayName = 'NS2';
+    controller.timeSeriesChart = new classes.TimeSeriesChart(
+      timeSeriesModel,
+      { data: {}, change: { emit: vi.fn() } },
+      {},
+      {},
+      'NS2'
+    );
+    controller.spectrogramChart = new classes.SpectrogramChart(
+      spectrogramModel,
+      {},
+      {},
+      { text: '' },
+      'NS2'
+    );
+
+    const state = { view: { selectedParameter: 'LZeq' } };
+    const dataCache = {
+      activeLineData: {
+        NS2: {
+          Datetime: [1000, 1100],
+          LAeq: [55, 57],
+          displayDetails: { type: 'log', reason: ' (Log Data)' },
+        },
+      },
+      activeSpectralData: {
+        NS2: {
+          displayDetails: { type: 'overview', reason: ' (Overview - No log spectrogram available)', displayedParameter: 'LZeq' },
+          displayedParameter: 'LZeq',
+          source_replacement: { image: [new Float32Array([1, 2, 3, 4])], x: [1000], dw: [400], y: [0], dh: [1] },
+        },
+      },
+    };
+
+    controller.updateAllCharts(state, dataCache, {});
+
+    expect(timeSeriesModel.title.text).toContain('Time History (Log Data)');
+    expect(spectrogramModel.title.text).toContain('LZeq Spectrogram (Overview - No log spectrogram available)');
+  });
+
   it.skip('Chart.syncMarkers should add, update styling, and remove markers correctly (TODO: update for new overlay system)', () => {
     // Base Chart with stubs
     const chartModel = { name: 'figure_P1_timeseries', add_layout: vi.fn(), remove_layout: vi.fn(), x_range: { start: 0, end: 100 }, y_range: { start: 0, end: 1 } };

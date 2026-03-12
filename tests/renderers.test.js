@@ -319,6 +319,46 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.setDisplayName).toHaveBeenCalledWith('P1');
             expect(window.NoiseSurveyApp.registry.controllers.positions.P1.spectrogramChart.hoverDivModel.visible).toBe(false);
         });
+
+        it('should still update controllers when explicit display details are stale or missing', () => {
+            const mockState = {
+                view: {
+                    chartVisibility: {
+                        figure_P1_timeseries: true,
+                        figure_P1_spectrogram: true
+                    }
+                }
+            };
+            const mockDataCache = {
+                activeLineData: {
+                    P1: {
+                        Datetime: [1000, 1100],
+                        LAeq: [50, 60],
+                        displayDetails: { type: 'log', reason: ' (Log Data)' }
+                    }
+                },
+                activeSpectralData: {
+                    P1: {
+                        displayDetails: { type: 'log', reason: ' (Log Data)', displayedParameter: 'LZeq' },
+                        source_replacement: { image: [new Float32Array([1, 2, 3, 4])], x: [1000], dw: [400], y: [0], dh: [1] }
+                    }
+                }
+            };
+
+            renderers.renderPrimaryCharts(mockState, mockDataCache, {
+                P1: {
+                    line: { type: 'overview', reason: ' (No Data Available)' }
+                }
+            });
+
+            expect(mockUpdateAllCharts).toHaveBeenCalledWith(
+                mockState,
+                mockDataCache,
+                expect.objectContaining({
+                    line: expect.objectContaining({ reason: ' (No Data Available)' })
+                })
+            );
+        });
     });
 
     describe('renderOverlays', () => {

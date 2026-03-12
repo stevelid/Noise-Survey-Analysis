@@ -782,12 +782,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const activeSpecData = dataCache.activeSpectralData[this.id];
             if (this.timeSeriesChart) {
                 this.timeSeriesChart.setDisplayName(this.displayName);
-                const lineDetails = displayDetails.line || this.timeSeriesChart.lastDisplayDetails || { reason: '' };
+                const lineDetails = activeLineData?.displayDetails
+                    || displayDetails.line
+                    || this.timeSeriesChart.lastDisplayDetails
+                    || { reason: '' };
                 this.timeSeriesChart.update(activeLineData, lineDetails);
             }
             if (this.spectrogramChart) {
                 this.spectrogramChart.setDisplayName(this.displayName);
-                const specDetails = displayDetails.spec || this.spectrogramChart.lastDisplayDetails || { reason: '' };
+                const specDetails = activeSpecData?.displayDetails
+                    || displayDetails.spec
+                    || this.spectrogramChart.lastDisplayDetails
+                    || { reason: '' };
                 this.spectrogramChart.update(activeSpecData, specDetails, state.view.selectedParameter);
             }
         }
