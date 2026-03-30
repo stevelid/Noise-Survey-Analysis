@@ -594,6 +594,104 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(mockDataCache.activeLineData.NS2.Datetime.length).toBe(7);
         });
 
+        it('should keep line data in overview while the spectrogram is still waiting for aligned log data', () => {
+            const viewState = {
+                globalViewType: 'log',
+                availablePositions: ['P1'],
+                viewport: { min: 1000, max: 2000 }
+            };
+            const mockDataCache = { activeLineData: {} };
+            const models = {
+                timeSeriesSources: {
+                    P1: {
+                        overview: {
+                            data: {
+                                Datetime: [0, 1000, 2000],
+                                LAeq: [50, 51, 52]
+                            }
+                        },
+                        log: {
+                            data: {
+                                Datetime: [1000, 1100, 1200, 1300, 1400, 1500, 1600],
+                                LAeq: [55, 56, 57, 58, 59, 60, 61]
+                            }
+                        }
+                    }
+                }
+            };
+
+            const details = dataProcessors.updateActiveLineChartData(
+                'P1',
+                viewState,
+                mockDataCache,
+                models,
+                0,
+                {
+                    type: 'overview',
+                    requestedViewType: 'log',
+                    statusCode: 'loading_log',
+                    statusLabel: 'Loading log spectrogram',
+                    reason: ' (Overview - Streaming Log Data...)',
+                    isLoading: true
+                }
+            );
+
+            expect(details.type).toBe('overview');
+            expect(details.statusCode).toBe('loading_log');
+            expect(mockDataCache.activeLineData.P1.dataViewType).toBe('overview');
+            expect(mockDataCache.activeLineData.P1.LAeq).toEqual([50, 51, 52]);
+        });
+
+        it('should keep line data in overview while the spectrogram edge guard is active', () => {
+            const viewState = {
+                globalViewType: 'log',
+                availablePositions: ['P1'],
+                viewport: { min: 1000, max: 2000 }
+            };
+            const mockDataCache = { activeLineData: {} };
+            const models = {
+                timeSeriesSources: {
+                    P1: {
+                        overview: {
+                            data: {
+                                Datetime: [0, 1000, 2000],
+                                LAeq: [50, 51, 52]
+                            }
+                        },
+                        log: {
+                            data: {
+                                Datetime: [1000, 1100, 1200, 1300, 1400, 1500, 1600],
+                                LAeq: [55, 56, 57, 58, 59, 60, 61]
+                            }
+                        }
+                    }
+                }
+            };
+
+            const details = dataProcessors.updateActiveLineChartData(
+                'P1',
+                viewState,
+                mockDataCache,
+                models,
+                0,
+                {
+                    type: 'overview',
+                    requestedViewType: 'log',
+                    statusCode: 'edge_guard',
+                    statusLabel: 'Waiting for aligned log spectrogram',
+                    reason: ' (Overview - Waiting for centered Log chunk...)',
+                    isLoading: true,
+                    coverageRatio: 1,
+                    centeredChunkReady: false
+                }
+            );
+
+            expect(details.type).toBe('overview');
+            expect(details.statusCode).toBe('edge_guard');
+            expect(mockDataCache.activeLineData.P1.dataViewType).toBe('overview');
+            expect(mockDataCache.activeLineData.P1.LAeq).toEqual([50, 51, 52]);
+        });
+
         it('should honor the server-provided shared threshold before any spectrogram reservoir has been streamed', () => {
             const viewState = {
                 globalViewType: 'log',

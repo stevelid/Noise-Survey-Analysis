@@ -265,22 +265,29 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const actionTypes = app.actionTypes || {};
         const previousStateForAudio = previousState;
         const lastActionType = state.system?.lastAction?.type;
-    
+
+        // Capture prev and advance previousState immediately, BEFORE rendering.
+        // This prevents nested dispatches (e.g. Bokeh selection callbacks triggered
+        // during data-source updates) from having their previousState overwritten
+        // when the outer onStateChange finishes.
+        const prev = previousState;
+        previousState = state;
+
         // --- A. DETERMINE UPDATE TYPE (HEAVY vs. LIGHT) ---
-        const didViewportChange = state.view.viewport !== previousState.view.viewport;
-        const didParamChange = state.view.selectedParameter !== previousState.view.selectedParameter;
-        const didViewToggleChange = state.view.globalViewType !== previousState.view.globalViewType;
-        const didVisibilityChange = state.view.chartVisibility !== previousState.view.chartVisibility;
-        const didChartOffsetsChange = state.view.positionChartOffsets !== previousState.view.positionChartOffsets;
-        const didMarkersChange = state.markers !== previousState.markers;
-        const didRegionsChange = state.regions !== previousState.regions;
-        const didActiveDragToolChange = state.interaction.activeDragTool !== previousState.interaction.activeDragTool;
-        const didActiveSidePanelTabChange = state.view.activeSidePanelTab !== previousState.view.activeSidePanelTab;
-        const didDisplayTitlesChange = state.view.positionDisplayTitles !== previousState.view.positionDisplayTitles;
-        const didThresholdChange = state.view.logViewThreshold !== previousState.view.logViewThreshold;
-        const didPendingRegionChange = state.interaction.pendingRegionStart !== previousState.interaction.pendingRegionStart;
-        const didTapChange = state.interaction.tap !== previousState.interaction.tap;
-        const didAudioPositionChange = state.audio.activePositionId !== previousState.audio.activePositionId;
+        const didViewportChange = state.view.viewport !== prev.view.viewport;
+        const didParamChange = state.view.selectedParameter !== prev.view.selectedParameter;
+        const didViewToggleChange = state.view.globalViewType !== prev.view.globalViewType;
+        const didVisibilityChange = state.view.chartVisibility !== prev.view.chartVisibility;
+        const didChartOffsetsChange = state.view.positionChartOffsets !== prev.view.positionChartOffsets;
+        const didMarkersChange = state.markers !== prev.markers;
+        const didRegionsChange = state.regions !== prev.regions;
+        const didActiveDragToolChange = state.interaction.activeDragTool !== prev.interaction.activeDragTool;
+        const didActiveSidePanelTabChange = state.view.activeSidePanelTab !== prev.view.activeSidePanelTab;
+        const didDisplayTitlesChange = state.view.positionDisplayTitles !== prev.view.positionDisplayTitles;
+        const didThresholdChange = state.view.logViewThreshold !== prev.view.logViewThreshold;
+        const didPendingRegionChange = state.interaction.pendingRegionStart !== prev.interaction.pendingRegionStart;
+        const didTapChange = state.interaction.tap !== prev.interaction.tap;
+        const didAudioPositionChange = state.audio.activePositionId !== prev.audio.activePositionId;
         const didDataRefresh = lastActionType === actionTypes.DATA_REFRESHED;
 
         const isHeavyUpdateRequested = isInitialLoad
@@ -417,8 +424,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleAudioSideEffects(state, previousStateForAudio, models);
 
         // --- D. CLEANUP ---
-        // Update previousState for the next cycle
-        previousState = state;
+        // previousState was already advanced at the top of this function
+        // to prevent nested-dispatch overwrites.
     }
 
     /**

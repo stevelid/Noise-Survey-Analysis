@@ -84,16 +84,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 });
 
                 if (areas.length <= 1 || targetIndex === -1) {
-                    dispatch(actions.regionRemove(regionHit.id));
                     if (app.regions?.invalidateRegionMetrics) {
                         app.regions.invalidateRegionMetrics(regionHit.id);
                     }
+                    dispatch(actions.regionRemove(regionHit.id));
                 } else {
                     const nextAreas = areas.filter((_, index) => index !== targetIndex);
-                    dispatch(actions.regionUpdate(regionHit.id, { areas: nextAreas }));
                     if (app.regions?.invalidateRegionMetrics) {
                         app.regions.invalidateRegionMetrics(regionHit.id);
                     }
+                    dispatch(actions.regionUpdate(regionHit.id, { areas: nextAreas }));
                 }
                 return;
             }
@@ -181,12 +181,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             if (rawKey === 'Delete' || rawKey === 'Backspace') {
                 const state = typeof getState === 'function' ? getState() : null;
+                const selectedMarker = state && typeof markerSelectors.selectSelectedMarker === 'function'
+                    ? markerSelectors.selectSelectedMarker(state)
+                    : null;
+                if (selectedMarker && Number.isFinite(selectedMarker.id) && typeof actions.markerRemove === 'function') {
+                    dispatch(actions.markerRemove(selectedMarker.id));
+                    return;
+                }
+
                 const selectedRegionId = state?.regions?.selectedId;
-                if (Number.isFinite(selectedRegionId) && typeof actions.regionRemoved === 'function') {
-                    dispatch(actions.regionRemoved({ id: selectedRegionId }));
+                if (Number.isFinite(selectedRegionId) && typeof actions.regionRemove === 'function') {
                     if (app.regions?.invalidateRegionMetrics) {
                         app.regions.invalidateRegionMetrics(selectedRegionId);
                     }
+                    dispatch(actions.regionRemove(selectedRegionId));
                 }
                 return;
             }

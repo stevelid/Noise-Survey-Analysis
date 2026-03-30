@@ -300,8 +300,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (targetRegion && targetRegion.positionId === positionId) {
                 const existingAreas = getRegionAreas(targetRegion);
                 const nextAreas = [...existingAreas, { start, end }];
-                dispatch(actions.regionUpdate(targetRegion.id, { areas: nextAreas }));
                 app.regions?.invalidateRegionMetrics?.(targetRegion.id);
+                dispatch(actions.regionUpdate(targetRegion.id, { areas: nextAreas }));
                 if (regionsState?.selectedId !== targetRegion.id) {
                     dispatch(selectRegionIntent(targetRegion.id));
                 }
@@ -521,10 +521,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
             const combinedAreas = [...getRegionAreas(targetRegion), ...getRegionAreas(sourceRegion)];
-            dispatch(actions.regionUpdate(targetId, { areas: combinedAreas }));
             app.regions?.invalidateRegionMetrics?.(targetId);
-            dispatch(actions.regionRemove(sourceNumericId));
+            dispatch(actions.regionUpdate(targetId, { areas: combinedAreas }));
             app.regions?.invalidateRegionMetrics?.(sourceNumericId);
+            dispatch(actions.regionRemove(sourceNumericId));
             if (regionsState?.addAreaTargetId === sourceNumericId) {
                 dispatch(actions.regionSetAddAreaMode(null));
             }
@@ -622,8 +622,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             if (mutated) {
-                dispatch(actions.regionUpdate(region.id, { areas: nextAreas }));
                 app.regions?.invalidateRegionMetrics?.(region.id);
+                dispatch(actions.regionUpdate(region.id, { areas: nextAreas }));
             }
         };
     }
@@ -657,13 +657,51 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 color: region.color
             }));
 
-            dispatch(actions.regionRemove(region.id));
             app.regions?.invalidateRegionMetrics?.(region.id);
+            dispatch(actions.regionRemove(region.id));
             if (regionsState?.addAreaTargetId === region.id && actions.regionSetAddAreaMode) {
                 dispatch(actions.regionSetAddAreaMode(null));
             }
             dispatch(actions.regionsAdded(newRegions));
             app.regions?.invalidateMetricsCache?.();
+        };
+    }
+
+    /**
+     * Copies the currently selected region to all other positions.
+     * Each new region spans the same time areas and computes metrics
+     * from its own position's data.
+     */
+    function copyRegionToAllPositionsIntent() {
+        return function (dispatch, getState) {
+            if (!actions || typeof getState !== 'function') return;
+            const state = getState();
+            const regionsState = regionSelectors.selectRegionsState
+                ? regionSelectors.selectRegionsState(state) : state?.regions;
+            const selectedId = regionsState?.selectedId;
+            if (!Number.isFinite(selectedId)) return;
+
+            const sourceRegion = regionsState.byId[selectedId];
+            if (!sourceRegion) return;
+
+            const sourceAreas = getRegionAreas(sourceRegion);
+            if (!sourceAreas.length) return;
+
+            const availablePositions = Array.isArray(state?.view?.availablePositions)
+                ? state.view.availablePositions : [];
+            const targets = availablePositions.filter(pid => pid !== sourceRegion.positionId);
+            if (!targets.length) return;
+
+            const regions = targets.map(positionId => ({
+                positionId,
+                areas: sourceAreas.map(a => ({ start: a.start, end: a.end })),
+                note: sourceRegion.note || '',
+                color: sourceRegion.color || ''
+            }));
+
+            dispatch(actions.regionsAdded(regions));
+            app.regions?.invalidateMetricsCache?.();
+            dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
         };
     }
 
@@ -681,7 +719,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         mergeRegionIntoSelectedIntent,
         resizeSelectedRegionIntent,
         splitSelectedRegionIntent,
-        toggleRegionCreationIntent
+        toggleRegionCreationIntent,
+        copyRegionToAllPositionsIntent
     };
 })(window.NoiseSurveyApp);
 

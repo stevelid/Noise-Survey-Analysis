@@ -521,9 +521,35 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const effectiveMax = Number.isFinite(viewportMax) ? viewportMax - positionOffsetMs : viewportMax;
 
             let nextActiveLine = null;
+            const shouldSyncLineToSpectrogramOverview = viewType === 'log'
+                && spectralDetails
+                && spectralDetails.requestedViewType === 'log'
+                && spectralDetails.type === 'overview'
+                && (
+                    spectralDetails.isLoading
+                    || spectralDetails.statusCode === 'edge_guard'
+                    || spectralDetails.statusCode === 'parameter_sync'
+                );
 
             if (viewType === 'log') {
-                if (hasLogData) {
+                if (shouldSyncLineToSpectrogramOverview) {
+                    const overviewClone = cloneDataColumns(overviewData || {});
+                    applyDatetimeOffset(overviewClone, positionOffsetMs);
+                    nextActiveLine = overviewClone;
+                    displayDetails = createDisplayMetadata({
+                        type: 'overview',
+                        reason: spectralDetails.reason || ' (Overview - Waiting for spectrogram log data...)',
+                        statusCode: spectralDetails.statusCode || 'loading_log',
+                        statusLabel: spectralDetails.statusLabel || 'Waiting for log spectrogram',
+                        requestedViewType: viewType,
+                        logDataExists,
+                        isLoading: Boolean(spectralDetails.isLoading),
+                        requiresZoom: Boolean(spectralDetails.requiresZoom),
+                        coverageRatio: spectralDetails.coverageRatio,
+                        centeredChunkReady: spectralDetails.centeredChunkReady,
+                        parameterMismatch: Boolean(spectralDetails.parameterMismatch),
+                    });
+                } else if (hasLogData) {
                     // Check viewport width against dynamic threshold (in milliseconds)
                     const logViewThresholdSeconds = calculateSharedLogDisplayThreshold(models, viewState);
                     const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)

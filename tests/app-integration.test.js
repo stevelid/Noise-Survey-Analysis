@@ -206,6 +206,35 @@ describe('App Orchestration Integration Tests', () => {
             expect(renderers.renderMarkers.mock.calls.length).toBeGreaterThan(beforeMarkers);
         });
 
+        it('keeps region change detection in sync after a nested dispatch during delete', () => {
+            const { store, actions, actionTypes, renderers } = window.NoiseSurveyApp;
+
+            store.dispatch(actions.regionAdd('P1', 0, 1000));
+            store.dispatch(actions.regionAdd('P1', 2000, 3000));
+
+            let nestedSelectionDispatched = false;
+            renderers.renderSidePanel.mockImplementation((state) => {
+                if (
+                    !nestedSelectionDispatched
+                    && state.system?.lastAction?.type === actionTypes.REGION_REMOVED
+                ) {
+                    nestedSelectionDispatched = true;
+                    store.dispatch(actions.regionSelect(1));
+                }
+            });
+
+            store.dispatch(actions.regionRemove(2));
+            expect(store.getState().regions.selectedId).toBe(1);
+
+            vi.clearAllMocks();
+            renderers.renderSidePanel.mockImplementation(() => { });
+
+            store.dispatch(actions.regionSelect(1));
+
+            expect(renderers.renderSidePanel).not.toHaveBeenCalled();
+            expect(renderers.renderRegions).not.toHaveBeenCalled();
+        });
+
         it('togglePlayPause sends play command and updates UI controls', () => {
             const { eventHandlers, store, renderers } = window.NoiseSurveyApp;
 

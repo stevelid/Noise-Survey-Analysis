@@ -134,6 +134,78 @@ describe('Region thunks cache invalidation', () => {
         invalidateSpy.mockRestore();
     });
 
+    it('recomputes cached spectrum before the alt-arrow resize render runs', () => {
+        const { store, actions, thunks, regions } = app;
+        if (!store || !actions || !thunks?.resizeSelectedRegionIntent || !regions) {
+            throw new Error('Required dependencies not available.');
+        }
+
+        store.dispatch(actions.initializeState({
+            availablePositions: ['P1'],
+            selectedParameter: 'LAeq',
+            viewport: { min: 0, max: 3000 },
+            chartVisibility: {}
+        }));
+        store.dispatch(actions.stepSizeCalculated(1000));
+
+        app.registry = app.registry || {};
+        app.registry.models = app.registry.models || {};
+        app.registry.models.timeSeriesSources = {
+            P1: {
+                log: {
+                    data: {
+                        Datetime: [0, 1000, 2000],
+                        LAeq: [10, 20, 30]
+                    }
+                }
+            }
+        };
+        app.registry.models.preparedGlyphData = {
+            P1: {
+                log: {
+                    prepared_params: {
+                        LZeq: {
+                            times_ms: [0, 1000, 2000],
+                            levels_flat_transposed: [10, 20, 30],
+                            n_freqs: 1,
+                            n_times: 3,
+                            frequency_labels: ['63 Hz']
+                        }
+                    }
+                }
+            }
+        };
+
+        store.dispatch(actions.regionAdd('P1', 0, 1000));
+
+        const beforeRegion = store.getState().regions.byId[1];
+        const beforeMetrics = regions.getRegionMetrics(beforeRegion, store.getState(), app.dataCache, app.registry.models);
+
+        let renderedSpectrum = null;
+        const unsubscribe = store.subscribe(() => {
+            const state = store.getState();
+            const region = state?.regions?.byId?.[1];
+            if (!region) {
+                return;
+            }
+            renderedSpectrum = regions.getRegionMetrics(region, state, app.dataCache, app.registry.models)?.spectrum?.values?.[0] ?? null;
+        });
+
+        store.dispatch(thunks.resizeSelectedRegionIntent({
+            key: 'ArrowRight',
+            modifiers: { alt: true }
+        }));
+        unsubscribe();
+
+        const afterState = store.getState();
+        const afterRegion = afterState.regions.byId[1];
+        const expectedSpectrum = regions.computeRegionMetrics(afterRegion, afterState, app.dataCache, app.registry.models)?.spectrum?.values?.[0] ?? null;
+
+        expect(afterRegion.end).toBe(2000);
+        expect(renderedSpectrum).toBeCloseTo(expectedSpectrum, 6);
+        expect(renderedSpectrum).not.toBeCloseTo(beforeMetrics?.spectrum?.values?.[0] ?? null, 6);
+    });
+
     it('invalidates cache when splitting a region', () => {
         const { store, actions, thunks, regions } = app;
         if (!store || !actions || !thunks?.splitSelectedRegionIntent || !regions) {
