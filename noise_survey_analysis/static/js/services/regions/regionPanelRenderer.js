@@ -515,7 +515,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function updateButtons(models, hasSelection, selectedRegion, state, isMergeModeActive, panelVisible) {
-        const { copyButton, deleteButton, addAreaButton, mergeButton, mergeSelect, splitButton } = models;
+        const { copyButton, deleteButton, addAreaButton, mergeButton, mergeSelect, splitButton, copyToAllPositionsButton } = models;
         const addAreaTargetId = state?.regions?.addAreaTargetId ?? null;
         const hasOtherRegions = state?.regions?.allIds.length > 1;
         const mergeOptionsAvailable = Array.isArray(mergeSelect?.options) && mergeSelect.options.length > 0;
@@ -552,6 +552,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const areaCount = Array.isArray(selectedRegion?.areas) ? selectedRegion.areas.length : 0;
             splitButton.disabled = !(hasSelection && areaCount > 1);
             splitButton.visible = panelVisible;
+        }
+        if (copyToAllPositionsButton) {
+            const availablePositions = Array.isArray(state?.view?.availablePositions)
+                ? state.view.availablePositions : [];
+            const currentPosition = selectedRegion?.positionId;
+            const otherPositions = availablePositions.filter(pid => pid !== currentPosition);
+            const canCopy = hasSelection && otherPositions.length > 0;
+            copyToAllPositionsButton.disabled = !canCopy;
+            copyToAllPositionsButton.visible = panelVisible && availablePositions.length > 1;
+            if (canCopy && otherPositions.length === 1) {
+                const titles = state?.view?.positionDisplayTitles || {};
+                const targetName = titles[otherPositions[0]] || otherPositions[0];
+                const label = 'Copy to ' + targetName;
+                if (copyToAllPositionsButton.label !== label) {
+                    copyToAllPositionsButton.label = label;
+                }
+            } else {
+                const label = 'Copy to All Positions';
+                if (copyToAllPositionsButton.label !== label) {
+                    copyToAllPositionsButton.label = label;
+                }
+            }
         }
     }
 
@@ -665,8 +687,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             visibilityToggle,
 
             autoDayNightButton,
-            splitButton
-
+            splitButton,
+            copyToAllPositionsButton
 
         } = panelModels;
 

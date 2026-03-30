@@ -8,6 +8,7 @@ import pandas as pd
 from bokeh.models import ColumnDataSource, Range1d
 
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
+from noise_survey_analysis.core.app_callbacks import session_destroyed
 from noise_survey_analysis.core.config import CHART_SETTINGS
 from noise_survey_analysis.core.data_parsers import ParsedData
 from noise_survey_analysis.core.data_processors import (
@@ -360,6 +361,16 @@ class StreamingBackendTests(unittest.TestCase):
         doc.flush_timeouts()
 
         server_data_handler.handle_range_update.assert_called_once_with(150, 250)
+
+    def test_session_destroyed_releases_audio_handler(self):
+        session_context = MagicMock()
+        callback_manager = MagicMock()
+        session_context.id = "session-1"
+        session_context._app_callback_manager = callback_manager
+
+        session_destroyed(session_context)
+
+        callback_manager.cleanup.assert_called_once_with()
 
     def test_dash_builder_server_mode_uses_explicit_master_range1d(self):
         builder = DashBuilder()

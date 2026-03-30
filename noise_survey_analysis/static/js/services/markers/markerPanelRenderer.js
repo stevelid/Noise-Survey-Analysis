@@ -373,6 +373,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         if (panelModels.visibilityToggle) {
             const shouldEnable = Boolean(markersState.enabled !== false);
+            const markerCount = markers.length;
+            const label = markerCount > 0 ? `Markers (${markerCount})` : 'Markers';
+            if (panelModels.visibilityToggle.label !== label) {
+                panelModels.visibilityToggle.label = label;
+            }
             if (panelModels.visibilityToggle.active !== shouldEnable) {
                 panelModels.visibilityToggle.active = shouldEnable;
             }

@@ -825,6 +825,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     spectrumDiv: models?.regionPanelSpectrumDiv,
                     visibilityToggle: models?.regionVisibilityToggle,
                     autoDayNightButton: models?.regionAutoDayNightButton,
+                    copyToAllPositionsButton: models?.regionPanelCopyToAllPositionsButton,
                 };
                 const availablePositions = Array.isArray(state?.view?.availablePositions)
                     ? state.view.availablePositions

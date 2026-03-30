@@ -22,6 +22,10 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
       models: {
         audio_status_source: { data: { is_playing: true, position_id: 'P1' } },
         audio_control_source: { data: {} },
+        config: { log_view_max_viewport_seconds: 86400 },
+        positionHasLogData: { P1: true, P2: true },
+        positionHasLogSpectral: { P1: true, P2: false },
+        positionLogSpectralThresholdSeconds: { P1: 900, P2: null },
       },
     };
 
@@ -128,12 +132,12 @@ describe('NoiseSurveyApp.eventHandlers (extra coverage)', () => {
   it('handleLogViewThresholdChange should keep auto mode when value matches computed auto threshold', () => {
     window.NoiseSurveyApp.store.getState = () => ({
       view: {
-        availablePositions: [],
+        availablePositions: ['P1', 'P2'],
         logViewThreshold: { mode: 'auto', seconds: null }
       }
     });
 
-    window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange(1440);
+    window.NoiseSurveyApp.eventHandlers.handleLogViewThresholdChange(15);
     expect(dispatchAction).not.toHaveBeenCalled();
   });
 

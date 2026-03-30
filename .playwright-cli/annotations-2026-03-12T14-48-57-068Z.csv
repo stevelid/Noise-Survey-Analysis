@@ -1,0 +1,1 @@
+type,id,positionId,start_utc,end_utc,note,color,areas,timestamp_utc,duration_ms,metrics_parameter,metrics_data_resolution,metrics_duration_ms,metrics_laeq,metrics_lafmax,metrics_la90,metrics_la90_available,metrics_broadband_value,metrics_broadband_position,metrics_timestamp_utc,metrics_spectrum_source

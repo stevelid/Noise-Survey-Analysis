@@ -10,7 +10,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const { actions } = app;
     const constants = app.constants || {};
-    const DEFAULT_PLAYBACK_RATES = [0.5, 1.0, 1.5, 2.0];
+    const DEFAULT_PLAYBACK_RATES = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0];
 
     function buildPlaybackRateOptions() {
         const rawRates = Array.isArray(constants.audioPlaybackRates) && constants.audioPlaybackRates.length

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Generate a config file for a job by scanning its survey directory.
+Generate a dashboard config by scanning a job survey directory or a specific
+subfolder within it.
 """
 import os
 import sys
 import json
 import glob
 import re
+import argparse
 from datetime import datetime
 from collections import defaultdict
-from pathlib import Path
 
 
 def find_job_directory(base_dir, job_number):
@@ -54,12 +55,34 @@ def extract_position_from_filename(filename):
     return None
 
 
+def detect_source_type(filename):
+    """Return the source type/parser_type for a known survey-data filename."""
+    lower = filename.lower()
+
+    # Noise Sentry exports commonly retain the Convergence Instruments timestamp
+    # pattern: *_YYYY_MM_DD__HHhMMmSSs_(log|summary).csv
+    if re.search(r'_\d{4}_\d{2}_\d{2}__\d{2}h\d{2}m\d{2}s_(log|summary)\.csv$', lower):
+        return "Noise Sentry", "sentry"
+
+    if lower.endswith(('_log.csv', '_summary.csv')):
+        return "Svan", "svan"
+
+    if lower.endswith('.txt') and (
+        '_123_' in lower or '_rta_3rd_' in lower
+    ) and (
+        lower.endswith('_log.txt') or lower.endswith('_rpt_report.txt')
+    ):
+        return "NTi", "nti"
+
+    return None, None
+
+
 def scan_survey_directory(scan_dir):
     """
     Scan directory and organize files by position.
     Returns: dict with positions as keys, containing lists of files and audio info.
     """
-    positions = defaultdict(lambda: {'log': [], 'summary': [], 'audio_files': []})
+    positions = defaultdict(lambda: {'sources': [], 'audio_files': []})
     audio_files = []
 
     # Get all files
@@ -78,8 +101,8 @@ def scan_survey_directory(scan_dir):
             audio_files.append(filename)
             continue
 
-        # Skip non-data files
-        if not (filename.endswith('_log.csv') or filename.endswith('_summary.csv')):
+        source_type, parser_type = detect_source_type(filename)
+        if not source_type:
             continue
 
         # Extract position
@@ -87,11 +110,11 @@ def scan_survey_directory(scan_dir):
         if not position:
             continue
 
-        # Categorize
-        if filename.endswith('_log.csv'):
-            positions[position]['log'].append(filename)
-        elif filename.endswith('_summary.csv'):
-            positions[position]['summary'].append(filename)
+        positions[position]['sources'].append({
+            'path': filename,
+            'type': source_type,
+            'parser_type': parser_type,
+        })
 
     # Also check for subdirectories (like in job 5931)
     for item in os.listdir(scan_dir):
@@ -103,18 +126,21 @@ def scan_survey_directory(scan_dir):
             if audio_in_subdir:
                 positions[item]['audio_dir'] = item
 
-            # Check for log/summary files in subdirectories
+            # Check for supported data files in subdirectories
             for subfile in os.listdir(item_path):
-                if subfile.endswith('_log.csv'):
-                    positions[item]['log'].append(os.path.join(item, subfile))
-                elif subfile.endswith('_summary.csv'):
-                    positions[item]['summary'].append(os.path.join(item, subfile))
+                source_type, parser_type = detect_source_type(subfile)
+                if source_type:
+                    positions[item]['sources'].append({
+                        'path': os.path.join(item, subfile),
+                        'type': source_type,
+                        'parser_type': parser_type,
+                    })
 
     return positions, audio_files
 
 
-def generate_config_file(job_number, scan_dir):
-    """Generate a config file for the job."""
+def generate_config_file(job_number, scan_dir, config_name=None):
+    """Generate a config file for the requested scan directory."""
     positions, root_audio_files = scan_survey_directory(scan_dir)
 
     if not positions and not root_audio_files:
@@ -132,22 +158,12 @@ def generate_config_file(job_number, scan_dir):
 
     # Add sources for each position
     for position, files in sorted(positions.items()):
-        # Add log files
-        for log_file in files['log']:
+        for source in files['sources']:
             config_data["sources"].append({
-                "path": log_file.replace('\\', '/'),
+                "path": source['path'].replace('\\', '/'),
                 "position": position,
-                "type": "Svan",
-                "parser_type": "svan"
-            })
-
-        # Add summary files
-        for summary_file in files['summary']:
-            config_data["sources"].append({
-                "path": summary_file.replace('\\', '/'),
-                "position": position,
-                "type": "Svan",
-                "parser_type": "svan"
+                "type": source['type'],
+                "parser_type": source['parser_type']
             })
 
         # Add audio directory if it exists
@@ -171,7 +187,7 @@ def generate_config_file(job_number, scan_dir):
         })
 
     # Save config file
-    config_filename = f"noise_survey_config_{job_number}.json"
+    config_filename = config_name or f"noise_survey_config_{job_number}.json"
     config_path = os.path.join(scan_dir, config_filename)
 
     with open(config_path, 'w', encoding='utf-8') as f:
@@ -189,12 +205,28 @@ def generate_config_file(job_number, scan_dir):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python generate_job_config.py <job_number> [base_dir]")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Generate a dashboard config for a job or a specific survey subfolder."
+    )
+    parser.add_argument("job_number", help="Job number, e.g. 5882")
+    parser.add_argument(
+        "base_dir",
+        nargs="?",
+        default="G:/Shared drives/Venta/Jobs",
+        help="Base jobs directory. Defaults to G:/Shared drives/Venta/Jobs",
+    )
+    parser.add_argument(
+        "--scan-dir",
+        help="Specific directory to scan instead of the default job surveys folder.",
+    )
+    parser.add_argument(
+        "--config-name",
+        help="Optional output config filename. Defaults to noise_survey_config_<job>.json",
+    )
+    args = parser.parse_args()
 
-    job_number = sys.argv[1]
-    base_dir = sys.argv[2] if len(sys.argv) > 2 else "G:/Shared drives/Venta/Jobs"
+    job_number = args.job_number
+    base_dir = args.base_dir
 
     print(f"Searching for job {job_number} in {base_dir}...")
 
@@ -207,11 +239,11 @@ def main():
     print(f"[OK] Found job directory: {job_dir}")
 
     # Get scan directory
-    scan_dir = get_scan_directory(job_dir, job_number)
+    scan_dir = args.scan_dir if args.scan_dir else get_scan_directory(job_dir, job_number)
     print(f"[OK] Scanning directory: {scan_dir}")
 
     # Generate config
-    config_path = generate_config_file(job_number, scan_dir)
+    config_path = generate_config_file(job_number, scan_dir, args.config_name)
 
     if config_path:
         print(f"\n[OK] Config file ready: {config_path}")

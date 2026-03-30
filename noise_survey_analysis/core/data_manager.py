@@ -512,10 +512,15 @@ class DataManager:
         # Summary files (_summary) are always loaded eagerly regardless of size
         filename_lower = os.path.basename(file_path).lower()
         is_summary_file = '_summary' in filename_lower
+        is_report_file = '_rpt_report' in filename_lower or filename_lower.endswith('_report.txt')
         is_likely_log_file = not is_summary_file and (
-            '_log' in filename_lower or
+            (not is_report_file and '_log' in filename_lower) or
             'log_' in filename_lower or
-            (filename_lower.endswith(('.csv', '.txt')) and os.path.getsize(file_path) > 1_000_000)  # > 1MB
+            (
+                not is_report_file and
+                filename_lower.endswith(('.csv', '.txt')) and
+                os.path.getsize(file_path) > 1_000_000
+            )  # > 1MB
         )
         
         if skip_log_files and is_likely_log_file:

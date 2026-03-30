@@ -40,6 +40,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return (Number.isFinite(raw) && raw > 0) ? raw : DEFAULT_SERVER_LIMIT_SECONDS;
     }
 
+    function getPositionSpectralThresholdSeconds(models, positionId) {
+        const raw = Number(models?.positionLogSpectralThresholdSeconds?.[positionId]);
+        return (Number.isFinite(raw) && raw > 0) ? raw : null;
+    }
+
     function secondsToMinutes(seconds) {
         const numeric = Number(seconds);
         return (Number.isFinite(numeric) && numeric > 0) ? numeric / 60 : null;
@@ -89,29 +94,42 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function calculatePositionAutoLogThresholdSeconds(models, positionId) {
         const serverLimit = getServerLogViewportLimitSeconds(models);
-        return Number.isFinite(serverLimit) && serverLimit > 0
-            ? serverLimit
-            : DEFAULT_AUTO_THRESHOLD_SECONDS;
+        if (!positionId) {
+            return Number.isFinite(serverLimit) && serverLimit > 0
+                ? serverLimit
+                : DEFAULT_AUTO_THRESHOLD_SECONDS;
+        }
+
+        if (!Boolean(models?.positionHasLogData?.[positionId])) {
+            return serverLimit;
+        }
+
+        const directSpectralThreshold = getPositionSpectralThresholdSeconds(models, positionId);
+        if (Number.isFinite(directSpectralThreshold) && directSpectralThreshold > 0) {
+            return Math.min(directSpectralThreshold, serverLimit);
+        }
+
+        const allPositions = Object.keys(models?.positionHasLogData || {});
+        const sharedThreshold = calculateGlobalAutoLogThresholdSeconds(models, allPositions);
+        return Math.min(sharedThreshold, serverLimit);
     }
 
     function calculateGlobalAutoLogThresholdSeconds(models, positions) {
+        const serverLimit = getServerLogViewportLimitSeconds(models);
         if (!Array.isArray(positions) || !positions.length) {
-            return Math.min(DEFAULT_AUTO_THRESHOLD_SECONDS, getServerLogViewportLimitSeconds(models));
+            return Math.min(DEFAULT_AUTO_THRESHOLD_SECONDS, serverLimit);
         }
 
-        let minThreshold = Infinity;
-        positions.forEach(positionId => {
-            const value = calculatePositionAutoLogThresholdSeconds(models, positionId);
-            if (Number.isFinite(value) && value > 0) {
-                minThreshold = Math.min(minThreshold, value);
-            }
-        });
+        const spectralCandidates = positions
+            .filter(positionId => Boolean(models?.positionHasLogSpectral?.[positionId]))
+            .map(positionId => getPositionSpectralThresholdSeconds(models, positionId))
+            .filter(value => Number.isFinite(value) && value > 0);
 
-        const fallback = (Number.isFinite(minThreshold) && minThreshold > 0)
-            ? minThreshold
-            : DEFAULT_AUTO_THRESHOLD_SECONDS;
+        if (spectralCandidates.length) {
+            return Math.min(Math.min(...spectralCandidates), serverLimit);
+        }
 
-        return Math.min(fallback, getServerLogViewportLimitSeconds(models));
+        return Math.min(DEFAULT_AUTO_THRESHOLD_SECONDS, serverLimit);
     }
 
     function resolveLogThresholdSeconds(models, viewState, positionId = null) {

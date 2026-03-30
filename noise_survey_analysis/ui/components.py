@@ -327,6 +327,13 @@ class RegionPanelComponent:
             disabled=True,
         )
 
+        self.copy_to_all_positions_button = Button(
+            label="Copy to All Positions",
+            width=panel_width,
+            name="region_copy_to_all_positions_button",
+            disabled=True,
+        )
+
         self.note_input = TextAreaInput(
             title="Notes",
             value="",
@@ -395,6 +402,7 @@ class RegionPanelComponent:
             self.merge_select,
             secondary_actions,
             self.split_button,
+            self.copy_to_all_positions_button,
             self.note_input,
             self.metrics_div,
             self.frequency_copy_button,
@@ -726,6 +734,15 @@ class RegionPanelComponent:
             store.dispatch(thunks.splitSelectedRegionIntent());
         """)
         self.split_button.js_on_event('button_click', split_callback)
+
+        copy_to_all_positions_callback = CustomJS(code="""
+            const store = window.NoiseSurveyApp?.store;
+            const thunks = window.NoiseSurveyApp?.thunks;
+            if (typeof store?.dispatch === 'function' && typeof thunks?.copyRegionToAllPositionsIntent === 'function') {
+                store.dispatch(thunks.copyRegionToAllPositionsIntent());
+            }
+        """)
+        self.copy_to_all_positions_button.js_on_event('button_click', copy_to_all_positions_callback)
 
         visibility_callback = CustomJS(code="""
             const actions = window.NoiseSurveyApp?.actions;
@@ -1172,7 +1189,10 @@ class TimeSeriesComponent:
         self.chart_settings = CHART_SETTINGS
         self.name_id = f"{self.position_name}_timeseries"
         self.line_renderers = []
-        self.has_log_data = position_data_obj.log_totals is not None and not position_data_obj.log_totals.empty
+        self.has_log_data = (
+            (position_data_obj.log_totals is not None and not position_data_obj.log_totals.empty)
+            or bool(getattr(position_data_obj, 'log_file_paths', None))
+        )
         
         #generate sources for the two view modes
         if position_data_obj.overview_totals is not None:
@@ -1702,7 +1722,7 @@ class ControlsComponent:
         self.server_mode = bool(server_mode)
         self.visibility_checkboxes: Dict[str, list] = {} # Key: position_name, Value: list of (chart_name, checkbox_widget) tuples
         self.position_order: List[str] = []  # Track order of positions as checkboxes are added
-        self.visibility_layout = None
+        self.plot_visibility_menu = self.add_plot_visibility_menu()
         
         self.session_menu = self.add_session_menu()
         self.view_toggle = self.add_view_type_selector()
@@ -1825,8 +1845,8 @@ class ControlsComponent:
 
         # Active position display
         active_position_display = Div(
-            text="<span style='font-size: 11px; color: #666;'>No audio</span>",
-            width=120,
+            text="<span style='font-size: 11px; color: #666;'>Audio not available</span>",
+            width=140,
             height=30,
             name="global_active_position_display",
             styles={"display": "flex", "align-items": "center", "padding-left": "8px"}
@@ -1892,6 +1912,34 @@ class ControlsComponent:
         )
         self.log_threshold_spinner_widget = spinner
         return Row(label, spinner, name="log_threshold_group")
+
+    def add_plot_visibility_menu(self):
+        dropdown = Dropdown(
+            label="Plots",
+            button_type="default",
+            width=120,
+            height=30,
+            name="plot_visibility_dropdown",
+            menu=[],
+        )
+        dropdown.js_on_event("menu_item_click", CustomJS(code="""
+            const chartName = cb_obj?.item;
+            if (!chartName) {
+                return;
+            }
+            const checkboxes = window.NoiseSurveyApp?.registry?.models?.visibilityCheckBoxes || [];
+            const target = checkboxes.find(cb => cb?.name === `visibility_${chartName}`);
+            if (!target) {
+                console.error('[PlotVisibility]', `Checkbox not found for ${chartName}`);
+                return;
+            }
+            const active = Array.isArray(target.active) ? target.active : [];
+            target.active = active.includes(0) ? [] : [0];
+            if (target.change && typeof target.change.emit === 'function') {
+                target.change.emit();
+            }
+        """))
+        return dropdown
 
     def add_status_chips(self):
         view_status = Div(
@@ -1984,41 +2032,23 @@ class ControlsComponent:
                 }}
             """)
         checkbox.js_on_change("active", checkbox_js_callback)
+        self._refresh_plot_visibility_menu()
         
-    def _build_visibility_layout(self):
-        """Builds the layout for visibility checkboxes, grouping them by position into a 2xP grid."""
-        if not self.visibility_checkboxes:
-            self.visibility_layout = Div(text="") # Empty div if no checkboxes
-            return
-
-        position_columns = []
-        # Use the order positions were added (preserves config file order)
+    def _refresh_plot_visibility_menu(self):
+        menu = []
         for position_name in self.position_order:
-            checkboxes = self.visibility_checkboxes[position_name]
-            # Sort checkboxes to ensure TS is above Spec, assuming consistent naming
-            # 'timeseries' comes before 'spectrogram' alphabetically.
-            sorted_checkboxes = sorted(checkboxes, key=lambda item: item[0])
-            checkbox_widgets = [widget for name, widget in sorted_checkboxes]
-            
-            # Create a vertical column for each position's checkboxes
-            position_column = Column(*checkbox_widgets, name=f"visibility_col_{position_name}")
-            position_columns.append(position_column)
-        
-        # Arrange the vertical columns in a horizontal row that can wrap on smaller screens
-        self.visibility_layout = Row(
-            *position_columns,
-            name="visibility_controls_row",
-            styles={
-                "flex-wrap": "wrap",
-                "gap": "8px",
-                "align-items": "flex-start"
-            }
-        )
+            position_checkboxes = self.visibility_checkboxes.get(position_name, [])
+            for chart_name, widget in sorted(position_checkboxes, key=lambda item: item[0]):
+                raw_label = widget.labels[0] if widget.labels else chart_name
+                is_active = 0 in getattr(widget, 'active', [])
+                menu.append((f"[{'x' if is_active else ' '}] {raw_label}", chart_name))
+        self.plot_visibility_menu.menu = menu
 
 
     def layout(self):
         view_controls_group = Row(
             self.session_menu,
+            self.plot_visibility_menu,
             self.param_select,
             self.view_toggle,
             self.log_threshold_spinner,
@@ -2950,15 +2980,6 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
         styles={"display": "flex", "align-items": "center", "justify-content": "flex-start", "flex-shrink": "0"}
     )
 
-    collapse_toggle = Toggle(
-        label="Collapse",
-        active=False,
-        width=92,
-        height=28,
-        button_type="default",
-        name=f"collapse_toggle_{position_id}",
-    )
-    
     # Chart Offset controls
     chart_offset_label = Div(
         text="<span style='font-size: 10px; color: #555;'>Chart Offset (s):</span>",
@@ -3037,7 +3058,6 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
 
     controls_layout = Row(
         title_div,
-        collapse_toggle,
         chart_offset_label,
         chart_offset_spinner,
         audio_offset_label,
@@ -3061,7 +3081,7 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
     logger.debug(f"Position title and offset controls created for '{position_id}'.")
     return {
         "title_div": title_div,
-        "collapse_toggle": collapse_toggle,
+        "display_title_div": title_div,
         "chart_offset_label": chart_offset_label,
         "chart_offset_spinner": chart_offset_spinner,
         "audio_offset_label": audio_offset_label,

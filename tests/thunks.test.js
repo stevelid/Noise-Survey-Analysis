@@ -260,6 +260,30 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.markers.byId[1].timestamp).toBe(3500);
     });
 
+    it('handleKeyboardShortcutIntent deletes selected marker on Delete', () => {
+        store.dispatch(actions.markerAdd(3000, { positionId: 'P1' }));
+        store.dispatch(actions.markerSelect(1));
+
+        const thunk = thunks.handleKeyboardShortcutIntent({ key: 'Delete', code: '' });
+        thunk(store.dispatch, store.getState);
+
+        const state = store.getState();
+        expect(state.markers.byId[1]).toBeUndefined();
+        expect(state.markers.allIds).toEqual([]);
+    });
+
+    it('handleKeyboardShortcutIntent deletes selected region on Delete when no marker selected', () => {
+        store.dispatch(actions.regionAdd('P1', 1000, 2000));
+        store.dispatch(actions.regionSelect(1));
+
+        const thunk = thunks.handleKeyboardShortcutIntent({ key: 'Delete', code: '' });
+        thunk(store.dispatch, store.getState);
+
+        const state = store.getState();
+        expect(state.regions.byId[1]).toBeUndefined();
+        expect(state.regions.allIds).toEqual([]);
+    });
+
     it('toggleRegionCreationIntent stores a pending start when idle', () => {
         store.dispatch(actions.tap(4000, 'P3', 'figure_P3_timeseries'));
         const thunk = thunks.toggleRegionCreationIntent();
@@ -525,6 +549,24 @@ describe('NoiseSurveyApp thunks', () => {
             const thunk = thunks.changePlaybackRateIntent({ positionId: 'P1' });
             thunk(dispatchSpy, store.getState);
             expect(dispatchSpy).toHaveBeenCalledWith(actions.audioRateChangeRequest('P1', 1.5));
+        });
+
+        it('changePlaybackRateIntent cycles from 2.0x to 3.0x when none provided', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            store.dispatch(actions.audioRateChangeRequest('P1', 2.0));
+            const dispatchSpy = vi.fn();
+            const thunk = thunks.changePlaybackRateIntent({ positionId: 'P1' });
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioRateChangeRequest('P1', 3.0));
+        });
+
+        it('changePlaybackRateIntent cycles from 3.0x to 4.0x when none provided', () => {
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            store.dispatch(actions.audioRateChangeRequest('P1', 3.0));
+            const dispatchSpy = vi.fn();
+            const thunk = thunks.changePlaybackRateIntent({ positionId: 'P1' });
+            thunk(dispatchSpy, store.getState);
+            expect(dispatchSpy).toHaveBeenCalledWith(actions.audioRateChangeRequest('P1', 4.0));
         });
 
         it('toggleVolumeBoostIntent ignores inactive positions', () => {

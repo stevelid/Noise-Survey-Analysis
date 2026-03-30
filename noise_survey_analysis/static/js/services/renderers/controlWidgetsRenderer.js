@@ -28,6 +28,95 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return 'Unknown';
     }
 
+    function extractChartNameFromCheckbox(checkbox) {
+        const rawName = typeof checkbox?.name === 'string' ? checkbox.name : '';
+        return rawName.startsWith('visibility_') ? rawName.slice('visibility_'.length) : rawName;
+    }
+
+    function resolvePositionHasAudio(models, availablePositions) {
+        const explicitMap = models?.positionHasAudio;
+        if (explicitMap && typeof explicitMap === 'object' && Object.keys(explicitMap).length) {
+            return explicitMap;
+        }
+
+        const derivedMap = {};
+        (Array.isArray(availablePositions) ? availablePositions : []).forEach(positionId => {
+            derivedMap[positionId] = false;
+        });
+
+        const availabilityData = models?.audio_availability_source?.data;
+        const availabilityPositions = Array.isArray(availabilityData?.position_id)
+            ? availabilityData.position_id
+            : [];
+        const availabilityFlags = Array.isArray(availabilityData?.has_audio)
+            ? availabilityData.has_audio
+            : [];
+
+        availabilityPositions.forEach((positionId, index) => {
+            if (typeof positionId !== 'string' || !positionId) {
+                return;
+            }
+            derivedMap[positionId] = Boolean(availabilityFlags[index]);
+        });
+
+        const sourceConfigs = Array.isArray(models?.sourceConfigs) ? models.sourceConfigs : [];
+        sourceConfigs.forEach(config => {
+            if (!config || typeof config !== 'object') {
+                return;
+            }
+
+            const parserType = String(config.parser_type || '').trim().toLowerCase();
+            const positionName = typeof config.position_name === 'string'
+                ? config.position_name
+                : null;
+
+            if (!positionName) {
+                return;
+            }
+
+            if (parserType === 'audio' || parserType === 'wav') {
+                derivedMap[positionName] = true;
+            }
+        });
+
+        if (Object.keys(derivedMap).length) {
+            models.positionHasAudio = derivedMap;
+        }
+
+        return derivedMap;
+    }
+
+    function syncPlotVisibilityMenu(models, chartVisibility) {
+        const menu = models?.plotVisibilityMenu;
+        const checkboxes = Array.isArray(models?.visibilityCheckBoxes) ? models.visibilityCheckBoxes : [];
+        if (!menu || !checkboxes.length) {
+            return;
+        }
+
+        const nextMenu = [];
+        let visibleCount = 0;
+        checkboxes.forEach(checkbox => {
+            const chartName = extractChartNameFromCheckbox(checkbox);
+            if (!chartName) {
+                return;
+            }
+            const defaultVisible = Array.isArray(checkbox?.active) ? checkbox.active.includes(0) : true;
+            const isVisible = Object.prototype.hasOwnProperty.call(chartVisibility, chartName)
+                ? Boolean(chartVisibility[chartName])
+                : defaultVisible;
+            const rawLabel = Array.isArray(checkbox?.labels) && checkbox.labels.length
+                ? checkbox.labels[0]
+                : chartName;
+            nextMenu.push([`[${isVisible ? 'x' : ' '}] ${rawLabel}`, chartName]);
+            if (isVisible) {
+                visibleCount += 1;
+            }
+        });
+
+        menu.menu = nextMenu;
+        menu.label = nextMenu.length ? `Plots (${visibleCount}/${nextMenu.length})` : 'Plots';
+    }
+
     function isChartVisibleFactory(chartVisibility) {
         return function isChartVisible(chartName) {
             if (!chartName) {
@@ -90,6 +179,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const spec = details?.spec || details?.spectrogram || null;
         const line = details?.line || null;
         const primary = spec || line || null;
+        const isLoading = Boolean(spec?.isLoading) || Boolean(line?.isLoading);
         const selectedParameter = viewState.selectedParameter || '--';
         const displayedParameter = spec?.displayedParameter || primary?.displayedParameter || selectedParameter;
         const requestedMode = titleCaseMode(viewState.globalViewType);
@@ -108,12 +198,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             displayedMode,
             statusLabel,
             parameterLabel,
+            isLoading,
             signature: [
                 positionId || 'none',
                 requestedMode,
                 displayedMode,
                 statusLabel,
-                parameterLabel
+                parameterLabel,
+                isLoading ? 'loading' : 'steady'
             ].join('|')
         };
     }
@@ -155,21 +247,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         syncLogThresholdSpinner(viewState, models.logThresholdSpinner);
+        syncPlotVisibilityMenu(models, chartVisibility);
 
         const isChartVisible = isChartVisibleFactory(chartVisibility);
-        const streamingReasons = [];
-        const detailEntries = displayDetailsByPosition ? Object.values(displayDetailsByPosition) : [];
-        detailEntries.forEach(details => {
-            const lineReason = details?.line?.reason;
-            const specReason = details?.spec?.reason || details?.spectrogram?.reason;
-            if (typeof lineReason === 'string' && lineReason.includes('Streaming Log Data')) {
-                streamingReasons.push(lineReason);
-            }
-            if (typeof specReason === 'string' && specReason.includes('Streaming Log Data')) {
-                streamingReasons.push(specReason);
-            }
-        });
-        const isStreamingInBackground = streamingReasons.length > 0;
         const statusPosition = resolveStatusPosition(state, availablePositions, isChartVisible);
         const statusSummary = buildStatusSummary(
             statusPosition,
@@ -196,7 +276,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             } else if (statusSummary.requestedMode !== statusSummary.displayedMode) {
                 displayText = `${statusSummary.displayedMode} shown`;
             }
-            const suffix = isStreamingInBackground
+            const suffix = statusSummary.isLoading
                 ? ` <span style='color:#9a3412;'>· Loading log</span>`
                 : '';
             models.viewStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>${escapeInlineText(displayText)}${suffix}</span>`;
@@ -232,12 +312,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
 
                 if (globalAudioControls.active_position_display) {
-                    let displayText = "<span style='font-size: 11px; color: #666;'>No audio</span>";
+                    const positionHasAudio = resolvePositionHasAudio(models, availablePositions);
+                    const anyAudioAvailable = Object.values(positionHasAudio).some(Boolean);
+                    let displayText = "<span style='font-size: 11px; color: #666;'>Audio not available</span>";
                     if (isPlaying && activePositionId) {
                         const displayName = typeof displayTitles[activePositionId] === 'string' && displayTitles[activePositionId].trim()
                             ? displayTitles[activePositionId]
                             : activePositionId;
                         displayText = `<span style='font-size: 11px; color: #2c7bb6; font-weight: 600;'>&#9654; ${displayName}</span>`;
+                    } else if (anyAudioAvailable) {
+                        displayText = "<span style='font-size: 11px; color: #666;'>Audio paused</span>";
                     }
                     if (globalAudioControls.active_position_display.text !== displayText) {
                         globalAudioControls.active_position_display.text = displayText;

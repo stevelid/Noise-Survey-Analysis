@@ -1,6 +1,18 @@
 # Hybrid Control Implementation Plan
 
-## Purpose
+**Status:** ✅ COMPLETED — The control system described in this document has been fully implemented.
+
+See `CONTROL_API.md` for the user-facing API documentation.
+
+## Original Purpose
+
+This document describes the implementation plan for the hybrid control system that was delivered. It is kept for historical reference.
+
+---
+
+**Archive Note:** The following content is the original design document. The implementation matches this specification.
+
+---
 
 Implement a safe hybrid control system for the Noise Survey Analysis app that supports:
 

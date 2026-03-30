@@ -134,10 +134,25 @@ describe('NoiseSurveyApp.renderers', () => {
                         play_toggle: { active: false, label: '', button_type: '' },
                         playback_rate_button: { label: '' },
                         volume_boost_button: { active: false, button_type: '' },
-                        active_position_display: { text: '' }
+                        active_position_display: { text: '' },
+                        audio_file_info_display: { text: '' },
+                        layout: { visible: true }
                     },
+                    visibilityCheckBoxes: [
+                        { name: 'visibility_figure_P1_timeseries', labels: ['P1 TS'], active: [0] },
+                        { name: 'visibility_figure_P1_spectrogram', labels: ['P1 Spec'], active: [0] }
+                    ],
+                    plotVisibilityMenu: { menu: [], label: 'Plots' },
+                    logThresholdSpinner: { value: 5, low: 0.5, high: 1440 },
+                    viewStatusChip: { text: '' },
+                    focusStatusChip: { text: '' },
+                    positionHasAudio: { P1: true },
+                    audio_availability_source: { data: { position_id: ['P1'], has_audio: [true] } },
+                    sourceConfigs: [],
                     config: { // Add config mock
-                        freq_table_freq_range_hz: [200, 300]
+                        freq_table_freq_range_hz: [200, 300],
+                        server_mode: true,
+                        log_view_max_viewport_seconds: 86400
                     }
                 }
             },
@@ -941,6 +956,85 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(globalControls.playback_rate_button.label).toBe('1.5x');
             expect(globalControls.volume_boost_button.active).toBe(true);
             expect(globalControls.volume_boost_button.button_type).toBe('warning');
+        });
+
+        it('shows audio paused when audio exists but is not playing', () => {
+            const mockState = {
+                audio: { isPlaying: false, activePositionId: null, playbackRate: 1.0, volumeBoost: false },
+                view: { availablePositions: ['P1'], selectedParameter: 'LAeq' }
+            };
+            const displayDetails = { P1: { line: { reason: '' }, spectrogram: { reason: '' } } };
+            renderers.renderControlWidgets(mockState, displayDetails);
+            expect(window.NoiseSurveyApp.registry.models.globalAudioControls.active_position_display.text)
+                .toContain('Audio paused');
+        });
+
+        it('shows audio not available when no position has audio', () => {
+            window.NoiseSurveyApp.registry.models.positionHasAudio = { P1: false };
+            const mockState = {
+                audio: { isPlaying: false, activePositionId: null, playbackRate: 1.0, volumeBoost: false },
+                view: { availablePositions: ['P1'], selectedParameter: 'LAeq' }
+            };
+            const displayDetails = { P1: { line: { reason: '' }, spectrogram: { reason: '' } } };
+            renderers.renderControlWidgets(mockState, displayDetails);
+            expect(window.NoiseSurveyApp.registry.models.globalAudioControls.active_position_display.text)
+                .toContain('Audio not available');
+        });
+
+        it('falls back to parser-confirmed audio availability when positionHasAudio is missing', () => {
+            delete window.NoiseSurveyApp.registry.models.positionHasAudio;
+            window.NoiseSurveyApp.registry.models.audio_availability_source = {
+                data: {
+                    position_id: ['P1'],
+                    has_audio: [true]
+                }
+            };
+            const mockState = {
+                audio: { isPlaying: false, activePositionId: null, playbackRate: 1.0, volumeBoost: false },
+                view: { availablePositions: ['P1'], selectedParameter: 'LAeq' }
+            };
+            const displayDetails = { P1: { line: { reason: '' }, spectrogram: { reason: '' } } };
+            renderers.renderControlWidgets(mockState, displayDetails);
+            expect(window.NoiseSurveyApp.registry.models.globalAudioControls.active_position_display.text)
+                .toContain('Audio paused');
+            expect(window.NoiseSurveyApp.registry.models.positionHasAudio).toEqual({ P1: true });
+        });
+
+        it('only shows loading log for the focused position when it is actively loading', () => {
+            const mockState = {
+                audio: { isPlaying: false, activePositionId: null, playbackRate: 1.0, volumeBoost: false },
+                interaction: { tap: { position: 'P1' } },
+                view: { availablePositions: ['P1', 'P2'], selectedParameter: 'LAeq', globalViewType: 'log' }
+            };
+            const displayDetails = {
+                P1: { line: { type: 'overview', statusLabel: 'Overview selected', isLoading: false } },
+                P2: { line: { type: 'overview', statusLabel: 'Loading log data', isLoading: true } }
+            };
+            renderers.renderControlWidgets(mockState, displayDetails);
+            expect(window.NoiseSurveyApp.registry.models.viewStatusChip.text)
+                .not.toContain('Loading log');
+        });
+
+        it('updates the plot visibility menu to reflect current chart visibility', () => {
+            const mockState = {
+                audio: { isPlaying: false, activePositionId: null, playbackRate: 1.0, volumeBoost: false },
+                view: {
+                    availablePositions: ['P1'],
+                    selectedParameter: 'LAeq',
+                    chartVisibility: {
+                        figure_P1_timeseries: true,
+                        figure_P1_spectrogram: false
+                    }
+                }
+            };
+            const displayDetails = { P1: { line: { reason: '' }, spectrogram: { reason: '' } } };
+            renderers.renderControlWidgets(mockState, displayDetails);
+            const menu = window.NoiseSurveyApp.registry.models.plotVisibilityMenu;
+            expect(menu.label).toBe('Plots (1/2)');
+            expect(menu.menu).toEqual([
+                ['[x] P1 TS', 'figure_P1_timeseries'],
+                ['[ ] P1 Spec', 'figure_P1_spectrogram']
+            ]);
         });
 
         it('should hide audio controls when all charts for a position are hidden', () => {

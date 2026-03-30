@@ -20,6 +20,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         chartsByName: new Map(),
     };
 
+    function buildPositionHasAudioMap(source) {
+        const data = source?.data;
+        const positionIds = Array.isArray(data?.position_id) ? data.position_id : [];
+        const hasAudioValues = Array.isArray(data?.has_audio) ? data.has_audio : [];
+        const result = {};
+
+        positionIds.forEach((positionId, index) => {
+            if (typeof positionId !== 'string' || !positionId) {
+                return;
+            }
+            result[positionId] = Boolean(hasAudioValues[index]);
+        });
+
+        return result;
+    }
+
     /**
      * Populates the registry with Bokeh models and initializes the controllers.
      * This function is called once at application startup.
@@ -65,9 +81,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const doc = Bokeh.documents[0];
             models.audio_control_source = doc.get_model_by_name('audio_control_source');
             models.audio_status_source = doc.get_model_by_name('audio_status_source');
+            models.audio_availability_source = doc.get_model_by_name('audio_availability_source');
             //Log a warning if the models are not found, but continue execution
             if (!models.audio_control_source) console.warn("[Registry] 'audio_control_source' not found.");
             if (!models.audio_status_source) console.warn("[Registry] 'audio_status_source' not found.");
+            if (!models.audio_availability_source) {
+                console.warn("[Registry] 'audio_availability_source' not found.");
+            } else {
+                models.positionHasAudio = buildPositionHasAudioMap(models.audio_availability_source);
+            }
         } else {
             console.error("[Registry] Bokeh.documents[0] is not available.");
         }
@@ -117,14 +139,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         // 3. Prepare the payload for the INITIALIZE_STATE action
         const chartVisibility = {};
         models.charts.forEach(chart => {
-            const checkbox = models.visibilityCheckBoxes.find(cb => cb.name === `visibility_${chart.name}`);
+            const checkbox = (models.visibilityCheckBoxes || []).find(cb => cb.name === `visibility_${chart.name}`);
             chartVisibility[chart.name] = checkbox ? checkbox.active.includes(0) : true;
         });
-
-        const resolution = app.features?.view?.resolution;
-        const initialAutoThresholdSeconds = resolution?.calculateGlobalAutoLogThresholdSeconds
-            ? resolution.calculateGlobalAutoLogThresholdSeconds(models, availablePositions)
-            : 3600;
 
         const initialStatePayload = {
             availablePositions: availablePositions,
@@ -134,8 +151,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             hoverEnabled: true,
             positionDisplayTitles: models.positionDisplayTitles,
             logViewThreshold: {
-                mode: 'manual',
-                seconds: initialAutoThresholdSeconds
+                mode: 'auto',
+                seconds: null
             },
         };
 

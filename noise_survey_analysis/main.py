@@ -185,6 +185,8 @@ def _get_cache_key(source_configs):
         logger.debug(f"_get_cache_key: Processing {len(source_configs)} source configs")
         for idx, config in enumerate(sorted(source_configs, key=lambda x: x.get('position_name', ''))):
             position = config.get('position_name', '')
+            parser_type = config.get('parser_type') or config.get('parser_type_hint') or 'auto'
+            return_all_columns = bool(config.get('return_all_columns', False))
             logger.debug(f"  Config {idx}: position='{position}', keys={list(config.keys())}")
 
             # Handle both file_path (singular, from workspace) and file_paths (plural, from selector)
@@ -209,7 +211,10 @@ def _get_cache_key(source_configs):
 
             # Normalize paths for consistent comparison
             normalized_paths = [os.path.normpath(os.path.abspath(p)) for p in paths]
-            key_part = f"{position}:{','.join(normalized_paths)}"
+            key_part = (
+                f"{position}|parser={parser_type}|all_cols={int(return_all_columns)}:"
+                f"{','.join(normalized_paths)}"
+            )
             key_parts.append(key_part)
             logger.debug(f"    Key part length: {len(key_part)}")
 
@@ -390,6 +395,16 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
             audio_handler = AudioPlaybackHandler(position_data=app_data.get_all_position_data())
             audio_control_source = ColumnDataSource(data={'command': [], 'position_id': [], 'value': []}, name='audio_control_source')
             audio_status_source = ColumnDataSource(data={'is_playing': [False], 'current_time': [0], 'playback_rate': [1.0], 'current_file_duration': [0], 'current_file_start_time': [0], 'active_position_id': [None], 'volume_boost': [False], 'current_file_name': ['']}, name='audio_status_source')
+            audio_availability_source = ColumnDataSource(
+                data={
+                    'position_id': list(app_data.positions()),
+                    'has_audio': [
+                        bool(getattr(app_data[position_name], 'has_audio_files', False))
+                        for position_name in app_data.positions()
+                    ],
+                },
+                name='audio_availability_source',
+            )
             session_action_source = ColumnDataSource(
                 data={'command': [None], 'request_id': [None], 'payload': [None]},
                 name='session_action_source'
@@ -491,6 +506,7 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
             )
             doc.add_root(audio_control_source)
             doc.add_root(audio_status_source)
+            doc.add_root(audio_availability_source)
             doc.add_root(session_action_source)
             doc.add_root(session_status_source)
             doc.add_root(control_state_source)

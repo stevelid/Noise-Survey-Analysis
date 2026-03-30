@@ -93,7 +93,7 @@ def load_config_and_prepare_sources(config_path='config.json'):
         if group_key not in grouped_sources:
             grouped_sources[group_key] = {
                 "position_name": position,
-                "file_paths": set(),
+                "file_paths": [],
                 "parser_type": parser_type,
             }
 
@@ -108,7 +108,8 @@ def load_config_and_prepare_sources(config_path='config.json'):
         if relative_path:
             absolute_path = os.path.abspath(os.path.join(base_path, relative_path))
             if os.path.exists(absolute_path):
-                grouped_sources[group_key]["file_paths"].add(absolute_path)
+                if absolute_path not in grouped_sources[group_key]["file_paths"]:
+                    grouped_sources[group_key]["file_paths"].append(absolute_path)
             else:
                 logger.warning(f"File not found and will be skipped: {absolute_path}")
 

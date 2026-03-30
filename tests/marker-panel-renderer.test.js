@@ -91,6 +91,7 @@ describe('markerPanelRenderer.renderMarkerPanel', () => {
         expect(panelModels.copyButton.disabled).toBe(false);
         expect(panelModels.deleteButton.disabled).toBe(false);
         expect(panelModels.addAtTapButton.disabled).toBe(false);
+        expect(panelModels.visibilityToggle.label).toBe('Markers (1)');
         expect(panelModels.visibilityToggle.active).toBe(true);
 
         expect(panelModels.markerTable.__suppressSelectionDispatch).toBe(true);
@@ -123,6 +124,7 @@ describe('markerPanelRenderer.renderMarkerPanel', () => {
         expect(panelModels.copyButton.disabled).toBe(true);
         expect(panelModels.deleteButton.disabled).toBe(true);
         expect(panelModels.addAtTapButton.disabled).toBe(true);
+        expect(panelModels.visibilityToggle.label).toBe('Markers');
         expect(panelModels.visibilityToggle.active).toBe(false);
     });
 });

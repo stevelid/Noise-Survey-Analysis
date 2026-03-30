@@ -17,6 +17,9 @@ describe('NoiseSurveyApp.registry.initialize', () => {
           get_model_by_name: vi.fn((name) => {
             if (name === 'audio_control_source') return { data: { control: true } };
             if (name === 'audio_status_source') return { data: { status: true } };
+            if (name === 'audio_availability_source') {
+              return { data: { position_id: ['P1'], has_audio: [true] } };
+            }
             return null;
           }),
         },
@@ -77,6 +80,7 @@ describe('NoiseSurveyApp.registry.initialize', () => {
     const models = window.NoiseSurveyApp.registry.models;
     expect(models.audio_control_source?.data?.control).toBe(true);
     expect(models.audio_status_source?.data?.status).toBe(true);
+    expect(models.positionHasAudio).toEqual({ P1: true });
 
     // Controllers should be populated with mapped charts
     const controllers = window.NoiseSurveyApp.registry.controllers;

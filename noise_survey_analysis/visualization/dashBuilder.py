@@ -386,6 +386,7 @@ class DashBuilder:
                 'timeseries': ts_component,
                 'spectrogram': spec_component,
                 'position_controls': position_controls,
+                'has_audio': bool(getattr(position_data_obj, 'has_audio_files', False)),
                 'has_log_spectral': position_data_obj.has_log_spectral,
                 'log_spectral_threshold_seconds': estimate_log_spectral_threshold_seconds(
                     getattr(position_data_obj, 'log_file_paths', []),
@@ -527,52 +528,6 @@ class DashBuilder:
             # Add position title and offset controls above the timeseries
             ts_layout = comp_dict['timeseries'].layout()
             spec_layout = comp_dict['spectrogram'].layout()
-            collapse_toggle = comp_dict['position_controls'].get('collapse_toggle')
-            if collapse_toggle is not None:
-                collapse_toggle.js_on_change("active", CustomJS(
-                    args=dict(
-                        timeseries_figure=comp_dict['timeseries'].figure,
-                        spectrogram_layout=spec_layout,
-                        chart_offset_label=comp_dict['position_controls']['chart_offset_label'],
-                        chart_offset_spinner=comp_dict['position_controls']['chart_offset_spinner'],
-                        audio_offset_label=comp_dict['position_controls']['audio_offset_label'],
-                        audio_offset_spinner=comp_dict['position_controls']['audio_offset_spinner'],
-                        effective_offset_display=comp_dict['position_controls']['effective_offset_display'],
-                    ),
-                    code="""
-                        const collapsed = Boolean(cb_obj.active);
-                        cb_obj.label = collapsed ? 'Expand' : 'Collapse';
-                        cb_obj.button_type = collapsed ? 'primary' : 'default';
-
-                        chart_offset_label.visible = !collapsed;
-                        chart_offset_spinner.visible = !collapsed;
-                        audio_offset_label.visible = !collapsed;
-                        audio_offset_spinner.visible = !collapsed;
-                        effective_offset_display.visible = !collapsed;
-                        spectrogram_layout.visible = !collapsed;
-
-                        timeseries_figure.height = collapsed ? 88 : 340;
-                        timeseries_figure.min_border_top = collapsed ? 16 : 55;
-                        timeseries_figure.min_border_bottom = collapsed ? 12 : 50;
-
-                        const legends = Array.isArray(timeseries_figure.legend) ? timeseries_figure.legend : [];
-                        legends.forEach(legend => {
-                            legend.visible = !collapsed;
-                        });
-
-                        const xaxes = Array.isArray(timeseries_figure.xaxis) ? timeseries_figure.xaxis : [];
-                        xaxes.forEach(axis => {
-                            axis.visible = !collapsed;
-                        });
-
-                        const yaxes = Array.isArray(timeseries_figure.yaxis) ? timeseries_figure.yaxis : [];
-                        yaxes.forEach(axis => {
-                            axis.visible = !collapsed;
-                        });
-
-                        timeseries_figure.change.emit();
-                    """
-                ))
             ts_layout_with_controls = column(
                 comp_dict['position_controls']['layout'],
                 ts_layout
@@ -808,11 +763,13 @@ class DashBuilder:
             'positionHasLogData': {},  # per-position flag: whether log data exists (even if not yet loaded)
             'positionHasLogSpectral': {},  # per-position flag: whether log spectrogram data exists
             'positionLogSpectralThresholdSeconds': {},  # per-position shared log switch threshold from deferred log metadata
+            'positionHasAudio': {},
             'clickLines': [],
             'hoverLines': [],
             'labels': [],
             'hoverDivs': [],
             'visibilityCheckBoxes': self.shared_components['controls'].get_all_visibility_checkboxes(),
+            'plotVisibilityMenu': self.shared_components['controls'].plot_visibility_menu,
             'barSource': self.shared_components['freq_bar'].source,
             'barChart': self.shared_components['freq_bar'].figure,
             'freqTableDiv': self.shared_components['freq_bar'].table_div,  # Add the frequency table div for copy/paste functionality
@@ -871,6 +828,7 @@ class DashBuilder:
             'regionPanelSpectrumDiv': self.shared_components['region_panel'].spectrum_div,
             'regionVisibilityToggle': self.shared_components['region_panel'].visibility_toggle,
             'regionAutoDayNightButton': self.shared_components['region_panel'].auto_daynight_button,
+            'regionPanelCopyToAllPositionsButton': self.shared_components['region_panel'].copy_to_all_positions_button,
             'markerPanelDiv': self.shared_components['marker_panel'].container,
             'markerPanelSource': self.shared_components['marker_panel'].marker_source,
             'markerPanelTable': self.shared_components['marker_panel'].marker_table,
@@ -893,8 +851,13 @@ class DashBuilder:
                 'log': comp_dict['timeseries'].log_source,
             }
             js_models['positionHasLogData'][pos] = comp_dict['timeseries'].has_log_data
-            js_models['positionHasLogSpectral'][pos] = bool(comp_dict.get('has_log_spectral'))
-            js_models['positionLogSpectralThresholdSeconds'][pos] = comp_dict.get('log_spectral_threshold_seconds')
+            threshold_seconds = comp_dict.get('log_spectral_threshold_seconds')
+            js_models['positionHasLogSpectral'][pos] = bool(
+                comp_dict.get('has_log_spectral') or
+                (threshold_seconds is not None)
+            )
+            js_models['positionLogSpectralThresholdSeconds'][pos] = threshold_seconds
+            js_models['positionHasAudio'][pos] = bool(comp_dict.get('has_audio'))
 
             js_models['spectrogramSources'][pos] = {
                 'overview': comp_dict['spectrogram'].overview_source,

@@ -1,4 +1,5 @@
 import os
+import os
 import pandas as pd
 import numpy as np
 import logging
@@ -31,82 +32,71 @@ def _peek_log_file_time_step_ms(log_file_paths: list) -> float:
     if not log_file_paths:
         return 0.0
 
-    file_path = log_file_paths[0].get('file_path', '')
-    if not file_path or not os.path.exists(file_path):
-        return 0.0
+    for file_info in log_file_paths:
+        file_path = file_info.get('file_path', '')
+        if not file_path or not os.path.exists(file_path):
+            continue
 
-    try:
-        # Read a small chunk to find the header row and first data rows.
-        # 8 KB covers any reasonable header block (Svan has ~5 header rows, NTi ~20+).
-        with open(file_path, 'r', encoding='utf-8', errors='replace') as fh:
-            raw = fh.read(8192)
+        try:
+            # Read a small chunk to find the header row and first data rows.
+            # 8 KB covers any reasonable header block (Svan has ~5 header rows, NTi ~20+).
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as fh:
+                raw = fh.read(8192)
 
-        lines = raw.splitlines()
+            lines = raw.splitlines()
 
-        # Detect delimiter: prefer tab (NTi), fall back to comma (Svan, NoiseSentry)
-        delimiter = '\t' if any('\t' in l for l in lines[:20]) else ','
+            # Detect delimiter: prefer tab (NTi), fall back to comma (Svan, NoiseSentry)
+            delimiter = '\t' if any('\t' in l for l in lines[:20]) else ','
 
-        # Find the header row and relevant column indices.
-        # Handles two layouts:
-        #   A. Single combined column: 'Date & time', 'Start date & time',
-        #      'Time (Date hh:mm:ss.ms)', 'DateTime', 'Timestamp', etc.
-        #      -> datetime_col_idx set; date_col_idx / time_col_idx left None
-        #   B. Split columns: separate 'Date'/'Start Date' + 'Time'/'Start Time'
-        #      -> date_col_idx and time_col_idx set; datetime_col_idx left None
-        header_idx = None
-        datetime_col_idx = None
-        date_col_idx = None
-        time_col_idx = None
+            header_idx = None
+            datetime_col_idx = None
+            date_col_idx = None
+            time_col_idx = None
 
-        for i, line in enumerate(lines):
-            cols = [c.strip().strip('"').lower() for c in line.split(delimiter)]
-            # Case A: single combined column containing both 'date' and 'time'
-            for j, col in enumerate(cols):
-                if 'date' in col and 'time' in col:
-                    header_idx = i
-                    datetime_col_idx = j
+            for i, line in enumerate(lines):
+                cols = [c.strip().strip('"').lower() for c in line.split(delimiter)]
+                for j, col in enumerate(cols):
+                    if 'date' in col and 'time' in col:
+                        header_idx = i
+                        datetime_col_idx = j
+                        break
+                if header_idx is not None:
                     break
-            if header_idx is not None:
-                break
-            # Case B: separate date and time columns (NTi layout)
-            date_j = next((j for j, c in enumerate(cols) if c in ('date', 'start date')), None)
-            time_j = next((j for j, c in enumerate(cols) if c in ('time', 'start time')), None)
-            if date_j is not None and time_j is not None:
-                header_idx = i
-                date_col_idx = date_j
-                time_col_idx = time_j
-                break
+                date_j = next((j for j, c in enumerate(cols) if c in ('date', 'start date')), None)
+                time_j = next((j for j, c in enumerate(cols) if c in ('time', 'start time')), None)
+                if date_j is not None and time_j is not None:
+                    header_idx = i
+                    date_col_idx = date_j
+                    time_col_idx = time_j
+                    break
 
-        if header_idx is None:
-            return 0.0
-
-        # Parse up to 32 data rows after the header
-        times_ms = []
-        for line in lines[header_idx + 1: header_idx + 34]:
-            parts = [p.strip().strip('"') for p in line.split(delimiter)]
-            try:
-                if datetime_col_idx is not None:
-                    raw_dt = parts[datetime_col_idx] if len(parts) > datetime_col_idx else ''
-                else:
-                    # Combine split date + time columns
-                    raw_date = parts[date_col_idx] if len(parts) > date_col_idx else ''
-                    raw_time = parts[time_col_idx] if len(parts) > time_col_idx else ''
-                    raw_dt = f"{raw_date} {raw_time}".strip()
-                if not raw_dt:
-                    continue
-                dt = pd.Timestamp(raw_dt)
-                times_ms.append(dt.value // 10**6)
-            except Exception:
+            if header_idx is None:
                 continue
 
-        if len(times_ms) < 2:
-            return 0.0
+            times_ms = []
+            for line in lines[header_idx + 1: header_idx + 34]:
+                parts = [p.strip().strip('"') for p in line.split(delimiter)]
+                try:
+                    if datetime_col_idx is not None:
+                        raw_dt = parts[datetime_col_idx] if len(parts) > datetime_col_idx else ''
+                    else:
+                        raw_date = parts[date_col_idx] if len(parts) > date_col_idx else ''
+                        raw_time = parts[time_col_idx] if len(parts) > time_col_idx else ''
+                        raw_dt = f"{raw_date} {raw_time}".strip()
+                    if not raw_dt:
+                        continue
+                    dt = pd.Timestamp(raw_dt)
+                    times_ms.append(dt.value // 10**6)
+                except Exception:
+                    continue
 
-        return _estimate_time_step_ms(np.array(times_ms, dtype=np.int64))
+            if len(times_ms) >= 2:
+                return _estimate_time_step_ms(np.array(times_ms, dtype=np.int64))
 
-    except Exception as exc:
-        logger.debug(f"_peek_log_file_time_step_ms: could not read '{file_path}': {exc}")
-        return 0.0
+        except Exception as exc:
+            logger.debug(f"_peek_log_file_time_step_ms: could not read '{file_path}': {exc}")
+
+    return 0.0
 
 
 def _peek_log_file_header_columns(log_file_paths: list) -> List[str]:
@@ -117,28 +107,29 @@ def _peek_log_file_header_columns(log_file_paths: list) -> List[str]:
     if not log_file_paths:
         return []
 
-    file_path = log_file_paths[0].get('file_path', '')
-    if not file_path or not os.path.exists(file_path):
-        return []
+    for file_info in log_file_paths:
+        file_path = file_info.get('file_path', '')
+        if not file_path or not os.path.exists(file_path):
+            continue
 
-    try:
-        with open(file_path, 'r', encoding='utf-8', errors='replace') as fh:
-            raw = fh.read(8192)
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as fh:
+                raw = fh.read(8192)
 
-        lines = raw.splitlines()
-        delimiter = '\t' if any('\t' in l for l in lines[:20]) else ','
+            lines = raw.splitlines()
+            delimiter = '\t' if any('\t' in l for l in lines[:20]) else ','
 
-        for line in lines[:40]:
-            cols = [c.strip().strip('"') for c in line.split(delimiter)]
-            normalized = [c.lower() for c in cols]
-            has_datetime = any('date' in col and 'time' in col for col in normalized)
-            has_split_date_time = any(col in ('date', 'start date') for col in normalized) and any(
-                col in ('time', 'start time') for col in normalized
-            )
-            if has_datetime or has_split_date_time:
-                return cols
-    except Exception as exc:
-        logger.debug(f"_peek_log_file_header_columns: could not read '{file_path}': {exc}")
+            for line in lines[:40]:
+                cols = [c.strip().strip('"') for c in line.split(delimiter)]
+                normalized = [c.lower() for c in cols]
+                has_datetime = any('date' in col and 'time' in col for col in normalized)
+                has_split_date_time = any(col in ('date', 'start date') for col in normalized) and any(
+                    col in ('time', 'start time') for col in normalized
+                )
+                if has_datetime or has_split_date_time:
+                    return cols
+        except Exception as exc:
+            logger.debug(f"_peek_log_file_header_columns: could not read '{file_path}': {exc}")
 
     return []
 
