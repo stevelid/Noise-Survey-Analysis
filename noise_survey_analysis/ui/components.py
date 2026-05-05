@@ -60,6 +60,14 @@ logger = logging.getLogger(__name__)
 SIDE_PANEL_WIDTH = UI_LAYOUT_SETTINGS.get('side_panel_width', 320)
 
 
+def _datetime_series_to_bokeh_ms(values) -> pd.Series:
+    """Convert datetimes to Bokeh datetime milliseconds independent of numpy unit."""
+    dt = pd.Series(pd.to_datetime(values, utc=True))
+    return (
+        dt.dt.tz_convert("UTC").dt.tz_localize(None).astype("datetime64[ns]").astype("int64") // 10**6
+    ).to_numpy()
+
+
 class RegionPanelComponent:
     """Bokeh widget-based panel for managing regions."""
 
@@ -1185,6 +1193,8 @@ class TimeSeriesComponent:
             raise ValueError("TimeSeriesComponent requires a valid PositionData object.")
 
         self.position_name = position_data_obj.name
+        self.y_axis_label = getattr(position_data_obj, 'y_axis_label', None) or "Sound Level (dB)"
+        self.y_range = getattr(position_data_obj, 'y_range', None)
         self._current_display_mode = initial_display_mode # 'overview' or 'log'
         self.chart_settings = CHART_SETTINGS
         self.name_id = f"{self.position_name}_timeseries"
@@ -1197,7 +1207,7 @@ class TimeSeriesComponent:
         #generate sources for the two view modes
         if position_data_obj.overview_totals is not None:
             overview_df = position_data_obj.overview_totals.copy()
-            overview_df['Datetime'] = overview_df['Datetime'].values.astype(np.int64) // 10**6 #convert to ms
+            overview_df['Datetime'] = _datetime_series_to_bokeh_ms(overview_df['Datetime'])
             self.overview_source: ColumnDataSource = ColumnDataSource(data=overview_df)
         else:
             self.overview_source: ColumnDataSource = ColumnDataSource(data={})
@@ -1205,7 +1215,7 @@ class TimeSeriesComponent:
         
         if position_data_obj.log_totals is not None:
             log_df = position_data_obj.log_totals.copy()
-            log_df['Datetime'] = log_df['Datetime'].values.astype(np.int64) // 10**6 #convert to ms
+            log_df['Datetime'] = _datetime_series_to_bokeh_ms(log_df['Datetime'])
             self.log_source: ColumnDataSource = ColumnDataSource(data=log_df)
         else:
             self.log_source: ColumnDataSource = ColumnDataSource(data={})
@@ -1260,7 +1270,7 @@ class TimeSeriesComponent:
             "title": title,
             "x_axis_type": "datetime",
             "x_axis_label": "Time",
-            "y_axis_label": "Sound Level (dB)",
+            "y_axis_label": self.y_axis_label,
             "tools": tools,
             "active_drag": pan_tool,
             "active_scroll": "xwheel_zoom",
@@ -1270,13 +1280,14 @@ class TimeSeriesComponent:
         }
 
         # Set y-range if specified in config
-        if self.chart_settings.get('timeseries_y_range'):
+        configured_y_range = self.y_range if self.y_range is not None else self.chart_settings.get('timeseries_y_range')
+        if configured_y_range:
             try:
-                y_start, y_end = self.chart_settings['timeseries_y_range']
+                y_start, y_end = configured_y_range
                 fig_kwargs['y_range'] = Range1d(y_start, y_end)
-                logger.debug(f"Setting fixed y-range for {self.position_name} to {self.chart_settings['timeseries_y_range']}")
+                logger.debug(f"Setting fixed y-range for {self.position_name} to {configured_y_range}")
             except (ValueError, TypeError) as e:
-                logger.warning(f"Invalid 'timeseries_y_range' format: {self.chart_settings['timeseries_y_range']}. Using auto-range. Error: {e}")
+                logger.warning(f"Invalid time-series y-range for {self.position_name}: {configured_y_range}. Using auto-range. Error: {e}")
 
         p = figure(**fig_kwargs)
         p.toolbar.autohide = True
@@ -1338,7 +1349,7 @@ class TimeSeriesComponent:
             return showSeconds ? `${base}:${ss}` : base;
         """)
         self.figure.xaxis.ticker = DatetimeTicker(desired_num_ticks=10) # Fewer ticks might be cleaner
-        self.figure.yaxis.axis_label = "Sound Level (dB)"
+        self.figure.yaxis.axis_label = self.y_axis_label
 
         self.figure.grid.grid_line_alpha = 0.3  # Set a default grid alpha
         self.figure.ygrid.band_fill_alpha = 0.1

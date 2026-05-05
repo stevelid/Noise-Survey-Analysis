@@ -27,6 +27,13 @@ logger = logging.getLogger(__name__)
 DEBUG_POSITION = 'Residential boundary (971-2, 440 m)'
 
 
+def _to_bokeh_ms(values) -> pd.Series:
+    dt = pd.Series(pd.to_datetime(values, utc=True))
+    return (
+        dt.dt.tz_convert("UTC").dt.tz_localize(None).astype("datetime64[ns]").astype("int64") // 10**6
+    ).to_numpy()
+
+
 class ServerDataHandler:
     def __init__(
         self,
@@ -328,7 +335,7 @@ class ServerDataHandler:
         build_started_at = time.perf_counter()
         data_dict = sliced.to_dict(orient='list')
         # Convert Datetime to int64 ms timestamps
-        data_dict['Datetime'] = (pd.to_datetime(sliced['Datetime']).astype('int64') // 10**6).tolist()
+        data_dict['Datetime'] = _to_bokeh_ms(sliced['Datetime']).tolist()
         build_ms = (time.perf_counter() - build_started_at) * 1000
         
         push_started_at = time.perf_counter()

@@ -20,6 +20,13 @@ from noise_survey_analysis.core.data_manager import PositionData
 logger = logging.getLogger(__name__)
 
 
+def _to_bokeh_ms(values) -> pd.Series:
+    dt = pd.Series(pd.to_datetime(values, utc=True))
+    return (
+        dt.dt.tz_convert("UTC").dt.tz_localize(None).astype("datetime64[ns]").astype("int64") // 10**6
+    ).to_numpy()
+
+
 def _peek_log_file_time_step_ms(log_file_paths: list) -> float:
     """
     Read just enough of the first log file to estimate its native time step in ms.
@@ -356,7 +363,7 @@ class GlyphDataProcessor:
         if position_data_obj.has_log_spectral:
             log_df_probe = position_data_obj.log_spectral
             if log_df_probe is not None and not log_df_probe.empty and 'Datetime' in log_df_probe.columns:
-                probe_times_ms = (pd.to_datetime(log_df_probe['Datetime']).astype('int64') // 10**6).values
+                probe_times_ms = _to_bokeh_ms(log_df_probe['Datetime'])
                 log_time_step = _estimate_time_step_ms(probe_times_ms)
         elif getattr(position_data_obj, 'log_file_paths', None):
             log_time_step = _peek_log_file_time_step_ms(position_data_obj.log_file_paths)
@@ -530,7 +537,7 @@ class GlyphDataProcessor:
             logger.warning(f"No time points for spectral data parameter: {param_prefix}")
             return None
         
-        times_ms = pd.to_datetime(times_dt).astype('int64') // 10**6 # Bokeh image x-coords
+        times_ms = _to_bokeh_ms(times_dt) # Bokeh image x-coords
         freq_indices = np.arange(n_freqs) # Bokeh image y-coords (categorical)
         time_step = _estimate_time_step_ms(times_ms)
         data_min_time = times_ms[0] if n_times > 0 else 0

@@ -2,6 +2,7 @@
 
 import os
 import pandas as pd
+import copy
 from collections import defaultdict # Not strictly needed with current PositionData, but good for other aggregations
 import logging
 import time
@@ -94,6 +95,8 @@ class PositionData:
         self.log_spectral: Optional[pd.DataFrame] = None
         self.audio_files_list: Optional[pd.DataFrame] = None # For list of audio files
         self.audio_files_path: Optional[str] = None # For path to audio files
+        self.y_axis_label: Optional[str] = None
+        self.y_range: Optional[List[float]] = None
         
         # Lazy loading: store file paths for on-demand loading
         self.log_file_paths: List[Dict[str, Any]] = []  # List of {file_path, parser_type, return_all_cols}
@@ -181,6 +184,40 @@ class PositionData:
         except Exception as e:
             logger.error(f"Error merging DataFrames for {self.name}: {e}")
             return existing_df # Return original on error
+
+    def _apply_source_options(
+        self,
+        parsed_data_obj: ParsedData,
+        selected_columns: Optional[List[str]] = None,
+        forced_profile: Optional[str] = None,
+    ) -> ParsedData:
+        """Apply source-level display options from the config after parsing."""
+        if forced_profile:
+            parsed_data_obj.data_profile = forced_profile
+
+        if not selected_columns:
+            return parsed_data_obj
+
+        requested = [col for col in selected_columns if col and col != 'Datetime']
+
+        def filter_columns(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+            if df is None or df.empty or 'Datetime' not in df.columns:
+                return df
+            available = [col for col in requested if col in df.columns]
+            missing = [col for col in requested if col not in df.columns]
+            if missing:
+                logger.warning(
+                    "Selected columns missing for %s: %s",
+                    parsed_data_obj.original_file_path,
+                    missing,
+                )
+            if not available:
+                return df[['Datetime']].copy()
+            return df[['Datetime', *available]].copy()
+
+        parsed_data_obj.totals_df = filter_columns(parsed_data_obj.totals_df)
+        parsed_data_obj.metadata['selected_columns'] = requested
+        return parsed_data_obj
 
     def add_parsed_file_data(self, parsed_data_obj: ParsedData):
         """
@@ -294,6 +331,8 @@ class PositionData:
             file_path = file_info['file_path']
             parser_type = file_info.get('parser_type')
             return_all_cols = file_info.get('return_all_cols', False)
+            selected_columns = file_info.get('selected_columns')
+            forced_profile = file_info.get('data_profile')
             
             try:
                 file_started_at = time.perf_counter()
@@ -318,7 +357,9 @@ class PositionData:
                         cache_label = 'miss'
 
                 if parsed_data is not None:
+                    parsed_data = copy.deepcopy(parsed_data)
                     merge_started_at = time.perf_counter()
+                    parsed_data = self._apply_source_options(parsed_data, selected_columns, forced_profile)
                     self.add_parsed_file_data(parsed_data)
                     merge_ms = (time.perf_counter() - merge_started_at) * 1000
                     total_merge_ms += merge_ms
@@ -348,16 +389,17 @@ class PositionData:
                 total_parse_ms += parse_ms
                 
                 if parsed_data:
-                    merge_started_at = time.perf_counter()
-                    self.add_parsed_file_data(parsed_data)
-                    merge_ms = (time.perf_counter() - merge_started_at) * 1000
-                    total_merge_ms += merge_ms
-
                     if cache is not None and 'error' not in parsed_data.metadata:
                         cache_put_started_at = time.perf_counter()
                         cache.put(file_path, parsed_data, return_all_cols)
                         cache_put_ms = (time.perf_counter() - cache_put_started_at) * 1000
                         total_cache_put_ms += cache_put_ms
+
+                    merge_started_at = time.perf_counter()
+                    parsed_data = self._apply_source_options(parsed_data, selected_columns, forced_profile)
+                    self.add_parsed_file_data(parsed_data)
+                    merge_ms = (time.perf_counter() - merge_started_at) * 1000
+                    total_merge_ms += merge_ms
 
                     logger.info(
                         "[LAZY LOAD PERF] position=%s file=%s cache=%s cache_lookup_ms=%.1f parser_lookup_ms=%.1f parse_ms=%.1f merge_ms=%.1f cache_put_ms=%.1f total_ms=%.1f",
@@ -431,7 +473,7 @@ class DataManager:
         'file_path' (str) or 'file_paths' (Set[str] or List[str]).
         """
         # Build a list of all file parsing tasks
-        parse_tasks: List[Tuple[str, str, bool, Optional[str]]] = []  # (file_path, position_name, return_all_cols, parser_hint)
+        parse_tasks: List[Tuple[str, str, bool, Optional[str], Dict[str, Any]]] = []  # (file_path, position_name, return_all_cols, parser_hint, options)
 
         for config in source_configs:
             if not config.get("enabled", True): # Default to enabled if not specified
@@ -466,7 +508,13 @@ class DataManager:
 
             for path in file_paths_to_process:
                 parser_hint = config.get("parser_type_hint") or config.get("parser_type")
-                parse_tasks.append((path, position_name, use_return_all_cols, parser_hint))
+                source_options = {
+                    'selected_columns': config.get('selected_columns') or config.get('columns'),
+                    'data_profile': config.get('data_profile') or config.get('profile'),
+                    'y_axis_label': config.get('y_axis_label'),
+                    'y_range': config.get('y_range'),
+                }
+                parse_tasks.append((path, position_name, use_return_all_cols, parser_hint, source_options))
 
         # Process files sequentially
         if not parse_tasks:
@@ -475,20 +523,28 @@ class DataManager:
 
         self._load_files_sequential(parse_tasks)
 
-    def _load_files_sequential(self, parse_tasks: List[Tuple[str, str, bool, Optional[str]]]):
+    def _load_files_sequential(self, parse_tasks: List[Tuple[str, str, bool, Optional[str], Dict[str, Any]]]):
         """Load files sequentially."""
         total = len(parse_tasks)
-        for idx, (file_path, position_name, return_all_cols, parser_hint) in enumerate(parse_tasks, 1):
+        for idx, (file_path, position_name, return_all_cols, parser_hint, source_options) in enumerate(parse_tasks, 1):
             self.add_source_file(file_path, position_name,
                                 parser_type_hint=parser_hint,
-                                return_all_columns=return_all_cols)
+                                return_all_columns=return_all_cols,
+                                selected_columns=source_options.get('selected_columns'),
+                                data_profile=source_options.get('data_profile'),
+                                y_axis_label=source_options.get('y_axis_label'),
+                                y_range=source_options.get('y_range'))
             if self.progress_callback:
                 self.progress_callback(idx, total)
 
     def add_source_file(self, file_path: str, position_name: str,
                         parser_type_hint: Optional[str] = None,
                         return_all_columns: bool = False,
-                        skip_log_files: bool = True):
+                        skip_log_files: bool = True,
+                        selected_columns: Optional[List[str]] = None,
+                        data_profile: Optional[str] = None,
+                        y_axis_label: Optional[str] = None,
+                        y_range: Optional[List[float]] = None):
         """
         Parses a single file and adds its data to the specified position.
         This method is used for sequential processing and backwards compatibility.
@@ -506,6 +562,10 @@ class DataManager:
                 self._position_order.append(position_name)
 
         position_obj = self._positions_data[position_name]
+        if y_axis_label:
+            position_obj.y_axis_label = y_axis_label
+        if y_range is not None:
+            position_obj.y_range = y_range
 
         # Check if this is a log file by quick heuristic (before parsing)
         # Log files typically have "_log" in filename or are large CSV/TXT files
@@ -529,7 +589,9 @@ class DataManager:
             position_obj.log_file_paths.append({
                 'file_path': file_path,
                 'parser_type': parser_type_hint,
-                'return_all_cols': return_all_columns
+                'return_all_cols': return_all_columns,
+                'selected_columns': selected_columns,
+                'data_profile': data_profile,
             })
             return
 
@@ -540,6 +602,8 @@ class DataManager:
             parsed_data_obj = cache.get(file_path, return_all_columns)
             if parsed_data_obj is not None:
                 logger.info(f"Using cached data for: {os.path.basename(file_path)}")
+                parsed_data_obj = copy.deepcopy(parsed_data_obj)
+                parsed_data_obj = position_obj._apply_source_options(parsed_data_obj, selected_columns, data_profile)
                 position_obj.add_parsed_file_data(parsed_data_obj)
                 return
 
@@ -557,12 +621,14 @@ class DataManager:
 
         try:
             parsed_data_obj = parser.parse(file_path, return_all_columns=return_all_columns)
-            position_obj.add_parsed_file_data(parsed_data_obj)
 
             # Cache the result if enabled and no errors
             if self.use_cache and 'error' not in parsed_data_obj.metadata:
                 cache = get_parsed_data_cache()
                 cache.put(file_path, parsed_data_obj, return_all_columns)
+
+            parsed_data_obj = position_obj._apply_source_options(parsed_data_obj, selected_columns, data_profile)
+            position_obj.add_parsed_file_data(parsed_data_obj)
 
             logger.info(f"Successfully processed and added data from '{file_path}' to '{position_name}'.")
         except Exception as e:

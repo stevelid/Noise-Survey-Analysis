@@ -47,6 +47,13 @@ def extract_position_from_filename(filename):
     if match:
         return match.group(1)
 
+    # Noise Sentry exports often keep the full descriptive site/position label
+    # before the timestamp suffix, for example:
+    # "6305 Barrosa Way NS6A_2026_04_11__17h58m09s_log.csv"
+    match = re.match(r'^(.+?)_\d{4}_\d{2}_\d{2}__\d{2}h\d{2}m\d{2}s_(?:log|summary)\.csv$', filename)
+    if match:
+        return match.group(1)
+
     # Pattern for SVL-derived files: "L{number}_log.csv"
     match = re.match(r'^(L\d+)_(?:log|summary)\.csv$', filename)
     if match:

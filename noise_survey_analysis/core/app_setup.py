@@ -88,7 +88,15 @@ def load_config_and_prepare_sources(config_path='config.json'):
             continue
 
         parser_type = source.get("parser_type", "auto")
-        group_key = (position, parser_type)
+        selected_columns = source.get("columns") or source.get("selected_columns")
+        if isinstance(selected_columns, str):
+            selected_columns = [selected_columns]
+        selected_columns_key = tuple(selected_columns) if isinstance(selected_columns, list) else ()
+        data_profile = source.get("profile") or source.get("data_profile")
+        y_axis_label = source.get("y_axis_label")
+        y_range = source.get("y_range")
+        y_range_key = tuple(y_range) if isinstance(y_range, list) else y_range
+        group_key = (position, parser_type, selected_columns_key, data_profile, y_axis_label, y_range_key)
 
         if group_key not in grouped_sources:
             grouped_sources[group_key] = {
@@ -96,6 +104,14 @@ def load_config_and_prepare_sources(config_path='config.json'):
                 "file_paths": [],
                 "parser_type": parser_type,
             }
+            if selected_columns:
+                grouped_sources[group_key]["selected_columns"] = selected_columns
+            if data_profile:
+                grouped_sources[group_key]["data_profile"] = data_profile
+            if y_axis_label:
+                grouped_sources[group_key]["y_axis_label"] = y_axis_label
+            if y_range is not None:
+                grouped_sources[group_key]["y_range"] = y_range
 
         display_title = source.get("display_title") or source.get("display_name")
         if isinstance(display_title, str):

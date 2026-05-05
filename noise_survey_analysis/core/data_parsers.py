@@ -571,6 +571,16 @@ class SvanFileParser(AbstractNoiseParser):
                         return f"{param_prefix}_{cleaned_freq}", 'spectral'
         return None, None
 
+    @staticmethod
+    def _make_unique_headers(headers: List[str]) -> List[str]:
+        seen = {}
+        unique_headers = []
+        for header in headers:
+            count = seen.get(header, 0)
+            unique_headers.append(header if count == 0 else f"{header}_{count}")
+            seen[header] = count + 1
+        return unique_headers
+
     def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
         logger.info(f"SvanParser: Parsing {file_path}")
         parsed_data_obj = ParsedData(original_file_path=file_path, parser_type='Svan')
@@ -693,6 +703,7 @@ class SvanFileParser(AbstractNoiseParser):
             for i in range(max_h_len):
                 parts = [h[i].strip() if i < len(h) else '' for h in temp_headers_parts]
                 raw_headers.append(re.sub(r'_+', '_', "_".join(p for p in parts if p)).strip('_') or f"Unnamed_{i}")
+            raw_headers = self._make_unique_headers(raw_headers)
 
             # Check trailing unnamed columns by sampling data rows
             while raw_headers and raw_headers[-1].startswith("Unnamed_"):
