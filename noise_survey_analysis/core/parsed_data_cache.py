@@ -57,12 +57,15 @@ class ParsedDataCache:
         except Exception as e:
             logger.warning(f"Failed to create cache directory: {e}")
 
-    def _get_cache_key(self, file_path: str) -> str:
-        """Generate a unique cache key for a file path."""
+    def _get_cache_key(self, file_path: str, return_all_columns: bool = False) -> str:
+        """Generate a unique cache key for a file path and parse profile."""
         # Use absolute path for consistency
         abs_path = os.path.abspath(file_path)
-        # Hash the path for a shorter key
-        return hashlib.md5(abs_path.encode('utf-8')).hexdigest()
+        # Include parse profile so filtered vs full-column results are cached separately
+        profile = 'full' if return_all_columns else 'filtered'
+        key_string = f"{abs_path}::{profile}"
+        # Hash for a shorter key
+        return hashlib.md5(key_string.encode('utf-8')).hexdigest()
 
     def _get_cache_file_path(self, cache_key: str) -> Path:
         """Get the path to the cache file for a given key."""
@@ -121,7 +124,7 @@ class ParsedDataCache:
         Returns:
             ParsedData object if cached and valid, None otherwise
         """
-        cache_key = self._get_cache_key(file_path)
+        cache_key = self._get_cache_key(file_path, return_all_columns)
 
         if cache_key not in self._cache:
             return None
@@ -135,8 +138,6 @@ class ParsedDataCache:
             self._remove_entry(cache_key)
             return None
 
-        # Note: We don't cache based on return_all_columns parameter
-        # If this becomes important, we could enhance the cache key
         logger.debug(f"Cache hit: {os.path.basename(file_path)}")
         return entry.parsed_data
 
@@ -151,7 +152,7 @@ class ParsedDataCache:
         """
         try:
             stat = os.stat(file_path)
-            cache_key = self._get_cache_key(file_path)
+            cache_key = self._get_cache_key(file_path, return_all_columns)
 
             entry = CacheEntry(
                 parsed_data=parsed_data,

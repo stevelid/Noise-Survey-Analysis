@@ -23,32 +23,45 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
-    function chooseDatasetForSlice(bounds, sources) {
+    function chooseDatasetForSlice(bounds, sources, broadbandParam) {
         if (!sources || !bounds) return null;
         const { start, end } = bounds;
-        const logData = sources.log?.data;
-        if (logData?.Datetime && logData.LAeq) {
-            const laeqValues = calcMetrics.sliceTimeSeries(logData.Datetime, logData.LAeq, start, end);
+        const effectiveParam = typeof broadbandParam === 'string' && broadbandParam.length
+            ? broadbandParam
+            : 'LAeq';
+
+        function tryDataset(datasetName, dataObj) {
+            if (!dataObj?.Datetime) return null;
+            const paramValues = calcMetrics.sliceTimeSeries(dataObj.Datetime, dataObj[effectiveParam], start, end);
+            if (paramValues.length) {
+                const laeqValues = calcMetrics.sliceTimeSeries(dataObj.Datetime, dataObj.LAeq, start, end);
+                return {
+                    dataset: datasetName,
+                    data: dataObj,
+                    broadbandValues: paramValues,
+                    broadbandParam: effectiveParam,
+                    laeqValues: laeqValues.length ? laeqValues : paramValues
+                };
+            }
+            // Fallback to LAeq if selected parameter not available
+            const laeqValues = calcMetrics.sliceTimeSeries(dataObj.Datetime, dataObj.LAeq, start, end);
             if (laeqValues.length) {
                 return {
-                    dataset: 'log',
-                    data: logData,
+                    dataset: datasetName,
+                    data: dataObj,
+                    broadbandValues: laeqValues,
+                    broadbandParam: 'LAeq',
                     laeqValues
                 };
             }
+            return null;
         }
 
-        const overviewData = sources.overview?.data;
-        if (overviewData?.Datetime && overviewData.LAeq) {
-            const laeqValues = calcMetrics.sliceTimeSeries(overviewData.Datetime, overviewData.LAeq, start, end);
-            if (laeqValues.length) {
-                return {
-                    dataset: 'overview',
-                    data: overviewData,
-                    laeqValues
-                };
-            }
-        }
+        const logResult = tryDataset('log', sources.log?.data);
+        if (logResult) return logResult;
+
+        const overviewResult = tryDataset('overview', sources.overview?.data);
+        if (overviewResult) return overviewResult;
 
         return null;
     }
@@ -158,14 +171,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         positionIds.forEach(positionId => {
             const sources = timeSeriesSources[positionId];
-            const selection = chooseDatasetForSlice(bounds, sources);
+            const broadbandParam = selectedParameter || 'LAeq';
+            const selection = chooseDatasetForSlice(bounds, sources, broadbandParam);
 
             if (!selection) {
                 metricsRows.push({
                     positionId,
                     dataset: 'none',
                     laeq: null,
+                    broadbandValue: null,
+                    broadbandParam: broadbandParam,
                     lafmax: null,
+                    lafmaxAvailable: false,
                     la90: null,
                     la90Available: false,
                     durationMs
@@ -173,16 +190,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            const broadbandValue = calcMetrics.calcLAeq(selection.broadbandValues);
             const laeq = calcMetrics.calcLAeq(selection.laeqValues);
-            let lafmaxValues = selection.laeqValues;
+            let lafmaxValues = null;
+            let lafmaxAvailable = false;
             const lafmaxField = selection.data?.LAFmax;
             if (lafmaxField) {
                 const extracted = calcMetrics.sliceTimeSeries(selection.data.Datetime, lafmaxField, bounds.start, bounds.end);
                 if (extracted.length) {
                     lafmaxValues = extracted;
+                    lafmaxAvailable = true;
                 }
             }
-            const lafmax = calcMetrics.calcLAMax(lafmaxValues);
+            const lafmax = lafmaxAvailable ? calcMetrics.calcLAMax(lafmaxValues) : null;
             const la90 = selection.dataset === 'log'
                 ? calcMetrics.calcLA90(selection.laeqValues)
                 : null;
@@ -212,13 +232,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 positionId,
                 dataset: selection.dataset,
                 laeq,
+                broadbandValue,
+                broadbandParam: selection.broadbandParam,
                 lafmax,
+                lafmaxAvailable,
                 la90,
                 la90Available: selection.dataset === 'log' && la90 !== null,
                 durationMs
             });
 
-            if (laeq !== null || lafmax !== null || (Array.isArray(spectrum.values) && spectrum.values.some(value => Number.isFinite(value)))) {
+            if (laeq !== null || broadbandValue !== null || lafmax !== null || (Array.isArray(spectrum.values) && spectrum.values.some(value => Number.isFinite(value)))) {
                 hasData = true;
             }
         });

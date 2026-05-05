@@ -113,7 +113,9 @@ def _normalize_path(value):
     return os.path.expanduser(value)
 
 # --- Configure Logging ---
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+_log_level_str = os.environ.get('NOISE_SURVEY_LOG_LEVEL', 'INFO').upper()
+_log_level = getattr(logging, _log_level_str, logging.INFO)
+logging.basicConfig(level=_log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Process-level cache for parsed data ---
@@ -244,8 +246,8 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         logger.addHandler(handler)
     
-    logger.setLevel(logging.DEBUG)
-    logging.getLogger().setLevel(logging.DEBUG)  # Ensure root logger allows DEBUG messages
+    logger.setLevel(_log_level)
+    logging.getLogger().setLevel(_log_level)
     logger.propagate = False  # Prevent duplicate output
     
     logger.info("--- New client session started. Creating live application instance. ---")

@@ -24,7 +24,11 @@ from noise_survey_analysis.core.data_processors import (
 from noise_survey_analysis.core.data_manager import DataManager
 
 logger = logging.getLogger(__name__)
-DEBUG_POSITION = 'Residential boundary (971-2, 440 m)'
+
+
+def _debug_position() -> str:
+    import os
+    return os.environ.get('NSA_DEBUG_POSITION', '')
 
 
 def _to_bokeh_ms(values) -> pd.Series:
@@ -320,7 +324,8 @@ class ServerDataHandler:
             return
         logger.info(f"[UPDATE] Pushing {len(sliced)} log totals rows to timeseries source")
         figure = model_bundle.get('timeseries_figure')
-        if figure is not None and getattr(figure, 'name', '') == f'figure_{DEBUG_POSITION}_timeseries':
+        debug_pos = _debug_position()
+        if debug_pos and figure is not None and getattr(figure, 'name', '') == f'figure_{debug_pos}_timeseries':
             logger.info(
                 "[TH DEBUG] rows=%s first=%s last=%s requested_start_ms=%s requested_end_ms=%s",
                 len(sliced),
@@ -405,7 +410,8 @@ class ServerDataHandler:
                 self._spectrogram_chunk_bounds.pop(position_id, None)
             return
         figure = model_bundle.get('spectrogram_figure')
-        if figure is not None and getattr(figure, 'name', '') == f'figure_{DEBUG_POSITION}_spectrogram':
+        debug_pos = _debug_position()
+        if debug_pos and figure is not None and getattr(figure, 'name', '') == f'figure_{debug_pos}_spectrogram':
             logger.info(
                 "[SPEC DEBUG] rows=%s first=%s last=%s requested_start_ms=%s requested_end_ms=%s param=%s",
                 len(sliced),
@@ -433,7 +439,7 @@ class ServerDataHandler:
                 prepared['n_freqs'],
                 log_cells,
             )
-            if figure is not None and getattr(figure, 'name', '') == f'figure_{DEBUG_POSITION}_spectrogram':
+            if debug_pos and figure is not None and getattr(figure, 'name', '') == f'figure_{debug_pos}_spectrogram':
                 logger.info(
                     "[SPEC DEBUG] prepared n_times=%s chunk_time_length=%s time_step=%s min_time=%s max_time=%s initial_x=%s initial_dw=%s cells=%s",
                     prepared['n_times'],

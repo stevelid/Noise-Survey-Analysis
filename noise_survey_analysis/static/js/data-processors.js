@@ -13,7 +13,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     const MAX_LOG_SPECTROGRAM_TIME_POINTS = 30000;
-    const DEBUG_POSITION = 'Residential boundary (971-2, 440 m)';
+
+    function getDebugPosition() {
+        try {
+            return localStorage.getItem('nsa_debug_position') || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function isDebugEnabled() {
+        try {
+            return localStorage.getItem('nsa_debug') === '1';
+        } catch (e) {
+            return false;
+        }
+    }
 
     // Log view threshold default:
     // min(1 hour, 10 overview steps, 360 log steps)
@@ -264,7 +279,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function debugSpectrogram(position, label, payload) {
-        if (position !== DEBUG_POSITION) {
+        const debugPos = getDebugPosition();
+        if (!debugPos || position !== debugPos) {
             return;
         }
         try {

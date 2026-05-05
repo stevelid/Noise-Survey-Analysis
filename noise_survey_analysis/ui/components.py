@@ -1382,10 +1382,8 @@ class TimeSeriesComponent:
         self.figure.js_on_event('doubletap', double_click_js)
         
         hover_js = CustomJS(code=f"""
-                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleChartHover) {{
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleChartHover) {{
                 window.NoiseSurveyApp.eventHandlers.handleChartHover(cb_data, 'figure_{self.name_id}');
-                }} else {{
-                    console.error('NoiseSurveyApp.eventHandlers.handleChartHover not defined!');
                 }}
         """)
         hover_tool = HoverTool(
@@ -1401,7 +1399,7 @@ class TimeSeriesComponent:
                 if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleRegionBoxSelect) {
                     window.NoiseSurveyApp.eventHandlers.handleRegionBoxSelect(cb_obj);
                 } else {
-                    console.error('NoiseSurveyApp.eventHandlers.handleRegionBoxSelect not defined!');
+                    console.debug('NoiseSurveyApp.eventHandlers.handleRegionBoxSelect not defined!');
                 }
         """)
         self.figure.js_on_event('selectiongeometry', selection_js)
@@ -1676,7 +1674,7 @@ class SpectrogramComponent:
                 if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleTap) {
                 window.NoiseSurveyApp.eventHandlers.handleTap(cb_obj);
                 } else {
-                    console.error('NoiseSurveyApp.eventHandlers.handleTap not defined!');
+                    console.debug('NoiseSurveyApp.eventHandlers.handleTap not defined!');
                 }
         """)
         self.figure.js_on_event('tap', tap_js)
@@ -1686,16 +1684,14 @@ class SpectrogramComponent:
                 if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleDoubleClick) {
                 window.NoiseSurveyApp.eventHandlers.handleDoubleClick(cb_obj);
                 } else {
-                    console.error('NoiseSurveyApp.eventHandlers.handleDoubleClick not defined!');
+                    console.debug('NoiseSurveyApp.eventHandlers.handleDoubleClick not defined!');
                 }
         """)
         self.figure.js_on_event('doubletap', double_click_js)
 
         hover_js = CustomJS(code=f"""
-                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleChartHover) {{
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleChartHover) {{
                 window.NoiseSurveyApp.eventHandlers.handleChartHover(cb_data, 'figure_{self.name_id}');
-                }} else {{
-                    console.error('NoiseSurveyApp.eventHandlers.handleChartHover not defined!');
                 }}
         """)
         hover_tool = HoverTool(

@@ -456,6 +456,37 @@ describe('NoiseSurveyApp thunks', () => {
         window.NoiseSurveyApp.registry.models.timeSeriesSources = originalSources;
     });
 
+    it('createAutoRegionsIntent works correctly with large unsorted timestamps via min/max stats (3.10)', () => {
+        // Generate 1000 timestamps out of order to verify O(n) min/max scan vs old O(n log n) sort
+        const unsortedTimes = [];
+        const baseTime = Date.UTC(2024, 0, 1, 0, 0, 0);
+        for (let i = 0; i < 1000; i++) {
+            unsortedTimes.push(baseTime + (i % 2 === 0 ? i * 60000 : (1000 - i) * 60000));
+        }
+
+        const previousSources = window.NoiseSurveyApp.registry.models.timeSeriesSources;
+        window.NoiseSurveyApp.registry.models.timeSeriesSources = {
+            P1: {
+                overview: { data: { Datetime: unsortedTimes } },
+                log: { data: { Datetime: [] } },
+            }
+        };
+
+        store.dispatch(actions.regionReplaceAll([]));
+
+        const thunk = thunks.createAutoRegionsIntent({ mode: 'daytime' });
+        thunk(store.dispatch, store.getState);
+
+        const state = store.getState();
+        expect(state.regions.allIds.length).toBe(1);
+        const region = state.regions.byId[state.regions.allIds[0]];
+        expect(region.color).toBe('#4caf50');
+        // Region should span across the full data range (multiple days)
+        expect(region.areas.length).toBeGreaterThanOrEqual(1);
+
+        window.NoiseSurveyApp.registry.models.timeSeriesSources = previousSources;
+    });
+
     it('createAutoRegionsIntent respects explicit mode filters', () => {
         const times = [
             Date.UTC(2024, 0, 1, 20, 0, 0),

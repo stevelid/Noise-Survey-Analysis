@@ -59,41 +59,55 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return timestamps;
     }
 
-    function collectPositionTimestamps(positionId) {
-        console.log('[collectPositionTimestamps] Called for position:', positionId);
+    function isDebugEnabled() {
+        try {
+            return localStorage.getItem('nsa_debug') === '1';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /**
+     * Collects timestamp statistics for a position using a single O(n) linear scan.
+     * Replaces the old sort+dedup approach with min/max/count extraction.
+     */
+    function collectPositionTimestampStats(positionId) {
         if (!positionId) {
-            console.warn('[collectPositionTimestamps] No positionId provided');
-            return [];
+            return null;
         }
         const registryModels = app.registry?.models || {};
         const sources = registryModels.timeSeriesSources?.[positionId];
-        console.log('[collectPositionTimestamps] sources:', sources);
-        console.log('[collectPositionTimestamps] sources.overview:', sources?.overview);
-        console.log('[collectPositionTimestamps] sources.log:', sources?.log);
         if (!sources) {
-            console.warn('[collectPositionTimestamps] No sources found for position:', positionId);
-            return [];
+            return null;
         }
-        const overviewTimes = collectTimestampsFromSource(sources.overview);
-        const logTimes = collectTimestampsFromSource(sources.log);
-        console.log('[collectPositionTimestamps] overviewTimes count:', overviewTimes.length);
-        console.log('[collectPositionTimestamps] logTimes count:', logTimes.length);
-        if (!overviewTimes.length && !logTimes.length) {
-            console.warn('[collectPositionTimestamps] No timestamps found in either source');
-            return [];
-        }
-        const combined = [...overviewTimes, ...logTimes];
-        combined.sort((a, b) => a - b);
-        const deduped = [];
-        let previous = null;
-        combined.forEach(timestamp => {
-            if (timestamp !== previous) {
-                deduped.push(timestamp);
-                previous = timestamp;
+
+        let min = Infinity;
+        let max = -Infinity;
+        let count = 0;
+
+        function scanSource(source) {
+            const data = source?.data;
+            if (!data || !data.Datetime) {
+                return;
             }
-        });
-        console.log('[collectPositionTimestamps] Returning', deduped.length, 'deduplicated timestamps');
-        return deduped;
+            const raw = data.Datetime;
+            for (let i = 0; i < raw.length; i++) {
+                const value = Number(raw[i]);
+                if (Number.isFinite(value)) {
+                    if (value < min) min = value;
+                    if (value > max) max = value;
+                    count++;
+                }
+            }
+        }
+
+        scanSource(sources.overview);
+        scanSource(sources.log);
+
+        if (!count) {
+            return null;
+        }
+        return { min, max, count };
     }
 
     function clampInterval(start, end, min, max) {
@@ -108,20 +122,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return { start: clampedStart, end: clampedEnd };
     }
 
-    function buildDailyIntervals(timestamps, mode) {
-        if (!Array.isArray(timestamps) || !timestamps.length) {
+    function buildDailyIntervals(timestampStats, mode) {
+        if (!timestampStats || !timestampStats.count) {
             return [];
         }
-        
-        // Exclude first and last 0.15% of timestamps to avoid spurious noise from equipment installation/retrieval
-        const bufferPercent = 0.0015;
-        const bufferCount = Math.ceil(timestamps.length * bufferPercent);
-        const startIndex = Math.min(bufferCount, Math.floor(timestamps.length / 2));
-        const endIndex = Math.max(timestamps.length - 1 - bufferCount, startIndex);
-        
-        const minTimestamp = timestamps[startIndex];
-        const maxTimestamp = timestamps[endIndex];
-        
+
+        const minTimestamp = timestampStats.min;
+        const maxTimestamp = timestampStats.max;
+
         if (!Number.isFinite(minTimestamp) || !Number.isFinite(maxTimestamp)) {
             return [];
         }
@@ -331,18 +339,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
-
     function createAutoRegionsIntent(payload) {
-        return function (dispatch, getState) {
-            console.log('[AutoRegions] Starting createAutoRegionsIntent');
-            console.log('[AutoRegions] actions available:', !!actions);
-            console.log('[AutoRegions] dispatch type:', typeof dispatch);
-            
+        return function (dispatch) {
             if (!actions || typeof dispatch !== 'function') {
-                console.error('[AutoRegions] Early return: actions or dispatch not available');
+                console.error('[AutoRegions] actions or dispatch not available');
                 return;
             }
-            const state = typeof getState === 'function' ? getState() : null;
+            const state = app.store?.getState?.();
             const availablePositions = Array.isArray(state?.view?.availablePositions)
                 ? state.view.availablePositions
                 : [];
@@ -351,10 +354,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ? Object.keys(registryModels.timeSeriesSources)
                 : [];
             const positions = availablePositions.length ? availablePositions : fallbackPositions;
-            console.log('[AutoRegions] Positions to process:', positions);
-            
+
             if (!positions.length) {
-                console.error('[AutoRegions] No positions found, returning');
+                console.warn('[AutoRegions] No positions found');
                 return;
             }
 
@@ -372,45 +374,36 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 });
                 return result.length ? result : Object.keys(AUTO_REGION_MODES);
             })();
-            console.log('[AutoRegions] Requested modes:', requestedModes);
             const shouldAggregate = requestedModes.length >= 2;
 
             const generated = [];
             positions.forEach(positionId => {
-                console.log('[AutoRegions] Processing position:', positionId);
                 if (!positionId) {
-                    console.warn('[AutoRegions] Skipping null/undefined position');
                     return;
                 }
-                const timestamps = collectPositionTimestamps(positionId);
-                console.log('[AutoRegions] Collected', timestamps.length, 'timestamps for', positionId);
-                if (!timestamps.length) {
-                    console.warn('[AutoRegions] No timestamps for position:', positionId);
+                const timestampStats = collectPositionTimestampStats(positionId);
+                if (!timestampStats) {
                     return;
                 }
-                
+
                 requestedModes.forEach(modeName => {
-                    console.log('[AutoRegions] Processing mode:', modeName, 'for position:', positionId);
                     const config = AUTO_REGION_MODES[modeName];
                     if (!config) {
-                        console.warn('[AutoRegions] No config for mode:', modeName);
                         return;
                     }
-                    const intervals = buildDailyIntervals(timestamps, modeName);
-                    console.log('[AutoRegions] Built', intervals.length, 'intervals for', modeName);
-                    
+                    const intervals = buildDailyIntervals(timestampStats, modeName);
+
                     if (intervals.length > 0) {
                         const baseTitle = `${modeName.charAt(0).toUpperCase() + modeName.slice(1)} - ${positionId}`;
                         if (shouldAggregate) {
-                        const region = {
-                            positionId,
-                            start: intervals[0].start,
-                            end: intervals[intervals.length - 1].end,
-                            areas: intervals,
-                            color: config.color,
-                            note: baseTitle
-                        };
-                            console.log('[AutoRegions] Generated aggregated region:', region);
+                            const region = {
+                                positionId,
+                                start: intervals[0].start,
+                                end: intervals[intervals.length - 1].end,
+                                areas: intervals,
+                                color: config.color,
+                                note: baseTitle
+                            };
                             generated.push(region);
                         } else {
                             intervals.forEach((interval, index) => {
@@ -423,35 +416,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                                     color: config.color,
                                     note: `${baseTitle}${titleSuffix}`
                                 };
-                                console.log('[AutoRegions] Generated individual region:', region);
-                        generated.push(region);
+                                generated.push(region);
                             });
                         }
-                    } else {
-                        console.warn('[AutoRegions] No intervals generated for', modeName);
                     }
                 });
             });
 
-            console.log('[AutoRegions] Total generated regions:', generated.length);
             if (!generated.length) {
-                console.error('[AutoRegions] No regions generated, returning');
                 return;
             }
 
-            console.log('[AutoRegions] Dispatching regionsAdded with', generated.length, 'regions');
             dispatch(actions.regionsAdded(generated));
             app.regions?.invalidateMetricsCache?.();
-            console.log('[AutoRegions] Dispatch complete');
         };
     }
 
-
-     /**
+    /**
      * A stateful thunk that manages the two-step region creation process via keyboard.
      * First press pins the start, second press finalizes and creates the region.
      */
-     function toggleRegionCreationIntent() {
+    function toggleRegionCreationIntent() {
         return function (dispatch, getState) {
             if (!actions || !getState || !dispatch) return;
 

@@ -12,7 +12,27 @@ import threading
 import re
 from typing import Callable, Optional, List, Tuple
 import logging
-import vlc
+
+# Lazy import VLC to allow static generation without python-vlc installed
+try:
+    import vlc
+    _vlc_available = True
+except ImportError:
+    vlc = None
+    _vlc_available = False
+
+if not _vlc_available:
+    class _DummyVLCState:
+        Playing = 3
+        Buffering = 4
+        Paused = 5
+        Ended = 6
+        Stopped = 0
+        Error = 7
+    class _DummyVLC:
+        State = _DummyVLCState
+    vlc = _DummyVLC()
+
 import pandas as pd # Make sure pandas is imported
 
 # Configure Logging
@@ -52,17 +72,21 @@ class AudioPlaybackHandler:
         self.audio_available = False
 
         # Initialize VLC
-        try:
-            self.vlc_instance = vlc.Instance('--no-xlib', '--quiet')
-            self.player = self.vlc_instance.media_player_new()
-            if self.vlc_instance is None or self.player is None:
-                raise RuntimeError("Failed to initialize VLC instance or player.")
-        except Exception as e:
-            logger.error(f"VLC initialization failed: {e}. Audio will be disabled.", exc_info=True)
+        if not _vlc_available:
+            logger.info("python-vlc not available. Audio will be disabled.")
             self.vlc_instance = self.player = None
             self.audio_available = False
         else:
-            self.audio_available = True
+            try:
+                self.vlc_instance = vlc.Instance('--no-xlib', '--quiet')
+                self.player = self.vlc_instance.media_player_new()
+                if self.vlc_instance is None or self.player is None:
+                    raise RuntimeError("Failed to initialize VLC instance or player.")
+                self.audio_available = True
+            except Exception as e:
+                logger.error(f"VLC initialization failed: {e}. Audio will be disabled.", exc_info=True)
+                self.vlc_instance = self.player = None
+                self.audio_available = False
 
         # --- NEW, SIMPLIFIED INITIALIZATION LOGIC ---
         logger.info("AudioPlaybackHandler: Indexing pre-processed audio data...")

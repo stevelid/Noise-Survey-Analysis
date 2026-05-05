@@ -9,7 +9,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     // Module-level cache for computed metrics (outside Redux state)
-    const _metricsCache = new Map(); // key: `${regionId}_${parameter}`, value: metrics object
+    const _metricsCache = new Map(); // key: `${regionId}_${parameter}_${offsetMs}`, value: metrics object
+
+    function getChartOffsetMs(region, state) {
+        if (!region || !state?.view?.positionChartOffsets) {
+            return 0;
+        }
+        const raw = Number(state.view.positionChartOffsets[region.positionId]);
+        return Number.isFinite(raw) ? raw : 0;
+    }
+
+    function getSourceQueryAreas(displayAreas, offsetMs) {
+        if (!Array.isArray(displayAreas) || !displayAreas.length) {
+            return [];
+        }
+        if (!Number.isFinite(offsetMs) || offsetMs === 0) {
+            return displayAreas;
+        }
+        return displayAreas.map(area => ({
+            start: Number(area.start) - offsetMs,
+            end: Number(area.end) - offsetMs
+        }));
+    }
 
     function toFiniteArray(values) {
         if (!values) return [];
@@ -213,10 +234,12 @@ function calcLAeq(values) {
         };
     }
 
-    function chooseDataset(region, sources) {
+    function chooseDataset(region, sources, state) {
         if (!sources) return null;
-        const areas = getRegionAreas(region);
-        if (!areas.length) return null;
+        const displayAreas = getRegionAreas(region);
+        if (!displayAreas.length) return null;
+        const offsetMs = getChartOffsetMs(region, state);
+        const areas = getSourceQueryAreas(displayAreas, offsetMs);
 
         const logData = sources.log?.data;
         if (logData?.Datetime && logData.LAeq) {
@@ -262,10 +285,12 @@ function calcLAeq(values) {
     }
 
     function computeRegionMetrics(region, state, dataCache, models) {
-        const areas = getRegionAreas(region);
-        const durationMs = sumAreaDurations(areas);
+        const displayAreas = getRegionAreas(region);
+        const durationMs = sumAreaDurations(displayAreas);
+        const offsetMs = getChartOffsetMs(region, state);
+        const sourceAreas = getSourceQueryAreas(displayAreas, offsetMs);
         const sources = models?.timeSeriesSources?.[region.positionId];
-        const selection = chooseDataset(region, sources);
+        const selection = chooseDataset(region, sources, state);
 
         if (!selection) {
             return {
@@ -276,21 +301,25 @@ function calcLAeq(values) {
                 dataResolution: 'none',
                 spectrum: { labels: [], values: [] },
                 parameter: state?.view?.selectedParameter || null,
-                durationMs
+                durationMs,
+                chartOffsetMs: offsetMs,
+                sourceAreas: getSourceQueryAreas(displayAreas, offsetMs)
             };
         }
 
         const laeq = calcLAeq(selection.laeqValues);
         let lafmaxValues = selection.laeqValues;
+        let lafmaxAvailable = false;
         const lafmaxField = selection.data?.LAFmax;
         if (lafmaxField) {
-            const extracted = sliceTimeSeriesForAreas(selection.data.Datetime, lafmaxField, areas);
+            const extracted = sliceTimeSeriesForAreas(selection.data.Datetime, lafmaxField, sourceAreas);
             if (extracted.length) {
                 lafmaxValues = extracted;
+                lafmaxAvailable = true;
             }
         }
-        const lafmax = calcLAMax(lafmaxValues);
-        
+        const lafmax = lafmaxAvailable ? calcLAMax(lafmaxValues) : null;
+
         let la90 = null;
         if (selection.dataset === 'log') {
             if (Array.isArray(selection.la90Values) && selection.la90Values.length > 0) {
@@ -308,17 +337,24 @@ function calcLAeq(values) {
 
         const selectedParam = state?.view?.selectedParameter;
         const prepared = models?.preparedGlyphData?.[region.positionId];
-        const logSpectral = prepared?.log?.prepared_params?.['LZeq'];
-        const overviewSpectral = prepared?.overview?.prepared_params?.['LZeq'];
+
+        // Resolve spectral parameter: prefer selected, fall back to LZeq
+        const spectralParam = selectedParam && prepared?.log?.prepared_params?.[selectedParam]
+            ? selectedParam
+            : (selectedParam && prepared?.overview?.prepared_params?.[selectedParam]
+                ? selectedParam
+                : 'LZeq');
+        const logSpectral = prepared?.log?.prepared_params?.[spectralParam];
+        const overviewSpectral = prepared?.overview?.prepared_params?.[spectralParam];
 
         let spectrumSource = null;
         let spectrum = { labels: [], values: [] };
         if (logSpectral) {
             spectrumSource = 'log';
-            spectrum = computeSpectrumAverage(logSpectral, areas);
+            spectrum = computeSpectrumAverage(logSpectral, sourceAreas);
         } else if (overviewSpectral) {
             spectrumSource = 'overview';
-            spectrum = computeSpectrumAverage(overviewSpectral, areas);
+            spectrum = computeSpectrumAverage(overviewSpectral, sourceAreas);
         }
         if (spectrum && typeof spectrum === 'object') {
             spectrum.source = spectrumSource;
@@ -327,12 +363,16 @@ function calcLAeq(values) {
         return {
             laeq,
             lafmax,
+            lafmaxAvailable,
             la90,
             la90Available: selection.dataset === 'log' && la90 !== null,
             dataResolution: selection.dataset,
             spectrum,
             parameter: selectedParam || null,
-            durationMs
+            spectrumParameter: spectralParam,
+            durationMs,
+            chartOffsetMs: offsetMs,
+            sourceAreas
         };
     }
 
@@ -346,7 +386,8 @@ function calcLAeq(values) {
         }
         const regionId = region.id ?? 'unknown';
         const parameter = state?.view?.selectedParameter ?? '';
-        const cacheKey = `${regionId}_${parameter}`;
+        const offsetMs = getChartOffsetMs(region, state);
+        const cacheKey = `${regionId}_${parameter}_${offsetMs}`;
 
         if (_metricsCache.has(cacheKey)) {
             return _metricsCache.get(cacheKey);
@@ -391,12 +432,17 @@ function calcLAeq(values) {
             .filter(Boolean)
             .map(region => {
                 const metrics = getRegionMetrics(region, state, dataCache, models);
+                const displayAreas = getRegionAreas(region);
+                const offsetMs = metrics?.chartOffsetMs ?? 0;
+                const sourceAreas = getSourceQueryAreas(displayAreas, offsetMs);
                 return {
                     id: region.id,
                     positionId: region.positionId,
-                    areas: getRegionAreas(region).map(area => ({ start: area.start, end: area.end })),
+                    areas: displayAreas.map(area => ({ start: area.start, end: area.end })),
                     start: region.start,
                     end: region.end,
+                    chartOffsetMs: offsetMs,
+                    sourceAreas: sourceAreas.map(area => ({ start: area.start, end: area.end })),
                     note: region.note || '',
                     metrics: metrics,
                     color: typeof region.color === 'string' ? region.color : null

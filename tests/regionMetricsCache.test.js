@@ -116,4 +116,125 @@ describe('Region metrics cache', () => {
         expect(invalidateSpy).toHaveBeenCalled();
         invalidateSpy.mockRestore();
     });
+
+    it('cache key includes chart offset so offset changes invalidate cached metrics', () => {
+        const { regions } = app;
+        if (!regions?.getRegionMetrics) {
+            throw new Error('Region utilities are not available.');
+        }
+
+        const region = { id: 10, positionId: 'P1', start: 0, end: 1000, areas: [{ start: 0, end: 1000 }] };
+        const dataCache = {};
+        const models = { timeSeriesSources: {} };
+
+        const stateOffset0 = { view: { selectedParameter: 'LAeq', positionChartOffsets: { P1: 0 } } };
+        const stateOffset5k = { view: { selectedParameter: 'LAeq', positionChartOffsets: { P1: 5000 } } };
+
+        const metrics0 = regions.getRegionMetrics(region, stateOffset0, dataCache, models);
+        const metrics5k = regions.getRegionMetrics(region, stateOffset5k, dataCache, models);
+
+        expect(metrics0).not.toBe(metrics5k);
+    });
+
+    it('computeRegionMetrics returns sourceAreas offset-corrected for chart offset', () => {
+        const { regions } = app;
+        if (!regions?.computeRegionMetrics) {
+            throw new Error('Region utilities are not available.');
+        }
+
+        const region = { id: 11, positionId: 'P1', start: 10000, end: 20000, areas: [{ start: 10000, end: 20000 }] };
+        const state = { view: { selectedParameter: 'LAeq', positionChartOffsets: { P1: 5000 } } };
+        const dataCache = {};
+        const models = { timeSeriesSources: {} };
+
+        const metrics = regions.computeRegionMetrics(region, state, dataCache, models);
+        expect(metrics.chartOffsetMs).toBe(5000);
+        expect(metrics.sourceAreas).toHaveLength(1);
+        expect(metrics.sourceAreas[0].start).toBe(5000);
+        expect(metrics.sourceAreas[0].end).toBe(15000);
+    });
+
+    it('computeRegionMetrics uses selected parameter for spectrum when available', () => {
+        const { regions } = app;
+        if (!regions?.computeRegionMetrics) {
+            throw new Error('Region utilities are not available.');
+        }
+
+        const region = { id: 12, positionId: 'P1', start: 0, end: 1000, areas: [{ start: 0, end: 1000 }] };
+        const state = { view: { selectedParameter: 'LCeq' } };
+        const dataCache = {};
+        const models = {
+            timeSeriesSources: {
+                P1: {
+                    log: {
+                        data: {
+                            Datetime: [0, 500, 1000],
+                            LAeq: [50, 55, 52]
+                        }
+                    }
+                }
+            },
+            preparedGlyphData: {
+                P1: {
+                    log: {
+                        prepared_params: {
+                            LCeq: {
+                                frequency_labels: ['63 Hz', '125 Hz'],
+                                times_ms: [0, 500, 1000],
+                                n_freqs: 2,
+                                n_times: 3,
+                                levels_flat_transposed: [10, 20, 30, 15, 25, 35]
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        const metrics = regions.computeRegionMetrics(region, state, dataCache, models);
+        expect(metrics.spectrumParameter).toBe('LCeq');
+        expect(metrics.spectrum.labels).toEqual(['63 Hz', '125 Hz']);
+    });
+
+    it('computeRegionMetrics falls back to LZeq when selected parameter spectral data is absent', () => {
+        const { regions } = app;
+        if (!regions?.computeRegionMetrics) {
+            throw new Error('Region utilities are not available.');
+        }
+
+        const region = { id: 13, positionId: 'P1', start: 0, end: 1000, areas: [{ start: 0, end: 1000 }] };
+        const state = { view: { selectedParameter: 'LCeq' } };
+        const dataCache = {};
+        const models = {
+            timeSeriesSources: {
+                P1: {
+                    log: {
+                        data: {
+                            Datetime: [0, 500, 1000],
+                            LAeq: [50, 55, 52]
+                        }
+                    }
+                }
+            },
+            preparedGlyphData: {
+                P1: {
+                    log: {
+                        prepared_params: {
+                            LZeq: {
+                                frequency_labels: ['63 Hz'],
+                                times_ms: [0, 500, 1000],
+                                n_freqs: 1,
+                                n_times: 3,
+                                levels_flat_transposed: [10, 20, 30]
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        const metrics = regions.computeRegionMetrics(region, state, dataCache, models);
+        expect(metrics.spectrumParameter).toBe('LZeq');
+        expect(metrics.spectrum.labels).toEqual(['63 Hz']);
+    });
 });

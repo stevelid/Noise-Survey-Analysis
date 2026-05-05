@@ -134,4 +134,151 @@ describe('processComparisonSliceMetrics', () => {
         expect(result.spectrum.series).toEqual([]);
         expect(result.hasData).toBe(false);
     });
+
+    it('uses selected broadband parameter instead of hardcoding LAeq', () => {
+        const timeSeriesSources = {
+            P1: {
+                log: {
+                    data: {
+                        Datetime: [0, 1000, 2000, 3000],
+                        LAeq: [40, 50, 60, 50],
+                        LAFmax: [55, 65, 70, 68]
+                    }
+                }
+            }
+        };
+
+        const result = processComparisonSliceMetrics({
+            start: 1000,
+            end: 3000,
+            positionIds: ['P1'],
+            timeSeriesSources,
+            preparedGlyphData: {},
+            selectedParameter: 'LAFmax'
+        });
+
+        expect(result.metricsRows).toHaveLength(1);
+        const metrics = result.metricsRows[0];
+        expect(metrics.broadbandParam).toBe('LAFmax');
+        // broadbandValue should be computed from LAFmax, not LAeq
+        const expectedBroadband = calcMetrics.calcLAeq([65, 70, 68]);
+        expect(metrics.broadbandValue).toBeCloseTo(expectedBroadband ?? 0, 6);
+    });
+
+    it('returns null lafmax when LAFmax column is missing', () => {
+        const timeSeriesSources = {
+            P1: {
+                log: {
+                    data: {
+                        Datetime: [0, 1000, 2000, 3000],
+                        LAeq: [40, 50, 60, 50]
+                        // No LAFmax column
+                    }
+                }
+            }
+        };
+
+        const result = processComparisonSliceMetrics({
+            start: 1000,
+            end: 3000,
+            positionIds: ['P1'],
+            timeSeriesSources,
+            preparedGlyphData: {},
+            selectedParameter: 'LAeq'
+        });
+
+        expect(result.metricsRows).toHaveLength(1);
+        const metrics = result.metricsRows[0];
+        expect(metrics.lafmax).toBeNull();
+        expect(metrics.lafmaxAvailable).toBe(false);
+    });
+
+    it('does not crash on generic dataset with only non-standard columns', () => {
+        const timeSeriesSources = {
+            P1: {
+                log: {
+                    data: {
+                        Datetime: [0, 1000, 2000, 3000],
+                        CustomLevel: [30, 35, 40, 38]
+                        // No LAeq, no LAFmax — generic parser output
+                    }
+                }
+            }
+        };
+
+        const result = processComparisonSliceMetrics({
+            start: 0,
+            end: 3000,
+            positionIds: ['P1'],
+            timeSeriesSources,
+            preparedGlyphData: {},
+            selectedParameter: 'CustomLevel'
+        });
+
+        // Should return a row without crashing
+        expect(result.metricsRows).toHaveLength(1);
+        const metrics = result.metricsRows[0];
+        expect(metrics.broadbandParam).toBe('CustomLevel');
+        expect(metrics.broadbandValue).not.toBeNull();
+        // LAFmax unavailable
+        expect(metrics.lafmax).toBeNull();
+        expect(metrics.lafmaxAvailable).toBe(false);
+    });
+
+    it('does not crash on overview-only dataset with no log data', () => {
+        const timeSeriesSources = {
+            P1: {
+                overview: {
+                    data: {
+                        Datetime: [0, 5000, 10000],
+                        LAeq: [42, 48, 45]
+                    }
+                }
+                // No log property at all
+            }
+        };
+
+        const result = processComparisonSliceMetrics({
+            start: 0,
+            end: 10000,
+            positionIds: ['P1'],
+            timeSeriesSources,
+            preparedGlyphData: {},
+            selectedParameter: 'LAeq'
+        });
+
+        expect(result.metricsRows).toHaveLength(1);
+        const metrics = result.metricsRows[0];
+        expect(metrics.dataset).toBe('overview');
+        expect(metrics.laeq).not.toBeNull();
+    });
+
+    it('uses broadband parameter fallback when selected parameter column is absent', () => {
+        const timeSeriesSources = {
+            P1: {
+                log: {
+                    data: {
+                        Datetime: [0, 1000, 2000, 3000],
+                        LAeq: [40, 50, 60, 50]
+                        // No LCeq column
+                    }
+                }
+            }
+        };
+
+        const result = processComparisonSliceMetrics({
+            start: 1000,
+            end: 3000,
+            positionIds: ['P1'],
+            timeSeriesSources,
+            preparedGlyphData: {},
+            selectedParameter: 'LCeq'
+        });
+
+        expect(result.metricsRows).toHaveLength(1);
+        const metrics = result.metricsRows[0];
+        // Should fall back to LAeq
+        expect(metrics.broadbandParam).toBe('LAeq');
+        expect(metrics.broadbandValue).not.toBeNull();
+    });
 });

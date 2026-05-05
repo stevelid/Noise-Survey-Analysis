@@ -114,6 +114,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const DEFAULT_COMPARISON_COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'];
 
+    function mapComparisonMetricValue(param, row) {
+        if (!param || !row) return null;
+        const p = String(param).trim();
+        if (p === 'LAeq' || p === 'LZeq' || p === 'LCeq' || p === 'LAFeq') {
+            return row.broadbandValue !== undefined ? row.broadbandValue : row.laeq;
+        }
+        if (p === 'LAFmax') {
+            return row.lafmaxAvailable ? row.lafmax : null;
+        }
+        if (p === 'LA90' || p === 'LAF90') {
+            return row.la90Available ? row.la90 : null;
+        }
+        return null;
+    }
+
     function buildComparisonMetricsTable(rows) {
         if (!Array.isArray(rows) || !rows.length) {
             return COMPARISON_METRICS_EMPTY_HTML;

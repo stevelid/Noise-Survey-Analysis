@@ -10,7 +10,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
 (function (app) {
     'use strict';
-    const DEBUG_POSITION = 'Residential boundary (971-2, 440 m)';
+    function getDebugPosition() {
+        try {
+            return localStorage.getItem('nsa_debug_position') || '';
+        } catch (e) {
+            return '';
+        }
+    }
 
     const DEFAULT_REGION_COLOR = '#1e88e5';
     const DEFAULT_REGION_FILL_ALPHA = 0.08;
@@ -636,9 +642,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
                 const existingImage = this.source.data.image?.[0];
                 const replacementImage = replacement.image?.[0];
+
+                // Validate payload before touching Bokeh's fixed-size image buffer
+                if (!replacementImage || typeof replacementImage.length !== 'number' || replacementImage.length === 0) {
+                    console.warn('[SpectrogramChart] Invalid or empty replacement image; retaining current image.');
+                    return;
+                }
+                if (Array.isArray(replacementImage)) {
+                    const actualRows = replacementImage.length;
+                    const actualCols = replacementImage[0]?.length ?? 0;
+                    if (actualRows > 0 && actualCols > 0 && existingImage && existingImage.length > 0) {
+                        const expectedCells = existingImage.length * (existingImage[0]?.length ?? 0);
+                        const actualCells = actualRows * actualCols;
+                        if (actualCells !== expectedCells) {
+                            console.warn(`[SpectrogramChart] Image size mismatch: expected ${expectedCells} cells, got ${actualCells}. Retaining current image.`);
+                            return;
+                        }
+                    }
+                }
+
                 const patchedInPlace = _updateBokehImageData(existingImage, replacementImage);
                 if (!patchedInPlace) {
-                    console.error('[SpecDebug] Skipping spectrogram update because replacement image shape does not match the initialized glyph buffer.');
+                    console.warn('[SpectrogramChart] Skipping spectrogram update because replacement image shape does not match the initialized glyph buffer.');
                     return;
                 }
 
@@ -667,7 +692,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     });
                 }
 
-                if (this.positionId === DEBUG_POSITION) {
+                const debugPos = getDebugPosition();
+                if (debugPos && this.positionId === debugPos) {
                     console.log('[SpecDebug] chart-update', {
                         selectedParameter,
                         replacementX: replacement.x?.[0],

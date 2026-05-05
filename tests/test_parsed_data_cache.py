@@ -76,6 +76,45 @@ class ParsedDataCacheTests(unittest.TestCase):
         self.assertEqual(self.cache.get_stats()["entry_count"], 0)
         self.assertFalse(any(self.cache._cache_dir.glob("*.pkl")))
 
+    def test_return_all_columns_produces_different_cache_entries(self):
+        file_path = Path(self._temp_dir.name) / "profile.csv"
+        file_path.write_text("sample", encoding="utf-8")
+
+        # First parse: limited columns
+        limited = ParsedData(
+            totals_df=pd.DataFrame({"Datetime": [1, 2], "LAeq": [50.0, 52.0]}),
+            spectral_df=pd.DataFrame({"Datetime": [1, 2], "LZeq_100": [60.0, 61.0]}),
+            original_file_path=str(file_path),
+            parser_type="generic",
+        )
+        self.cache.put(str(file_path), limited, return_all_columns=False)
+        cached_limited = self.cache.get(str(file_path), return_all_columns=False)
+        self.assertIsNotNone(cached_limited)
+
+        # Second parse: all columns (different data)
+        full = ParsedData(
+            totals_df=pd.DataFrame({
+                "Datetime": [1, 2],
+                "LAeq": [50.0, 52.0],
+                "LAFmax": [55.0, 57.0],
+                "CustomCol": [1, 2]
+            }),
+            spectral_df=pd.DataFrame({"Datetime": [1, 2], "LZeq_100": [60.0, 61.0]}),
+            original_file_path=str(file_path),
+            parser_type="generic",
+        )
+        self.cache.put(str(file_path), full, return_all_columns=True)
+        cached_full = self.cache.get(str(file_path), return_all_columns=True)
+        self.assertIsNotNone(cached_full)
+
+        # The two cached entries must be distinct
+        self.assertIn("CustomCol", cached_full.totals_df.columns)
+        self.assertNotIn("CustomCol", cached_limited.totals_df.columns)
+
+        # Requesting with opposite profile should not cross-contaminate
+        cached_limited_again = self.cache.get(str(file_path), return_all_columns=False)
+        self.assertNotIn("CustomCol", cached_limited_again.totals_df.columns)
+
 
 if __name__ == "__main__":
     unittest.main()

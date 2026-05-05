@@ -535,4 +535,42 @@ describe('NoiseSurveyApp.classes', () => {
     expect(chartModel.y_range.end).toBe(1);
     expect(spec.source.data.image[0]).toEqual(srcArray);
   });
+
+  it('SpectrogramChart.update retains current image when replacement is empty', () => {
+    const srcArray = new Float32Array([1, 2, 3, 4]);
+    const imageRenderer = { glyph: { type: 'Image', x: 0, y: 0, dw: 0, dh: 0 }, data_source: { data: { image: [srcArray] }, change: { emit: vi.fn() } } };
+    const chartModel = { name: 'figure_P1_spectrogram', renderers: [imageRenderer], title: { text: '' }, yaxis: { ticker: {}, major_label_overrides: {} }, y_range: { start: 0, end: 1 } };
+    const spec = new classes.SpectrogramChart(chartModel, {}, {}, { text: '' }, 'P1');
+    const replacement = { image: [new Float32Array(0)], x: [1], dw: [1], y: [0], dh: [1] };
+    spec.update({ source_replacement: replacement }, { reason: ' (Log Data)' }, 'LAeq');
+    expect(spec.source.data.image[0]).toEqual(srcArray);
+    expect(spec.imageRenderer.glyph.x).toBe(0);
+  });
+
+  it('SpectrogramChart.update retains current image when replacement is null', () => {
+    const srcArray = new Float32Array([1, 2, 3, 4]);
+    const imageRenderer = { glyph: { type: 'Image', x: 0, y: 0, dw: 0, dh: 0 }, data_source: { data: { image: [srcArray] }, change: { emit: vi.fn() } } };
+    const chartModel = { name: 'figure_P1_spectrogram', renderers: [imageRenderer], title: { text: '' }, yaxis: { ticker: {}, major_label_overrides: {} }, y_range: { start: 0, end: 1 } };
+    const spec = new classes.SpectrogramChart(chartModel, {}, {}, { text: '' }, 'P1');
+    const replacement = { image: [null], x: [1], dw: [1], y: [0], dh: [1] };
+    spec.update({ source_replacement: replacement }, { reason: ' (Log Data)' }, 'LAeq');
+    expect(spec.source.data.image[0]).toEqual(srcArray);
+    expect(spec.imageRenderer.glyph.x).toBe(0);
+  });
+
+  it('SpectrogramChart.update retains current image on 2D array cell count mismatch', () => {
+    // Simulate a 2x2 existing image (4 cells total)
+    const srcArray = [new Float32Array([1, 2]), new Float32Array([3, 4])];
+    const imageRenderer = {
+      glyph: { type: 'Image', x: 0, y: 0, dw: 2, dh: 2 },
+      data_source: { data: { image: [srcArray] }, change: { emit: vi.fn() } }
+    };
+    const chartModel = { name: 'figure_P1_spectrogram', renderers: [imageRenderer], title: { text: '' }, yaxis: { ticker: {}, major_label_overrides: {} }, y_range: { start: 0, end: 1 } };
+    const spec = new classes.SpectrogramChart(chartModel, {}, {}, { text: '' }, 'P1');
+    // Replacement is 1x3 (3 cells) mismatched against 2x2 (4 cells)
+    const replacement = { image: [[1, 2, 3]], x: [1], dw: [1], y: [0], dh: [1] };
+    spec.update({ source_replacement: replacement }, { reason: ' (Log Data)' }, 'LAeq');
+    expect(spec.source.data.image[0]).toEqual(srcArray);
+    expect(spec.imageRenderer.glyph.x).toBe(0);
+  });
 });
