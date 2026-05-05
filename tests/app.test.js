@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Ensure correct load order: state core modules followed by init
 import './loadCoreModules.js';
@@ -6,9 +6,11 @@ import '../noise_survey_analysis/static/js/init.js';
 
 // We'll stub dependencies that app.js orchestrates
 let defaultDisplayDetails;
+let consoleErrorSpy;
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   // Fresh spies before every test
   defaultDisplayDetails = { P1: { line: { reason: ' (Overview)' }, spec: { reason: ' (Overview)' } } };
 
@@ -19,6 +21,7 @@ beforeEach(() => {
     renderControlWidgets: vi.fn(),
     renderMarkers: vi.fn(),
     renderRegions: vi.fn(),
+    renderSidePanel: vi.fn(),
     renderActiveTool: vi.fn(),
   };
   window.NoiseSurveyApp.data_processors = {
@@ -51,6 +54,13 @@ beforeEach(() => {
     handleAudioStatusUpdate: vi.fn(),
     handleKeyPress: vi.fn(),
   };
+});
+
+afterEach(() => {
+  const renderErrors = consoleErrorSpy.mock.calls.filter(([message]) =>
+    typeof message === 'string' && message.startsWith('[RenderError]')
+  );
+  expect(renderErrors).toEqual([]);
 });
 
 // Import app.js last so it picks up our stubs (no side-effects until init() is called)
@@ -128,5 +138,53 @@ describe('NoiseSurveyApp.app orchestrator', () => {
         spec: { type: 'log', reason: ' (Log Data)' },
       },
     });
+  });
+
+  it('should skip frequency bar update on marker-only state change (3.11)', () => {
+    window.NoiseSurveyApp.init.initialize({});
+    vi.clearAllMocks();
+
+    // Dispatch a marker add — this should NOT trigger frequency bar
+    window.NoiseSurveyApp.store.dispatch(
+      window.NoiseSurveyApp.actions.markerAdd(500, { positionId: 'P1' })
+    );
+
+    expect(window.NoiseSurveyApp.data_processors.updateActiveFreqBarData).not.toHaveBeenCalled();
+    expect(window.NoiseSurveyApp.renderers.renderFrequencyBar).not.toHaveBeenCalled();
+  });
+
+  it('should run frequency bar update on hover change (3.11)', () => {
+    window.NoiseSurveyApp.init.initialize({});
+    vi.clearAllMocks();
+
+    // Dispatch a hover change — this SHOULD trigger frequency bar
+    window.NoiseSurveyApp.store.dispatch(
+      window.NoiseSurveyApp.actions.hover({ timestamp: 500, position: 'P1', isActive: true })
+    );
+
+    expect(window.NoiseSurveyApp.data_processors.updateActiveFreqBarData).toHaveBeenCalled();
+    expect(window.NoiseSurveyApp.renderers.renderFrequencyBar).toHaveBeenCalled();
+  });
+
+  it('should skip control widgets on marker-only state change (3.12)', () => {
+    window.NoiseSurveyApp.init.initialize({});
+    vi.clearAllMocks();
+
+    window.NoiseSurveyApp.store.dispatch(
+      window.NoiseSurveyApp.actions.markerAdd(500, { positionId: 'P1' })
+    );
+
+    expect(window.NoiseSurveyApp.renderers.renderControlWidgets).not.toHaveBeenCalled();
+  });
+
+  it('should run control widgets on parameter change (3.12)', () => {
+    window.NoiseSurveyApp.init.initialize({});
+    vi.clearAllMocks();
+
+    window.NoiseSurveyApp.store.dispatch(
+      window.NoiseSurveyApp.actions.paramChange('LZeq')
+    );
+
+    expect(window.NoiseSurveyApp.renderers.renderControlWidgets).toHaveBeenCalled();
   });
 });

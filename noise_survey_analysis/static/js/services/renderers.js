@@ -410,9 +410,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const hoverState = state.interaction.hover;
 
-        // The data processing is now handled in onStateChange, so we just need to render.
-        renderFrequencyBar(state, dataCache);
-
         // Only render hover effects if hover is enabled
         if (state.view.hoverEnabled) {
             controllers.chartsByName.forEach(chart => {

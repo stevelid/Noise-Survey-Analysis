@@ -388,7 +388,7 @@ describe('NoiseSurveyApp.renderers', () => {
                 markers: { timestamps: [], enabled: true },
                 audio: { isPlaying: false }
             };
-            // Provide minimal bar data to avoid errors in renderFrequencyBar (called inside hover effects)
+            // Provide minimal frequency data for spectrogram hover details.
             const mockDataCache = { 
                 activeFreqBarData: {
                     levels: [1],
@@ -422,8 +422,8 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(mockRenderLabel).toHaveBeenCalled();
             // Hover effects should hide hover lines when inactive
             expect(mockHideHoverLine).toHaveBeenCalled();
-            // Frequency bar should have been updated (emit called)
-            expect(window.NoiseSurveyApp.registry.models.barSource.change.emit).toHaveBeenCalled();
+            // Frequency bar updates are gated by app.js and should not run from overlay rendering.
+            expect(window.NoiseSurveyApp.registry.models.barSource.change.emit).not.toHaveBeenCalled();
             // Note: We do not assert internal calls to summary renderer here because
             // it is a local function inside the module. We verify observable effects instead.
         });

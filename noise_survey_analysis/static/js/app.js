@@ -259,6 +259,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * then orchestrates all necessary data processing, rendering, and side effects.
      * @param {boolean} [isInitialLoad=false] - A flag to force a full update.
      */
+    let _renderErrorCooldown = 0;
+    const RENDER_ERROR_COOLDOWN_MS = 5000;
+
+    function _guardedRender(label, fn, context) {
+        try {
+            return fn();
+        } catch (error) {
+            const now = performance.now();
+            if (now - _renderErrorCooldown > RENDER_ERROR_COOLDOWN_MS) {
+                _renderErrorCooldown = now;
+                console.error(`[RenderError] ${label}:`, error, context);
+            }
+        }
+    }
+
     function onStateChange(isInitialLoad = false) {
         let state = app.store.getState();
         const { models, controllers } = app.registry;
@@ -279,6 +294,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didViewToggleChange = state.view.globalViewType !== prev.view.globalViewType;
         const didVisibilityChange = state.view.chartVisibility !== prev.view.chartVisibility;
         const didChartOffsetsChange = state.view.positionChartOffsets !== prev.view.positionChartOffsets;
+        if (didChartOffsetsChange && app.regions?.invalidateMetricsCache) {
+            app.regions.invalidateMetricsCache();
+        }
         const didMarkersChange = state.markers !== prev.markers;
         const didRegionsChange = state.regions !== prev.regions;
         const didActiveDragToolChange = state.interaction.activeDragTool !== prev.interaction.activeDragTool;
@@ -287,6 +305,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didThresholdChange = state.view.logViewThreshold !== prev.view.logViewThreshold;
         const didPendingRegionChange = state.interaction.pendingRegionStart !== prev.interaction.pendingRegionStart;
         const didTapChange = state.interaction.tap !== prev.interaction.tap;
+        const didHoverChange = state.interaction.hover !== prev.interaction.hover;
         const didAudioPositionChange = state.audio.activePositionId !== prev.audio.activePositionId;
         const didDataRefresh = lastActionType === actionTypes.DATA_REFRESHED;
 
@@ -369,63 +388,82 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
 
+        const renderContext = {
+            lastActionType,
+            isHeavyUpdate,
+            didParamChange,
+            didViewportChange,
+            didChartOffsetsChange
+        };
+
         if (isHeavyUpdate) {
             // 3. Render the main charts with the new data
-            app.renderers.renderPrimaryCharts(state, dataCache, displayDetailsUpdates);
+            _guardedRender('renderPrimaryCharts', () => {
+                app.renderers.renderPrimaryCharts(state, dataCache, displayDetailsUpdates);
+            }, renderContext);
         }
 
-        // Always update the frequency bar, as it depends on hover/tap (light changes)
-        app.data_processors.updateActiveFreqBarData(state, dataCache);
-        app.renderers.renderFrequencyBar(state, dataCache);
+        // Frequency bar only needs updating when hover, tap, parameter, viewport, or audio changes
+        const shouldUpdateFreqBar = isHeavyUpdate || didTapChange || didHoverChange || didParamChange || didAudioPositionChange;
+        if (shouldUpdateFreqBar) {
+            _guardedRender('updateActiveFreqBarData', () => {
+                app.data_processors.updateActiveFreqBarData(state, dataCache);
+            }, renderContext);
+            _guardedRender('renderFrequencyBar', () => {
+                app.renderers.renderFrequencyBar(state, dataCache);
+            }, renderContext);
+        }
 
         // Always update overlays (tap lines, hover lines, labels)
-        app.renderers.renderOverlays(state, dataCache);
+        _guardedRender('renderOverlays', () => {
+            app.renderers.renderOverlays(state, dataCache);
+        }, renderContext);
 
-        // Always keep UI widgets in sync with the state
-        app.renderers.renderControlWidgets(state, displayDetailsUpdates || lastDisplayDetailsByPosition);
+        // Control widgets only need updating when audio, display details, titles, offsets, visibility, parameter, or view toggle changes
+        const didAudioChange = state.audio !== prev.audio;
+        const shouldUpdateWidgets = isHeavyUpdate || didAudioChange || didDisplayTitlesChange
+            || didChartOffsetsChange || didVisibilityChange || didParamChange || didViewToggleChange;
+        if (shouldUpdateWidgets) {
+            _guardedRender('renderControlWidgets', () => {
+                app.renderers.renderControlWidgets(state, displayDetailsUpdates || lastDisplayDetailsByPosition);
+            }, renderContext);
+        }
 
         // render the side panel
         if (didMarkersChange || didRegionsChange || didActiveSidePanelTabChange || didPendingRegionChange) {
-            const currentPanelState = {
-                lastActionType: state.system.lastAction?.type,
-                markers: state.markers,
-                regions: state.regions,
-                activeSidePanelTab: state.view.activeSidePanelTab,
-                desiredIndex: state.view.desiredIndex,
-                didMarkersChange: didMarkersChange,
-                didRegionsChange: didRegionsChange,
-                didActiveSidePanelTabChange: didActiveSidePanelTabChange
-            };
-
-            app.renderers.renderSidePanel(state);
+            _guardedRender('renderSidePanel', () => {
+                app.renderers.renderSidePanel(state);
+            }, renderContext);
         }
 
         // Always sync markers
-        
         if (isInitialLoad || didMarkersChange) {
-            app.renderers.renderMarkers(state);
+            _guardedRender('renderMarkers', () => {
+                app.renderers.renderMarkers(state);
+            }, renderContext);
         }
 
         if (isInitialLoad || didRegionsChange || didPendingRegionChange) {
-            app.renderers.renderRegions(state, dataCache);
+            _guardedRender('renderRegions', () => {
+                app.renderers.renderRegions(state, dataCache);
+            }, renderContext);
         }
 
-
         if (app.renderers && typeof app.renderers.renderComparisonMode === 'function') {
-            app.renderers.renderComparisonMode(state);
+            _guardedRender('renderComparisonMode', () => {
+                app.renderers.renderComparisonMode(state);
+            }, renderContext);
         }
 
         if ((isInitialLoad || didActiveDragToolChange) && typeof app.renderers.renderActiveTool === 'function') {
-            app.renderers.renderActiveTool(state, models);
+            _guardedRender('renderActiveTool', () => {
+                app.renderers.renderActiveTool(state, models);
+            }, renderContext);
         }
 
         // --- C. HANDLE SIDE EFFECTS ---
         // These are tasks that interact with the outside world (e.g., Bokeh backend)
         handleAudioSideEffects(state, previousStateForAudio, models);
-
-        // --- D. CLEANUP ---
-        // previousState was already advanced at the top of this function
-        // to prevent nested-dispatch overwrites.
     }
 
     /**
