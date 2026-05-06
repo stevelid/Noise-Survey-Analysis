@@ -76,7 +76,7 @@ class AppSetupTests(unittest.TestCase):
             self.assertEqual(source["position_name"], "P1")
             self.assertEqual(source["parser_type"], "auto")
             self.assertEqual(source["display_title"], "Living Room")
-            self.assertEqual(source["file_paths"], {str(file_a.resolve()), str(file_b.resolve())})
+            self.assertEqual(source["file_paths"], [str(file_a.resolve()), str(file_b.resolve())])
 
     def test_keeps_mixed_parser_sources_separate_for_one_position(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -119,9 +119,9 @@ class AppSetupTests(unittest.TestCase):
             self.assertEqual(len(sources), 2)
             by_parser = {source["parser_type"]: source for source in sources}
             self.assertEqual(by_parser["svan"]["position_name"], "P1")
-            self.assertEqual(by_parser["svan"]["file_paths"], {str(summary_file.resolve())})
+            self.assertEqual(by_parser["svan"]["file_paths"], [str(summary_file.resolve())])
             self.assertEqual(by_parser["audio"]["position_name"], "P1")
-            self.assertEqual(by_parser["audio"]["file_paths"], {str(audio_dir.resolve())})
+            self.assertEqual(by_parser["audio"]["file_paths"], [str(audio_dir.resolve())])
 
     def test_missing_or_invalid_config_returns_nones(self):
         with tempfile.TemporaryDirectory() as temp_dir:

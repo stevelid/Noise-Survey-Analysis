@@ -12,6 +12,8 @@ import argparse
 from datetime import datetime
 from collections import defaultdict
 
+from noise_survey_analysis.core.config import DEFAULT_BASE_JOB_DIR
+
 
 def find_job_directory(base_dir, job_number):
     """Find the job directory matching the job number."""
@@ -211,7 +213,7 @@ def generate_config_file(job_number, scan_dir, config_name=None):
     return config_path
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(
         description="Generate a dashboard config for a job or a specific survey subfolder."
     )
@@ -219,8 +221,8 @@ def main():
     parser.add_argument(
         "base_dir",
         nargs="?",
-        default="G:/Shared drives/Venta/Jobs",
-        help="Base jobs directory. Defaults to G:/Shared drives/Venta/Jobs",
+        default=DEFAULT_BASE_JOB_DIR,
+        help=f"Base jobs directory. Defaults to {DEFAULT_BASE_JOB_DIR}",
     )
     parser.add_argument(
         "--scan-dir",
@@ -230,6 +232,11 @@ def main():
         "--config-name",
         help="Optional output config filename. Defaults to noise_survey_config_<job>.json",
     )
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
     job_number = args.job_number

@@ -5,7 +5,66 @@ This module contains all configuration settings used throughout the application.
 Previously, these settings were scattered across different files.
 """
 
+import json
 import logging
+import os
+
+logger = logging.getLogger(__name__)
+
+
+def _get_env_text(name, default=''):
+    """Return a stripped environment value, or default when unset/blank."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    value = value.strip()
+    return value if value else default
+
+
+def _load_default_data_sources():
+    """Load optional default data sources without hardcoding local paths."""
+    inline_json = _get_env_text('NOISE_SURVEY_DEFAULT_DATA_SOURCES_JSON')
+    if inline_json:
+        try:
+            parsed = json.loads(inline_json)
+        except json.JSONDecodeError as exc:
+            logger.warning(
+                "Ignoring invalid NOISE_SURVEY_DEFAULT_DATA_SOURCES_JSON: %s",
+                exc,
+            )
+        else:
+            if isinstance(parsed, list):
+                return parsed
+            logger.warning(
+                "Ignoring NOISE_SURVEY_DEFAULT_DATA_SOURCES_JSON because it is not a list"
+            )
+
+    config_path = _get_env_text('NOISE_SURVEY_DEFAULT_DATA_SOURCES_FILE')
+    if config_path:
+        try:
+            with open(config_path, 'r', encoding='utf-8') as config_file:
+                parsed = json.load(config_file)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Ignoring NOISE_SURVEY_DEFAULT_DATA_SOURCES_FILE %r: %s",
+                config_path,
+                exc,
+            )
+        else:
+            if isinstance(parsed, list):
+                return parsed
+            if isinstance(parsed, dict):
+                for key in ('sourceConfigs', 'sources', 'data_sources'):
+                    sources = parsed.get(key)
+                    if isinstance(sources, list):
+                        return sources
+            logger.warning(
+                "Ignoring NOISE_SURVEY_DEFAULT_DATA_SOURCES_FILE %r because it "
+                "does not contain a data-source list",
+                config_path,
+            )
+
+    return []
 
 REQUIRED_BROADBAND_METRICS = [
     'LAeq',
@@ -125,15 +184,17 @@ LOG_VIEW_BUFFER_FRACTION_HIGH_RATE = 0.1  # 10% buffer for data faster than 1s
 LOG_VIEW_HIGH_RATE_THRESHOLD_SECONDS = 1.0  # Sample periods <= this are "high rate"
 
 # Default base directory for job files
-DEFAULT_BASE_JOB_DIR = "G:\\Shared drives\\Venta\\Jobs"
+DEFAULT_BASE_JOB_DIR = _get_env_text(
+    'NOISE_SURVEY_BASE_JOB_DIR',
+    os.path.expanduser('~'),
+)
 
 # --- General Application Settings ---
 GENERAL_SETTINGS = {
     # Define the base path where corresponding audio/video media files might be found.
     # This path should correspond to the root directory containing media files,
     # which are typically expected to be named similarly to the survey data files.
-    # TODO: Update this path to the correct location for your system or make it configurable.
-    "media_path": r"G:\Shared drives\Venta\Jobs\5924 44 Grafton Road, London\5924 Surveys\5924-3",
+    "media_path": _get_env_text('NOISE_SURVEY_MEDIA_PATH'),
 
     # TODO: Add other general settings like logging level, default theme, etc.
     # "log_level": "INFO", # Example: DEBUG, INFO, WARNING, ERROR
@@ -155,38 +216,7 @@ AUDIO_ANCHORING_SETTINGS = {
 
 # --- New Data Source Configuration ---
 # A list of dictionaries, where each dictionary defines a data source file.
-DEFAULT_DATA_SOURCES = [
-    {
-        "position_name": "svan",  # User-friendly name for the measurement position
-        "file_path": r"G:\Shared drives\Venta\Jobs\5792 Swyncombe Field, Padel Courts\5792 Surveys\971-2\L251_summary.csv",
-        "parser_type": "svan", # Specifies which parser class to use
-        "enabled": True         # Flag to easily include/exclude this file
-    },
-    {
-        "position_name": "nti_log",
-        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Log.txt",
-        "parser_type": "nti",
-        "enabled": True
-    },
-    {
-        "position_name": "nti_rpt_report",
-        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_123_Rpt_Report.txt",
-        "parser_type": "nti",
-        "enabled": True
-    },
-    {
-        "position_name": "nti_rta_log",
-        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Log.txt",
-        "parser_type": "nti",
-        "enabled": True
-    },
-    {
-        "position_name": "nti_rta_rpt_report",
-        "file_path": r"G:\My Drive\Programing\example files\Nti\2025-06-02_SLM_000_RTA_3rd_Rpt_Report.txt",
-        "parser_type": "nti",
-        "enabled": True
-    }
-]
+DEFAULT_DATA_SOURCES = _load_default_data_sources()
 # Configuration dictionary (for backward compatibility)
 CONFIG = {
     'chart_settings': CHART_SETTINGS,
@@ -196,6 +226,3 @@ CONFIG = {
     # Avoid putting DEFAULT_DATA_SOURCES in here unless absolutely necessary
     # for old code. It's better managed separately.
 }
-
-# Add logger for config module if used elsewhere
-logger = logging.getLogger(__name__)
