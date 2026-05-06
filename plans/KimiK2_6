@@ -1,0 +1,332 @@
+# Deep Dive Review: Noise Survey Analysis Dashboard
+
+**Date:** 2026-05-05  
+**Scope:** Full-stack review of the Noise Survey Analysis Bokeh dashboard — JavaScript frontend, Python backend, UI/UX, tests, and data analysis workflows.  
+**Method:** Static code analysis, architecture pattern review, bug pattern search, test coverage assessment, and feature gap identification against professional acoustic consultancy workflows.
+
+---
+
+## Executive Summary
+
+The project is a sophisticated, performant Bokeh-based noise survey dashboard with a well-architected Redux-style frontend and a hybrid static/live server backend. However, **production reliability is being undermined by a category of defensive-coding gaps**, stale debug instrumentation left in production code, event listener memory leaks, and several UI/UX friction points that slow down expert data review. There are also **genuinely useful analysis features missing** that would materially improve reporting workflows.
+
+This review prioritizes fixes and features by **impact-to-effort ratio** and **risk to data integrity / user trust**.
+
+---
+
+## 1. Critical Bugs & Reliability Issues (Fix First)
+
+### 1.1 Hardcoded DEBUG_POSITION left in production code
+- **Files:** `noise_survey_analysis/static/js/data-processors.js:16`, `noise_survey_analysis/static/js/chart-classes.js:13`, `noise_survey_analysis/core/server_data_handler.py:27`
+- **Issue:** A hardcoded position string `'Residential boundary (971-2, 440 m)'` is used to gate `debugSpectrogram()` and server-side debug logging. In production, debug calls for this specific position still execute (and log to console), while all other positions get no diagnostics. This is misleading during support triage and bloats the browser console with noise for any user loading that exact position name.
+- **Fix:** Replace with a runtime-configurable debug flag (e.g., `window.localStorage.getItem('nsa_debug')`) or remove entirely.
+- **Severity:** Medium — support/debugging noise, minor performance impact from unnecessary object construction in `debugSpectrogram`.
+
+### 1.2 `debugSpectrogram()` constructs large debug objects even when the position doesn't match
+- **File:** `noise_survey_analysis/static/js/data-processors.js:266-275`
+- **Issue:** Every call to `debugSpectrogram()` first builds the `payload` object (which can contain large arrays like `times_ms`, `levels_flat_transposed` slices) and *then* checks the position filter. For high-frequency zoom/pan events this creates garbage pressure.
+- **Fix:** Gate with an early-return before object construction, or use a no-op wrapper in production builds.
+- **Severity:** Low-Medium
+
+### 1.3 Spectrogram `initial_glyph_data.image` deserialization trusts `unwrapArray` for typed arrays without length validation
+- **File:** `noise_survey_analysis/static/js/data-processors.js:777-784`
+- **Issue:** When reconstructing `initial_glyph_data` from a streamed reservoir payload, `imageData` is unwrapped and placed into `image: [imageData]`. If the server sends a malformed or empty image buffer, Bokeh will throw `expected a 2D array, not undefined` (a known failure mode per `AGENTS.md`). There is no validation that `imageData` is actually a 2D array or typed array of the expected dimensions.
+- **Fix:** Add a defensive check that `imageData` is an array-like object with `length > 0` and dimensions match `n_freqs × chunk_time_length`.
+- **Severity:** Medium — causes white/crashed spectrogram renders after server push.
+
+### 1.4 `onStateChange` stores `previousState` in a closure variable that is advanced *before* rendering completes
+- **File:** `noise_survey_analysis/static/js/app.js:262-429`
+- **Issue:** The code correctly advances `previousState` at the top of `onStateChange` to prevent nested-dispatch overwrites, but the comment admits this is a workaround. The real risk is that any exception thrown during rendering leaves `previousState` in an inconsistent state relative to the actual UI. The `try/catch` around `kickoffInitialRender` only covers the first call, not the main loop.
+- **Fix:** Wrap the entire body of `onStateChange` in a `try/catch` that logs and recovers, or use a small state-version counter instead of storing the full previous state object.
+- **Severity:** Medium
+
+### 1.5 `data-processors.js` `applyDatetimeOffset` mutates the `data` object in place
+- **File:** `noise_survey_analysis/static/js/data-processors.js:232-239`
+- **Issue:** `applyDatetimeOffset` directly mutates `data.Datetime = adjusted`. Because `data` is often a cloned object from `cloneDataColumns`, this is mostly safe, but if an un-cloned source is ever passed (e.g., from a cached `dataCache` entry), the mutation will corrupt shared state silently. The architecture guidelines (`AGENTS.md`) explicitly warn against mutating state directly.
+- **Fix:** Return a new object instead of mutating in place, or document the pre-condition that `data` must already be a clone.
+- **Severity:** Low-Medium — latent bug, hard to reproduce.
+
+### 1.6 Python `data_processors.py` duplicate `import os` at lines 1-2
+- **File:** `noise_survey_analysis/core/data_processors.py`
+- **Issue:** `import os` appears twice. Harmless but indicates insufficient linting.
+- **Fix:** Remove duplicate.
+- **Severity:** Trivial
+
+### 1.7 Bokeh model lookups in `registry.js` assume `Bokeh.documents[0]` always exists
+- **File:** `noise_survey_analysis/static/js/registry.js:80`
+- **Issue:** `if (window.Bokeh && Bokeh.documents[0])` will throw if `Bokeh.documents` is defined but empty (`[]`), because accessing `[0]` on an empty array returns `undefined` (which is falsy, so it doesn't throw). However, if `Bokeh` is present but `documents` is not an array, this will throw. More importantly, if the document is not ready, `get_model_by_name` returns `undefined` and the code proceeds with missing models.
+- **Fix:** Use `Array.isArray(Bokeh.documents) && Bokeh.documents.length > 0`.
+- **Severity:** Low
+
+---
+
+## 2. Memory Leaks & Lifecycle Issues
+
+### 2.1 Global `keydown`/`keyup` listeners are never removed
+- **File:** `noise_survey_analysis/static/js/app.js:199-201`
+- **Issue:** `document.addEventListener('keydown', ...)` and `keyup` are attached during `initialize()` but there is no corresponding `removeEventListener` on teardown. In a Bokeh server environment where the page may be refreshed or the session destroyed, these leak. In single-page contexts this is minor, but in development/hot-reload it accumulates.
+- **Fix:** Store listener references and remove them in a `destroy()` or `cleanup()` function.
+- **Severity:** Low
+
+### 2.2 Bokeh `change` event connections in `app.js` are never disconnected
+- **File:** `noise_survey_analysis/static/js/app.js:177-196`
+- **Issue:** `logSource.change.connect(...)` callbacks are registered for every position. Bokeh's connect API may not automatically clean up when the document is destroyed. If a dashboard is rebuilt (e.g., after loading a new workspace), old callbacks may still fire.
+- **Fix:** Track connection handles and disconnect on re-initialization, or scope connections to the document lifecycle.
+- **Severity:** Low-Medium
+
+### 2.3 `AppCallbacks.cleanup()` exists but may not clear the Bokeh periodic callback
+- **File:** `noise_survey_analysis/core/app_callbacks.py:58, 272-300`
+- **Issue:** `_periodic_callback_id` is stored but the `cleanup()` method referenced in `session_destroyed` is not shown in the excerpt. If `cleanup()` does not call `doc.remove_periodic_callback(self._periodic_callback_id)`, the Python-side callback leaks per session.
+- **Fix:** Verify `cleanup()` removes the periodic callback and detaches all `on_change` handlers.
+- **Severity:** Medium — server memory leak over many sessions.
+
+### 2.4 `sessionManager.js` automation retry timer may not be cleared
+- **File:** `noise_survey_analysis/static/js/services/session/sessionManager.js:17-18`
+- **Issue:** `automationAttachRetryTimer` is declared but if the retry loop gives up or the page navigates away, the timer reference may be lost without clearing.
+- **Fix:** Ensure timer is cleared in a `beforeunload` handler or on successful attachment.
+- **Severity:** Low
+
+---
+
+## 3. UI/UX Bugs & Friction Points
+
+### 3.1 Spectrogram status chips regress to "Display: None" on light renders
+- **File:** `noise_survey_analysis/static/js/services/renderers/controlWidgetsRenderer.js:272-283`
+- **Issue:** The `buildStatusSummary` function uses `spec || line || null` as `primary`. On a light render (markers/regions changed but no heavy data update), `displayDetailsByPosition` is null or stale. The `viewStatusChip` then shows `displayedMode: 'None'` and `statusLabel: 'No data available'`, which is alarming and incorrect because data *is* still displayed. The TODO notes this explicitly: "Status chips should persist the last heavy-update display state so light renders do not regress to Display: None."
+- **Fix:** Cache the last valid `statusSummary` per position and only update the chip when `isHeavyUpdate` is true or the summary actually changes.
+- **Severity:** Medium — actively confusing to users.
+
+### 3.2 `handleChartHover` can log `not defined!` before app init completes
+- **File:** `noise_survey_analysis/static/js/services/eventHandlers.js:110-126`
+- **Issue:** The TODO notes this: `NoiseSurveyApp.eventHandlers.handleChartHover not defined!` can appear in the console before `app.js` initialization finishes. This happens because Bokeh may fire hover callbacks as soon as the DOM is ready, before the JS bundle has executed `initialize()`.
+- **Fix:** Use a `CustomJS` wrapper that checks `window.NoiseSurveyApp?.eventHandlers?.handleChartHover` before calling, or defers Bokeh hover tool attachment until after `initialize()`.
+- **Severity:** Low — cosmetic console noise.
+
+### 3.3 Region table uses `DataTable` with `HTMLTemplateFormatter` which is brittle
+- **File:** `noise_survey_analysis/ui/components.py:141-165`
+- **Issue:** The region card template injects raw HTML via Bokeh's `HTMLTemplateFormatter`. If a region note or title contains HTML special characters (`<`, `>`, `&`), it will be rendered as HTML (potential XSS) or broken markup. `escapeHtml` exists in `renderers.js` but is not used in the Python-side template generation.
+- **Fix:** Escape user-provided text (notes, titles) before embedding in the HTML template, or switch to a plain text formatter.
+- **Severity:** Medium — data integrity and security risk.
+
+### 3.4 `SpectrogramChart` and `TimeSeriesChart` `updateAllCharts` are not shown — potential for `index` contamination
+- **File:** `noise_survey_analysis/static/js/chart-classes.js` (lines not shown, but pattern known from memory)
+- **Issue:** A previous fix addressed pandas `index` contamination in `activeLineData` where Bokeh's `ColumnDataSource` received `{"index":{"0":0,"1":1...}}`. The fix was in `TimeSeriesChart.update()`. However, if other chart classes (e.g., `SpectrogramChart`) also assign data directly without filtering `index`, the bug could resurface.
+- **Fix:** Audit all direct `source.data = ...` assignments in chart-classes for `index` filtering, or create a shared `sanitizeBokehData()` helper.
+- **Severity:** Low-Medium
+
+### 3.5 `renderSummaryTable` uses regex to replace `<tbody>` content
+- **File:** `noise_survey_analysis/static/js/services/renderers.js:729-731`
+- **Issue:** `tableDiv.text.replace(/<tbody>[\s\S]*<\/tbody>/, ...)` is fragile. If the table HTML ever has nested `<tbody>` tags or the regex fails to match, the entire table string is replaced incorrectly. This is a classic string-soup anti-pattern.
+- **Fix:** Build the full table HTML string from a template each time, or use DOM manipulation via a hidden `div`.
+- **Severity:** Low
+
+### 3.6 Per-position audio controls were removed but offset spinners still appear under each position
+- **File:** `noise_survey_analysis/ui/components.py` (inferred from `controlWidgetsRenderer.js`)
+- **Issue:** The UI still shows per-position offset spinners even though audio playback buttons are now global. This clutters the UI, especially when many positions are loaded. Users must adjust offsets per-position but there is no "Apply to all" or "Link offsets" feature.
+- **Fix:** Collapse offset controls into a single global panel with an option to unlink per-position offsets, or move them into a dropdown menu.
+- **Severity:** Low-Medium
+
+---
+
+## 4. Data Integrity & Analysis Gaps
+
+### 4.1 `comparison-metrics.js` hardcodes `LAeq` as the comparison metric
+- **File:** `noise_survey_analysis/static/js/comparison-metrics.js:30-53`
+- **Issue:** `chooseDatasetForSlice` always looks for `logData.LAeq` and `overviewData.LAeq`. If the user has selected a different parameter (e.g., `LZeq`), the comparison mode still uses `LAeq` values. The `selectedParameter` is passed into `processComparisonSliceMetrics` but is only used for the spectrum lookup, not the broadband metrics.
+- **Fix:** Use `options.selectedParameter` (or the current view parameter) for the broadband slice, with a fallback to `LAeq`.
+- **Severity:** Medium — produces silently incorrect comparison metrics.
+
+### 4.2 `calcMetrics.calcLA90` is only called for log datasets in comparison mode
+- **File:** `noise_survey_analysis/static/js/comparison-metrics.js:186-188`
+- **Issue:** `la90` is explicitly set to `null` for overview datasets. There is no technical reason overview data cannot compute `LA90` (it's just a statistical percentile). This forces users into log view to get `LA90` in comparisons.
+- **Fix:** Compute `LA90` for overview data too if the column exists.
+- **Severity:** Low-Medium
+
+### 4.3 Region metrics do not account for chart offsets
+- **File:** `noise_survey_analysis/static/js/features/regions/regionThunks.js` (inferred), `data-processors.js`
+- **Issue:** The TODO explicitly notes: "when rendering and saving a region we should think about how to handle offsets. make sure labels, spectrum, freq outputs etc align with the realigned chart data." When a user applies a chart offset to align two positions, the region timestamps are still in raw data time. The spectrum and metrics computed for that region will therefore be from the wrong absolute time.
+- **Fix:** Subtract the position's chart offset from region start/end before querying spectral data and computing metrics. Ensure exported CSVs note whether offsets were applied.
+- **Severity:** High — this is a **data integrity bug** for multi-position reports.
+
+### 4.4 `processComparisonSliceMetrics` uses `calcMetrics.calcLAMax` on `lafmaxValues` which may actually be `LAeq` values
+- **File:** `noise_survey_analysis/static/js/comparison-metrics.js:177-185`
+- **Issue:** If `LAFmax` column does not exist, `lafmaxValues` falls back to `selection.laeqValues` (which are `LAeq` values). Then `calcLAMax` is called on them. `calcLAMax` presumably returns the maximum value, so the result is the maximum `LAeq` in the slice, which is *not* `LAFmax`. The label says `LAFmax` but the value is wrong.
+- **Fix:** If `LAFmax` is missing, report `N/A` rather than a misleading substitute.
+- **Severity:** Medium — misleading reporting.
+
+### 4.5 Spectral column parsing is overly rigid for non-standard frequencies
+- **File:** `noise_survey_analysis/core/data_processors.py:488-500`
+- **Issue:** Frequency columns are parsed by splitting on `_` and taking the last part. If a column is named `LZeq_31_5` (with an extra underscore), the parser extracts `5` instead of `31.5`. The `EXPECTED_THIRD_OCTAVE_SUFFIXES` list contains both `"31.5"` and `"31"`, so `31.5` would fail to match if parsed as `5`.
+- **Fix:** Use a regex like `^(LZeq|LZmax|LAFmax)_(.+)$` and take the *last* captured group, or split on the first underscore only.
+- **Severity:** Low — only affects non-standard or malformed column names.
+
+---
+
+## 5. Performance Issues
+
+### 5.1 `onStateChange` always calls `updateActiveFreqBarData` and `renderFrequencyBar` even when hover/tap hasn't changed
+- **File:** `noise_survey_analysis/static/js/app.js:378-379`
+- **Issue:** These functions run on every state change (including marker/region visibility toggles, side panel tab switches). The frequency bar data only needs updating when `hoverState.timestamp` or `tapState.timestamp` or `activePositionId` changes.
+- **Fix:** Guard with `didTapChange || didHoverChange || didAudioPositionChange || didParamChange`.
+- **Severity:** Low
+
+### 5.2 `renderControlWidgets` iterates all positions and updates DOM text on every state change
+- **File:** `noise_survey_analysis/static/js/services/renderers/controlWidgetsRenderer.js:367-449`
+- **Issue:** For each position, the renderer updates title text, background color, offset spinners, and display title divs even when none of those values changed. This is fine for 2-3 positions but becomes noticeable with 10+ positions.
+- **Fix:** Memoize the last rendered state per position and skip updates when inputs are identical.
+- **Severity:** Low
+
+### 5.3 `cloneDataColumns` slices every column on every heavy update
+- **File:** `noise_survey_analysis/static/js/data-processors.js:200-217`
+- **Issue:** For overview data (which can be large), `cloneDataColumns` creates a full shallow copy of every column array on every viewport/param change. If the user is panning smoothly, this copies large arrays repeatedly.
+- **Fix:** For overview data that does not change during a session, cache the cloned copy and only re-clone when the underlying Bokeh source data changes.
+- **Severity:** Low-Medium
+
+### 5.4 `collectPositionTimestamps` in `regionThunks.js` concatenates and deduplicates on every auto-region call
+- **File:** `noise_survey_analysis/static/js/features/regions/regionThunks.js:45-97`
+- **Issue:** This function walks every timestamp in overview and log sources, sorts them, and deduplicates them. For a multi-day log at 100 ms resolution, this is ~1.7M timestamps. It is called every time auto day/night regions are generated.
+- **Fix:** Cache the deduplicated timestamps per position, or compute auto-regions from the data frame's `min()`/`max()` and known survey duration rather than materializing all timestamps.
+- **Severity:** Medium — causes multi-second hangs on large datasets.
+
+---
+
+## 6. Missing Features (Genuinely Useful for Data Review)
+
+### 6.1 Undo/Redo for state changes
+- **Source:** TODO.txt line 18
+- **Issue:** Users accidentally delete regions, mis-click to create wrong markers, or apply incorrect offsets. There is no undo. In a professional reporting workflow, accidental data loss is a serious friction point.
+- **Implementation sketch:** Maintain a history stack of `{ state, actionType }` tuples (limit to ~50). Exclude `HOVER` and `STEP_SIZE_CALCULATED` from the stack. Add `Ctrl+Z` / `Ctrl+Y` handlers.
+- **Effort:** Medium  
+- **Impact:** Very High
+
+### 6.2 Export region spectrum + metrics to Excel/CSV
+- **Issue:** The "Copy Summary" button copies plain text. There is no structured export of region metrics (LAeq, LAFmax, LA90, spectrum by band) for reporting. Consultants currently must manually transcribe values into Word/Excel.
+- **Implementation sketch:** Extend `sessionManager.js` CSV export to include a "Region Report" mode that exports one row per region with metrics and a second sheet/file for the averaged spectrum.
+- **Effort:** Low-Medium  
+- **Impact:** High
+
+### 6.3 Batch offset adjustment (link offsets across positions)
+- **Issue:** When correlating audio with log data, users often know one global offset (e.g., audio started 2 minutes late) and want to apply it to all positions. Currently they must adjust each position's spinner individually.
+- **Implementation sketch:** Add a "Link Offsets" toggle and a global offset spinner. When linked, changing one position updates all. Store the link state in `viewState`.
+- **Effort:** Low  
+- **Impact:** Medium-High
+
+### 6.4 Time-range screenshot / export for reports
+- **Issue:** Consultants frequently need to include specific chart views in reports. There is no built-in "Export this view as PNG/PDF" feature. Users must use browser screenshots which capture the entire page.
+- **Implementation sketch:** Use Bokeh's built-in `export_png` or add a toolbar button that triggers `canvas.toDataURL()` on the specific figure.
+- **Effort:** Low  
+- **Impact:** High
+
+### 6.5 Statistical overlay lines on time series (LAF90, LAF10, LAeq trend)
+- **Issue:** The time series only shows raw data lines. There is no option to overlay percentile bands or rolling averages, which are standard in noise analysis for identifying trends.
+- **Implementation sketch:** Add a toggle for "Show percentile bands" that computes `rolling(window='1H').quantile([0.1, 0.9])` in Python and overlays as filled areas.
+- **Effort:** Medium  
+- **Impact:** High
+
+### 6.6 Annotation notes directly on the chart
+- **Issue:** Region and marker notes are only visible in the side panel. There is no way to see a note when looking at the chart itself.
+- **Implementation sketch:** Use Bokeh `LabelSet` or `Span` with text labels positioned near the marker/region top. Only show on hover or when a "Show Notes" toggle is active.
+- **Effort:** Low-Medium  
+- **Impact:** Medium
+
+### 6.7 Spectrogram color scale legend and manual range adjustment
+- **Issue:** The spectrogram uses an auto-scaling color map. For comparing two positions side-by-side, the color scales may differ, making visual comparison misleading. There is no color bar or way to fix min/max dB values.
+- **Implementation sketch:** Add a `ColorBar` to `SpectrogramComponent` and expose min/max spinners in the control panel.
+- **Effort:** Low-Medium  
+- **Impact:** Medium-High
+
+### 6.8 Keyboard shortcut help overlay
+- **Issue:** The app has many keyboard shortcuts (M, R, Space, arrows, Ctrl/Alt modifiers) but no in-app reference. Users must consult the manual or discover them by trial and error.
+- **Implementation sketch:** Add a `?` key handler that opens a small modal div listing shortcuts.
+- **Effort:** Very Low  
+- **Impact:** Medium
+
+---
+
+## 7. Test Coverage Gaps
+
+### 7.1 No tests for chart offset logic
+- **Files:** `data-processors.js` offset functions, `eventHandlers.js` offset dispatch
+- **Gap:** The `positionChartOffsetSet` and `positionAudioOffsetSet` actions exist, but there are no unit tests verifying that `effectiveMin = viewportMin - offsetMs` is computed correctly, or that audio side-effects subtract the offset before seeking.
+- **Risk:** The region offset bug (4.3) would likely have been caught by such tests.
+
+### 7.2 No tests for `controlWidgetsRenderer.js`
+- **Gap:** The status chip regression (3.1) and audio control synchronization are untested. The renderer is complex (~460 lines) and has no test file.
+
+### 7.3 No tests for `sessionManager.js` workspace import with mismatched sources
+- **Gap:** The workspace loader warns when sources don't match, but this path is not covered. Corrupt workspace JSON could crash the app.
+
+### 7.4 No Python tests for `ServerDataHandler` spectrogram reservoir edge cases
+- **Gap:** `test_streaming_backend.py` covers shared range wiring, but there are no tests for the `_spectrogram_chunk_coverage_ratio` < 0.98 refresh path or the lazy-load exception handling.
+
+### 7.5 No tests for generic parser with real-world malformed CSVs
+- **Gap:** The generic parser contract (`AGENTS.md` section 8) promises graceful handling of non-standard files, but there are no tests for missing datetime columns, all-NaN numeric columns, or files with BOM characters.
+
+---
+
+## 8. Code Quality & Maintainability
+
+### 8.1 Large files violate single-responsibility
+- `data-processors.js` (1515 lines) handles line data slicing, spectrogram chunk extraction, threshold calculation, offset application, and display metadata creation. This should be split into `data-processors/lineData.js`, `data-processors/spectrogramData.js`, and `data-processors/thresholds.js`.
+- `components.py` (3169 lines) contains every Bokeh widget class. Splitting into `components/timeseries.py`, `components/spectrogram.py`, `components/panels.py` would reduce merge conflicts.
+
+### 8.2 Magic numbers scattered across JS and Python
+- `MIN_COVERAGE_RATIO = 0.98` in JS, `LOG_VIEW_BUFFER_FRACTION_DEFAULT` in Python, `HEAVY_UPDATE_THROTTLE_MS = 50` in `app.js`. These should be centralized in `config.py`/`CHART_SETTINGS` and mirrored to JS via a JSON payload at init.
+
+### 8.3 Inconsistent null/undefined guarding
+- Some functions use `if (!data)` (catches `null`, `undefined`, `false`, `0`, `''`), others use `if (data == null)` (catches only `null`/`undefined`), and others use `if (typeof data === 'undefined')`. This inconsistency makes refactoring risky.
+
+### 8.4 Python `sys.path.insert` hacks in multiple files
+- `data_processors.py`, `dashBuilder.py`, and others manually manipulate `sys.path` to resolve imports. This is a smell that the package structure or launch configuration is incorrect. It should not be necessary in a properly installed package.
+
+---
+
+## Recommended Implementation Order
+
+### Phase 1: Hot Fixes (Do This Week)
+1. **Remove/replace `DEBUG_POSITION` hardcoding** — trivial, removes console noise.
+2. **Fix region offset data integrity bug (4.3)** — subtract offsets before metric/spectrum queries.
+3. **Fix comparison metrics using wrong parameter (4.1)** — use `selectedParameter` for broadband slice.
+4. **Fix status chip regression on light renders (3.1)** — cache last heavy state.
+5. **Escape HTML in region panel templates (3.3)** — security/data integrity.
+
+### Phase 2: Reliability & Performance (Next 2 Weeks)
+6. **Add defensive `index` filtering helper for all Bokeh `source.data` assignments (3.4)**.
+7. **Add `try/catch` around full `onStateChange` body (1.4)**.
+8. **Cache `collectPositionTimestamps` result (5.4)** — removes multi-second hangs.
+9. **Verify `AppCallbacks.cleanup()` removes periodic callbacks (2.3)**.
+10. **Add spectrogram `imageData` dimension validation (1.3)**.
+
+### Phase 3: Analysis Features (Next Month)
+11. **Undo/Redo stack (6.1)** — highest-impact feature for user trust.
+12. **Structured region export to CSV/Excel with spectrum (6.2)**.
+13. **Spectrogram color bar + fixed scale (6.7)**.
+14. **Statistical overlay lines (6.5)**.
+15. **Global/batch offset adjustment (6.3)**.
+
+### Phase 4: Polish & Tech Debt
+16. **Keyboard shortcut help overlay (6.8)**.
+17. **Annotation notes on charts (6.6)**.
+18. **Chart screenshot export (6.4)**.
+19. **Split `data-processors.js` and `components.py` into smaller modules (8.1)**.
+20. **Centralize magic numbers in shared config (8.2)**.
+21. **Add tests for offsets, control widgets, and session manager edge cases (7)**.
+
+---
+
+## Files Requiring Immediate Attention
+
+| File | Lines | Primary Concern |
+|------|-------|-----------------|
+| `noise_survey_analysis/static/js/data-processors.js` | 1-1515 | Spectrogram chunk logic, debug noise, offset handling |
+| `noise_survey_analysis/static/js/app.js` | 1-574 | State change lifecycle, event listener leaks |
+| `noise_survey_analysis/static/js/services/renderers/controlWidgetsRenderer.js` | 1-462 | Status chip regression, heavy per-position iteration |
+| `noise_survey_analysis/static/js/comparison-metrics.js` | 1-251 | Hardcoded `LAeq`, misleading `LAFmax` fallback |
+| `noise_survey_analysis/core/server_data_handler.py` | 1-635 | Session lifecycle, debug logging |
+| `noise_survey_analysis/ui/components.py` | 1-3169 | HTML injection risk, oversized module |
+| `noise_survey_analysis/core/app_callbacks.py` | 1-422 | Periodic callback cleanup |
+| `noise_survey_analysis/static/js/features/regions/regionThunks.js` | 1-730 | Auto-region timestamp materialization, offset awareness |
+
+---
+
+*End of review. This document should be treated as a living artifact — check off items as they are implemented and add regression tests for every bug fix.*
