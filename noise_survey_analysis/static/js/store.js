@@ -18,6 +18,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      */
 
     function createStore(reducer) {
+        // Wrap with history if available and not already wrapped
+        if (app.history && typeof app.history.withHistory === 'function') {
+            reducer = app.history.withHistory(reducer);
+        }
+
         // ------ PRIVATE VARIABLES ------
         let state;
         let listeners = [];

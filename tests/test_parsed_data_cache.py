@@ -115,6 +115,45 @@ class ParsedDataCacheTests(unittest.TestCase):
         cached_limited_again = self.cache.get(str(file_path), return_all_columns=False)
         self.assertNotIn("CustomCol", cached_limited_again.totals_df.columns)
 
+    def test_timezone_produces_different_cache_entries(self):
+        file_path = Path(self._temp_dir.name) / "timezone.csv"
+        file_path.write_text("sample", encoding="utf-8")
+
+        london = ParsedData(
+            totals_df=pd.DataFrame({
+                "Datetime": [pd.Timestamp("2024-06-01 11:00:00", tz="UTC")],
+                "LAeq": [50.0],
+            }),
+            original_file_path=str(file_path),
+            parser_type="generic",
+            metadata={"timezone": "Europe/London"},
+        )
+        new_york = ParsedData(
+            totals_df=pd.DataFrame({
+                "Datetime": [pd.Timestamp("2024-06-01 16:00:00", tz="UTC")],
+                "LAeq": [50.0],
+            }),
+            original_file_path=str(file_path),
+            parser_type="generic",
+            metadata={"timezone": "America/New_York"},
+        )
+
+        self.cache.put(str(file_path), london, timezone="Europe/London")
+        self.cache.put(str(file_path), new_york, timezone="America/New_York")
+
+        cached_london = self.cache.get(str(file_path), timezone="Europe/London")
+        cached_new_york = self.cache.get(str(file_path), timezone="America/New_York")
+
+        self.assertEqual(
+            cached_london.totals_df["Datetime"].iloc[0],
+            pd.Timestamp("2024-06-01 11:00:00", tz="UTC"),
+        )
+        self.assertEqual(
+            cached_new_york.totals_df["Datetime"].iloc[0],
+            pd.Timestamp("2024-06-01 16:00:00", tz="UTC"),
+        )
+        self.assertEqual(self.cache.get_stats()["entry_count"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -645,6 +645,7 @@ class DashBuilder:
                 'features/audio/audioReducer.js',
                 'features/audio/audioThunks.js',
                 'core/rootReducer.js',
+                'core/history.js',
                 'store.js',           # Creates the store, needs rootReducer
                 'init.js',            # Creates app.init and reInitializeStore, needs store
 

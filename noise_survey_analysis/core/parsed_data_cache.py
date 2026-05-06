@@ -15,9 +15,9 @@ import tempfile
 logger = logging.getLogger(__name__)
 
 try:
-    from .data_parsers import ParsedData
+    from .data_parsers import DEFAULT_TIMEZONE, ParsedData
 except ImportError:
-    from data_parsers import ParsedData
+    from data_parsers import DEFAULT_TIMEZONE, ParsedData
 
 
 @dataclass
@@ -57,13 +57,19 @@ class ParsedDataCache:
         except Exception as e:
             logger.warning(f"Failed to create cache directory: {e}")
 
-    def _get_cache_key(self, file_path: str, return_all_columns: bool = False) -> str:
-        """Generate a unique cache key for a file path and parse profile."""
+    def _get_cache_key(
+        self,
+        file_path: str,
+        return_all_columns: bool = False,
+        timezone: Optional[str] = None,
+    ) -> str:
+        """Generate a unique cache key for a file path, parse profile, and timezone."""
         # Use absolute path for consistency
         abs_path = os.path.abspath(file_path)
-        # Include parse profile so filtered vs full-column results are cached separately
+        # Include parse profile and timezone so parse results are not cross-contaminated.
         profile = 'full' if return_all_columns else 'filtered'
-        key_string = f"{abs_path}::{profile}"
+        resolved_timezone = timezone or DEFAULT_TIMEZONE
+        key_string = f"{abs_path}::{profile}::{resolved_timezone}"
         # Hash for a shorter key
         return hashlib.md5(key_string.encode('utf-8')).hexdigest()
 
@@ -113,18 +119,24 @@ class ParsedDataCache:
             # File doesn't exist or can't be accessed
             return True
 
-    def get(self, file_path: str, return_all_columns: bool = False) -> Optional[ParsedData]:
+    def get(
+        self,
+        file_path: str,
+        return_all_columns: bool = False,
+        timezone: Optional[str] = None,
+    ) -> Optional[ParsedData]:
         """
         Retrieve cached parsed data for a file if available and valid.
 
         Args:
             file_path: Path to the file
             return_all_columns: Whether all columns were requested during parsing
+            timezone: Timezone used to interpret naive datetimes
 
         Returns:
             ParsedData object if cached and valid, None otherwise
         """
-        cache_key = self._get_cache_key(file_path, return_all_columns)
+        cache_key = self._get_cache_key(file_path, return_all_columns, timezone)
 
         if cache_key not in self._cache:
             return None
@@ -141,7 +153,13 @@ class ParsedDataCache:
         logger.debug(f"Cache hit: {os.path.basename(file_path)}")
         return entry.parsed_data
 
-    def put(self, file_path: str, parsed_data: ParsedData, return_all_columns: bool = False):
+    def put(
+        self,
+        file_path: str,
+        parsed_data: ParsedData,
+        return_all_columns: bool = False,
+        timezone: Optional[str] = None,
+    ):
         """
         Store parsed data in the cache.
 
@@ -149,10 +167,12 @@ class ParsedDataCache:
             file_path: Path to the file
             parsed_data: Parsed data to cache
             return_all_columns: Whether all columns were requested during parsing
+            timezone: Timezone used to interpret naive datetimes
         """
         try:
             stat = os.stat(file_path)
-            cache_key = self._get_cache_key(file_path, return_all_columns)
+            resolved_timezone = timezone or parsed_data.metadata.get('timezone') or DEFAULT_TIMEZONE
+            cache_key = self._get_cache_key(file_path, return_all_columns, resolved_timezone)
 
             entry = CacheEntry(
                 parsed_data=parsed_data,

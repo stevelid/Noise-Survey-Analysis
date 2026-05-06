@@ -63,6 +63,60 @@ describe('NoiseSurveyApp.data_processors', () => {
             const stepSize = dataProcessors.calculateStepSize(mockState, mockDataCache);
             expect(stepSize).toBeUndefined();
         });
+
+        it('does not call console.warn when no active position (default)', () => {
+            const warnSpy = vi.spyOn(console, 'warn');
+            const mockState = {
+                interaction: { tap: { position: null } },
+                audio: { activePositionId: null }
+            };
+            const mockDataCache = { activeLineData: {} };
+            dataProcessors.calculateStepSize(mockState, mockDataCache);
+            expect(warnSpy).not.toHaveBeenCalled();
+        });
+
+        it('does not call console.warn when active position has insufficient data (default)', () => {
+            const warnSpy = vi.spyOn(console, 'warn');
+            const mockState = {
+                interaction: { tap: { position: 'P1' } },
+                audio: {}
+            };
+            const mockDataCache = {
+                activeLineData: {
+                    P1: { Datetime: [0, 1000, 2000] }
+                }
+            };
+            dataProcessors.calculateStepSize(mockState, mockDataCache);
+            expect(warnSpy).not.toHaveBeenCalled();
+        });
+
+        it('emits console.debug when nsa_debug is enabled', () => {
+            const origGetItem = localStorage.getItem.bind(localStorage);
+            vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key) => {
+                if (key === 'nsa_debug') return '1';
+                return origGetItem(key);
+            });
+            const debugSpy = vi.spyOn(console, 'debug');
+
+            // No active position case
+            const stateNoPos = {
+                interaction: { tap: { position: null } },
+                audio: { activePositionId: null }
+            };
+            dataProcessors.calculateStepSize(stateNoPos, { activeLineData: {} });
+
+            // Insufficient data case
+            const stateWithPos = {
+                interaction: { tap: { position: 'P1' } },
+                audio: {}
+            };
+            dataProcessors.calculateStepSize(stateWithPos, {
+                activeLineData: { P1: { Datetime: [0, 1000] } }
+            });
+
+            expect(debugSpy).toHaveBeenCalled();
+            vi.restoreAllMocks();
+        });
     });
 
     describe('updateActiveFreqBarData', () => {

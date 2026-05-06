@@ -14,11 +14,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const viewThunks = app.features?.view?.thunks || {};
     const markerThunks = app.features?.markers?.thunks || {};
 
+    function handleUndoRedoIntent({ direction }) {
+        return (dispatch) => {
+            if (direction === 'undo') dispatch(app.actions.undo());
+            else if (direction === 'redo') dispatch(app.actions.redo());
+        };
+    }
+
     app.thunks = {
         ...markerThunks,
         ...regionThunks,
         ...interactionThunks,
         ...audioThunks,
-        ...viewThunks
+        ...viewThunks,
+        handleUndoRedoIntent,
     };
 })(window.NoiseSurveyApp);

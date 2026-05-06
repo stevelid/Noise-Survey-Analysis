@@ -137,6 +137,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         'metrics_spectrum_source'
     ];
 
+    // Provenance columns added after CSV_HEADER; import parser ignores them (not in CSV_HEADER).
+    const PROVENANCE_COLUMNS = ['chart_offset_ms', 'source_start_utc', 'source_end_utc', 'source_areas'];
+
+    // Mirrors getChartOffsetMs from regionUtils — CSV export uses the same offset convention
+    // as the region metric source-query logic.
+    function getCsvExportOffsetMs(region, state) {
+        if (!region || !state?.view?.positionChartOffsets) return 0;
+        const raw = Number(state.view.positionChartOffsets[region.positionId]);
+        return Number.isFinite(raw) ? raw : 0;
+    }
+
     function escapeCsvValue(value) {
         if (value === null || value === undefined) {
             return '';
@@ -408,7 +419,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const models = options?.models ?? app.registry?.models;
         const bandColumns = collectBandColumns(markers, regions, resolvedState, dataCache, models);
         const bandLookup = new Map(bandColumns.map(entry => [entry.key, entry.column]));
-        const header = CSV_HEADER.concat(METRIC_COLUMNS, bandColumns.map(entry => entry.column));
+        const header = CSV_HEADER.concat(PROVENANCE_COLUMNS, METRIC_COLUMNS, bandColumns.map(entry => entry.column));
 
         const rows = [header.join(',')];
 
@@ -483,6 +494,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ? JSON.stringify(serializedAreas)
                 : JSON.stringify([{ startUtc: formattedStart, endUtc: formattedEnd }]);
             rowData.areas = areasValue;
+
+            const offsetMs = getCsvExportOffsetMs(region, resolvedState);
+            rowData.chart_offset_ms = String(offsetMs);
+            rowData.source_start_utc = formatTimestampForCsv(Number(region.start) - offsetMs);
+            rowData.source_end_utc = formatTimestampForCsv(Number(region.end) - offsetMs);
+            const sourceSerializedAreas = regionAreas
+                .map(area => {
+                    const srcStart = formatTimestampForCsv(Number(area?.start) - offsetMs);
+                    const srcEnd = formatTimestampForCsv(Number(area?.end) - offsetMs);
+                    if (!srcStart || !srcEnd) return null;
+                    return { startUtc: srcStart, endUtc: srcEnd };
+                })
+                .filter(Boolean);
+            rowData.source_areas = sourceSerializedAreas.length
+                ? JSON.stringify(sourceSerializedAreas)
+                : JSON.stringify([{ startUtc: rowData.source_start_utc, endUtc: rowData.source_end_utc }]);
 
             const metrics = resolveRegionMetrics(region, resolvedState, dataCache, models);
             if (metrics) {
@@ -1354,7 +1381,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         buildAnnotationsCsv,
         parseAnnotationsCsv,
         CSV_HEADER: CSV_HEADER.slice(),
-        METRIC_COLUMNS: METRIC_COLUMNS.slice()
+        METRIC_COLUMNS: METRIC_COLUMNS.slice(),
+        PROVENANCE_COLUMNS: PROVENANCE_COLUMNS.slice()
     };
 
     app.session = {

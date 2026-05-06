@@ -1263,14 +1263,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const positionId = state.interaction.tap.position || state.audio.activePositionId;
     
             if (!positionId) {
-                console.warn("[DEBUG] Can't calculate step size - no active position.");
+                if (isDebugEnabled()) {
+                    console.debug("[DEBUG] Can't calculate step size - no active position.");
+                }
                 return;
             }
-    
+
             const activeData = dataCache.activeLineData[positionId];
-    
+
             if (!activeData || !activeData.Datetime || activeData.Datetime.length < 11) {
-                console.warn(`[DEBUG] Can't calculate step size for '${positionId}' - no data or not enough data points.`);
+                if (isDebugEnabled()) {
+                    console.debug(`[DEBUG] Can't calculate step size for '${positionId}' - no data or not enough data points.`);
+                }
                 return;
             }
     

@@ -28,6 +28,23 @@ logger = logging.getLogger(__name__)
 STANDARD_OUTPUT_COLUMNS = ['Datetime', 'LAF90', 'LAF10', 'LAFmax', 'LAeq']
 STANDARD_SPECTRAL_PREFIXES = ['LZeq', 'LZmax', 'LZFmax', 'LZF90']
 
+DEFAULT_TIMEZONE = 'Europe/London'
+
+
+def _resolve_timezone(tz: Optional[str]) -> str:
+    """Resolve and validate a timezone string, falling back to DEFAULT_TIMEZONE."""
+    if tz is None or str(tz).strip() == '':
+        return DEFAULT_TIMEZONE
+    tz = str(tz).strip()
+    try:
+        pd.Timestamp('2024-01-01').tz_localize(tz)
+        return tz
+    except Exception as exc:
+        logger.warning(
+            f"Invalid timezone '{tz}': {exc}. Falling back to {DEFAULT_TIMEZONE}."
+        )
+        return DEFAULT_TIMEZONE
+
 # Standard 1/3 octave band center frequencies (as strings for matching cleaned column suffixes)
 # Used by parsers to identify and normalize frequency parts of column names.
 # And by _filter_and_standardize_columns to identify spectral columns.
@@ -73,10 +90,11 @@ class AbstractNoiseParser(ABC):
     """
     Abstract Base Class for all noise file parsers.
     """
-    def __init__(self):
+    def __init__(self, timezone: Optional[str] = None):
         self.standard_output_columns = STANDARD_OUTPUT_COLUMNS
         self.standard_spectral_prefixes = STANDARD_SPECTRAL_PREFIXES
         self.expected_third_octave_suffixes = EXPECTED_THIRD_OCTAVE_SUFFIXES
+        self.timezone: str = _resolve_timezone(timezone)
 
     @abstractmethod
     def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
@@ -154,10 +172,21 @@ class AbstractNoiseParser(ABC):
         def _to_utc(series: pd.Series) -> pd.Series:
             s = pd.to_datetime(series, errors='coerce')
             try:
-                # Match original semantics: always treat values as local Europe/London
+                # Treat values as local time in self.timezone (default: Europe/London)
                 # regardless of any incoming timezone info.
                 s = s.dt.tz_localize(None)
-                s = s.dt.tz_localize('Europe/London', ambiguous='infer')
+                try:
+                    s = s.dt.tz_localize(
+                        self.timezone,
+                        ambiguous='infer',
+                        nonexistent='shift_forward',
+                    )
+                except Exception:
+                    s = s.dt.tz_localize(
+                        self.timezone,
+                        ambiguous='NaT',
+                        nonexistent='shift_forward',
+                    )
                 s = s.dt.tz_convert('UTC')
             except Exception as e:
                 logger.warning(f"Failed to localize/convert timezone: {e}")
@@ -387,7 +416,8 @@ class NoiseSentryFileParser(AbstractNoiseParser):
         parsed_data_obj = ParsedData(
             original_file_path=file_path,
             parser_type='NoiseSentry',
-            spectral_data_type='none'
+            spectral_data_type='none',
+            metadata={'timezone': self.timezone},
         )
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -583,7 +613,11 @@ class SvanFileParser(AbstractNoiseParser):
 
     def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
         logger.info(f"SvanParser: Parsing {file_path}")
-        parsed_data_obj = ParsedData(original_file_path=file_path, parser_type='Svan')
+        parsed_data_obj = ParsedData(
+            original_file_path=file_path,
+            parser_type='Svan',
+            metadata={'timezone': self.timezone},
+        )
         try:
             # Handle Excel files separately
             if file_path.lower().endswith('.xlsx'):
@@ -986,7 +1020,11 @@ class NTiFileParser(AbstractNoiseParser):
 
     def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
         logger.info(f"NTiParser: Parsing {file_path}")
-        parsed_data_obj = ParsedData(original_file_path=file_path, parser_type='NTi')
+        parsed_data_obj = ParsedData(
+            original_file_path=file_path,
+            parser_type='NTi',
+            metadata={'timezone': self.timezone},
+        )
         
         filename_lower = os.path.basename(file_path).lower()
         if "_report.txt" in filename_lower and "_rpt_" not in filename_lower:
@@ -1192,22 +1230,7 @@ class GenericFileParser(AbstractNoiseParser):
         return []
 
     def _normalize_datetime_utc(self, df: pd.DataFrame, dt_cols: List[str]) -> pd.DataFrame:
-        if len(dt_cols) == 2:
-            raw = df[dt_cols[0]].astype(str) + ' ' + df[dt_cols[1]].astype(str)
-        else:
-            raw = df[dt_cols[0]]
-
-        parsed = pd.to_datetime(raw, errors='coerce', utc=True)
-        df['Datetime'] = parsed
-
-        for col in dt_cols:
-            if col != 'Datetime' and col in df.columns:
-                df = df.drop(columns=[col])
-
-        df = df.dropna(subset=['Datetime'])
-        if not df.empty:
-            df = df.sort_values(by='Datetime').reset_index(drop=True)
-        return df
+        return self._normalize_datetime_column(df, dt_cols)
 
     def parse(self, file_path: str, return_all_columns: bool = False) -> ParsedData:
         logger.info(f"GenericParser: Parsing {file_path}")
@@ -1215,6 +1238,7 @@ class GenericFileParser(AbstractNoiseParser):
             original_file_path=file_path,
             parser_type='Generic',
             spectral_data_type='none',
+            metadata={'timezone': self.timezone},
         )
 
         try:
@@ -1305,6 +1329,7 @@ class AudioFileParser(AbstractNoiseParser):
             parser_type='Audio',
             data_profile='file_list',
             spectral_data_type='none',
+            metadata={'timezone': self.timezone},
         )
         audio_files_details = []
         try:
@@ -1365,28 +1390,28 @@ class AudioFileParser(AbstractNoiseParser):
 
 class NoiseParserFactory:
     @staticmethod
-    def get_parser(file_path: str, parser_type: str = 'auto') -> Optional[AbstractNoiseParser]:
+    def get_parser(file_path: str, parser_type: str = 'auto', timezone: Optional[str] = None) -> Optional[AbstractNoiseParser]:
         forced_type = (parser_type or 'auto').strip().lower().replace('_', '').replace('-', '')
 
         if forced_type not in ('', 'auto'):
             if forced_type in ('sentry', 'noisesentry'):
-                return NoiseSentryFileParser()
+                return NoiseSentryFileParser(timezone=timezone)
             if forced_type in ('svan', 'svantek'):
-                return SvanFileParser()
+                return SvanFileParser(timezone=timezone)
             if forced_type == 'nti':
-                return NTiFileParser()
+                return NTiFileParser(timezone=timezone)
             if forced_type in ('audio', 'wav'):
-                return AudioFileParser()
+                return AudioFileParser(timezone=timezone)
             if forced_type in ('generic', 'plotlinesonly', 'lineonly'):
-                return GenericFileParser()
+                return GenericFileParser(timezone=timezone)
 
             logger.warning(f"Unknown forced parser type '{parser_type}' for {file_path}; falling back to auto detection.")
 
         filename_lower = os.path.basename(file_path).lower()
-        
+
         # Audio directory check is now first and more specific
         if os.path.isdir(file_path):
-             return AudioFileParser()
+             return AudioFileParser(timezone=timezone)
 
         # Individual WAV files (Svan or NTi audio files)
         if filename_lower.endswith('.wav'):
@@ -1394,7 +1419,7 @@ class NoiseParserFactory:
             # This allows the audio parser to scan the entire directory containing the WAV file
             parent_dir = os.path.dirname(file_path)
             if parent_dir and os.path.isdir(parent_dir):
-                return AudioFileParser()
+                return AudioFileParser(timezone=timezone)
             else:
                 logger.warning(f"WAV file found but parent directory invalid: {file_path}")
                 return None
@@ -1402,14 +1427,14 @@ class NoiseParserFactory:
         # NTi files have very specific naming conventions
         if '_report.txt' in filename_lower or '_log.txt' in filename_lower:
             if "_rta_" in filename_lower or "_123_" in filename_lower:
-                return NTiFileParser()
+                return NTiFileParser(timezone=timezone)
 
         # Svan or Noise Sentry
         if filename_lower.endswith(('.csv','.svl')) or "overview.xlsx" in filename_lower :
             if re.search(r'_\d{4}_\d{2}_\d{2}__\d{2}h\d{2}m\d{2}s.*\.csv$', filename_lower):
-                return NoiseSentryFileParser()
-            return SvanFileParser()
-             
+                return NoiseSentryFileParser(timezone=timezone)
+            return SvanFileParser(timezone=timezone)
+
         logger.warning(f"Could not determine parser type for: {file_path}")
         return None
 

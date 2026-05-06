@@ -26,6 +26,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     let toggleRegionCreationIntentSpy;
     let nudgeSelectedMarkerIntentSpy;
     let handleKeyboardShortcutIntentSpy;
+    let handleUndoRedoIntentSpy;
 
     beforeEach(() => {
         vi.useFakeTimers();
@@ -61,6 +62,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         toggleRegionCreationIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'toggleRegionCreationIntent').mockImplementation(() => () => {});
         nudgeSelectedMarkerIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'nudgeSelectedMarkerIntent').mockImplementation(() => () => {});
         handleKeyboardShortcutIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleKeyboardShortcutIntent');
+        handleUndoRedoIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleUndoRedoIntent').mockImplementation(() => () => {});
     });
 
     afterEach(() => {
@@ -311,6 +313,30 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             expect(event.preventDefault).toHaveBeenCalled();
             expect(toggleRegionCreationIntentSpy).toHaveBeenCalled();
             expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
+        });
+    });
+
+    describe('undo/redo shortcuts', () => {
+        it('ctrl+z dispatches undo intent and does not fall through to keyboard shortcut', () => {
+            const event = { key: 'z', ctrlKey: true, preventDefault: vi.fn(), target: { tagName: 'div' } };
+            eventHandlers.handleKeyPress(event);
+            expect(event.preventDefault).toHaveBeenCalled();
+            expect(handleUndoRedoIntentSpy).toHaveBeenCalledWith({ direction: 'undo' });
+            expect(handleKeyboardShortcutIntentSpy).not.toHaveBeenCalled();
+        });
+
+        it('ctrl+y dispatches redo intent', () => {
+            const event = { key: 'y', ctrlKey: true, preventDefault: vi.fn(), target: { tagName: 'div' } };
+            eventHandlers.handleKeyPress(event);
+            expect(event.preventDefault).toHaveBeenCalled();
+            expect(handleUndoRedoIntentSpy).toHaveBeenCalledWith({ direction: 'redo' });
+        });
+
+        it('ctrl+shift+z dispatches redo intent', () => {
+            const event = { key: 'z', ctrlKey: true, shiftKey: true, preventDefault: vi.fn(), target: { tagName: 'div' } };
+            eventHandlers.handleKeyPress(event);
+            expect(event.preventDefault).toHaveBeenCalled();
+            expect(handleUndoRedoIntentSpy).toHaveBeenCalledWith({ direction: 'redo' });
         });
     });
 });

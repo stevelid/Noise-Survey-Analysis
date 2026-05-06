@@ -384,6 +384,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const normalizedKey = rawKey.toLowerCase();
         const code = typeof e.code === 'string' ? e.code : '';
 
+        const isCtrlOrMeta = Boolean(e.ctrlKey) || Boolean(e.metaKey);
+
+        // Undo/redo: handle before the general key filter
+        if (isCtrlOrMeta && normalizedKey === 'z' && !e.shiftKey) {
+            if (typeof e.preventDefault === 'function') e.preventDefault();
+            const undoRedoThunk = app.thunks && app.thunks.handleUndoRedoIntent;
+            if (typeof undoRedoThunk === 'function') {
+                dispatch(undoRedoThunk({ direction: 'undo' }));
+            }
+            return;
+        }
+        if (isCtrlOrMeta && (normalizedKey === 'y' || (normalizedKey === 'z' && e.shiftKey))) {
+            if (typeof e.preventDefault === 'function') e.preventDefault();
+            const undoRedoThunk = app.thunks && app.thunks.handleUndoRedoIntent;
+            if (typeof undoRedoThunk === 'function') {
+                dispatch(undoRedoThunk({ direction: 'redo' }));
+            }
+            return;
+        }
+
         const isSpace = code === 'Space' || rawKey === ' ' || rawKey === 'Spacebar';
         const isEscape = rawKey === 'Escape';
         const isMarkerKey = normalizedKey === 'm';

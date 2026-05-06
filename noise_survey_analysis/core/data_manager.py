@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 def _parse_single_file(file_path: str, position_name: str,
                        parser_type_hint: Optional[str] = None,
                        return_all_columns: bool = False,
+                       timezone: Optional[str] = None,
                        use_cache: bool = True) -> Tuple[str, str, ParsedData]:
     """
     Worker function to parse a single file.
@@ -39,14 +40,21 @@ def _parse_single_file(file_path: str, position_name: str,
         # Check cache first
         if use_cache:
             cache = get_parsed_data_cache()
-            cached_data = cache.get(file_path, return_all_columns)
+            if timezone is None:
+                cached_data = cache.get(file_path, return_all_columns)
+            else:
+                cached_data = cache.get(file_path, return_all_columns, timezone=timezone)
             if cached_data is not None:
                 logger.debug(f"Using cached data for: {os.path.basename(file_path)}")
                 return (file_path, position_name, cached_data)
 
         # Parse the file
         factory = NoiseParserFactory()
-        parser = factory.get_parser(file_path, parser_type=parser_type_hint or 'auto')
+        parser = factory.get_parser(
+            file_path,
+            parser_type=parser_type_hint or 'auto',
+            timezone=timezone,
+        )
 
         if not parser:
             err_msg = f"No suitable parser found for file: {file_path}"
@@ -60,10 +68,14 @@ def _parse_single_file(file_path: str, position_name: str,
 
         parsed_data = parser.parse(file_path, return_all_columns=return_all_columns)
 
+        # Record the resolved timezone so callers can inspect it
+        if parsed_data is not None and parsed_data.metadata is not None:
+            parsed_data.metadata.setdefault('timezone', getattr(parser, 'timezone', None))
+
         # Cache the result
         if use_cache and 'error' not in parsed_data.metadata:
             cache = get_parsed_data_cache()
-            cache.put(file_path, parsed_data, return_all_columns)
+            cache.put(file_path, parsed_data, return_all_columns, timezone=parser.timezone)
 
         return (file_path, position_name, parsed_data)
 
@@ -331,6 +343,7 @@ class PositionData:
             file_path = file_info['file_path']
             parser_type = file_info.get('parser_type')
             return_all_cols = file_info.get('return_all_cols', False)
+            timezone = file_info.get('timezone')
             selected_columns = file_info.get('selected_columns')
             forced_profile = file_info.get('data_profile')
             
@@ -346,7 +359,10 @@ class PositionData:
 
                 if cache is not None:
                     cache_lookup_started_at = time.perf_counter()
-                    parsed_data = cache.get(file_path, return_all_cols)
+                    if timezone is None:
+                        parsed_data = cache.get(file_path, return_all_cols)
+                    else:
+                        parsed_data = cache.get(file_path, return_all_cols, timezone=timezone)
                     cache_lookup_ms = (time.perf_counter() - cache_lookup_started_at) * 1000
                     total_cache_lookup_ms += cache_lookup_ms
                     if parsed_data is not None:
@@ -376,7 +392,11 @@ class PositionData:
                     continue
 
                 parser_lookup_started_at = time.perf_counter()
-                parser = parser_factory.get_parser(file_path, parser_type=parser_type or 'auto')
+                parser = parser_factory.get_parser(
+                    file_path,
+                    parser_type=parser_type or 'auto',
+                    timezone=timezone,
+                )
                 parser_lookup_ms = (time.perf_counter() - parser_lookup_started_at) * 1000
                 total_parser_lookup_ms += parser_lookup_ms
                 if not parser:
@@ -391,7 +411,7 @@ class PositionData:
                 if parsed_data:
                     if cache is not None and 'error' not in parsed_data.metadata:
                         cache_put_started_at = time.perf_counter()
-                        cache.put(file_path, parsed_data, return_all_cols)
+                        cache.put(file_path, parsed_data, return_all_cols, timezone=parser.timezone)
                         cache_put_ms = (time.perf_counter() - cache_put_started_at) * 1000
                         total_cache_put_ms += cache_put_ms
 
@@ -513,6 +533,7 @@ class DataManager:
                     'data_profile': config.get('data_profile') or config.get('profile'),
                     'y_axis_label': config.get('y_axis_label'),
                     'y_range': config.get('y_range'),
+                    'timezone': config.get('timezone'),
                 }
                 parse_tasks.append((path, position_name, use_return_all_cols, parser_hint, source_options))
 
@@ -533,7 +554,8 @@ class DataManager:
                                 selected_columns=source_options.get('selected_columns'),
                                 data_profile=source_options.get('data_profile'),
                                 y_axis_label=source_options.get('y_axis_label'),
-                                y_range=source_options.get('y_range'))
+                                y_range=source_options.get('y_range'),
+                                timezone=source_options.get('timezone'))
             if self.progress_callback:
                 self.progress_callback(idx, total)
 
@@ -544,7 +566,8 @@ class DataManager:
                         selected_columns: Optional[List[str]] = None,
                         data_profile: Optional[str] = None,
                         y_axis_label: Optional[str] = None,
-                        y_range: Optional[List[float]] = None):
+                        y_range: Optional[List[float]] = None,
+                        timezone: Optional[str] = None):
         """
         Parses a single file and adds its data to the specified position.
         This method is used for sequential processing and backwards compatibility.
@@ -590,6 +613,7 @@ class DataManager:
                 'file_path': file_path,
                 'parser_type': parser_type_hint,
                 'return_all_cols': return_all_columns,
+                'timezone': timezone,
                 'selected_columns': selected_columns,
                 'data_profile': data_profile,
             })
@@ -599,7 +623,10 @@ class DataManager:
         parsed_data_obj = None
         if self.use_cache:
             cache = get_parsed_data_cache()
-            parsed_data_obj = cache.get(file_path, return_all_columns)
+            if timezone is None:
+                parsed_data_obj = cache.get(file_path, return_all_columns)
+            else:
+                parsed_data_obj = cache.get(file_path, return_all_columns, timezone=timezone)
             if parsed_data_obj is not None:
                 logger.info(f"Using cached data for: {os.path.basename(file_path)}")
                 parsed_data_obj = copy.deepcopy(parsed_data_obj)
@@ -607,7 +634,11 @@ class DataManager:
                 position_obj.add_parsed_file_data(parsed_data_obj)
                 return
 
-        parser = self.parser_factory.get_parser(file_path, parser_type=parser_type_hint or 'auto')
+        parser = self.parser_factory.get_parser(
+            file_path,
+            parser_type=parser_type_hint or 'auto',
+            timezone=timezone,
+        )
         if not parser:
             err_msg = f"No suitable parser found for file: {file_path}"
             logger.error(err_msg)
@@ -625,7 +656,7 @@ class DataManager:
             # Cache the result if enabled and no errors
             if self.use_cache and 'error' not in parsed_data_obj.metadata:
                 cache = get_parsed_data_cache()
-                cache.put(file_path, parsed_data_obj, return_all_columns)
+                cache.put(file_path, parsed_data_obj, return_all_columns, timezone=parser.timezone)
 
             parsed_data_obj = position_obj._apply_source_options(parsed_data_obj, selected_columns, data_profile)
             position_obj.add_parsed_file_data(parsed_data_obj)

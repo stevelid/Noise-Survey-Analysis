@@ -67,9 +67,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
+    // Module-private cache for collectPositionTimestampStats.
+    // Keyed by positionId → { overviewSource, logSource, stats }.
+    // Invalidated when source object identity changes (Bokeh replaces sources on rebuild).
+    const _timestampStatsCache = new Map();
+
+    function _resetTimestampStatsCache() {
+        _timestampStatsCache.clear();
+    }
+
     /**
      * Collects timestamp statistics for a position using a single O(n) linear scan.
-     * Replaces the old sort+dedup approach with min/max/count extraction.
+     * Results are cached by source object identity; repeated calls with unchanged
+     * sources return the same result object without rescanning.
      */
     function collectPositionTimestampStats(positionId) {
         if (!positionId) {
@@ -79,6 +89,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const sources = registryModels.timeSeriesSources?.[positionId];
         if (!sources) {
             return null;
+        }
+
+        const cached = _timestampStatsCache.get(positionId);
+        if (cached &&
+            cached.overviewSource === sources.overview &&
+            cached.logSource === sources.log) {
+            return cached.stats;
         }
 
         let min = Infinity;
@@ -104,10 +121,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         scanSource(sources.overview);
         scanSource(sources.log);
 
-        if (!count) {
-            return null;
-        }
-        return { min, max, count };
+        const stats = count ? { min, max, count } : null;
+        _timestampStatsCache.set(positionId, {
+            overviewSource: sources.overview,
+            logSource: sources.log,
+            stats
+        });
+        return stats;
     }
 
     function clampInterval(start, end, min, max) {
@@ -707,6 +727,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         toggleRegionCreationIntent,
         copyRegionToAllPositionsIntent
     };
+    app.features.regions.__test__ = app.features.regions.__test__ || {};
+    app.features.regions.__test__.collectPositionTimestampStats = collectPositionTimestampStats;
+    app.features.regions.__test__._resetTimestampStatsCache = _resetTimestampStatsCache;
 })(window.NoiseSurveyApp);
 
 

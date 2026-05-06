@@ -76,11 +76,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         AUDIO_RATE_CHANGE_REQUEST: 'audio/RATE_CHANGE_REQUEST', 
         AUDIO_BOOST_TOGGLE_REQUEST: 'audio/BOOST_TOGGLE_REQUEST', 
 
+        // History
+        HISTORY_UNDO: 'history/undo',
+        HISTORY_REDO: 'history/redo',
+
         // System
         KEYBOARD_SETUP_COMPLETE: 'KEYBOARD_SETUP_COMPLETE',
         DATA_REFRESHED: 'data/refreshed',
-        
-        
+
+
     };
 
     // --Action Creators --
@@ -278,7 +282,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             type: actionTypes.DATA_REFRESHED,
             payload: { positionId }
         }),
-    
+
+        undo: () => ({ type: actionTypes.HISTORY_UNDO }),
+        redo: () => ({ type: actionTypes.HISTORY_REDO }),
+
     };
 
     app.actionTypes = actionTypes;
