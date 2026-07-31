@@ -136,6 +136,114 @@ class StreamingBackendTests(unittest.TestCase):
             [70, 70, 70, 71, 71, 72],
         )
 
+    def _spectral_frame_at_cadence(self, cadence_seconds, n_rows=64):
+        base_time = pd.Timestamp("2024-01-01T00:00:00Z")
+        times = [
+            base_time + pd.Timedelta(seconds=idx * cadence_seconds)
+            for idx in range(n_rows)
+        ]
+        return pd.DataFrame({
+            "Datetime": times,
+            "LZeq_100": [60 + idx for idx in range(n_rows)],
+            "LZeq_200": [70 + idx for idx in range(n_rows)],
+        })
+
+    def test_dynamic_log_window_drifts_with_slice_cadence_when_unpinned(self):
+        """Guards the failure mode the pin exists to prevent.
+
+        chunk_time_length is derived from a median over the leading gaps of whichever
+        slice was just cut, so a slice that lands on a coarser cadence (a data gap, a
+        file boundary, a mixed-cadence source) sizes a different buffer.
+        """
+        processor = GlyphDataProcessor()
+
+        one_second = processor.prepare_single_spectrogram_data(
+            self._spectral_frame_at_cadence(1),
+            "LZeq",
+            CHART_SETTINGS,
+            use_dynamic_log_window=True,
+        )
+        two_second = processor.prepare_single_spectrogram_data(
+            self._spectral_frame_at_cadence(2),
+            "LZeq",
+            CHART_SETTINGS,
+            use_dynamic_log_window=True,
+        )
+
+        self.assertNotEqual(
+            one_second["chunk_time_length"],
+            two_second["chunk_time_length"],
+            "expected unpinned dynamic window to drift with slice cadence",
+        )
+
+    def test_explicit_fixed_n_times_pins_chunk_time_length_across_cadences(self):
+        """The pin must survive cadence drift so the fixed Image buffer stays valid."""
+        processor = GlyphDataProcessor()
+        pinned_width = 3600
+
+        for cadence_seconds in (1, 2, 5):
+            with self.subTest(cadence_seconds=cadence_seconds):
+                prepared = processor.prepare_single_spectrogram_data(
+                    self._spectral_frame_at_cadence(cadence_seconds),
+                    "LZeq",
+                    CHART_SETTINGS,
+                    use_dynamic_log_window=True,
+                    fixed_n_times=pinned_width,
+                )
+
+                self.assertEqual(prepared["chunk_time_length"], pinned_width)
+                # The reservoir is padded up to a whole number of display buffers, so a
+                # client-side chunk extraction can always fill the glyph exactly.
+                self.assertEqual(prepared["n_times"] % pinned_width, 0)
+                self.assertGreaterEqual(prepared["n_times"], pinned_width)
+
+    def test_streamed_spectrogram_matches_initialized_display_buffer_width(self):
+        """End-to-end: the streamed payload is sized from the live display buffer."""
+        pinned_width = 3600
+        n_freqs = 2
+        display_source = ColumnDataSource(data={
+            "image": [np.zeros((n_freqs, pinned_width), dtype=np.int16)],
+            "x": [0.0],
+            "y": [-0.5],
+            "dw": [1.0],
+            "dh": [float(n_freqs)],
+        })
+        spectrogram_log_source = ColumnDataSource(data={})
+
+        position = PositionData(name="P_pin")
+        # 2 s cadence: unpinned this would size a 1800-bin buffer and be rejected.
+        position.log_spectral = self._spectral_frame_at_cadence(2)
+
+        doc = FakeDoc({
+            "source_P_pin_spectrogram": display_source,
+            "source_P_pin_spectrogram_log": spectrogram_log_source,
+            "figure_P_pin_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({"P_pin": position}), CHART_SETTINGS)
+
+        self.assertEqual(
+            handler._resolve_display_buffer_width("P_pin", handler.position_models["P_pin"]),
+            pinned_width,
+        )
+
+        times = position.log_spectral["Datetime"]
+        handler._update_log_spectrogram(
+            position.log_spectral,
+            handler.position_models["P_pin"],
+            int(times.iloc[0].value // 10**6),
+            int(times.iloc[-1].value // 10**6),
+            position_id="P_pin",
+            position_data=position,
+        )
+
+        self.assertEqual(spectrogram_log_source.data["chunk_time_length"][0], pinned_width)
+        self.assertEqual(spectrogram_log_source.data["n_freqs"][0], n_freqs)
+        # The client extracts n_freqs * chunk_time_length cells into the fixed buffer.
+        self.assertEqual(
+            spectrogram_log_source.data["n_times"][0] % pinned_width,
+            0,
+        )
+
     def test_prepare_all_spectral_data_keeps_overview_and_log_buffers_identical(self):
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
         overview_times = [base_time + pd.Timedelta(minutes=idx * 5) for idx in range(3)]

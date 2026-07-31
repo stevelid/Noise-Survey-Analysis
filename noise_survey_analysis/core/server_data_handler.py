@@ -54,6 +54,7 @@ class ServerDataHandler:
         self._buffer_bounds = {}  # Track buffer bounds per position for edge detection
         self._spectrogram_chunk_bounds = {}
         self._range_update_counter = 0
+        self._display_buffer_width = {}  # position_id -> pinned Image glyph buffer width
 
     def _collect_position_models(self) -> Dict[str, Dict[str, object]]:
         models: Dict[str, Dict[str, object]] = {}
@@ -62,6 +63,10 @@ class ServerDataHandler:
                 # Push to log_source (reservoir) instead of display source
                 'timeseries_log_source': self.doc.get_model_by_name(f"source_{position_id}_timeseries_log"),
                 'spectrogram_log_source': self.doc.get_model_by_name(f"source_{position_id}_spectrogram_log"),
+                # The display source is the one bound to the Image glyph.  Its buffer is
+                # sized once at init and must never change shape — it is the authority on
+                # how wide every streamed chunk has to be.
+                'spectrogram_display_source': self.doc.get_model_by_name(f"source_{position_id}_spectrogram"),
                 'timeseries_figure': self.doc.get_model_by_name(f"figure_{position_id}_timeseries"),
                 'spectrogram_figure': self.doc.get_model_by_name(f"figure_{position_id}_spectrogram"),
             }
@@ -356,6 +361,54 @@ class ServerDataHandler:
             (time.perf_counter() - update_started_at) * 1000,
         )
 
+    def _resolve_display_buffer_width(self, position_id: str, model_bundle: Dict[str, object]) -> Optional[int]:
+        """
+        Return the pinned width (time bins) of this position's Image glyph buffer.
+
+        The browser's ``source.data.image`` buffer is fixed-size after initialization
+        (AGENTS.md §6).  Every streamed chunk therefore has to be exactly as wide as the
+        buffer that was created at init, otherwise the client's shape guard rejects the
+        update and the spectrogram silently stops refreshing.
+
+        The initialized display source is the ground truth for that width, so read it
+        back rather than re-deriving it from the streamed slice's cadence.
+        """
+        if position_id in self._display_buffer_width:
+            return self._display_buffer_width[position_id]
+
+        width: Optional[int] = None
+        display_source = model_bundle.get('spectrogram_display_source')
+        image_column = getattr(display_source, 'data', {}).get('image') if display_source is not None else None
+
+        if image_column is not None and len(image_column) > 0:
+            buffer = image_column[0]
+            try:
+                shape = getattr(buffer, 'shape', None)
+                if shape is not None and len(shape) == 2:
+                    # (n_freqs, chunk_time_length)
+                    width = int(shape[1])
+                elif buffer is not None and len(buffer) > 0 and hasattr(buffer[0], '__len__'):
+                    width = int(len(buffer[0]))
+            except (TypeError, IndexError, ValueError):
+                width = None
+
+        if width is not None and width > 0:
+            logger.info(
+                "[SPEC PIN] position=%s display buffer width pinned to %s bins",
+                position_id,
+                width,
+            )
+            self._display_buffer_width[position_id] = width
+            return width
+
+        # No initialized buffer to read (e.g. a position whose spectrogram has not been
+        # built yet).  Fall back to the dynamic window so behaviour is unchanged.
+        logger.debug(
+            "[SPEC PIN] position=%s no initialized display buffer; falling back to dynamic window",
+            position_id,
+        )
+        return None
+
     def _update_log_spectrogram(
         self,
         df: pd.DataFrame,
@@ -426,11 +479,28 @@ class ServerDataHandler:
         # The browser extracts the visible display chunk from this reservoir,
         # allowing panning within the reservoir without a new server round-trip.
         prepare_started_at = time.perf_counter()
+        pinned_chunk_time_length = self._resolve_display_buffer_width(position_id, model_bundle)
         prepared = self.processor.prepare_single_spectrogram_data(
-            sliced, param, self.chart_settings, use_dynamic_log_window=True
+            sliced,
+            param,
+            self.chart_settings,
+            use_dynamic_log_window=True,
+            fixed_n_times=pinned_chunk_time_length,
         )
         prepare_ms = (time.perf_counter() - prepare_started_at) * 1000
         if prepared:
+            if (
+                pinned_chunk_time_length is not None
+                and prepared['chunk_time_length'] != pinned_chunk_time_length
+            ):
+                # Should be unreachable now that the pin is honoured; loud if it ever is.
+                logger.warning(
+                    "[SPEC PIN] position=%s chunk_time_length=%s does not match pinned buffer width %s; "
+                    "the client will reject this update",
+                    position_id,
+                    prepared['chunk_time_length'],
+                    pinned_chunk_time_length,
+                )
             log_cells = prepared['n_freqs'] * prepared['chunk_time_length']
             logger.debug(
                 "[SPEC] Reservoir: n_times=%s chunk_time_length=%s n_freqs=%s cells=%s",
