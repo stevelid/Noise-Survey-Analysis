@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2026-02-05
-**Version:** 1.4.0
+**Last Updated:** 2026-07-31
+**Version:** 1.5.0
 
 ---
 
@@ -656,6 +656,59 @@
 - [ ] **Expected:** No console errors
 - [ ] **Test:** Zoom in (log view), toggle to overview, toggle back to log
 - [ ] **Expected:** Log data reloads correctly
+
+### 11.6 Spectrogram Buffer Width Is Pinned 🔴
+**Why:** The Image glyph buffer is fixed-size after init (AGENTS.md §6). The streamed
+chunk width is now pinned to the initialized display buffer instead of being re-derived
+from each slice's cadence, which drifted across gaps and file boundaries.
+- [ ] **Setup:** Load a position whose log data contains a gap or spans multiple files
+- [ ] **Action:** Enable Log View and pan so the viewport starts inside the gap
+- [ ] **Expected:** Spectrogram keeps updating; it does not freeze while the time history moves
+- [ ] **Expected:** Console shows no `Image size mismatch` or `replacement image shape` warnings
+- [ ] **Expected:** Server log shows `[SPEC PIN] ... pinned to N bins` once per position
+- [ ] **Expected:** Server log shows **no** `[SPEC PIN] ... does not match pinned buffer width` warnings
+
+### 11.7 Large Survey Responsiveness 🔴
+**Why:** Streamed slices are cut by row before column selection, and refreshes are
+batched per frame.
+- [ ] **Setup:** Load 3+ positions with 1 s log data over 3–4 days, spectral where available
+- [ ] **Action:** Pan and zoom repeatedly in Log View
+- [ ] **Expected:** UI stays responsive; charts settle within ~1 s of the gesture ending
+- [ ] **Expected:** Server `[SPEC PERF]` lines show `slice_ms` in single-digit ms, not hundreds
+- [ ] **Expected:** One heavy update per pan, not one per streamed source
+
+---
+
+## 11b. Audio Seek Responsiveness 🔴 SERVER
+
+**Note:** Seeking inside the recording already loaded no longer reloads media, and
+control commands run off the Bokeh document thread.
+
+### 11b.1 Seek Within The Current Recording 🔴
+- [ ] **Setup:** Start playback on a position with audio
+- [ ] **Action:** Click a new time inside the same audio file
+- [ ] **Expected:** Audio jumps effectively immediately (no ~0.5 s stall)
+- [ ] **Expected:** Playback continues without an audible stop/restart
+- [ ] **Expected:** Server log shows `Seeking within already-loaded media`, not `Now playing:`
+
+### 11b.2 Seek Across A File Boundary 🔴
+- [ ] **Action:** Click a time that falls in a different audio file
+- [ ] **Expected:** Playback switches to the new file and continues
+- [ ] **Expected:** Server log shows `Now playing: <new file>`
+- [ ] **Expected:** Position indicator and file name update
+
+### 11b.3 Seeking Does Not Freeze The Dashboard 🔴
+- [ ] **Setup:** Load a large survey (3+ positions, multi-day 1 s log data)
+- [ ] **Action:** Click rapidly between distant times and across positions
+- [ ] **Expected:** Charts, hover and range selector stay responsive throughout
+- [ ] **Expected:** Commands apply in the order clicked; final position is the last clicked
+- [ ] **Expected:** No console or server errors
+
+### 11b.4 Playback Rolls Over Between Files 🔴
+- [ ] **Setup:** Start playback shortly before the end of an audio file
+- [ ] **Action:** Let it play through the boundary without interacting
+- [ ] **Expected:** Playback continues into the next file automatically
+- [ ] **Expected:** Server log shows no `cannot join current thread` error
 
 ---
 
