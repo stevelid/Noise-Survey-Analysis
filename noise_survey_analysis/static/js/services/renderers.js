@@ -621,6 +621,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             renderer(state, displayDetailsByPosition);
         }
     }
+    // Only the <tbody> is rewritten, so the header - and therefore the parameter list
+    // parsed from it - is stable between renders. This runs on every state change,
+    // including each audio status tick during playback, so parsing the whole table
+    // every time just to re-read fixed column names is wasted work.
+    let _summaryTableHeaderCache = { key: null, parameters: [] };
+
+    function getSummaryTableParameters(tableHtml) {
+        const headMatch = /<thead>[\s\S]*?<\/thead>/i.exec(tableHtml || '');
+        const key = headMatch ? headMatch[0] : (tableHtml || '');
+        if (_summaryTableHeaderCache.key === key) {
+            return _summaryTableHeaderCache.parameters;
+        }
+
+        const parsed = new DOMParser().parseFromString(tableHtml, 'text/html');
+        const headerCells = parsed.querySelectorAll('thead th:not(.position-header)');
+        const parameters = Array.from(headerCells).map(th => th.textContent.trim());
+        _summaryTableHeaderCache = { key, parameters };
+        return parameters;
+    }
+
     function renderSummaryTable(state, dataCache) {
         const { models } = app.registry;
         if (!models) return;
@@ -643,9 +663,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             ? comparisonState.includedPositions
             : [];
 
-        const initialDoc = new DOMParser().parseFromString(tableDiv.text, 'text/html');
-        const headerCells = initialDoc.querySelectorAll("thead th:not(.position-header)");
-        const parameters = Array.from(headerCells).map(th => th.textContent.trim());
+        const parameters = getSummaryTableParameters(tableDiv.text);
 
         let tableBodyHtml = '';
 

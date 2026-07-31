@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Import source files for side effects to enable coverage tracking.
+import '../noise_survey_analysis/static/js/utils.js';
 import '../noise_survey_analysis/static/js/features/view/viewResolution.js';
 import '../noise_survey_analysis/static/js/data-processors.js';
 

@@ -657,7 +657,7 @@ class DashBuilder:
                 # 3. Application modules
                 'chart-classes.js',   # Defines Chart classes, needed by registry
                 'registry.js',        # Defines the model/controller registry
-                'data-processors.js', # (No hard dependencies on others)
+                'data-processors.js', # Calls app.utils at run time; must load after utils.js
                 'services/markers/markerPanelRenderer.js',
                 'services/regions/regionPanelRenderer.js',
                 'services/renderers/controlWidgetsRenderer.js',

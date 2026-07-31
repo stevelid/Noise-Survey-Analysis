@@ -1109,5 +1109,52 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(actual).toContain(`<td>70.0</td>`);
             expect(actual).toContain(`<td>80.0</td>`);
         });
+
+        it('re-reads the header when the column set changes', () => {
+            const mockState = {
+                interaction: { tap: { isActive: true, timestamp: 100, position: 'P1' } },
+                view: { availablePositions: ['P1'] }
+            };
+            const mockDataCache = {
+                activeLineData: { P1: { Datetime: [100], LAeq: [70], LCeq: [80], LZeq: [90] } }
+            };
+            const div = window.NoiseSurveyApp.registry.models.summaryTableDiv;
+            window.NoiseSurveyApp.utils.findAssociatedDateIndex.mockReturnValue(0);
+
+            div.text = '<table><thead><tr><th class="position-header">Position</th><th>LAeq</th></tr></thead><tbody></tbody></table>';
+            renderers.renderSummaryTable(mockState, mockDataCache);
+            expect(div.text).toContain('<td>70.0</td>');
+            expect(div.text).not.toContain('<td>80.0</td>');
+
+            // A different header must not be served from the cached parameter list.
+            div.text = '<table><thead><tr><th class="position-header">Position</th><th>LCeq</th><th>LZeq</th></tr></thead><tbody></tbody></table>';
+            renderers.renderSummaryTable(mockState, mockDataCache);
+            expect(div.text).toContain('<td>80.0</td>');
+            expect(div.text).toContain('<td>90.0</td>');
+            expect(div.text).not.toContain('<td>70.0</td>');
+        });
+
+        it('reuses the parsed header across repeated renders', () => {
+            const mockState = {
+                interaction: { tap: { isActive: true, timestamp: 100, position: 'P1' } },
+                view: { availablePositions: ['P1'] }
+            };
+            const mockDataCache = { activeLineData: { P1: { Datetime: [100], LAeq: [70], LCeq: [80] } } };
+            const div = window.NoiseSurveyApp.registry.models.summaryTableDiv;
+            window.NoiseSurveyApp.utils.findAssociatedDateIndex.mockReturnValue(0);
+            div.text = '<table><thead><tr><th class="position-header">Position</th><th>LAeq</th><th>LCeq</th></tr></thead><tbody></tbody></table>';
+
+            const parseSpy = vi.spyOn(DOMParser.prototype, 'parseFromString');
+            try {
+                renderers.renderSummaryTable(mockState, mockDataCache);
+                const afterFirst = parseSpy.mock.calls.length;
+                renderers.renderSummaryTable(mockState, mockDataCache);
+                renderers.renderSummaryTable(mockState, mockDataCache);
+                // The tbody changes but the thead does not, so no further parsing.
+                expect(parseSpy.mock.calls.length).toBe(afterFirst);
+            } finally {
+                parseSpy.mockRestore();
+            }
+        });
     });
 });
