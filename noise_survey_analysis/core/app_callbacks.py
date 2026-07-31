@@ -3,6 +3,7 @@
 import logging
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from bokeh.plotting import curdoc
 from bokeh.models import ColumnDataSource, Button, Select, Div, CustomJS
 from datetime import datetime, timedelta, timezone
@@ -60,6 +61,11 @@ class AppCallbacks:
         self._streaming_timeout_id = None
         self._pending_stream_range = None
         self._static_export_in_progress = False
+        # Single worker so audio commands stay ordered relative to each other while
+        # staying off the document's IOLoop.
+        self._audio_command_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix='nsa-audio-cmd'
+        )
 
         if not self.audio_handler:
             logger.info("AppCallbacks initialized without audio handler. Audio features disabled.")
@@ -87,13 +93,23 @@ class AppCallbacks:
         if not self.audio_handler or not getattr(self.audio_handler, 'audio_available', False):
             logger.debug("Ignoring audio control command: audio handler missing or unavailable.")
             return
-        try:
-            command = new.get('command', [None])[0]
-            if command is None:
-                return
-            position_id = new.get('position_id', [None])[0] 
-            value = new.get('value', [None])[0]
 
+        command = new.get('command', [None])[0]
+        if command is None:
+            return
+        position_id = new.get('position_id', [None])[0]
+        value = new.get('value', [None])[0]
+
+        # Opening media and settling VLC blocks for hundreds of milliseconds. Bokeh runs
+        # document callbacks on a single IOLoop, so doing that here freezes the whole
+        # dashboard - streaming, rendering and status ticks alike - for the duration.
+        # Hand it to a single worker so commands still apply in order.
+        self._audio_command_executor.submit(
+            self._execute_audio_control_command, command, position_id, value
+        )
+
+    def _execute_audio_control_command(self, command, position_id, value):
+        try:
             logger.info(f"Received audio control command: {command}, position_id: {position_id}, value: {value}")
 
             if command == 'play':
@@ -326,6 +342,10 @@ class AppCallbacks:
     def cleanup(self):
         """Cleans up resources when the session is destroyed."""
         self._stop_periodic_update()
+        try:
+            self._audio_command_executor.shutdown(wait=False)
+        except Exception as e:
+            logger.warning(f"Error shutting down audio command executor: {e}")
         if self.audio_handler:
             try:
                 self.audio_handler.release()
