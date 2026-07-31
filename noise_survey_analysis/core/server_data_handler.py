@@ -39,6 +39,8 @@ def _to_bokeh_ms(values) -> pd.Series:
 
 
 class ServerDataHandler:
+    _TIME_INDEX_CACHE_LIMIT = 16
+
     def __init__(
         self,
         doc,
@@ -55,6 +57,7 @@ class ServerDataHandler:
         self._spectrogram_chunk_bounds = {}
         self._range_update_counter = 0
         self._display_buffer_width = {}  # position_id -> pinned Image glyph buffer width
+        self._time_index_cache = {}  # id(df) -> (df, int64 ms array or None)
 
     def _collect_position_models(self) -> Dict[str, Dict[str, object]]:
         models: Dict[str, Dict[str, object]] = {}
@@ -342,10 +345,19 @@ class ServerDataHandler:
         
         # Stream full-resolution log data (no downsampling)
         # Resolution can be anything from 0.1s to 60s depending on the source data
+        # Keep columns as NumPy arrays: Bokeh serializes ndarrays over its binary
+        # protocol, whereas Python lists go out as JSON text.
         build_started_at = time.perf_counter()
-        data_dict = sliced.to_dict(orient='list')
+        data_dict = {}
+        for column in sliced.columns:
+            if column == 'Datetime':
+                continue
+            values = sliced[column].to_numpy()
+            # Non-numeric columns gain nothing from the binary path; hand Bokeh a list
+            # rather than an object-dtype array it would have to unpack anyway.
+            data_dict[column] = values if values.dtype.kind in 'fiub' else values.tolist()
         # Convert Datetime to int64 ms timestamps
-        data_dict['Datetime'] = _to_bokeh_ms(sliced['Datetime']).tolist()
+        data_dict['Datetime'] = _to_bokeh_ms(sliced['Datetime'])
         build_ms = (time.perf_counter() - build_started_at) * 1000
         
         push_started_at = time.perf_counter()
@@ -446,9 +458,12 @@ class ServerDataHandler:
             if position_id is not None:
                 self._spectrogram_chunk_bounds.pop(position_id, None)
             return
-        subset = df[['Datetime', *param_columns]]
+        # Slice rows before selecting columns.  The other order copies every band across
+        # the whole survey (4 days of 1 s data x ~36 bands is ~100 MB) only to discard
+        # all but the viewport, on every pan and zoom.
         slice_started_at = time.perf_counter()
-        sliced = self._slice_by_time(subset, start_ms, end_ms)
+        sliced_rows = self._slice_by_time(df, start_ms, end_ms)
+        sliced = sliced_rows[['Datetime', *param_columns]]
         slice_ms = (time.perf_counter() - slice_started_at) * 1000
         if sliced.empty:
             logger.debug(
@@ -602,10 +617,55 @@ class ServerDataHandler:
                 param,
             )
 
+    def _time_index_ms(self, df: pd.DataFrame) -> Optional[np.ndarray]:
+        """
+        Return a cached int64-ms view of ``df['Datetime']``, or None if it is unusable.
+
+        Converting the Datetime column is O(n) over the whole survey, and the streaming
+        path slices on every pan and zoom.  Building it once per frame turns each slice
+        into a pair of binary searches.  Returns None when the column is not sorted, so
+        callers fall back to the mask path that does not assume ordering.
+        """
+        cache_key = id(df)
+        cached = self._time_index_cache.get(cache_key)
+        # Hold a strong reference to the frame alongside the array so the id() key
+        # cannot be recycled onto a different object while the entry is live.
+        if cached is not None and cached[0] is df:
+            return cached[1]
+
+        # Only a couple of frames per position are ever indexed, but lazy loading
+        # replaces them, and entries hold a strong reference.  Drop the lot rather than
+        # pin superseded frames in memory; a miss only costs one rebuild.
+        if len(self._time_index_cache) >= self._TIME_INDEX_CACHE_LIMIT:
+            self._time_index_cache.clear()
+
+        try:
+            times = _to_bokeh_ms(df['Datetime'])
+        except (TypeError, ValueError) as exc:
+            logger.debug("Could not build time index: %s", exc)
+            self._time_index_cache[cache_key] = (df, None)
+            return None
+
+        if times.size and not np.all(np.diff(times) >= 0):
+            logger.debug("Datetime column is not sorted; using mask-based slicing")
+            self._time_index_cache[cache_key] = (df, None)
+            return None
+
+        self._time_index_cache[cache_key] = (df, times)
+        return times
+
     def _slice_by_time(self, df: pd.DataFrame, start_ms: float, end_ms: float) -> pd.DataFrame:
         if df is None or df.empty or 'Datetime' not in df.columns:
             return df
         start, end = sorted([start_ms, end_ms])
+
+        times_ms = self._time_index_ms(df)
+        if times_ms is not None:
+            # Bounds are inclusive at both ends, matching the mask path below.
+            left = int(np.searchsorted(times_ms, start, side='left'))
+            right = int(np.searchsorted(times_ms, end, side='right'))
+            return df.iloc[left:right]
+
         times = pd.to_datetime(df['Datetime'])
         # Create timezone-aware timestamps to match the data
         start_ts = pd.to_datetime(start, unit='ms', utc=True)

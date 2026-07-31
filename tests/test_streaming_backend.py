@@ -244,6 +244,73 @@ class StreamingBackendTests(unittest.TestCase):
             0,
         )
 
+    def _slice_handler(self):
+        return ServerDataHandler(FakeDoc({}), DummyDataManager({}), CHART_SETTINGS)
+
+    def test_slice_by_time_is_inclusive_at_both_bounds(self):
+        handler = self._slice_handler()
+        frame = self._spectral_frame_at_cadence(1, n_rows=10)
+        times_ms = [int(value.value // 10**6) for value in frame["Datetime"]]
+
+        sliced = handler._slice_by_time(frame, times_ms[2], times_ms[5])
+
+        self.assertEqual(
+            [int(value.value // 10**6) for value in sliced["Datetime"]],
+            times_ms[2:6],
+        )
+
+    def test_slice_by_time_matches_mask_path_on_arbitrary_bounds(self):
+        """The binary-search path must agree with the mask it replaced."""
+        handler = self._slice_handler()
+        frame = self._spectral_frame_at_cadence(1, n_rows=64)
+        times_ms = [int(value.value // 10**6) for value in frame["Datetime"]]
+        first, last = times_ms[0], times_ms[-1]
+
+        bounds = [
+            (first - 5000, first - 1),      # entirely before
+            (last + 1, last + 5000),        # entirely after
+            (first - 5000, last + 5000),    # superset
+            (times_ms[3] + 250, times_ms[9] - 250),  # off-grid interior
+            (times_ms[7], times_ms[7]),     # single instant
+        ]
+
+        for start_ms, end_ms in bounds:
+            with self.subTest(start_ms=start_ms, end_ms=end_ms):
+                fast = handler._slice_by_time(frame, start_ms, end_ms)
+                # Force the fallback by poisoning the cached index for this frame.
+                handler._time_index_cache[id(frame)] = (frame, None)
+                masked = handler._slice_by_time(frame, start_ms, end_ms)
+                handler._time_index_cache.clear()
+
+                self.assertEqual(list(fast.index), list(masked.index))
+
+    def test_slice_by_time_falls_back_when_datetime_unsorted(self):
+        handler = self._slice_handler()
+        frame = self._spectral_frame_at_cadence(1, n_rows=8)
+        shuffled = frame.iloc[[3, 0, 5, 1, 7, 2, 6, 4]].reset_index(drop=True)
+        times_ms = sorted(int(value.value // 10**6) for value in shuffled["Datetime"])
+
+        self.assertIsNone(handler._time_index_ms(shuffled))
+
+        sliced = handler._slice_by_time(shuffled, times_ms[1], times_ms[4])
+
+        self.assertEqual(
+            sorted(int(value.value // 10**6) for value in sliced["Datetime"]),
+            times_ms[1:5],
+        )
+
+    def test_time_index_cache_is_bounded(self):
+        handler = self._slice_handler()
+        frames = [self._spectral_frame_at_cadence(1, n_rows=4) for _ in range(40)]
+
+        for frame in frames:
+            handler._time_index_ms(frame)
+
+        self.assertLessEqual(
+            len(handler._time_index_cache),
+            ServerDataHandler._TIME_INDEX_CACHE_LIMIT,
+        )
+
     def test_prepare_all_spectral_data_keeps_overview_and_log_buffers_identical(self):
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
         overview_times = [base_time + pd.Timedelta(minutes=idx * 5) for idx in range(3)]
@@ -347,7 +414,8 @@ class StreamingBackendTests(unittest.TestCase):
         handler.handle_range_update(self.start_ms, self.end_ms)
 
         timeseries_data = timeseries_log_source.data
-        self.assertEqual(timeseries_data["LAeq"], [50, 52, 54])
+        # Numeric columns stream as NumPy arrays so Bokeh uses its binary protocol.
+        self.assertEqual(list(timeseries_data["LAeq"]), [50, 52, 54])
         self.assertEqual(
             [int(value) for value in timeseries_data["Datetime"]],
             [self.start_ms, self.middle_ms, self.end_ms],
@@ -546,7 +614,7 @@ class StreamingBackendTests(unittest.TestCase):
         handler.handle_range_update(self.start_ms, wide_end_ms)
 
         self.assertIn("Datetime", timeseries_log_source.data)
-        self.assertEqual(timeseries_log_source.data["LAeq"], [50, 52, 54])
+        self.assertEqual(list(timeseries_log_source.data["LAeq"]), [50, 52, 54])
 
     def test_server_data_handler_skips_wide_high_sample_rate_viewport(self):
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
