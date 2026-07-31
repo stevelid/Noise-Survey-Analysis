@@ -270,6 +270,10 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     parameter = 'LAeq',
     initial_dw = null,
     repeated_tail_count = 0,
+    // Live reservoir payloads carry glyph metadata but no pixels: the display chunk is
+    // extracted from levels_flat_transposed, so shipping initial_glyph_data.image would
+    // just duplicate its leading chunk. Opt in to cover the legacy shape.
+    include_image = false,
   } = {}) {
     const times_ms = Array.from({ length: n_times }, (_, t) => start + (t * time_step));
     if (repeated_tail_count > 0 && repeated_tail_count < n_times) {
@@ -286,10 +290,9 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     }
     const frequencies_hz = [100, 200, 300, 400].slice(0, n_freqs);
     const frequency_labels = frequencies_hz.map(hz => `${hz} Hz`);
-    const initImage = levels.slice(0, n_freqs * chunk_time_length);
     const initialDw = initial_dw ?? (chunk_time_length * time_step);
 
-    return {
+    const payload = {
       times_ms: [times_ms],
       levels_flat_transposed: [levels],
       parameter: [parameter],
@@ -305,10 +308,68 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
       initial_glyph_data_y: [[-0.5]],
       initial_glyph_data_dw: [[initialDw]],
       initial_glyph_data_dh: [[n_freqs]],
-      initial_glyph_data_image: [initImage],
       is_reservoir_payload: [true],
     };
+
+    if (include_image) {
+      payload.initial_glyph_data_image = [levels.slice(0, n_freqs * chunk_time_length)];
+    }
+
+    return payload;
   }
+
+  it('reservoir payload without image pixels keeps glyph anchoring and paints from the reservoir', () => {
+    const position = 'P_reservoir_no_image';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    // No prepared overview/log data, so nothing else can supply glyph metadata: this
+    // asserts the reservoir payload's own x/y/dw/dh survive without the pixels.
+    const reservoirSource = buildReservoirLogSource();
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: null } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: { [position]: { log: { data: reservoirSource } } },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const active = dataState.activeSpectralData[position];
+    const rep = active.source_replacement;
+
+    expect(details.type).toBe('log');
+    expect(reservoirSource.initial_glyph_data_image).toBeUndefined();
+    expect(active.initial_glyph_data).toBeTruthy();
+    // The chunk is extracted from the reservoir, not read from the absent pixels.
+    expect(rep.image[0].length).toBe(active.n_freqs * active.chunk_time_length);
+    // y and dh anchor the image to the full-frequency layout; both must survive.
+    expect(rep.y).toEqual([-0.5]);
+    expect(rep.dh).toEqual([4]);
+  });
+
+  it('legacy reservoir payload carrying image pixels still renders', () => {
+    const position = 'P_reservoir_legacy_image';
+    const viewState = { globalViewType: 'log', selectedParameter: 'LAeq', viewport: { min: 1000, max: 1200 } };
+    const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+    const reservoirSource = buildReservoirLogSource({ include_image: true });
+    const models = {
+      preparedGlyphData: {
+        [position]: { overview: { prepared_params: { LAeq: null } }, log: { prepared_params: { LAeq: null } } },
+      },
+      spectrogramSources: { [position]: { log: { data: reservoirSource } } },
+      positionHasLogData: { [position]: true },
+      config: { spectrogram_freq_range_hz: [100, 400], log_view_max_viewport_seconds: 300 },
+    };
+
+    const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
+    const rep = dataState.activeSpectralData[position].source_replacement;
+
+    expect(details.type).toBe('log');
+    expect(reservoirSource.initial_glyph_data_image).toBeDefined();
+    expect(rep.image[0].length).toBe(4 * 3);
+    expect(rep.y).toEqual([-0.5]);
+  });
 
   it('payload normalization handles typed arrays from reservoir', () => {
     const position = 'P_typed';

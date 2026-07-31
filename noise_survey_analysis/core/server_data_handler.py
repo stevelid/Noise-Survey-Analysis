@@ -542,7 +542,9 @@ class ServerDataHandler:
             # Build reservoir payload: send full prepared backing data as NumPy arrays.
             # The browser will extract the display chunk client-side.
             reservoir_times = np.asarray(prepared['times_ms'], dtype=np.float64)
-            reservoir_levels = np.asarray(prepared['levels_flat_transposed'], dtype=np.float32)
+            # Levels are rounded to int16 during preparation; keep that width rather
+            # than upcasting, which doubles the payload for no extra precision.
+            reservoir_levels = np.ascontiguousarray(prepared['levels_flat_transposed'])
             reservoir_n_times = len(reservoir_times)
             reservoir_n_freqs = prepared['n_freqs']
             chunk_time_length = prepared['chunk_time_length']
@@ -573,11 +575,15 @@ class ServerDataHandler:
                 'max_val': [prepared['max_val']],
                 'min_time': [float(reservoir_times[0])],
                 'max_time': [float(reservoir_times[-1])],
+                # Glyph metadata only.  `initial_glyph_data.image` is the leading chunk of
+                # levels_flat_transposed, which is already in this payload, and the client
+                # extracts its display chunk from the reservoir rather than from those
+                # pixels.  Sending them meant a second copy of the same data, serialized
+                # as JSON text instead of a binary buffer.
                 'initial_glyph_data_x': [prepared['initial_glyph_data']['x']],
                 'initial_glyph_data_y': [prepared['initial_glyph_data']['y']],
                 'initial_glyph_data_dw': [prepared['initial_glyph_data']['dw']],
                 'initial_glyph_data_dh': [prepared['initial_glyph_data']['dh']],
-                'initial_glyph_data_image': [prepared['initial_glyph_data']['image'][0].tolist()],
                 'is_reservoir_payload': [True],
             }
             build_ms = (time.perf_counter() - build_started_at) * 1000

@@ -446,7 +446,9 @@ class StreamingBackendTests(unittest.TestCase):
         self.assertIn("initial_glyph_data_y", spectrogram_data)
         self.assertIn("initial_glyph_data_dw", spectrogram_data)
         self.assertIn("initial_glyph_data_dh", spectrogram_data)
-        self.assertIn("initial_glyph_data_image", spectrogram_data)
+        # The pixels are deliberately absent: they duplicate the leading chunk of
+        # levels_flat_transposed, which the client slices its display chunk from.
+        self.assertNotIn("initial_glyph_data_image", spectrogram_data)
 
         # Verify wrapping (list of lists for arrays)
         self.assertEqual(len(spectrogram_data["frequency_labels"]), 1)
@@ -1038,7 +1040,9 @@ class StreamingBackendTests(unittest.TestCase):
 
         self.assertIsInstance(levels, np.ndarray, "levels_flat_transposed should be NumPy array")
         self.assertIsInstance(times_data, np.ndarray, "times_ms should be NumPy array")
-        self.assertEqual(levels.dtype, np.float32, "levels should be float32")
+        # Levels are rounded to int16 during preparation; upcasting only doubled the
+        # payload, so the prepared width is preserved on the wire.
+        self.assertEqual(levels.dtype, np.int16, "levels should stay int16")
         self.assertEqual(times_data.dtype, np.float64, "times should be float64")
 
     def test_reservoir_column_data_source_outer_lengths_valid(self):

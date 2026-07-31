@@ -788,17 +788,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     });
                 }
 
-                // Reconstruct initial_glyph_data from flattened transport fields
+                // Reconstruct initial_glyph_data from flattened transport fields.
+                // Key off the glyph metadata, not the pixels: `y` and `dh` anchor the
+                // image to the full-frequency layout and are always required, whereas
+                // the pixels are only a fallback for payloads with no reservoir. A
+                // reservoir payload therefore omits them and the chunk is extracted
+                // from levels_flat_transposed instead.
                 let initial_glyph_data = null;
-                if (logSourceData.initial_glyph_data_image) {
-                    const imageData = unwrapArray(logSourceData.initial_glyph_data_image);
+                if (logSourceData.initial_glyph_data_dh || logSourceData.initial_glyph_data_image) {
                     initial_glyph_data = {
                         x: logSourceData.initial_glyph_data_x ? logSourceData.initial_glyph_data_x[0] : [0],
                         y: logSourceData.initial_glyph_data_y ? logSourceData.initial_glyph_data_y[0] : [-0.5],
                         dw: logSourceData.initial_glyph_data_dw ? logSourceData.initial_glyph_data_dw[0] : [0],
                         dh: logSourceData.initial_glyph_data_dh ? logSourceData.initial_glyph_data_dh[0] : [0],
-                        image: [imageData]
                     };
+                    if (logSourceData.initial_glyph_data_image) {
+                        initial_glyph_data.image = [unwrapArray(logSourceData.initial_glyph_data_image)];
+                    }
                 }
 
                 return {
