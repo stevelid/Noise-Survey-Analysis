@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2026-07-31
-**Version:** 1.5.0
+**Last Updated:** 2026-08-01
+**Version:** 1.6.0
 
 ---
 
@@ -679,6 +679,33 @@ batched per frame.
 
 ---
 
+### 11.8 Deferred Log Files Load In The Background 🔴
+**Why:** The first zoom into a position used to parse its whole log file on the document
+thread, freezing the dashboard for seconds. It now loads on a worker.
+- [ ] **Setup:** Start with a config whose log files are large (multi-day, 1 s or faster)
+- [ ] **Action:** Enable Log View and zoom in on a position for the first time
+- [ ] **Expected:** The UI stays interactive throughout — hover, pan and the range selector all keep responding
+- [ ] **Expected:** That position shows a "waiting for log data" status rather than freezing
+- [ ] **Expected:** Log data appears by itself when the load finishes, with no further interaction
+- [ ] **Expected:** Server log shows `[LAZY LOAD] Starting background load` then `[LAZY LOAD] Completed`
+
+### 11.9 Panning During A Background Load 🔴
+- [ ] **Action:** Zoom into an unloaded position, then immediately pan somewhere else while it loads
+- [ ] **Expected:** Data appears for **where you ended up**, not where you started
+- [ ] **Expected:** Server log shows `[LAZY LOAD] Refreshing ... at viewport` with the later range
+- [ ] **Test:** Pan back and forth repeatedly during the load
+- [ ] **Expected:** Only one load runs per position (one `Starting background load` line each)
+
+### 11.10 Unreadable Log File Recovers 🔴
+- [ ] **Setup:** Point a config at a log file on a disconnected network drive, or rename it after load
+- [ ] **Action:** Zoom into that position
+- [ ] **Expected:** `[LAZY LOAD] Failed` is logged once; the dashboard stays usable on overview data
+- [ ] **Expected:** No repeated retry storm in the log
+- [ ] **Action:** Restore the file, then navigate away and back
+- [ ] **Expected:** The load is retried and the data appears
+
+---
+
 ## 11b. Audio Seek Responsiveness 🔴 SERVER
 
 **Note:** Seeking inside the recording already loaded no longer reloads media, and
@@ -704,7 +731,16 @@ control commands run off the Bokeh document thread.
 - [ ] **Expected:** Commands apply in the order clicked; final position is the last clicked
 - [ ] **Expected:** No console or server errors
 
-### 11b.4 Playback Rolls Over Between Files 🔴
+### 11b.4 Closing The Tab Mid-Playback 🔴
+**Why:** Session teardown releases VLC. A command still running on the worker would be
+calling into freed resources.
+- [ ] **Action:** Start playback, then close the browser tab while audio is playing
+- [ ] **Expected:** Server logs `Audio handler released.` and `AppCallbacks cleaned up.`
+- [ ] **Expected:** No VLC crash, segfault, or `RuntimeError: cannot schedule new futures after shutdown`
+- [ ] **Test:** Repeat while rapidly clicking to seek, so a command is genuinely in flight
+- [ ] **Expected:** Teardown completes promptly; no `Audio command still running after` warning
+
+### 11b.5 Playback Rolls Over Between Files 🔴
 - [ ] **Setup:** Start playback shortly before the end of an audio file
 - [ ] **Action:** Let it play through the boundary without interacting
 - [ ] **Expected:** Playback continues into the next file automatically
