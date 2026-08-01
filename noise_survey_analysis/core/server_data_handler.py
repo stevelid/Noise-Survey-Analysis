@@ -20,7 +20,6 @@ from noise_survey_analysis.core.config import (
 )
 from noise_survey_analysis.core.data_processors import (
     GlyphDataProcessor,
-    _calculate_spectrogram_log_window_ms,
     _peek_log_file_time_step_ms,
 )
 from noise_survey_analysis.core.data_manager import DataManager
