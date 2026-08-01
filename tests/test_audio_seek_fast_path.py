@@ -1,6 +1,7 @@
 """Audio seek must not reload media it already has open, or block the document thread."""
 import datetime
 import threading
+import time
 import unittest
 from unittest.mock import MagicMock
 
@@ -180,6 +181,152 @@ class AudioCommandDispatchTests(unittest.TestCase):
             self.assertEqual(applied, ['play', 'pause'])
         finally:
             callbacks.cleanup()
+
+
+class AudioCleanupLifecycleTests(unittest.TestCase):
+    """VLC must not be released while a worker thread is still calling into it."""
+
+    def _callbacks(self, audio_handler):
+        return AppCallbacks(
+            doc=MagicMock(),
+            audio_handler=audio_handler,
+            audio_control_source=MagicMock(),
+            audio_status_source=MagicMock(),
+        )
+
+    @staticmethod
+    def _play_command():
+        return ('data', None,
+                {'command': ['play'], 'position_id': ['P1'], 'value': [1704067200000]})
+
+    def test_cleanup_waits_for_an_active_command_before_releasing_vlc(self):
+        audio_handler = MagicMock()
+        audio_handler.audio_available = True
+        audio_handler.current_position = "P1"
+
+        started = threading.Event()
+        finish = threading.Event()
+        order = []
+
+        def slow_play(_timestamp):
+            order.append('play:start')
+            started.set()
+            finish.wait(5)
+            order.append('play:end')
+
+        audio_handler.play.side_effect = slow_play
+        audio_handler.release.side_effect = lambda: order.append('release')
+
+        callbacks = self._callbacks(audio_handler)
+        callbacks._handle_audio_control_command(*self._play_command())
+        self.assertTrue(started.wait(5), "command never started")
+
+        # Release the command shortly after cleanup begins, so cleanup genuinely has to
+        # wait rather than finding it already done.
+        threading.Timer(0.2, finish.set).start()
+        callbacks.cleanup()
+
+        self.assertEqual(order, ['play:start', 'play:end', 'release'])
+
+    def test_cleanup_cancels_queued_commands_and_never_touches_vlc(self):
+        audio_handler = MagicMock()
+        audio_handler.audio_available = True
+        audio_handler.current_position = "P1"
+
+        started = threading.Event()
+        finish = threading.Event()
+        audio_handler.play.side_effect = lambda _ts: (started.set(), finish.wait(5))
+
+        callbacks = self._callbacks(audio_handler)
+        callbacks._handle_audio_control_command(*self._play_command())
+        self.assertTrue(started.wait(5), "first command never started")
+
+        # These queue behind the blocked command.
+        for _ in range(3):
+            callbacks._handle_audio_control_command(
+                'data', None, {'command': ['pause'], 'position_id': ['P1'], 'value': [None]})
+
+        threading.Timer(0.2, finish.set).start()
+        callbacks.cleanup()
+
+        # cleanup() returning is not by itself proof the queued commands were dropped -
+        # without cancellation the worker would still be draining them. Give it a window
+        # to misbehave in before asserting it did not.
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and not audio_handler.pause.called:
+            time.sleep(0.02)
+
+        audio_handler.pause.assert_not_called()
+        audio_handler.release.assert_called_once()
+
+    def test_commands_submitted_after_cleanup_are_ignored(self):
+        audio_handler = MagicMock()
+        audio_handler.audio_available = True
+        audio_handler.current_position = "P1"
+
+        callbacks = self._callbacks(audio_handler)
+        callbacks.cleanup()
+
+        callbacks._handle_audio_control_command(*self._play_command())
+
+        audio_handler.play.assert_not_called()
+
+    def test_cleanup_does_not_hang_when_a_command_never_returns(self):
+        audio_handler = MagicMock()
+        audio_handler.audio_available = True
+        audio_handler.current_position = "P1"
+
+        started = threading.Event()
+        release_forever = threading.Event()
+        audio_handler.play.side_effect = lambda _ts: (started.set(), release_forever.wait(30))
+
+        callbacks = self._callbacks(audio_handler)
+        callbacks.AUDIO_SHUTDOWN_GRACE_SECONDS = 0.3
+        callbacks._handle_audio_control_command(*self._play_command())
+        self.assertTrue(started.wait(5), "command never started")
+
+        try:
+            began = time.monotonic()
+            callbacks.cleanup()
+            elapsed = time.monotonic() - began
+            # Bounded by the grace period rather than the stuck command.
+            self.assertLess(elapsed, 5)
+            audio_handler.release.assert_called_once()
+        finally:
+            release_forever.set()
+
+    def test_cleanup_from_the_worker_thread_does_not_deadlock(self):
+        audio_handler = MagicMock()
+        audio_handler.audio_available = True
+        audio_handler.current_position = "P1"
+
+        callbacks = self._callbacks(audio_handler)
+        finished = threading.Event()
+        errors = []
+
+        def cleanup_from_worker(_timestamp):
+            try:
+                callbacks.cleanup()
+            except Exception as exc:  # pragma: no cover - failure path
+                errors.append(exc)
+            finally:
+                finished.set()
+
+        audio_handler.play.side_effect = cleanup_from_worker
+        callbacks._handle_audio_control_command(*self._play_command())
+
+        self.assertTrue(finished.wait(5), "cleanup deadlocked on its own executor")
+        self.assertEqual(errors, [])
+
+    def test_cleanup_is_safe_to_call_twice(self):
+        audio_handler = MagicMock()
+        audio_handler.audio_available = True
+
+        callbacks = self._callbacks(audio_handler)
+        callbacks.cleanup()
+        callbacks.cleanup()
+
+        self.assertEqual(audio_handler.release.call_count, 2)
 
 
 if __name__ == "__main__":

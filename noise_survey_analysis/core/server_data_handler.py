@@ -1,6 +1,8 @@
 import logging
+import threading
 import time
 from bisect import bisect_left
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Optional
 
 import numpy as np
@@ -56,6 +58,16 @@ class ServerDataHandler:
         self._range_update_counter = 0
         self._display_buffer_width = {}  # position_id -> pinned Image glyph buffer width
         self._time_index_cache = {}  # id(df) -> (df, int64 ms array or None)
+        self._last_requested_range = None  # newest viewport, for deferred refreshes
+        self._disposed = False
+        self._lazy_load_lock = threading.Lock()
+        self._lazy_load_in_flight = set()
+        self._lazy_load_failed = set()
+        # Serialized: log files usually sit on a network drive, and loading several
+        # multi-day files at once spikes memory without helping the user.
+        self._lazy_load_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix='nsa-lazy-load'
+        )
 
     def _collect_position_models(self) -> Dict[str, Dict[str, object]]:
         models: Dict[str, Dict[str, object]] = {}
@@ -144,6 +156,9 @@ class ServerDataHandler:
 
         self._range_update_counter += 1
         request_id = self._range_update_counter
+        # Remembered so a background lazy load that finishes later refreshes against the
+        # viewport the user is actually looking at, not the one that triggered it.
+        self._last_requested_range = (start_ms, end_ms)
         viewport_width_ms = abs(end_ms - start_ms)
         viewport_width_seconds = viewport_width_ms / 1000
         logger.debug(
@@ -261,12 +276,15 @@ class ServerDataHandler:
         # Use getattr for backward compatibility with cached PositionData objects
         log_data_loaded = getattr(position_data, '_log_data_loaded', False)
         log_file_paths = getattr(position_data, 'log_file_paths', [])
-        
+
         if not log_data_loaded and log_file_paths:
-            logger.info(f"[LAZY LOAD] Triggering lazy load for {position_id}")
-            lazy_load_started_at = time.perf_counter()
-            position_data.load_log_data_lazy(self.app_data.parser_factory, self.app_data.use_cache)
-            lazy_load_ms = (time.perf_counter() - lazy_load_started_at) * 1000
+            # Parsing a multi-day log file takes seconds. Bokeh runs document callbacks
+            # on a single IOLoop, so doing it here freezes the whole dashboard until it
+            # finishes. Start it in the background and leave this position on overview
+            # data; the client already shows a "waiting for log data" status while its
+            # log source is empty. The load re-enters this method when it completes.
+            self._ensure_lazy_load_started(position_id, position_data)
+            return
 
         if viewport_start_ms is None:
             viewport_start_ms = start_ms
@@ -373,6 +391,89 @@ class ServerDataHandler:
             push_ms,
             (time.perf_counter() - update_started_at) * 1000,
         )
+
+    def _ensure_lazy_load_started(self, position_id: str, position_data) -> None:
+        """
+        Kick off this position's deferred log parse in the background, at most once.
+
+        Source files often live on a network drive, so the loads are serialized through a
+        single worker rather than run in parallel. When one finishes it re-runs the range
+        update on the document thread, using the viewport current at that moment - the
+        user has usually kept panning while it was loading.
+        """
+        if self._disposed:
+            return
+        with self._lazy_load_lock:
+            if position_id in self._lazy_load_in_flight:
+                return
+            self._lazy_load_in_flight.add(position_id)
+            if position_id in self._lazy_load_failed:
+                # A previous attempt raised. Retry, but only because the user has
+                # navigated here again, not in a tight loop.
+                self._lazy_load_failed.discard(position_id)
+
+        logger.info("[LAZY LOAD] Starting background load for %s", position_id)
+        self._lazy_load_executor.submit(self._run_lazy_load, position_id, position_data)
+
+    def _run_lazy_load(self, position_id: str, position_data) -> None:
+        started_at = time.perf_counter()
+        succeeded = False
+        try:
+            position_data.load_log_data_lazy(self.app_data.parser_factory, self.app_data.use_cache)
+            succeeded = True
+            logger.info(
+                "[LAZY LOAD] Completed for %s in %.0f ms",
+                position_id,
+                (time.perf_counter() - started_at) * 1000,
+            )
+        except Exception:
+            logger.error("[LAZY LOAD] Failed for %s", position_id, exc_info=True)
+        finally:
+            with self._lazy_load_lock:
+                self._lazy_load_in_flight.discard(position_id)
+                if not succeeded:
+                    self._lazy_load_failed.add(position_id)
+
+        if succeeded:
+            self._schedule_refresh_after_lazy_load(position_id)
+
+    def _schedule_refresh_after_lazy_load(self, position_id: str) -> None:
+        """Re-run the range update on the document thread once loaded data is available."""
+        if self._disposed:
+            return
+
+        pending = self._last_requested_range
+        if pending is None:
+            logger.debug("[LAZY LOAD] No viewport recorded for %s; nothing to refresh", position_id)
+            return
+
+        def refresh():
+            if self._disposed:
+                return
+            # Read the range again here rather than closing over the one captured above:
+            # the user may have panned between the load finishing and this callback running.
+            latest = self._last_requested_range
+            if latest is None:
+                return
+            logger.info("[LAZY LOAD] Refreshing %s at viewport %s", position_id, latest)
+            try:
+                self.handle_range_update(*latest)
+            except Exception:
+                logger.error("[LAZY LOAD] Refresh failed for %s", position_id, exc_info=True)
+
+        try:
+            self.doc.add_next_tick_callback(refresh)
+        except Exception:
+            # The session can be torn down while a load is in flight.
+            logger.debug("[LAZY LOAD] Could not schedule refresh for %s", position_id, exc_info=True)
+
+    def cleanup(self) -> None:
+        """Release background workers. Safe to call more than once."""
+        self._disposed = True
+        try:
+            self._lazy_load_executor.shutdown(wait=False)
+        except Exception as exc:
+            logger.warning("Error shutting down lazy load executor: %s", exc)
 
     def _resolve_display_buffer_width(self, position_id: str, model_bundle: Dict[str, object]) -> Optional[int]:
         """
