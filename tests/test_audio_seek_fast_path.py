@@ -271,14 +271,19 @@ class AudioCleanupLifecycleTests(unittest.TestCase):
 
         audio_handler.play.assert_not_called()
 
-    def test_cleanup_does_not_hang_when_a_command_never_returns(self):
+    def test_cleanup_defers_release_when_a_command_outlives_the_grace_period(self):
+        """A wedged command still owns the VLC player, so cleanup must not free it.
+
+        Releasing on timeout would recreate the very race the grace period exists to
+        avoid. Ownership passes to the command: whoever finishes last releases.
+        """
         audio_handler = MagicMock()
         audio_handler.audio_available = True
         audio_handler.current_position = "P1"
 
         started = threading.Event()
-        release_forever = threading.Event()
-        audio_handler.play.side_effect = lambda _ts: (started.set(), release_forever.wait(30))
+        let_it_finish = threading.Event()
+        audio_handler.play.side_effect = lambda _ts: (started.set(), let_it_finish.wait(30))
 
         callbacks = self._callbacks(audio_handler)
         callbacks.AUDIO_SHUTDOWN_GRACE_SECONDS = 0.3
@@ -289,11 +294,65 @@ class AudioCleanupLifecycleTests(unittest.TestCase):
             began = time.monotonic()
             callbacks.cleanup()
             elapsed = time.monotonic() - began
-            # Bounded by the grace period rather than the stuck command.
+
+            # Teardown is bounded by the grace period, not by the stuck command.
             self.assertLess(elapsed, 5)
-            audio_handler.release.assert_called_once()
+            # ...and VLC is still alive, because the command is still using it.
+            audio_handler.release.assert_not_called()
         finally:
-            release_forever.set()
+            let_it_finish.set()
+
+        # Once the command finally returns, it hands the resources back.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not audio_handler.release.called:
+            time.sleep(0.02)
+        audio_handler.release.assert_called_once()
+
+    def test_a_command_that_never_finishes_leaves_vlc_alive(self):
+        """Leaking a player beats freeing one a live thread is still calling into."""
+        audio_handler = MagicMock()
+        audio_handler.audio_available = True
+        audio_handler.current_position = "P1"
+
+        started = threading.Event()
+        wedged = threading.Event()
+        audio_handler.play.side_effect = lambda _ts: (started.set(), wedged.wait(30))
+
+        callbacks = self._callbacks(audio_handler)
+        callbacks.AUDIO_SHUTDOWN_GRACE_SECONDS = 0.2
+        callbacks._handle_audio_control_command(*self._play_command())
+        self.assertTrue(started.wait(5), "command never started")
+
+        try:
+            callbacks.cleanup()
+            time.sleep(0.4)
+            audio_handler.release.assert_not_called()
+        finally:
+            wedged.set()
+
+    def test_release_happens_exactly_once_when_a_deferred_command_finishes(self):
+        audio_handler = MagicMock()
+        audio_handler.audio_available = True
+        audio_handler.current_position = "P1"
+
+        started = threading.Event()
+        let_it_finish = threading.Event()
+        audio_handler.play.side_effect = lambda _ts: (started.set(), let_it_finish.wait(30))
+
+        callbacks = self._callbacks(audio_handler)
+        callbacks.AUDIO_SHUTDOWN_GRACE_SECONDS = 0.2
+        callbacks._handle_audio_control_command(*self._play_command())
+        self.assertTrue(started.wait(5), "command never started")
+
+        callbacks.cleanup()
+        callbacks.cleanup()  # A second teardown must not double-release either.
+        let_it_finish.set()
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not audio_handler.release.called:
+            time.sleep(0.02)
+        time.sleep(0.2)
+        self.assertEqual(audio_handler.release.call_count, 1)
 
     def test_cleanup_from_the_worker_thread_does_not_deadlock(self):
         audio_handler = MagicMock()
@@ -318,7 +377,7 @@ class AudioCleanupLifecycleTests(unittest.TestCase):
         self.assertTrue(finished.wait(5), "cleanup deadlocked on its own executor")
         self.assertEqual(errors, [])
 
-    def test_cleanup_is_safe_to_call_twice(self):
+    def test_cleanup_is_safe_to_call_twice_and_releases_once(self):
         audio_handler = MagicMock()
         audio_handler.audio_available = True
 
@@ -326,7 +385,8 @@ class AudioCleanupLifecycleTests(unittest.TestCase):
         callbacks.cleanup()
         callbacks.cleanup()
 
-        self.assertEqual(audio_handler.release.call_count, 2)
+        # Freeing a VLC player twice is its own hazard.
+        self.assertEqual(audio_handler.release.call_count, 1)
 
 
 if __name__ == "__main__":

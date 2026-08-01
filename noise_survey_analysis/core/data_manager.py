@@ -314,20 +314,33 @@ class PositionData:
             if parsed_data_obj.spectral_df is not None:
                 self.log_spectral = self._merge_df(self.log_spectral, parsed_data_obj.spectral_df)
 
-    def load_log_data_lazy(self, parser_factory, use_cache: bool = True) -> None:
+    def load_log_data_lazy(self, parser_factory, use_cache: bool = True) -> bool:
         """
         Load log data on-demand from stored file paths.
         This is called by ServerDataHandler when streaming is first triggered.
         Preserves the exact same data format as the old eager loading approach.
+
+        Returns:
+            True if at least one file was loaded, False if every file failed. Callers
+            use this to decide whether the position can be retried later - a network
+            share that was unavailable may come back, and a position that silently
+            reported success could never recover.
+
+        Partial success counts as loaded: usable data beats none, and re-running would
+        re-parse the files that did work. The failures are logged individually and
+        summarized, so a missing file is visible rather than silent.
         """
         if self._log_data_loaded:
             logger.debug(f"Log data already loaded for {self.name}, skipping lazy load")
-            return
-        
+            return True
+
         if not self.log_file_paths:
             logger.debug(f"No log file paths stored for {self.name}, nothing to load")
-            return
-        
+            return False
+
+        loaded_files: List[str] = []
+        failed_files: List[str] = []
+
         logger.info(f"[LAZY LOAD] Loading log data for {self.name} from {len(self.log_file_paths)} file(s)")
         load_started_at = time.perf_counter()
         total_parse_ms = 0.0
@@ -389,6 +402,7 @@ class PositionData:
                         (time.perf_counter() - file_started_at) * 1000,
                     )
                     logger.info(f"[LAZY LOAD] Loaded {file_path} for {self.name} (cache hit)")
+                    loaded_files.append(file_path)
                     continue
 
                 parser_lookup_started_at = time.perf_counter()
@@ -401,6 +415,7 @@ class PositionData:
                 total_parser_lookup_ms += parser_lookup_ms
                 if not parser:
                     logger.warning(f"[LAZY LOAD] No suitable parser for {file_path}")
+                    failed_files.append(file_path)
                     continue
 
                 parse_started_at = time.perf_counter()
@@ -434,12 +449,37 @@ class PositionData:
                         (time.perf_counter() - file_started_at) * 1000,
                     )
                     logger.info(f"[LAZY LOAD] Loaded {file_path} for {self.name}")
+                    loaded_files.append(file_path)
                 else:
                     logger.warning(f"[LAZY LOAD] Failed to parse {file_path}")
-                    
+                    failed_files.append(file_path)
+
             except Exception as e:
                 logger.error(f"[LAZY LOAD] Error loading {file_path}: {e}")
-        
+                failed_files.append(file_path)
+
+        if not loaded_files:
+            # Every file failed. Leave _log_data_loaded unset so the position stays
+            # eligible for a retry once whatever broke - an unmounted share, a locked
+            # file - is fixed.
+            logger.error(
+                "[LAZY LOAD] No log files could be loaded for %s (%s attempted); "
+                "leaving the position unloaded so it can be retried",
+                self.name,
+                len(failed_files),
+            )
+            return False
+
+        if failed_files:
+            logger.warning(
+                "[LAZY LOAD] Partial load for %s: %s of %s file(s) failed (%s). "
+                "Continuing with the data that loaded.",
+                self.name,
+                len(failed_files),
+                len(self.log_file_paths),
+                ', '.join(os.path.basename(path) for path in failed_files),
+            )
+
         self._log_data_loaded = True
         logger.info(
             "[LAZY LOAD PERF] position=%s files=%s cache_hits=%s cache_misses=%s cache_lookup_ms=%.1f parser_lookup_ms=%.1f parse_ms=%.1f merge_ms=%.1f cache_put_ms=%.1f total_ms=%.1f",
@@ -455,6 +495,7 @@ class PositionData:
             (time.perf_counter() - load_started_at) * 1000,
         )
         logger.info(f"[LAZY LOAD] Completed for {self.name}. Log totals: {self.log_totals.shape if self.log_totals is not None else 'None'}, Log spectral: {self.log_spectral.shape if self.log_spectral is not None else 'None'}")
+        return True
 
 
 # ==============================================================================

@@ -76,6 +76,8 @@ class AppCallbacks:
         self._audio_commands_lock = threading.Lock()
         self._pending_audio_commands = set()
         self._audio_shutdown = False
+        self._audio_release_lock = threading.Lock()
+        self._audio_released = False
 
         if not self.audio_handler:
             logger.info("AppCallbacks initialized without audio handler. Audio features disabled.")
@@ -371,6 +373,11 @@ class AppCallbacks:
         command still running on the worker would be calling into freed resources.
         Queued commands are cancelled, and the flag makes any that already escaped
         cancellation return without touching VLC.
+
+        Returns:
+            The futures still running when the grace period expired. The caller must not
+            release VLC while any of these are outstanding - they hand ownership of the
+            release to the command itself.
         """
         with self._audio_commands_lock:
             self._audio_shutdown = True
@@ -379,15 +386,17 @@ class AppCallbacks:
         for future in pending:
             future.cancel()  # No-op for the one already running.
 
+        still_running = []
         if threading.current_thread().name.startswith(self._AUDIO_THREAD_PREFIX):
             # Waiting on our own executor would deadlock. Only reachable if a command
             # somehow triggers session teardown.
             logger.warning("Audio command shutdown requested from the worker; skipping wait.")
         elif pending:
-            _, still_running = futures_wait(pending, timeout=self.AUDIO_SHUTDOWN_GRACE_SECONDS)
+            _, unfinished = futures_wait(pending, timeout=self.AUDIO_SHUTDOWN_GRACE_SECONDS)
+            still_running = list(unfinished)
             if still_running:
                 logger.warning(
-                    "Audio command still running after %.1fs; releasing VLC regardless.",
+                    "Audio command still running after %.1fs; deferring VLC release to it.",
                     self.AUDIO_SHUTDOWN_GRACE_SECONDS,
                 )
 
@@ -396,22 +405,66 @@ class AppCallbacks:
         except Exception as e:
             logger.warning(f"Error shutting down audio command executor: {e}")
 
+        return still_running
+
+    def _release_audio_handler_once(self):
+        """
+        Release the VLC handler, at most once across every caller.
+
+        Both cleanup() and the deferred completion callback can reach here, and freeing
+        VLC twice is its own hazard.
+        """
+        if not self.audio_handler:
+            return
+        with self._audio_release_lock:
+            if self._audio_released:
+                return
+            self._audio_released = True
+        try:
+            self.audio_handler.release()
+            logger.info("Audio handler released.")
+        except Exception as e:
+            logger.warning(f"Error releasing audio handler: {e}")
+
+    def _release_audio_when_commands_finish(self, outstanding):
+        """
+        Hand the release to the commands still holding VLC.
+
+        Whichever finishes last releases. If one never finishes we deliberately keep the
+        player and instance alive: leaking them is far safer than freeing memory that a
+        live thread is still calling into.
+        """
+        remaining = {'count': len(outstanding)}
+        guard = threading.Lock()
+
+        def on_done(_future):
+            with guard:
+                remaining['count'] -= 1
+                last = remaining['count'] == 0
+            if last:
+                logger.info("Deferred audio command finished; releasing VLC now.")
+                self._release_audio_handler_once()
+
+        for future in outstanding:
+            future.add_done_callback(on_done)
+
     def cleanup(self):
         """Cleans up resources when the session is destroyed."""
         self._stop_periodic_update()
-        # Must precede audio_handler.release() below.
-        self._shutdown_audio_commands()
+        # Must precede any release below: a command still on the worker owns VLC.
+        outstanding = self._shutdown_audio_commands()
         if self.server_data_handler is not None and hasattr(self.server_data_handler, 'cleanup'):
             try:
                 self.server_data_handler.cleanup()
             except Exception as e:
                 logger.warning(f"Error cleaning up server data handler: {e}")
-        if self.audio_handler:
-            try:
-                self.audio_handler.release()
-                logger.info("Audio handler released.")
-            except Exception as e:
-                logger.warning(f"Error releasing audio handler: {e}")
+
+        if outstanding:
+            # A command outlived the grace period. It still owns the player, so it - not
+            # us - performs the release when it finishes.
+            self._release_audio_when_commands_finish(outstanding)
+        else:
+            self._release_audio_handler_once()
         logger.info("AppCallbacks cleaned up.")
 
     def set_server_data_handler(self, server_data_handler):

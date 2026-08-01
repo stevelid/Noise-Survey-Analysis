@@ -298,6 +298,7 @@ class StreamingBackendTests(unittest.TestCase):
             started.set()
             release.wait(5)
             position._log_data_loaded = True
+            return True
 
         position.load_log_data_lazy = slow_load
         caller = threading.current_thread()
@@ -326,6 +327,7 @@ class StreamingBackendTests(unittest.TestCase):
             started.set()
             release.wait(5)
             position._log_data_loaded = True
+            return True
 
         position.load_log_data_lazy = slow_load
 
@@ -357,6 +359,7 @@ class StreamingBackendTests(unittest.TestCase):
             started.set()
             release.wait(5)
             position._log_data_loaded = True
+            return True
 
         position.load_log_data_lazy = slow_load
 
@@ -396,6 +399,7 @@ class StreamingBackendTests(unittest.TestCase):
                 "LAeq": [50 + (idx % 7) for idx in range(len(times))],
             })
             position._log_data_loaded = True
+            return True
 
         position.load_log_data_lazy = load
 
@@ -412,6 +416,197 @@ class StreamingBackendTests(unittest.TestCase):
         self.assertGreater(len(source.data.get("Datetime", [])), 0,
                            "log data never reached the source after the load completed")
         self.assertEqual(list(source.data["LAeq"])[:3], [50, 51, 52])
+
+    def test_real_load_reports_failure_when_every_file_is_unreadable(self):
+        """Exercises the real load_log_data_lazy, not a stub that raises.
+
+        The method absorbs per-file errors, so it used to return normally with
+        _log_data_loaded set even when nothing had loaded. The handler then saw success
+        and would never retry once an unavailable share came back.
+        """
+        position = PositionData(name="P_real_fail")
+        position.log_file_paths = [{
+            "file_path": "/definitely/not/here/missing_log.csv",
+            "parser_type": "Svan",
+            "return_all_cols": False,
+        }]
+
+        parser_factory = MagicMock()
+        parser_factory.get_parser.return_value = None  # No parser will touch this path.
+
+        result = position.load_log_data_lazy(parser_factory, use_cache=False)
+
+        self.assertFalse(result, "a total failure must not report success")
+        self.assertFalse(position._log_data_loaded, "must stay eligible for a retry")
+        self.assertFalse(position.has_log_totals)
+        self.assertFalse(position.has_log_spectral)
+
+    def test_real_load_reports_failure_when_the_parser_raises(self):
+        position = PositionData(name="P_real_raise")
+        position.log_file_paths = [{
+            "file_path": "unreadable_log.csv",
+            "parser_type": "Svan",
+            "return_all_cols": False,
+        }]
+
+        parser = MagicMock()
+        parser.parse.side_effect = IOError("network share went away")
+        parser_factory = MagicMock()
+        parser_factory.get_parser.return_value = parser
+
+        result = position.load_log_data_lazy(parser_factory, use_cache=False)
+
+        self.assertFalse(result)
+        self.assertFalse(position._log_data_loaded)
+
+    def test_real_load_counts_partial_multi_file_success_as_loaded(self):
+        """One good file out of two is usable data; re-parsing the good one helps nobody."""
+        position = PositionData(name="P_partial")
+        position.log_file_paths = [
+            {"file_path": "good_log.csv", "parser_type": "Svan", "return_all_cols": False},
+            {"file_path": "bad_log.csv", "parser_type": "Svan", "return_all_cols": False},
+        ]
+
+        base = pd.Timestamp("2024-01-01T00:00:00Z")
+        good = ParsedData(
+            totals_df=pd.DataFrame({
+                "Datetime": [base, base + pd.Timedelta(seconds=1)],
+                "LAeq": [50, 51],
+            }),
+            original_file_path="good_log.csv",
+            parser_type="Svan",
+            data_profile="log",
+            sample_period_seconds=1.0,
+        )
+
+        good_parser = MagicMock()
+        good_parser.parse.return_value = good
+        good_parser.timezone = None
+        bad_parser = MagicMock()
+        bad_parser.parse.side_effect = ValueError("corrupt file")
+
+        parser_factory = MagicMock()
+        parser_factory.get_parser.side_effect = lambda path, **kwargs: (
+            good_parser if path == "good_log.csv" else bad_parser
+        )
+
+        result = position.load_log_data_lazy(parser_factory, use_cache=False)
+
+        self.assertTrue(result, "partial success should still surface the data we have")
+        self.assertTrue(position._log_data_loaded)
+        self.assertEqual(position.log_totals["LAeq"].tolist(), [50, 51])
+
+    def test_unreadable_real_load_is_retried_after_the_file_is_restored(self):
+        """The end-to-end recovery path: share goes away, comes back, user revisits."""
+        name = "P_restore"
+        position = PositionData(name=name)
+        position.log_file_paths = [{
+            "file_path": "flaky_log.csv",
+            "parser_type": "Svan",
+            "return_all_cols": False,
+        }]
+        doc, handler = self._lazy_handler(position, name)
+
+        base = pd.Timestamp("2024-01-01T00:00:00Z")
+        times = [base + pd.Timedelta(seconds=idx) for idx in range(30)]
+        restored = ParsedData(
+            totals_df=pd.DataFrame({"Datetime": times, "LAeq": list(range(50, 80))}),
+            original_file_path="flaky_log.csv",
+            parser_type="Svan",
+            data_profile="log",
+            sample_period_seconds=1.0,
+        )
+
+        available = {'ok': False}
+        parser = MagicMock()
+        parser.timezone = None
+
+        def parse(*_args, **_kwargs):
+            if not available['ok']:
+                raise IOError("share unavailable")
+            return restored
+
+        parser.parse.side_effect = parse
+        handler.app_data.parser_factory.get_parser.return_value = parser
+        handler.app_data.use_cache = False
+
+        start_ms = int(times[0].value // 10**6)
+        end_ms = int(times[-1].value // 10**6)
+        source = doc.get_model_by_name(f"source_{name}_timeseries_log")
+
+        # First visit: the share is down.
+        handler.handle_range_update(start_ms, end_ms)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not parser.parse.called:
+            time.sleep(0.02)
+        self.assertFalse(position._log_data_loaded)
+        self.assertEqual(len(doc._next_tick_callbacks), 0, "a failed load must not refresh")
+
+        # The share comes back and the user navigates here again.
+        available['ok'] = True
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not position._log_data_loaded:
+            handler.handle_range_update(start_ms, end_ms)
+            time.sleep(0.05)
+
+        self.assertTrue(position._log_data_loaded, "retry never succeeded after restore")
+        self.assertTrue(doc.next_tick_event.wait(5), "no refresh after the successful retry")
+        doc.flush_next_ticks()
+        self.assertGreater(len(source.data.get("Datetime", [])), 0)
+
+    def test_queued_position_loads_never_start_after_cleanup(self):
+        """Loads are serialized, so the queue must be cancelled, not left to drain."""
+        first = self._deferred_position("P_a")
+        second = self._deferred_position("P_b")
+        doc = FakeDoc({
+            "source_P_a_timeseries_log": ColumnDataSource(data={}),
+            "source_P_b_timeseries_log": ColumnDataSource(data={}),
+            "figure_P_a_timeseries": DummyFigure(width=320),
+            "figure_P_b_timeseries": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(
+            doc, DummyDataManager({"P_a": first, "P_b": second}), CHART_SETTINGS
+        )
+        self.addCleanup(handler.cleanup)
+
+        started_first = threading.Event()
+        let_first_finish = threading.Event()
+        second_started = threading.Event()
+
+        def slow_first(_factory, _use_cache):
+            started_first.set()
+            let_first_finish.wait(5)
+            first._log_data_loaded = True
+            return True
+
+        def should_not_run(_factory, _use_cache):
+            second_started.set()
+            second._log_data_loaded = True
+            return True
+
+        first.load_log_data_lazy = slow_first
+        second.load_log_data_lazy = should_not_run
+
+        # One range update queues both positions behind the single worker.
+        handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+        self.assertTrue(started_first.wait(5), "first load never started")
+
+        handler.cleanup()
+        let_first_finish.set()
+
+        # The second was still queued when the session closed; it must never begin.
+        self.assertFalse(second_started.wait(1.0),
+                         "a queued multi-day parse started after cleanup")
+
+    def test_repeated_handler_cleanup_is_safe(self):
+        position = self._deferred_position("P_twice")
+        doc, handler = self._lazy_handler(position, "P_twice")
+        position.load_log_data_lazy = lambda _f, _c: True
+
+        handler.cleanup()
+        handler.cleanup()
+
+        self.assertTrue(handler._disposed)
 
     def test_failed_lazy_load_does_not_wedge_or_refresh(self):
         position = self._deferred_position()
@@ -452,6 +647,7 @@ class StreamingBackendTests(unittest.TestCase):
             started.set()
             release.wait(5)
             position._log_data_loaded = True
+            return True
 
         position.load_log_data_lazy = slow_load
 

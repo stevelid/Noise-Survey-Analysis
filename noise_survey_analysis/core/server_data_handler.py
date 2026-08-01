@@ -64,6 +64,7 @@ class ServerDataHandler:
         self._lazy_load_lock = threading.Lock()
         self._lazy_load_in_flight = set()
         self._lazy_load_failed = set()
+        self._lazy_load_futures = set()
         # Serialized: log files usually sit on a network drive, and loading several
         # multi-day files at once spikes memory without helping the user.
         self._lazy_load_executor = ThreadPoolExecutor(
@@ -417,25 +418,48 @@ class ServerDataHandler:
             if position_id in self._lazy_load_in_flight:
                 return
             self._lazy_load_in_flight.add(position_id)
-            if position_id in self._lazy_load_failed:
-                # A previous attempt raised. Retry, but only because the user has
-                # navigated here again, not in a tight loop.
-                self._lazy_load_failed.discard(position_id)
+            # Retried only because the user navigated back here, never in a tight loop.
+            retrying = position_id in self._lazy_load_failed
+            self._lazy_load_failed.discard(position_id)
 
-        logger.info("[LAZY LOAD] Starting background load for %s", position_id)
-        self._lazy_load_executor.submit(self._run_lazy_load, position_id, position_data)
+        logger.info(
+            "[LAZY LOAD] %s background load for %s",
+            "Retrying" if retrying else "Starting",
+            position_id,
+        )
+        try:
+            future = self._lazy_load_executor.submit(self._run_lazy_load, position_id, position_data)
+        except RuntimeError:
+            # The executor was shut down between the disposed check and here.
+            logger.debug("[LAZY LOAD] Executor closed; not starting %s", position_id)
+            with self._lazy_load_lock:
+                self._lazy_load_in_flight.discard(position_id)
+            return
+        with self._lazy_load_lock:
+            self._lazy_load_futures.add(future)
+        future.add_done_callback(self._forget_lazy_load_future)
+
+    def _forget_lazy_load_future(self, future) -> None:
+        with self._lazy_load_lock:
+            self._lazy_load_futures.discard(future)
 
     def _run_lazy_load(self, position_id: str, position_data) -> None:
         started_at = time.perf_counter()
         succeeded = False
         try:
-            position_data.load_log_data_lazy(self.app_data.parser_factory, self.app_data.use_cache)
-            succeeded = True
-            logger.info(
-                "[LAZY LOAD] Completed for %s in %.0f ms",
-                position_id,
-                (time.perf_counter() - started_at) * 1000,
+            # load_log_data_lazy absorbs per-file errors, so its return value - not the
+            # absence of an exception - is what says whether any data arrived.
+            succeeded = bool(
+                position_data.load_log_data_lazy(self.app_data.parser_factory, self.app_data.use_cache)
             )
+            if succeeded:
+                logger.info(
+                    "[LAZY LOAD] Completed for %s in %.0f ms",
+                    position_id,
+                    (time.perf_counter() - started_at) * 1000,
+                )
+            else:
+                logger.error("[LAZY LOAD] Loaded no data for %s; will retry if revisited", position_id)
         except Exception:
             logger.error("[LAZY LOAD] Failed for %s", position_id, exc_info=True)
         finally:
@@ -478,8 +502,27 @@ class ServerDataHandler:
             logger.debug("[LAZY LOAD] Could not schedule refresh for %s", position_id, exc_info=True)
 
     def cleanup(self) -> None:
-        """Release background workers. Safe to call more than once."""
+        """
+        Release background workers. Safe to call more than once.
+
+        Loads are queued one behind another, so without explicit cancellation the
+        remaining positions would each start a multi-day parse after the session had
+        already closed. A parse already under way is left to finish - interrupting it is
+        not possible - but `_disposed` stops it publishing to the dead document.
+        """
         self._disposed = True
+        with self._lazy_load_lock:
+            pending = list(self._lazy_load_futures)
+
+        cancelled = [future for future in pending if future.cancel()]
+        if cancelled:
+            # A cancelled job never runs _run_lazy_load, so it would otherwise leave its
+            # position marked in-flight forever.
+            logger.info("[LAZY LOAD] Cancelled %s queued load(s) during cleanup", len(cancelled))
+            with self._lazy_load_lock:
+                for future in cancelled:
+                    self._lazy_load_futures.discard(future)
+
         try:
             self._lazy_load_executor.shutdown(wait=False)
         except Exception as exc:
