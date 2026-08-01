@@ -52,6 +52,7 @@ from noise_survey_analysis.core.config import (
     UI_LAYOUT_SETTINGS,
 )
 from noise_survey_analysis.core.data_manager import PositionData
+from noise_survey_analysis.core.utils import to_bokeh_ms
 from noise_survey_analysis.core.data_processors import GlyphDataProcessor
 
 
@@ -60,12 +61,9 @@ logger = logging.getLogger(__name__)
 SIDE_PANEL_WIDTH = UI_LAYOUT_SETTINGS.get('side_panel_width', 320)
 
 
-def _datetime_series_to_bokeh_ms(values) -> pd.Series:
+def _datetime_series_to_bokeh_ms(values) -> np.ndarray:
     """Convert datetimes to Bokeh datetime milliseconds independent of numpy unit."""
-    dt = pd.Series(pd.to_datetime(values, utc=True))
-    return (
-        dt.dt.tz_convert("UTC").dt.tz_localize(None).astype("datetime64[ns]").astype("int64") // 10**6
-    ).to_numpy()
+    return to_bokeh_ms(values)
 
 
 class RegionPanelComponent:

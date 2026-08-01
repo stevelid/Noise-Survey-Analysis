@@ -15,16 +15,14 @@ project_root = current_file.parent.parent.parent  # Go up to "Noise Survey Analy
 sys.path.insert(0, str(project_root))
 
 from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETTINGS
+from noise_survey_analysis.core.utils import to_bokeh_ms
 from noise_survey_analysis.core.data_manager import PositionData
 
 logger = logging.getLogger(__name__)
 
 
-def _to_bokeh_ms(values) -> pd.Series:
-    dt = pd.Series(pd.to_datetime(values, utc=True))
-    return (
-        dt.dt.tz_convert("UTC").dt.tz_localize(None).astype("datetime64[ns]").astype("int64") // 10**6
-    ).to_numpy()
+def _to_bokeh_ms(values) -> np.ndarray:
+    return to_bokeh_ms(values)
 
 
 def _peek_log_file_time_step_ms(log_file_paths: list) -> float:

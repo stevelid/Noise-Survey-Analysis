@@ -1,8 +1,46 @@
 import logging
 import os
+
+import numpy as np
+import pandas as pd
 from bokeh.models import Div
 
 logger = logging.getLogger(__name__)
+
+
+def to_bokeh_ms(values) -> np.ndarray:
+    """
+    Convert datetimes to Bokeh datetime milliseconds, independent of numpy unit.
+
+    Streaming calls this on every pan, so it takes a fast path when the input is
+    already datetime64. `pd.to_datetime` would still be correct there, but it runs a
+    `should_cache` heuristic that iterates the values element by element to decide
+    whether a lookup table would pay off - which dominated the streaming profile.
+
+    Args:
+        values: Anything datetime-like: a Series, Index, ndarray or sequence.
+
+    Returns:
+        np.ndarray of int64 milliseconds since the epoch, UTC.
+    """
+    values = getattr(values, 'array', values) if isinstance(values, pd.Series) else values
+    dtype = getattr(values, 'dtype', None)
+
+    # Fast path: already datetime64, so reinterpret rather than re-parse. Both tz-aware
+    # and naive values are stored as UTC-relative integers, so one cast covers each.
+    if dtype is not None and (
+        isinstance(dtype, pd.DatetimeTZDtype) or np.issubdtype(getattr(dtype, 'type', dtype), np.datetime64)
+    ):
+        as_index = pd.DatetimeIndex(values)
+    else:
+        # Slow path: strings, objects, mixed offsets - let pandas parse.
+        as_index = pd.DatetimeIndex(pd.to_datetime(values, utc=True))
+
+    if as_index.tz is not None:
+        as_index = as_index.tz_convert('UTC').tz_localize(None)
+    # Floor-divide rather than cast to datetime64[ms]: numpy's cast and Python's // round
+    # differently below the epoch, and this keeps the original arithmetic exactly.
+    return as_index.values.astype('datetime64[ns]').astype('int64') // 10**6
 
 def add_error_to_doc(doc, message, error=None, height=50):
     """

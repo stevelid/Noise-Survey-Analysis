@@ -22,6 +22,7 @@ from noise_survey_analysis.core.data_processors import (
     _peek_log_file_time_step_ms,
 )
 from noise_survey_analysis.core.data_manager import DataManager
+from noise_survey_analysis.core.utils import to_bokeh_ms
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,8 @@ def _debug_position() -> str:
     return os.environ.get('NSA_DEBUG_POSITION', '')
 
 
-def _to_bokeh_ms(values) -> pd.Series:
-    dt = pd.Series(pd.to_datetime(values, utc=True))
-    return (
-        dt.dt.tz_convert("UTC").dt.tz_localize(None).astype("datetime64[ns]").astype("int64") // 10**6
-    ).to_numpy()
+def _to_bokeh_ms(values) -> np.ndarray:
+    return to_bokeh_ms(values)
 
 
 class ServerDataHandler:
@@ -325,7 +323,7 @@ class ServerDataHandler:
             return
         update_started_at = time.perf_counter()
         slice_started_at = time.perf_counter()
-        sliced = self._slice_by_time(df, start_ms, end_ms)
+        sliced, sliced_times_ms = self._slice_by_time_with_index(df, start_ms, end_ms)
         slice_ms = (time.perf_counter() - slice_started_at) * 1000
         if sliced.empty:
             logger.debug(f"[UPDATE] Sliced log_totals is empty for range {start_ms}-{end_ms}")
@@ -356,8 +354,11 @@ class ServerDataHandler:
             # Non-numeric columns gain nothing from the binary path; hand Bokeh a list
             # rather than an object-dtype array it would have to unpack anyway.
             data_dict[column] = values if values.dtype.kind in 'fiub' else values.tolist()
-        # Convert Datetime to int64 ms timestamps
-        data_dict['Datetime'] = _to_bokeh_ms(sliced['Datetime'])
+        # Reuse the cached index slice when the fast path produced one; only fall back to
+        # converting when the frame was sliced by mask.
+        data_dict['Datetime'] = (
+            sliced_times_ms if sliced_times_ms is not None else _to_bokeh_ms(sliced['Datetime'])
+        )
         build_ms = (time.perf_counter() - build_started_at) * 1000
         
         push_started_at = time.perf_counter()
@@ -660,9 +661,16 @@ class ServerDataHandler:
         self._time_index_cache[cache_key] = (df, times)
         return times
 
-    def _slice_by_time(self, df: pd.DataFrame, start_ms: float, end_ms: float) -> pd.DataFrame:
+    def _slice_by_time_with_index(self, df: pd.DataFrame, start_ms: float, end_ms: float):
+        """
+        Slice by time, also returning the slice's int64 ms timestamps when available.
+
+        Callers that need those timestamps (to push to Bokeh) can reuse this instead of
+        re-deriving them from the sliced frame, which is the single most expensive step
+        in a streamed update.  The second element is None on the fallback path.
+        """
         if df is None or df.empty or 'Datetime' not in df.columns:
-            return df
+            return df, None
         start, end = sorted([start_ms, end_ms])
 
         times_ms = self._time_index_ms(df)
@@ -670,14 +678,18 @@ class ServerDataHandler:
             # Bounds are inclusive at both ends, matching the mask path below.
             left = int(np.searchsorted(times_ms, start, side='left'))
             right = int(np.searchsorted(times_ms, end, side='right'))
-            return df.iloc[left:right]
+            return df.iloc[left:right], times_ms[left:right]
 
         times = pd.to_datetime(df['Datetime'])
         # Create timezone-aware timestamps to match the data
         start_ts = pd.to_datetime(start, unit='ms', utc=True)
         end_ts = pd.to_datetime(end, unit='ms', utc=True)
         mask = (times >= start_ts) & (times <= end_ts)
-        return df.loc[mask]
+        return df.loc[mask], None
+
+    def _slice_by_time(self, df: pd.DataFrame, start_ms: float, end_ms: float) -> pd.DataFrame:
+        sliced, _ = self._slice_by_time_with_index(df, start_ms, end_ms)
+        return sliced
 
     def _buffer_covers_viewport(self, position_id: str, start_ms: float, end_ms: float) -> bool:
         """Check if current buffer covers viewport with 10% margin."""
