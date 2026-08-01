@@ -207,7 +207,7 @@ class ServerDataHandler:
                     buffer_end,
                     chunk_bounds,
                 )
-                self._update_position(
+                streamed = self._update_position(
                     position_id,
                     buffer_start,
                     buffer_end,
@@ -215,7 +215,14 @@ class ServerDataHandler:
                     viewport_end_ms=end_ms,
                     sample_period_seconds=sample_period_seconds,
                 )
-                self._buffer_bounds[position_id] = (buffer_start, buffer_end)
+                # Only record coverage when data actually went out. A deferred lazy load
+                # has streamed nothing, so claiming coverage here would make every later
+                # update skip this position - including the refresh the load itself
+                # schedules once it finishes.
+                if streamed:
+                    self._buffer_bounds[position_id] = (buffer_start, buffer_end)
+                else:
+                    self._buffer_bounds.pop(position_id, None)
                 continue
 
             # Reservoir coverage check: refresh reservoir when viewport is not
@@ -265,7 +272,8 @@ class ServerDataHandler:
         viewport_end_ms: Optional[float] = None,
         sample_period_seconds: Optional[float] = None,
         refresh_totals: bool = True,
-    ) -> None:
+    ) -> bool:
+        """Push this position's data. Returns False if it deferred to a background load."""
         position_data = self.app_data[position_id]
         update_started_at = time.perf_counter()
         lazy_load_ms = 0.0
@@ -284,7 +292,7 @@ class ServerDataHandler:
             # data; the client already shows a "waiting for log data" status while its
             # log source is empty. The load re-enters this method when it completes.
             self._ensure_lazy_load_started(position_id, position_data)
-            return
+            return False
 
         if viewport_start_ms is None:
             viewport_start_ms = start_ms
@@ -330,6 +338,7 @@ class ServerDataHandler:
             spectrogram_update_ms,
             (time.perf_counter() - update_started_at) * 1000,
         )
+        return True
 
     def _update_log_totals(self, df: pd.DataFrame, model_bundle: Dict[str, object], start_ms: float, end_ms: float) -> None:
         timeseries_source = model_bundle.get('timeseries_log_source')

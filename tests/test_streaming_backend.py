@@ -1,6 +1,8 @@
 import unittest
 import os
 import tempfile
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -42,6 +44,8 @@ class FakeDoc:
     def __init__(self, models):
         self._models = models
         self._timeout_callbacks = []
+        self._next_tick_callbacks = []
+        self.next_tick_event = threading.Event()
 
     def get_model_by_name(self, name):
         return self._models.get(name)
@@ -55,6 +59,21 @@ class FakeDoc:
         self._timeout_callbacks.clear()
         for callback in callbacks:
             callback()
+
+    def add_next_tick_callback(self, callback):
+        # Bokeh guarantees this is safe to call from a worker thread.
+        self._next_tick_callbacks.append(callback)
+        self.next_tick_event.set()
+        return len(self._next_tick_callbacks) - 1
+
+    def flush_next_ticks(self):
+        """Run queued callbacks the way the document thread eventually would."""
+        callbacks = list(self._next_tick_callbacks)
+        self._next_tick_callbacks.clear()
+        self.next_tick_event.clear()
+        for callback in callbacks:
+            callback()
+        return len(callbacks)
 
 
 class FakeRange:
@@ -243,6 +262,221 @@ class StreamingBackendTests(unittest.TestCase):
             spectrogram_log_source.data["n_times"][0] % pinned_width,
             0,
         )
+
+    def _deferred_position(self, name="P_lazy"):
+        """A position whose log data is still on disk, as after a deferred load."""
+        position = PositionData(name=name)
+        position.log_file_paths = [{
+            "file_path": "deferred_log.csv",
+            "parser_type": "Svan",
+            "return_all_cols": False,
+        }]
+        return position
+
+    def _lazy_handler(self, position, name="P_lazy"):
+        doc = FakeDoc({
+            f"source_{name}_timeseries_log": ColumnDataSource(data={}),
+            f"source_{name}_spectrogram_log": ColumnDataSource(data={}),
+            f"figure_{name}_timeseries": DummyFigure(width=320),
+            f"figure_{name}_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({name: position}), CHART_SETTINGS)
+        self.addCleanup(handler.cleanup)
+        return doc, handler
+
+    def test_lazy_load_does_not_block_the_document_thread(self):
+        """Parsing a multi-day log takes seconds; Bokeh's IOLoop cannot wait on it."""
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+
+        started = threading.Event()
+        release = threading.Event()
+        loaded_on = {}
+
+        def slow_load(_factory, _use_cache):
+            loaded_on['thread'] = threading.current_thread()
+            started.set()
+            release.wait(5)
+            position._log_data_loaded = True
+
+        position.load_log_data_lazy = slow_load
+        caller = threading.current_thread()
+
+        began = time.monotonic()
+        handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+        elapsed = time.monotonic() - began
+
+        try:
+            self.assertLess(elapsed, 2, "range update blocked on the lazy load")
+            self.assertTrue(started.wait(5), "lazy load never started")
+            self.assertIsNot(loaded_on['thread'], caller)
+        finally:
+            release.set()
+
+    def test_lazy_load_is_started_only_once_while_in_flight(self):
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+
+        started = threading.Event()
+        release = threading.Event()
+        calls = []
+
+        def slow_load(_factory, _use_cache):
+            calls.append(1)
+            started.set()
+            release.wait(5)
+            position._log_data_loaded = True
+
+        position.load_log_data_lazy = slow_load
+
+        handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+        self.assertTrue(started.wait(5), "lazy load never started")
+        # Further pans while it is still loading must not queue more loads.
+        for offset in range(1, 4):
+            handler.handle_range_update(
+                1704067200000 + offset * 60_000,
+                1704067200000 + (offset + 1) * 60_000,
+            )
+
+        release.set()
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and len(calls) < 2:
+            time.sleep(0.02)
+
+        self.assertEqual(len(calls), 1)
+
+    def test_lazy_load_refreshes_against_the_newest_viewport(self):
+        """The user keeps panning while the file loads; the refresh must follow them."""
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_load(_factory, _use_cache):
+            started.set()
+            release.wait(5)
+            position._log_data_loaded = True
+
+        position.load_log_data_lazy = slow_load
+
+        stale = (1704067200000, 1704067200000 + 60_000)
+        handler.handle_range_update(*stale)
+        self.assertTrue(started.wait(5), "lazy load never started")
+
+        newest = (1704070800000, 1704070800000 + 60_000)
+        handler.handle_range_update(*newest)
+
+        release.set()
+        self.assertTrue(doc.next_tick_event.wait(5), "no refresh was scheduled")
+
+        seen = []
+        handler.handle_range_update = lambda start, end: seen.append((start, end))
+        doc.flush_next_ticks()
+
+        self.assertEqual(seen, [newest])
+
+    def test_data_reaches_the_source_after_a_deferred_load_completes(self):
+        """The deferring update must not claim buffer coverage it never streamed.
+
+        If it did, the covering check would skip the position on every later update -
+        including the refresh the completed load schedules - and the chart would sit on
+        overview data forever.
+        """
+        name = "P_lazy_e2e"
+        position = self._deferred_position(name)
+        doc, handler = self._lazy_handler(position, name)
+
+        base = pd.Timestamp("2024-01-01T00:00:00Z")
+        times = [base + pd.Timedelta(seconds=idx) for idx in range(120)]
+
+        def load(_factory, _use_cache):
+            position.log_totals = pd.DataFrame({
+                "Datetime": times,
+                "LAeq": [50 + (idx % 7) for idx in range(len(times))],
+            })
+            position._log_data_loaded = True
+
+        position.load_log_data_lazy = load
+
+        start_ms = int(times[0].value // 10**6)
+        end_ms = int(times[-1].value // 10**6)
+        source = doc.get_model_by_name(f"source_{name}_timeseries_log")
+
+        handler.handle_range_update(start_ms, end_ms)
+        self.assertEqual(len(source.data.get("Datetime", [])), 0, "should defer, not block")
+
+        self.assertTrue(doc.next_tick_event.wait(5), "no refresh was scheduled")
+        doc.flush_next_ticks()
+
+        self.assertGreater(len(source.data.get("Datetime", [])), 0,
+                           "log data never reached the source after the load completed")
+        self.assertEqual(list(source.data["LAeq"])[:3], [50, 51, 52])
+
+    def test_failed_lazy_load_does_not_wedge_or_refresh(self):
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+
+        attempts = []
+
+        def failing_load(_factory, _use_cache):
+            attempts.append(1)
+            raise IOError("network drive unavailable")
+
+        position.load_log_data_lazy = failing_load
+
+        handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and not attempts:
+            time.sleep(0.02)
+        self.assertEqual(len(attempts), 1)
+
+        # A failure must not schedule a refresh that would find no data.
+        self.assertEqual(len(doc._next_tick_callbacks), 0)
+
+        # A later pan may retry, rather than the position being wedged forever.
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and len(attempts) < 2:
+            handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+            time.sleep(0.02)
+        self.assertGreaterEqual(len(attempts), 2)
+
+    def test_no_refresh_is_scheduled_after_cleanup(self):
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_load(_factory, _use_cache):
+            started.set()
+            release.wait(5)
+            position._log_data_loaded = True
+
+        position.load_log_data_lazy = slow_load
+
+        handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+        self.assertTrue(started.wait(5), "lazy load never started")
+
+        handler.cleanup()
+        release.set()
+
+        # The session is gone; scheduling onto its document would be a leak at best.
+        time.sleep(0.3)
+        self.assertEqual(len(doc._next_tick_callbacks), 0)
+
+    def test_lazy_load_is_not_started_when_the_viewport_is_too_wide(self):
+        """The existing viewport gate still runs before any background work."""
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+        position.load_log_data_lazy = MagicMock()
+        position.sample_periods_seconds = {0.1}
+
+        # Far wider than the high-rate cap.
+        handler.handle_range_update(1704067200000, 1704067200000 + 86_400_000)
+
+        time.sleep(0.2)
+        position.load_log_data_lazy.assert_not_called()
 
     def _slice_handler(self):
         return ServerDataHandler(FakeDoc({}), DummyDataManager({}), CHART_SETTINGS)
