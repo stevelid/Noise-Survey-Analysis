@@ -39,7 +39,7 @@ This tool provides a powerful, interactive dashboard for analyzing noise survey 
 
 ### 1. Prerequisites
 
-*   Python 3.8+
+*   Python 3.10+ (the codebase uses `X | None` type syntax)
 *   **VLC Media Player:** Must be installed on your system for audio playback to function in the live server mode.
 *   `soundfile` Python package (included in `requirements.txt`) to read audio durations for multiple formats. On most platforms, wheels include `libsndfile`.
     *   If you build from source or encounter installation issues, install `libsndfile` via your OS package manager (e.g., `brew install libsndfile` on macOS, `apt-get install libsndfile1` on Debian/Ubuntu). Windows wheels typically bundle it.

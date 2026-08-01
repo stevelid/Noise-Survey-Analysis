@@ -2,7 +2,6 @@ import logging
 import math
 import threading
 import time
-from bisect import bisect_left
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Optional
 
@@ -21,7 +20,6 @@ from noise_survey_analysis.core.config import (
 )
 from noise_survey_analysis.core.data_processors import (
     GlyphDataProcessor,
-    _calculate_spectrogram_log_window_ms,
     _peek_log_file_time_step_ms,
 )
 from noise_survey_analysis.core.data_manager import DataManager
@@ -131,26 +129,6 @@ class ServerDataHandler:
         )
         return max_viewport
 
-    def _position_max_spectrogram_viewport_seconds(self, position_data, sample_period_seconds: Optional[float] = None) -> Optional[float]:
-        if position_data is None or not getattr(position_data, 'has_log_spectral', False):
-            return None
-
-        effective_sample_period = sample_period_seconds
-        if effective_sample_period is None or effective_sample_period <= 0:
-            effective_sample_period = self._get_effective_sample_period(position_data)
-
-        if effective_sample_period is None or effective_sample_period <= 0:
-            return None
-
-        spectrogram_window_ms = _calculate_spectrogram_log_window_ms(effective_sample_period * 1000.0, self.chart_settings)
-        max_viewport_seconds = max(LOG_VIEW_MIN_VIEWPORT_SECONDS, spectrogram_window_ms / 1000.0)
-        logger.debug(
-            "Max spectrogram viewport for %s: %.0fs (sample_period=%.3fs)",
-            getattr(position_data, 'name', 'unknown'),
-            max_viewport_seconds,
-            effective_sample_period,
-        )
-        return max_viewport_seconds
 
     def handle_range_update(self, start_ms: float, end_ms: float) -> None:
         if not isinstance(start_ms, (int, float)) or not isinstance(end_ms, (int, float)):
@@ -177,10 +155,6 @@ class ServerDataHandler:
             position_data = self.app_data[position_id]
             max_viewport_seconds = self._position_max_viewport_seconds(position_data)
             sample_period_seconds = self._get_effective_sample_period(position_data)
-            spectrogram_max_viewport_seconds = self._position_max_spectrogram_viewport_seconds(
-                position_data,
-                sample_period_seconds,
-            )
             buffer_bounds = self._buffer_bounds.get(position_id)
             chunk_bounds = self._spectrogram_chunk_bounds.get(position_id)
             if viewport_width_seconds > max_viewport_seconds:
@@ -278,7 +252,6 @@ class ServerDataHandler:
         """Push this position's data. Returns False if it deferred to a background load."""
         position_data = self.app_data[position_id]
         update_started_at = time.perf_counter()
-        lazy_load_ms = 0.0
         totals_update_ms = 0.0
         spectrogram_update_ms = 0.0
         
@@ -333,9 +306,8 @@ class ServerDataHandler:
             )
             spectrogram_update_ms = (time.perf_counter() - spectrogram_started_at) * 1000
         logger.info(
-            "[STREAM PERF] position=%s lazy_load_ms=%.1f totals_update_ms=%.1f spectrogram_update_ms=%.1f total_ms=%.1f",
+            "[STREAM PERF] position=%s totals_update_ms=%.1f spectrogram_update_ms=%.1f total_ms=%.1f",
             position_id,
-            lazy_load_ms,
             totals_update_ms,
             spectrogram_update_ms,
             (time.perf_counter() - update_started_at) * 1000,
@@ -870,8 +842,6 @@ class ServerDataHandler:
         overlap_width = max(0, overlap_end - overlap_start)
         return overlap_width / viewport_width
 
-    def _spectrogram_chunk_covers_viewport(self, position_id: str, start_ms: float, end_ms: float) -> bool:
-        return self._spectrogram_chunk_coverage_ratio(position_id, start_ms, end_ms) >= 0.98
 
     def _infer_log_file_sample_period_seconds(self, position_data):
         log_file_paths = getattr(position_data, 'log_file_paths', None)

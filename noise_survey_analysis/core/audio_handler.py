@@ -400,22 +400,16 @@ class AudioPlaybackHandler:
     def _perform_stop_actions(self) -> bool:
         """Helper to perform the actual player stop and thread join actions."""
         # Stop monitor thread first
-        monitor_stopped = False
         if self.playback_monitor and self.playback_monitor.is_alive():
             self.stop_monitor = True
             # The monitor reaches here via its own file-rollover play() call; a thread
             # cannot join itself, and it exits its loop immediately after regardless.
             if self.playback_monitor is threading.current_thread():
                 logger.debug("Monitor thread is stopping itself; skipping join.")
-                monitor_stopped = True
             else:
                 self.playback_monitor.join(0.5)
-                if not self.playback_monitor.is_alive():
-                    monitor_stopped = True
-                else:
+                if self.playback_monitor.is_alive():
                     logger.warning("Playback monitor thread did not stop cleanly.")
-        else:
-            monitor_stopped = True
 
         if not self.audio_available or not self.player:
             self._is_playing = False

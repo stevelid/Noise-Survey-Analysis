@@ -23,7 +23,12 @@ def scan_directory_for_sources(base_dir: str) -> List[Dict[str, Any]]:
     supported_file_extensions = ('.csv', '.svl', '.txt', '.xlsx', '.xls', '.json', '.wav')
 
     for root, dirs, files in os.walk(base_dir):
-        for file in files:
+        # os.walk yields entries in filesystem order, which differs between platforms
+        # and even between runs. For an audio folder only the first file seen supplies
+        # the display name, so without sorting the name shown for a position could
+        # change from one scan to the next.
+        dirs.sort()
+        for file in sorted(files):
             if not file.lower().endswith(supported_file_extensions):
                 continue
             
