@@ -15,16 +15,14 @@ project_root = current_file.parent.parent.parent  # Go up to "Noise Survey Analy
 sys.path.insert(0, str(project_root))
 
 from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETTINGS
+from noise_survey_analysis.core.utils import to_bokeh_ms
 from noise_survey_analysis.core.data_manager import PositionData
 
 logger = logging.getLogger(__name__)
 
 
-def _to_bokeh_ms(values) -> pd.Series:
-    dt = pd.Series(pd.to_datetime(values, utc=True))
-    return (
-        dt.dt.tz_convert("UTC").dt.tz_localize(None).astype("datetime64[ns]").astype("int64") // 10**6
-    ).to_numpy()
+def _to_bokeh_ms(values) -> np.ndarray:
+    return to_bokeh_ms(values)
 
 
 def _peek_log_file_time_step_ms(log_file_paths: list) -> float:
@@ -572,7 +570,15 @@ class GlyphDataProcessor:
             n_times = levels_transposed.shape[1]
         
 
-        if use_dynamic_log_window:
+        if use_dynamic_log_window and fixed_n_times is not None:
+            # Explicit pin from the caller wins over re-deriving the window from this
+            # slice's cadence.  `time_step` is a median over the first few gaps of
+            # whichever slice was just cut, so it drifts across data gaps, file
+            # boundaries and mixed-cadence sources.  A drifted step yields a different
+            # chunk_time_length, which no longer matches the browser's fixed-size Image
+            # buffer, and the client silently drops the update.  See AGENTS.md §6.
+            chunk_time_length = max(1, int(fixed_n_times))
+        elif use_dynamic_log_window:
             target_window_ms = _calculate_spectrogram_log_window_ms(time_step, chart_settings)
             chunk_time_length = max(1, math.ceil(target_window_ms / time_step)) if time_step > 0 else n_times
         elif fixed_n_times is not None:

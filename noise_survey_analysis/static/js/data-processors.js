@@ -426,7 +426,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const targetChunkEndTimeStamp = viewportCenter + (targetChunkPoints * safeTimeStep / 2);
         const centeredTolerance = safeTimeStep * 0.5;
 
-        let chunkStartTimeIdx = times_ms.findIndex(t => t >= targetChunkStartTimeStamp);
+        let chunkStartTimeIdx = app.utils.firstIndexAtOrAfter(times_ms, targetChunkStartTimeStamp);
         if (chunkStartTimeIdx === -1) {
             chunkStartTimeIdx = Math.max(0, n_times - targetChunkPoints);
         }
@@ -588,8 +588,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             requiresZoom: true,
                         });
                     } else {
-                        const startIndex = logData.Datetime.findIndex(t => t >= effectiveMin);
-                        const endIndex = logData.Datetime.findLastIndex(t => t <= effectiveMax);
+                        // Binary search: this runs per position on every heavy update,
+                        // over a streamed log window that can hold tens of thousands of
+                        // points.
+                        const startIndex = app.utils.firstIndexAtOrAfter(logData.Datetime, effectiveMin);
+                        const endIndex = app.utils.lastIndexAtOrBefore(logData.Datetime, effectiveMax);
                         const hasViewportOverlap = startIndex !== -1 && endIndex !== -1 && endIndex >= startIndex;
                         if (!hasViewportOverlap) {
                             // Log source has data, but current viewport is outside the streamed chunk.
@@ -788,17 +791,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     });
                 }
 
-                // Reconstruct initial_glyph_data from flattened transport fields
+                // Reconstruct initial_glyph_data from flattened transport fields.
+                // Key off the glyph metadata, not the pixels: `y` and `dh` anchor the
+                // image to the full-frequency layout and are always required, whereas
+                // the pixels are only a fallback for payloads with no reservoir. A
+                // reservoir payload therefore omits them and the chunk is extracted
+                // from levels_flat_transposed instead.
                 let initial_glyph_data = null;
-                if (logSourceData.initial_glyph_data_image) {
-                    const imageData = unwrapArray(logSourceData.initial_glyph_data_image);
+                if (logSourceData.initial_glyph_data_dh || logSourceData.initial_glyph_data_image) {
                     initial_glyph_data = {
                         x: logSourceData.initial_glyph_data_x ? logSourceData.initial_glyph_data_x[0] : [0],
                         y: logSourceData.initial_glyph_data_y ? logSourceData.initial_glyph_data_y[0] : [-0.5],
                         dw: logSourceData.initial_glyph_data_dw ? logSourceData.initial_glyph_data_dw[0] : [0],
                         dh: logSourceData.initial_glyph_data_dh ? logSourceData.initial_glyph_data_dh[0] : [0],
-                        image: [imageData]
                     };
+                    if (logSourceData.initial_glyph_data_image) {
+                        initial_glyph_data.image = [unwrapArray(logSourceData.initial_glyph_data_image)];
+                    }
                 }
 
                 return {
@@ -1191,7 +1200,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            const closestTimeIdx = activeSpectralData.times_ms.findLastIndex(time => time <= timestamp);
+            // Runs on every hover move and every audio status tick.
+            const closestTimeIdx = app.utils.lastIndexAtOrBefore(activeSpectralData.times_ms, timestamp);
             if (closestTimeIdx === -1) {
                 dataCache.activeFreqBarData = blankData;
                 return;

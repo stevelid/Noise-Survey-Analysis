@@ -9,14 +9,65 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
+    /**
+     * Index of the first element >= target, or -1 if every element is smaller.
+     *
+     * Requires `values` to be sorted ascending. Every timestamp array in the app is:
+     * source frames are sorted on merge, and chunk slices and synthetic display grids
+     * inherit that ordering.
+     *
+     * @param {Array<number>|TypedArray} values - Ascending numeric array.
+     * @param {number} target - Value to search for.
+     * @returns {number} Matching index, or -1.
+     */
+    function firstIndexAtOrAfter(values, target) {
+        if (!values || values.length === 0) {
+            return -1;
+        }
+        let low = 0;
+        let high = values.length;
+        while (low < high) {
+            const mid = (low + high) >>> 1;
+            if (values[mid] >= target) {
+                high = mid;
+            } else {
+                low = mid + 1;
+            }
+        }
+        return low < values.length ? low : -1;
+    }
+
+    /**
+     * Index of the last element <= target, or -1 if every element is larger.
+     *
+     * Same ascending-order requirement as `firstIndexAtOrAfter`.
+     *
+     * @param {Array<number>|TypedArray} values - Ascending numeric array.
+     * @param {number} target - Value to search for.
+     * @returns {number} Matching index, or -1.
+     */
+    function lastIndexAtOrBefore(values, target) {
+        if (!values || values.length === 0) {
+            return -1;
+        }
+        let low = 0;
+        let high = values.length;
+        while (low < high) {
+            const mid = (low + high) >>> 1;
+            if (values[mid] <= target) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        return low - 1;
+    }
+
     function findAssociatedDateIndex(activeData, timestamp) {
         if (!activeData || !activeData.Datetime || activeData.Datetime.length === 0) {
             return -1;
         }
-        for (let i = activeData.Datetime.length - 1; i >= 0; i--) {
-            if (activeData.Datetime[i] <= timestamp) return i;
-        }
-        return -1;
+        return lastIndexAtOrBefore(activeData.Datetime, timestamp);
     }
 
     /**
@@ -63,6 +114,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     app.utils = {
         findAssociatedDateIndex: findAssociatedDateIndex,
+        firstIndexAtOrAfter: firstIndexAtOrAfter,
+        lastIndexAtOrBefore: lastIndexAtOrBefore,
         isEditableEvent: isEditableEvent
     };
 })(window.NoiseSurveyApp);

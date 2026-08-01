@@ -1,6 +1,9 @@
 import logging
+import math
+import threading
 import time
 from bisect import bisect_left
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Optional
 
 import numpy as np
@@ -22,6 +25,7 @@ from noise_survey_analysis.core.data_processors import (
     _peek_log_file_time_step_ms,
 )
 from noise_survey_analysis.core.data_manager import DataManager
+from noise_survey_analysis.core.utils import to_bokeh_ms
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +35,13 @@ def _debug_position() -> str:
     return os.environ.get('NSA_DEBUG_POSITION', '')
 
 
-def _to_bokeh_ms(values) -> pd.Series:
-    dt = pd.Series(pd.to_datetime(values, utc=True))
-    return (
-        dt.dt.tz_convert("UTC").dt.tz_localize(None).astype("datetime64[ns]").astype("int64") // 10**6
-    ).to_numpy()
+def _to_bokeh_ms(values) -> np.ndarray:
+    return to_bokeh_ms(values)
 
 
 class ServerDataHandler:
+    _TIME_INDEX_CACHE_LIMIT = 16
+
     def __init__(
         self,
         doc,
@@ -54,6 +57,19 @@ class ServerDataHandler:
         self._buffer_bounds = {}  # Track buffer bounds per position for edge detection
         self._spectrogram_chunk_bounds = {}
         self._range_update_counter = 0
+        self._display_buffer_width = {}  # position_id -> pinned Image glyph buffer width
+        self._time_index_cache = {}  # id(df) -> (df, int64 ms array or None)
+        self._last_requested_range = None  # newest viewport, for deferred refreshes
+        self._disposed = False
+        self._lazy_load_lock = threading.Lock()
+        self._lazy_load_in_flight = set()
+        self._lazy_load_failed = set()
+        self._lazy_load_futures = set()
+        # Serialized: log files usually sit on a network drive, and loading several
+        # multi-day files at once spikes memory without helping the user.
+        self._lazy_load_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix='nsa-lazy-load'
+        )
 
     def _collect_position_models(self) -> Dict[str, Dict[str, object]]:
         models: Dict[str, Dict[str, object]] = {}
@@ -62,6 +78,10 @@ class ServerDataHandler:
                 # Push to log_source (reservoir) instead of display source
                 'timeseries_log_source': self.doc.get_model_by_name(f"source_{position_id}_timeseries_log"),
                 'spectrogram_log_source': self.doc.get_model_by_name(f"source_{position_id}_spectrogram_log"),
+                # The display source is the one bound to the Image glyph.  Its buffer is
+                # sized once at init and must never change shape — it is the authority on
+                # how wide every streamed chunk has to be.
+                'spectrogram_display_source': self.doc.get_model_by_name(f"source_{position_id}_spectrogram"),
                 'timeseries_figure': self.doc.get_model_by_name(f"figure_{position_id}_timeseries"),
                 'spectrogram_figure': self.doc.get_model_by_name(f"figure_{position_id}_spectrogram"),
             }
@@ -138,6 +158,9 @@ class ServerDataHandler:
 
         self._range_update_counter += 1
         request_id = self._range_update_counter
+        # Remembered so a background lazy load that finishes later refreshes against the
+        # viewport the user is actually looking at, not the one that triggered it.
+        self._last_requested_range = (start_ms, end_ms)
         viewport_width_ms = abs(end_ms - start_ms)
         viewport_width_seconds = viewport_width_ms / 1000
         logger.debug(
@@ -186,7 +209,7 @@ class ServerDataHandler:
                     buffer_end,
                     chunk_bounds,
                 )
-                self._update_position(
+                streamed = self._update_position(
                     position_id,
                     buffer_start,
                     buffer_end,
@@ -194,7 +217,14 @@ class ServerDataHandler:
                     viewport_end_ms=end_ms,
                     sample_period_seconds=sample_period_seconds,
                 )
-                self._buffer_bounds[position_id] = (buffer_start, buffer_end)
+                # Only record coverage when data actually went out. A deferred lazy load
+                # has streamed nothing, so claiming coverage here would make every later
+                # update skip this position - including the refresh the load itself
+                # schedules once it finishes.
+                if streamed:
+                    self._buffer_bounds[position_id] = (buffer_start, buffer_end)
+                else:
+                    self._buffer_bounds.pop(position_id, None)
                 continue
 
             # Reservoir coverage check: refresh reservoir when viewport is not
@@ -244,7 +274,8 @@ class ServerDataHandler:
         viewport_end_ms: Optional[float] = None,
         sample_period_seconds: Optional[float] = None,
         refresh_totals: bool = True,
-    ) -> None:
+    ) -> bool:
+        """Push this position's data. Returns False if it deferred to a background load."""
         position_data = self.app_data[position_id]
         update_started_at = time.perf_counter()
         lazy_load_ms = 0.0
@@ -255,12 +286,15 @@ class ServerDataHandler:
         # Use getattr for backward compatibility with cached PositionData objects
         log_data_loaded = getattr(position_data, '_log_data_loaded', False)
         log_file_paths = getattr(position_data, 'log_file_paths', [])
-        
+
         if not log_data_loaded and log_file_paths:
-            logger.info(f"[LAZY LOAD] Triggering lazy load for {position_id}")
-            lazy_load_started_at = time.perf_counter()
-            position_data.load_log_data_lazy(self.app_data.parser_factory, self.app_data.use_cache)
-            lazy_load_ms = (time.perf_counter() - lazy_load_started_at) * 1000
+            # Parsing a multi-day log file takes seconds. Bokeh runs document callbacks
+            # on a single IOLoop, so doing it here freezes the whole dashboard until it
+            # finishes. Start it in the background and leave this position on overview
+            # data; the client already shows a "waiting for log data" status while its
+            # log source is empty. The load re-enters this method when it completes.
+            self._ensure_lazy_load_started(position_id, position_data)
+            return False
 
         if viewport_start_ms is None:
             viewport_start_ms = start_ms
@@ -306,6 +340,7 @@ class ServerDataHandler:
             spectrogram_update_ms,
             (time.perf_counter() - update_started_at) * 1000,
         )
+        return True
 
     def _update_log_totals(self, df: pd.DataFrame, model_bundle: Dict[str, object], start_ms: float, end_ms: float) -> None:
         timeseries_source = model_bundle.get('timeseries_log_source')
@@ -317,7 +352,7 @@ class ServerDataHandler:
             return
         update_started_at = time.perf_counter()
         slice_started_at = time.perf_counter()
-        sliced = self._slice_by_time(df, start_ms, end_ms)
+        sliced, sliced_times_ms = self._slice_by_time_with_index(df, start_ms, end_ms)
         slice_ms = (time.perf_counter() - slice_started_at) * 1000
         if sliced.empty:
             logger.debug(f"[UPDATE] Sliced log_totals is empty for range {start_ms}-{end_ms}")
@@ -337,10 +372,22 @@ class ServerDataHandler:
         
         # Stream full-resolution log data (no downsampling)
         # Resolution can be anything from 0.1s to 60s depending on the source data
+        # Keep columns as NumPy arrays: Bokeh serializes ndarrays over its binary
+        # protocol, whereas Python lists go out as JSON text.
         build_started_at = time.perf_counter()
-        data_dict = sliced.to_dict(orient='list')
-        # Convert Datetime to int64 ms timestamps
-        data_dict['Datetime'] = _to_bokeh_ms(sliced['Datetime']).tolist()
+        data_dict = {}
+        for column in sliced.columns:
+            if column == 'Datetime':
+                continue
+            values = sliced[column].to_numpy()
+            # Non-numeric columns gain nothing from the binary path; hand Bokeh a list
+            # rather than an object-dtype array it would have to unpack anyway.
+            data_dict[column] = values if values.dtype.kind in 'fiub' else values.tolist()
+        # Reuse the cached index slice when the fast path produced one; only fall back to
+        # converting when the frame was sliced by mask.
+        data_dict['Datetime'] = (
+            sliced_times_ms if sliced_times_ms is not None else _to_bokeh_ms(sliced['Datetime'])
+        )
         build_ms = (time.perf_counter() - build_started_at) * 1000
         
         push_started_at = time.perf_counter()
@@ -355,6 +402,179 @@ class ServerDataHandler:
             push_ms,
             (time.perf_counter() - update_started_at) * 1000,
         )
+
+    def _ensure_lazy_load_started(self, position_id: str, position_data) -> None:
+        """
+        Kick off this position's deferred log parse in the background, at most once.
+
+        Source files often live on a network drive, so the loads are serialized through a
+        single worker rather than run in parallel. When one finishes it re-runs the range
+        update on the document thread, using the viewport current at that moment - the
+        user has usually kept panning while it was loading.
+        """
+        if self._disposed:
+            return
+        with self._lazy_load_lock:
+            if position_id in self._lazy_load_in_flight:
+                return
+            self._lazy_load_in_flight.add(position_id)
+            # Retried only because the user navigated back here, never in a tight loop.
+            retrying = position_id in self._lazy_load_failed
+            self._lazy_load_failed.discard(position_id)
+
+        logger.info(
+            "[LAZY LOAD] %s background load for %s",
+            "Retrying" if retrying else "Starting",
+            position_id,
+        )
+        try:
+            future = self._lazy_load_executor.submit(self._run_lazy_load, position_id, position_data)
+        except RuntimeError:
+            # The executor was shut down between the disposed check and here.
+            logger.debug("[LAZY LOAD] Executor closed; not starting %s", position_id)
+            with self._lazy_load_lock:
+                self._lazy_load_in_flight.discard(position_id)
+            return
+        with self._lazy_load_lock:
+            self._lazy_load_futures.add(future)
+        future.add_done_callback(self._forget_lazy_load_future)
+
+    def _forget_lazy_load_future(self, future) -> None:
+        with self._lazy_load_lock:
+            self._lazy_load_futures.discard(future)
+
+    def _run_lazy_load(self, position_id: str, position_data) -> None:
+        started_at = time.perf_counter()
+        succeeded = False
+        try:
+            # load_log_data_lazy absorbs per-file errors, so its return value - not the
+            # absence of an exception - is what says whether any data arrived.
+            succeeded = bool(
+                position_data.load_log_data_lazy(self.app_data.parser_factory, self.app_data.use_cache)
+            )
+            if succeeded:
+                logger.info(
+                    "[LAZY LOAD] Completed for %s in %.0f ms",
+                    position_id,
+                    (time.perf_counter() - started_at) * 1000,
+                )
+            else:
+                logger.error("[LAZY LOAD] Loaded no data for %s; will retry if revisited", position_id)
+        except Exception:
+            logger.error("[LAZY LOAD] Failed for %s", position_id, exc_info=True)
+        finally:
+            with self._lazy_load_lock:
+                self._lazy_load_in_flight.discard(position_id)
+                if not succeeded:
+                    self._lazy_load_failed.add(position_id)
+
+        if succeeded:
+            self._schedule_refresh_after_lazy_load(position_id)
+
+    def _schedule_refresh_after_lazy_load(self, position_id: str) -> None:
+        """Re-run the range update on the document thread once loaded data is available."""
+        if self._disposed:
+            return
+
+        pending = self._last_requested_range
+        if pending is None:
+            logger.debug("[LAZY LOAD] No viewport recorded for %s; nothing to refresh", position_id)
+            return
+
+        def refresh():
+            if self._disposed:
+                return
+            # Read the range again here rather than closing over the one captured above:
+            # the user may have panned between the load finishing and this callback running.
+            latest = self._last_requested_range
+            if latest is None:
+                return
+            logger.info("[LAZY LOAD] Refreshing %s at viewport %s", position_id, latest)
+            try:
+                self.handle_range_update(*latest)
+            except Exception:
+                logger.error("[LAZY LOAD] Refresh failed for %s", position_id, exc_info=True)
+
+        try:
+            self.doc.add_next_tick_callback(refresh)
+        except Exception:
+            # The session can be torn down while a load is in flight.
+            logger.debug("[LAZY LOAD] Could not schedule refresh for %s", position_id, exc_info=True)
+
+    def cleanup(self) -> None:
+        """
+        Release background workers. Safe to call more than once.
+
+        Loads are queued one behind another, so without explicit cancellation the
+        remaining positions would each start a multi-day parse after the session had
+        already closed. A parse already under way is left to finish - interrupting it is
+        not possible - but `_disposed` stops it publishing to the dead document.
+        """
+        self._disposed = True
+        with self._lazy_load_lock:
+            pending = list(self._lazy_load_futures)
+
+        cancelled = [future for future in pending if future.cancel()]
+        if cancelled:
+            # A cancelled job never runs _run_lazy_load, so it would otherwise leave its
+            # position marked in-flight forever.
+            logger.info("[LAZY LOAD] Cancelled %s queued load(s) during cleanup", len(cancelled))
+            with self._lazy_load_lock:
+                for future in cancelled:
+                    self._lazy_load_futures.discard(future)
+
+        try:
+            self._lazy_load_executor.shutdown(wait=False)
+        except Exception as exc:
+            logger.warning("Error shutting down lazy load executor: %s", exc)
+
+    def _resolve_display_buffer_width(self, position_id: str, model_bundle: Dict[str, object]) -> Optional[int]:
+        """
+        Return the pinned width (time bins) of this position's Image glyph buffer.
+
+        The browser's ``source.data.image`` buffer is fixed-size after initialization
+        (AGENTS.md §6).  Every streamed chunk therefore has to be exactly as wide as the
+        buffer that was created at init, otherwise the client's shape guard rejects the
+        update and the spectrogram silently stops refreshing.
+
+        The initialized display source is the ground truth for that width, so read it
+        back rather than re-deriving it from the streamed slice's cadence.
+        """
+        if position_id in self._display_buffer_width:
+            return self._display_buffer_width[position_id]
+
+        width: Optional[int] = None
+        display_source = model_bundle.get('spectrogram_display_source')
+        image_column = getattr(display_source, 'data', {}).get('image') if display_source is not None else None
+
+        if image_column is not None and len(image_column) > 0:
+            buffer = image_column[0]
+            try:
+                shape = getattr(buffer, 'shape', None)
+                if shape is not None and len(shape) == 2:
+                    # (n_freqs, chunk_time_length)
+                    width = int(shape[1])
+                elif buffer is not None and len(buffer) > 0 and hasattr(buffer[0], '__len__'):
+                    width = int(len(buffer[0]))
+            except (TypeError, IndexError, ValueError):
+                width = None
+
+        if width is not None and width > 0:
+            logger.info(
+                "[SPEC PIN] position=%s display buffer width pinned to %s bins",
+                position_id,
+                width,
+            )
+            self._display_buffer_width[position_id] = width
+            return width
+
+        # No initialized buffer to read (e.g. a position whose spectrogram has not been
+        # built yet).  Fall back to the dynamic window so behaviour is unchanged.
+        logger.debug(
+            "[SPEC PIN] position=%s no initialized display buffer; falling back to dynamic window",
+            position_id,
+        )
+        return None
 
     def _update_log_spectrogram(
         self,
@@ -393,9 +613,12 @@ class ServerDataHandler:
             if position_id is not None:
                 self._spectrogram_chunk_bounds.pop(position_id, None)
             return
-        subset = df[['Datetime', *param_columns]]
+        # Slice rows before selecting columns.  The other order copies every band across
+        # the whole survey (4 days of 1 s data x ~36 bands is ~100 MB) only to discard
+        # all but the viewport, on every pan and zoom.
         slice_started_at = time.perf_counter()
-        sliced = self._slice_by_time(subset, start_ms, end_ms)
+        sliced_rows = self._slice_by_time(df, start_ms, end_ms)
+        sliced = sliced_rows[['Datetime', *param_columns]]
         slice_ms = (time.perf_counter() - slice_started_at) * 1000
         if sliced.empty:
             logger.debug(
@@ -426,11 +649,28 @@ class ServerDataHandler:
         # The browser extracts the visible display chunk from this reservoir,
         # allowing panning within the reservoir without a new server round-trip.
         prepare_started_at = time.perf_counter()
+        pinned_chunk_time_length = self._resolve_display_buffer_width(position_id, model_bundle)
         prepared = self.processor.prepare_single_spectrogram_data(
-            sliced, param, self.chart_settings, use_dynamic_log_window=True
+            sliced,
+            param,
+            self.chart_settings,
+            use_dynamic_log_window=True,
+            fixed_n_times=pinned_chunk_time_length,
         )
         prepare_ms = (time.perf_counter() - prepare_started_at) * 1000
         if prepared:
+            if (
+                pinned_chunk_time_length is not None
+                and prepared['chunk_time_length'] != pinned_chunk_time_length
+            ):
+                # Should be unreachable now that the pin is honoured; loud if it ever is.
+                logger.warning(
+                    "[SPEC PIN] position=%s chunk_time_length=%s does not match pinned buffer width %s; "
+                    "the client will reject this update",
+                    position_id,
+                    prepared['chunk_time_length'],
+                    pinned_chunk_time_length,
+                )
             log_cells = prepared['n_freqs'] * prepared['chunk_time_length']
             logger.debug(
                 "[SPEC] Reservoir: n_times=%s chunk_time_length=%s n_freqs=%s cells=%s",
@@ -457,7 +697,9 @@ class ServerDataHandler:
             # Build reservoir payload: send full prepared backing data as NumPy arrays.
             # The browser will extract the display chunk client-side.
             reservoir_times = np.asarray(prepared['times_ms'], dtype=np.float64)
-            reservoir_levels = np.asarray(prepared['levels_flat_transposed'], dtype=np.float32)
+            # Levels are rounded to int16 during preparation; keep that width rather
+            # than upcasting, which doubles the payload for no extra precision.
+            reservoir_levels = np.ascontiguousarray(prepared['levels_flat_transposed'])
             reservoir_n_times = len(reservoir_times)
             reservoir_n_freqs = prepared['n_freqs']
             chunk_time_length = prepared['chunk_time_length']
@@ -488,11 +730,15 @@ class ServerDataHandler:
                 'max_val': [prepared['max_val']],
                 'min_time': [float(reservoir_times[0])],
                 'max_time': [float(reservoir_times[-1])],
+                # Glyph metadata only.  `initial_glyph_data.image` is the leading chunk of
+                # levels_flat_transposed, which is already in this payload, and the client
+                # extracts its display chunk from the reservoir rather than from those
+                # pixels.  Sending them meant a second copy of the same data, serialized
+                # as JSON text instead of a binary buffer.
                 'initial_glyph_data_x': [prepared['initial_glyph_data']['x']],
                 'initial_glyph_data_y': [prepared['initial_glyph_data']['y']],
                 'initial_glyph_data_dw': [prepared['initial_glyph_data']['dw']],
                 'initial_glyph_data_dh': [prepared['initial_glyph_data']['dh']],
-                'initial_glyph_data_image': [prepared['initial_glyph_data']['image'][0].tolist()],
                 'is_reservoir_payload': [True],
             }
             build_ms = (time.perf_counter() - build_started_at) * 1000
@@ -532,16 +778,76 @@ class ServerDataHandler:
                 param,
             )
 
-    def _slice_by_time(self, df: pd.DataFrame, start_ms: float, end_ms: float) -> pd.DataFrame:
+    def _time_index_ms(self, df: pd.DataFrame) -> Optional[np.ndarray]:
+        """
+        Return a cached int64-ms view of ``df['Datetime']``, or None if it is unusable.
+
+        Converting the Datetime column is O(n) over the whole survey, and the streaming
+        path slices on every pan and zoom.  Building it once per frame turns each slice
+        into a pair of binary searches.  Returns None when the column is not sorted, so
+        callers fall back to the mask path that does not assume ordering.
+        """
+        cache_key = id(df)
+        cached = self._time_index_cache.get(cache_key)
+        # Hold a strong reference to the frame alongside the array so the id() key
+        # cannot be recycled onto a different object while the entry is live.
+        if cached is not None and cached[0] is df:
+            return cached[1]
+
+        # Only a couple of frames per position are ever indexed, but lazy loading
+        # replaces them, and entries hold a strong reference.  Drop the lot rather than
+        # pin superseded frames in memory; a miss only costs one rebuild.
+        if len(self._time_index_cache) >= self._TIME_INDEX_CACHE_LIMIT:
+            self._time_index_cache.clear()
+
+        try:
+            times = _to_bokeh_ms(df['Datetime'])
+        except (TypeError, ValueError) as exc:
+            logger.debug("Could not build time index: %s", exc)
+            self._time_index_cache[cache_key] = (df, None)
+            return None
+
+        if times.size and not np.all(np.diff(times) >= 0):
+            logger.debug("Datetime column is not sorted; using mask-based slicing")
+            self._time_index_cache[cache_key] = (df, None)
+            return None
+
+        self._time_index_cache[cache_key] = (df, times)
+        return times
+
+    def _slice_by_time_with_index(self, df: pd.DataFrame, start_ms: float, end_ms: float):
+        """
+        Slice by time, also returning the slice's int64 ms timestamps when available.
+
+        Callers that need those timestamps (to push to Bokeh) can reuse this instead of
+        re-deriving them from the sliced frame, which is the single most expensive step
+        in a streamed update.  The second element is None on the fallback path.
+        """
         if df is None or df.empty or 'Datetime' not in df.columns:
-            return df
+            return df, None
         start, end = sorted([start_ms, end_ms])
+
+        times_ms = self._time_index_ms(df)
+        if times_ms is not None:
+            # Search with integer bounds. The viewport arrives from Bokeh as floats, and
+            # a float needle promotes the whole int64 index to float64 on every call -
+            # 276us instead of 1.3us over a 4-day 1s survey.
+            # Rounding preserves the inclusive bounds: the first time >= start is the
+            # first >= ceil(start), and the last time <= end is the last <= floor(end).
+            left = int(np.searchsorted(times_ms, math.ceil(start), side='left'))
+            right = int(np.searchsorted(times_ms, math.floor(end), side='right'))
+            return df.iloc[left:right], times_ms[left:right]
+
         times = pd.to_datetime(df['Datetime'])
         # Create timezone-aware timestamps to match the data
         start_ts = pd.to_datetime(start, unit='ms', utc=True)
         end_ts = pd.to_datetime(end, unit='ms', utc=True)
         mask = (times >= start_ts) & (times <= end_ts)
-        return df.loc[mask]
+        return df.loc[mask], None
+
+    def _slice_by_time(self, df: pd.DataFrame, start_ms: float, end_ms: float) -> pd.DataFrame:
+        sliced, _ = self._slice_by_time_with_index(df, start_ms, end_ms)
+        return sliced
 
     def _buffer_covers_viewport(self, position_id: str, start_ms: float, end_ms: float) -> bool:
         """Check if current buffer covers viewport with 10% margin."""

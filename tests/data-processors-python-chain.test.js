@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
+import '../noise_survey_analysis/static/js/utils.js';
 import '../noise_survey_analysis/static/js/features/view/viewResolution.js';
 import '../noise_survey_analysis/static/js/data-processors.js';
 

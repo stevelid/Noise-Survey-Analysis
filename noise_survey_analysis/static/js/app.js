@@ -27,6 +27,35 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         _spectrogramCanvasBuffers: {}
     };
 
+    // Server-pushed reservoir updates arrive one Bokeh source at a time, so a single
+    // pan lands up to two changes per position (time series + spectrogram). Each one
+    // used to force its own heavy update, and a heavy update reprocesses every
+    // position, so the work scaled with sources rather than with pans. Coalesce them
+    // into one dispatch per frame.
+    let _pendingDataRefreshHandle = null;
+    const _pendingDataRefreshPositions = new Set();
+
+    function flushPendingDataRefresh() {
+        _pendingDataRefreshHandle = null;
+        if (!_pendingDataRefreshPositions.size) {
+            return;
+        }
+        const positionIds = Array.from(_pendingDataRefreshPositions);
+        _pendingDataRefreshPositions.clear();
+        // The payload is advisory: a heavy update rebuilds every visible position.
+        app.store.dispatch(app.actions.dataRefreshed(positionIds[0]));
+    }
+
+    function scheduleDataRefresh(positionId) {
+        _pendingDataRefreshPositions.add(positionId);
+        if (_pendingDataRefreshHandle !== null) {
+            return;
+        }
+        _pendingDataRefreshHandle = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame(flushPendingDataRefresh)
+            : setTimeout(flushPendingDataRefresh, 0);
+    }
+
     const logStepSizeByPosition = {};
     const lineDisplayTypeByPosition = {};
     let lastAppliedControlStateUpdateAt = null;
@@ -178,7 +207,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const logSource = models.timeSeriesSources[positionId]?.log;
                 if (logSource && logSource.change) {
                     logSource.change.connect(() => {
-                        app.store.dispatch(app.actions.dataRefreshed(positionId));
+                        scheduleDataRefresh(positionId);
                     });
                 }
             });
@@ -189,7 +218,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     const logSource = models.spectrogramSources[positionId]?.log;
                     if (logSource && logSource.change) {
                         logSource.change.connect(() => {
-                            app.store.dispatch(app.actions.dataRefreshed(positionId));
+                            scheduleDataRefresh(positionId);
                         });
                     }
                 });

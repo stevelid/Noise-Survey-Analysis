@@ -116,6 +116,75 @@ describe('App Orchestration Integration Tests', () => {
         });
     });
 
+    // --- Category 1b: Streamed data refresh coalescing ---
+    describe('Category 1b: Streamed data refresh coalescing', () => {
+        const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+
+        async function initializeWithStreamingSources() {
+            // Drop the subscription created by the shared beforeEach so only this
+            // app instance responds to the store.
+            window.NoiseSurveyApp.init.reInitializeStore();
+            const changeHandlers = [];
+            const makeStreamingSource = () => ({
+                data: { Datetime: [] },
+                change: { connect: (fn) => changeHandlers.push(fn) },
+            });
+
+            const models = {
+                ...mockBokehModels,
+                timeSeriesSources: {
+                    P1: { overview: { data: { Datetime: [0, 1000], LAeq: [50, 50] } }, log: makeStreamingSource() },
+                    P2: { overview: { data: { Datetime: [0, 1000], LAeq: [50, 50] } }, log: makeStreamingSource() },
+                },
+                spectrogramSources: {
+                    P1: { log: makeStreamingSource() },
+                    P2: { log: makeStreamingSource() },
+                },
+            };
+
+            window.NoiseSurveyApp.registry.models = models;
+            window.NoiseSurveyApp.init.initialize(models);
+            // Let the initial kickoff render settle before anything is measured.
+            await nextFrame();
+            await nextFrame();
+            return changeHandlers;
+        }
+
+        it('collapses one change per streamed source into a single heavy update', async () => {
+            const { renderers } = window.NoiseSurveyApp;
+            const changeHandlers = await initializeWithStreamingSources();
+            // Two positions x (time series + spectrogram).
+            expect(changeHandlers).toHaveLength(4);
+
+            vi.clearAllMocks();
+            changeHandlers.forEach(fn => fn());
+
+            // Nothing dispatched yet: the refresh is deferred to the next frame.
+            expect(renderers.renderPrimaryCharts).not.toHaveBeenCalled();
+
+            await nextFrame();
+            await nextFrame();
+
+            expect(renderers.renderPrimaryCharts).toHaveBeenCalledTimes(1);
+        });
+
+        it('still refreshes on a later frame after the batch flushes', async () => {
+            const { renderers } = window.NoiseSurveyApp;
+            const changeHandlers = await initializeWithStreamingSources();
+
+            changeHandlers.forEach(fn => fn());
+            await nextFrame();
+            await nextFrame();
+
+            vi.clearAllMocks();
+            changeHandlers[0]();
+            await nextFrame();
+            await nextFrame();
+
+            expect(renderers.renderPrimaryCharts).toHaveBeenCalledTimes(1);
+        });
+    });
+
     // --- Category 2: Light Update Scenarios ---
     describe('Category 2: Light Update Scenarios', () => {
         it('tap sets cursor and calls overlays without primary re-render', () => {

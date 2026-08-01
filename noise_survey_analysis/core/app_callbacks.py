@@ -3,6 +3,7 @@
 import logging
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor, wait as futures_wait
 from bokeh.plotting import curdoc
 from bokeh.models import ColumnDataSource, Button, Select, Div, CustomJS
 from datetime import datetime, timedelta, timezone
@@ -28,6 +29,13 @@ class AppCallbacks:
     Manages Python-side callbacks for the Bokeh application.
     Connects UI events to application logic.
     """
+
+    _AUDIO_THREAD_PREFIX = 'nsa-audio-cmd'
+    # How long cleanup waits for an in-flight audio command before releasing VLC anyway.
+    # Commands are bounded (VLC settle sleeps plus a 0.5s monitor join), so this is
+    # generous; exceeding it means something is wedged and hanging teardown is worse.
+    AUDIO_SHUTDOWN_GRACE_SECONDS = 5.0
+
     def __init__(
         self,
         doc,
@@ -60,6 +68,16 @@ class AppCallbacks:
         self._streaming_timeout_id = None
         self._pending_stream_range = None
         self._static_export_in_progress = False
+        # Single worker so audio commands stay ordered relative to each other while
+        # staying off the document's IOLoop.
+        self._audio_command_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix=self._AUDIO_THREAD_PREFIX
+        )
+        self._audio_commands_lock = threading.Lock()
+        self._pending_audio_commands = set()
+        self._audio_shutdown = False
+        self._audio_release_lock = threading.Lock()
+        self._audio_released = False
 
         if not self.audio_handler:
             logger.info("AppCallbacks initialized without audio handler. Audio features disabled.")
@@ -87,13 +105,37 @@ class AppCallbacks:
         if not self.audio_handler or not getattr(self.audio_handler, 'audio_available', False):
             logger.debug("Ignoring audio control command: audio handler missing or unavailable.")
             return
-        try:
-            command = new.get('command', [None])[0]
-            if command is None:
-                return
-            position_id = new.get('position_id', [None])[0] 
-            value = new.get('value', [None])[0]
 
+        command = new.get('command', [None])[0]
+        if command is None:
+            return
+        position_id = new.get('position_id', [None])[0]
+        value = new.get('value', [None])[0]
+
+        # Opening media and settling VLC blocks for hundreds of milliseconds. Bokeh runs
+        # document callbacks on a single IOLoop, so doing that here freezes the whole
+        # dashboard - streaming, rendering and status ticks alike - for the duration.
+        # Hand it to a single worker so commands still apply in order.
+        with self._audio_commands_lock:
+            if self._audio_shutdown:
+                logger.debug("Ignoring audio control command after shutdown: %s", command)
+                return
+            future = self._audio_command_executor.submit(
+                self._execute_audio_control_command, command, position_id, value
+            )
+            self._pending_audio_commands.add(future)
+        future.add_done_callback(self._forget_audio_command)
+
+    def _forget_audio_command(self, future):
+        with self._audio_commands_lock:
+            self._pending_audio_commands.discard(future)
+
+    def _execute_audio_control_command(self, command, position_id, value):
+        if self._audio_shutdown:
+            # Queued behind a command that outlived the session; VLC may already be gone.
+            logger.debug("Skipping audio control command after shutdown: %s", command)
+            return
+        try:
             logger.info(f"Received audio control command: {command}, position_id: {position_id}, value: {value}")
 
             if command == 'play':
@@ -323,15 +365,106 @@ class AppCallbacks:
             finally:
                 self._periodic_callback_id = None
 
+    def _shutdown_audio_commands(self):
+        """
+        Stop accepting audio commands and let any in-flight one finish.
+
+        Ordering matters: `release()` invalidates the VLC player and instance, so a
+        command still running on the worker would be calling into freed resources.
+        Queued commands are cancelled, and the flag makes any that already escaped
+        cancellation return without touching VLC.
+
+        Returns:
+            The futures still running when the grace period expired. The caller must not
+            release VLC while any of these are outstanding - they hand ownership of the
+            release to the command itself.
+        """
+        with self._audio_commands_lock:
+            self._audio_shutdown = True
+            pending = list(self._pending_audio_commands)
+
+        for future in pending:
+            future.cancel()  # No-op for the one already running.
+
+        still_running = []
+        if threading.current_thread().name.startswith(self._AUDIO_THREAD_PREFIX):
+            # Waiting on our own executor would deadlock. Only reachable if a command
+            # somehow triggers session teardown.
+            logger.warning("Audio command shutdown requested from the worker; skipping wait.")
+        elif pending:
+            _, unfinished = futures_wait(pending, timeout=self.AUDIO_SHUTDOWN_GRACE_SECONDS)
+            still_running = list(unfinished)
+            if still_running:
+                logger.warning(
+                    "Audio command still running after %.1fs; deferring VLC release to it.",
+                    self.AUDIO_SHUTDOWN_GRACE_SECONDS,
+                )
+
+        try:
+            self._audio_command_executor.shutdown(wait=False)
+        except Exception as e:
+            logger.warning(f"Error shutting down audio command executor: {e}")
+
+        return still_running
+
+    def _release_audio_handler_once(self):
+        """
+        Release the VLC handler, at most once across every caller.
+
+        Both cleanup() and the deferred completion callback can reach here, and freeing
+        VLC twice is its own hazard.
+        """
+        if not self.audio_handler:
+            return
+        with self._audio_release_lock:
+            if self._audio_released:
+                return
+            self._audio_released = True
+        try:
+            self.audio_handler.release()
+            logger.info("Audio handler released.")
+        except Exception as e:
+            logger.warning(f"Error releasing audio handler: {e}")
+
+    def _release_audio_when_commands_finish(self, outstanding):
+        """
+        Hand the release to the commands still holding VLC.
+
+        Whichever finishes last releases. If one never finishes we deliberately keep the
+        player and instance alive: leaking them is far safer than freeing memory that a
+        live thread is still calling into.
+        """
+        remaining = {'count': len(outstanding)}
+        guard = threading.Lock()
+
+        def on_done(_future):
+            with guard:
+                remaining['count'] -= 1
+                last = remaining['count'] == 0
+            if last:
+                logger.info("Deferred audio command finished; releasing VLC now.")
+                self._release_audio_handler_once()
+
+        for future in outstanding:
+            future.add_done_callback(on_done)
+
     def cleanup(self):
         """Cleans up resources when the session is destroyed."""
         self._stop_periodic_update()
-        if self.audio_handler:
+        # Must precede any release below: a command still on the worker owns VLC.
+        outstanding = self._shutdown_audio_commands()
+        if self.server_data_handler is not None and hasattr(self.server_data_handler, 'cleanup'):
             try:
-                self.audio_handler.release()
-                logger.info("Audio handler released.")
+                self.server_data_handler.cleanup()
             except Exception as e:
-                logger.warning(f"Error releasing audio handler: {e}")
+                logger.warning(f"Error cleaning up server data handler: {e}")
+
+        if outstanding:
+            # A command outlived the grace period. It still owns the player, so it - not
+            # us - performs the release when it finishes.
+            self._release_audio_when_commands_finish(outstanding)
+        else:
+            self._release_audio_handler_once()
         logger.info("AppCallbacks cleaned up.")
 
     def set_server_data_handler(self, server_data_handler):

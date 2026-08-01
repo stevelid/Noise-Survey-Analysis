@@ -1,6 +1,8 @@
 import unittest
 import os
 import tempfile
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -42,6 +44,8 @@ class FakeDoc:
     def __init__(self, models):
         self._models = models
         self._timeout_callbacks = []
+        self._next_tick_callbacks = []
+        self.next_tick_event = threading.Event()
 
     def get_model_by_name(self, name):
         return self._models.get(name)
@@ -55,6 +59,21 @@ class FakeDoc:
         self._timeout_callbacks.clear()
         for callback in callbacks:
             callback()
+
+    def add_next_tick_callback(self, callback):
+        # Bokeh guarantees this is safe to call from a worker thread.
+        self._next_tick_callbacks.append(callback)
+        self.next_tick_event.set()
+        return len(self._next_tick_callbacks) - 1
+
+    def flush_next_ticks(self):
+        """Run queued callbacks the way the document thread eventually would."""
+        callbacks = list(self._next_tick_callbacks)
+        self._next_tick_callbacks.clear()
+        self.next_tick_event.clear()
+        for callback in callbacks:
+            callback()
+        return len(callbacks)
 
 
 class FakeRange:
@@ -134,6 +153,618 @@ class StreamingBackendTests(unittest.TestCase):
         self.assertEqual(
             prepared["initial_glyph_data"]["image"][0][1].tolist(),
             [70, 70, 70, 71, 71, 72],
+        )
+
+    def _spectral_frame_at_cadence(self, cadence_seconds, n_rows=64):
+        base_time = pd.Timestamp("2024-01-01T00:00:00Z")
+        times = [
+            base_time + pd.Timedelta(seconds=idx * cadence_seconds)
+            for idx in range(n_rows)
+        ]
+        return pd.DataFrame({
+            "Datetime": times,
+            "LZeq_100": [60 + idx for idx in range(n_rows)],
+            "LZeq_200": [70 + idx for idx in range(n_rows)],
+        })
+
+    def test_dynamic_log_window_drifts_with_slice_cadence_when_unpinned(self):
+        """Guards the failure mode the pin exists to prevent.
+
+        chunk_time_length is derived from a median over the leading gaps of whichever
+        slice was just cut, so a slice that lands on a coarser cadence (a data gap, a
+        file boundary, a mixed-cadence source) sizes a different buffer.
+        """
+        processor = GlyphDataProcessor()
+
+        one_second = processor.prepare_single_spectrogram_data(
+            self._spectral_frame_at_cadence(1),
+            "LZeq",
+            CHART_SETTINGS,
+            use_dynamic_log_window=True,
+        )
+        two_second = processor.prepare_single_spectrogram_data(
+            self._spectral_frame_at_cadence(2),
+            "LZeq",
+            CHART_SETTINGS,
+            use_dynamic_log_window=True,
+        )
+
+        self.assertNotEqual(
+            one_second["chunk_time_length"],
+            two_second["chunk_time_length"],
+            "expected unpinned dynamic window to drift with slice cadence",
+        )
+
+    def test_explicit_fixed_n_times_pins_chunk_time_length_across_cadences(self):
+        """The pin must survive cadence drift so the fixed Image buffer stays valid."""
+        processor = GlyphDataProcessor()
+        pinned_width = 3600
+
+        for cadence_seconds in (1, 2, 5):
+            with self.subTest(cadence_seconds=cadence_seconds):
+                prepared = processor.prepare_single_spectrogram_data(
+                    self._spectral_frame_at_cadence(cadence_seconds),
+                    "LZeq",
+                    CHART_SETTINGS,
+                    use_dynamic_log_window=True,
+                    fixed_n_times=pinned_width,
+                )
+
+                self.assertEqual(prepared["chunk_time_length"], pinned_width)
+                # The reservoir is padded up to a whole number of display buffers, so a
+                # client-side chunk extraction can always fill the glyph exactly.
+                self.assertEqual(prepared["n_times"] % pinned_width, 0)
+                self.assertGreaterEqual(prepared["n_times"], pinned_width)
+
+    def test_streamed_spectrogram_matches_initialized_display_buffer_width(self):
+        """End-to-end: the streamed payload is sized from the live display buffer."""
+        pinned_width = 3600
+        n_freqs = 2
+        display_source = ColumnDataSource(data={
+            "image": [np.zeros((n_freqs, pinned_width), dtype=np.int16)],
+            "x": [0.0],
+            "y": [-0.5],
+            "dw": [1.0],
+            "dh": [float(n_freqs)],
+        })
+        spectrogram_log_source = ColumnDataSource(data={})
+
+        position = PositionData(name="P_pin")
+        # 2 s cadence: unpinned this would size a 1800-bin buffer and be rejected.
+        position.log_spectral = self._spectral_frame_at_cadence(2)
+
+        doc = FakeDoc({
+            "source_P_pin_spectrogram": display_source,
+            "source_P_pin_spectrogram_log": spectrogram_log_source,
+            "figure_P_pin_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({"P_pin": position}), CHART_SETTINGS)
+
+        self.assertEqual(
+            handler._resolve_display_buffer_width("P_pin", handler.position_models["P_pin"]),
+            pinned_width,
+        )
+
+        times = position.log_spectral["Datetime"]
+        handler._update_log_spectrogram(
+            position.log_spectral,
+            handler.position_models["P_pin"],
+            int(times.iloc[0].value // 10**6),
+            int(times.iloc[-1].value // 10**6),
+            position_id="P_pin",
+            position_data=position,
+        )
+
+        self.assertEqual(spectrogram_log_source.data["chunk_time_length"][0], pinned_width)
+        self.assertEqual(spectrogram_log_source.data["n_freqs"][0], n_freqs)
+        # The client extracts n_freqs * chunk_time_length cells into the fixed buffer.
+        self.assertEqual(
+            spectrogram_log_source.data["n_times"][0] % pinned_width,
+            0,
+        )
+
+    def _deferred_position(self, name="P_lazy"):
+        """A position whose log data is still on disk, as after a deferred load."""
+        position = PositionData(name=name)
+        position.log_file_paths = [{
+            "file_path": "deferred_log.csv",
+            "parser_type": "Svan",
+            "return_all_cols": False,
+        }]
+        return position
+
+    def _lazy_handler(self, position, name="P_lazy"):
+        doc = FakeDoc({
+            f"source_{name}_timeseries_log": ColumnDataSource(data={}),
+            f"source_{name}_spectrogram_log": ColumnDataSource(data={}),
+            f"figure_{name}_timeseries": DummyFigure(width=320),
+            f"figure_{name}_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({name: position}), CHART_SETTINGS)
+        self.addCleanup(handler.cleanup)
+        return doc, handler
+
+    def test_lazy_load_does_not_block_the_document_thread(self):
+        """Parsing a multi-day log takes seconds; Bokeh's IOLoop cannot wait on it."""
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+
+        started = threading.Event()
+        release = threading.Event()
+        loaded_on = {}
+
+        def slow_load(_factory, _use_cache):
+            loaded_on['thread'] = threading.current_thread()
+            started.set()
+            release.wait(5)
+            position._log_data_loaded = True
+            return True
+
+        position.load_log_data_lazy = slow_load
+        caller = threading.current_thread()
+
+        began = time.monotonic()
+        handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+        elapsed = time.monotonic() - began
+
+        try:
+            self.assertLess(elapsed, 2, "range update blocked on the lazy load")
+            self.assertTrue(started.wait(5), "lazy load never started")
+            self.assertIsNot(loaded_on['thread'], caller)
+        finally:
+            release.set()
+
+    def test_lazy_load_is_started_only_once_while_in_flight(self):
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+
+        started = threading.Event()
+        release = threading.Event()
+        calls = []
+
+        def slow_load(_factory, _use_cache):
+            calls.append(1)
+            started.set()
+            release.wait(5)
+            position._log_data_loaded = True
+            return True
+
+        position.load_log_data_lazy = slow_load
+
+        handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+        self.assertTrue(started.wait(5), "lazy load never started")
+        # Further pans while it is still loading must not queue more loads.
+        for offset in range(1, 4):
+            handler.handle_range_update(
+                1704067200000 + offset * 60_000,
+                1704067200000 + (offset + 1) * 60_000,
+            )
+
+        release.set()
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and len(calls) < 2:
+            time.sleep(0.02)
+
+        self.assertEqual(len(calls), 1)
+
+    def test_lazy_load_refreshes_against_the_newest_viewport(self):
+        """The user keeps panning while the file loads; the refresh must follow them."""
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_load(_factory, _use_cache):
+            started.set()
+            release.wait(5)
+            position._log_data_loaded = True
+            return True
+
+        position.load_log_data_lazy = slow_load
+
+        stale = (1704067200000, 1704067200000 + 60_000)
+        handler.handle_range_update(*stale)
+        self.assertTrue(started.wait(5), "lazy load never started")
+
+        newest = (1704070800000, 1704070800000 + 60_000)
+        handler.handle_range_update(*newest)
+
+        release.set()
+        self.assertTrue(doc.next_tick_event.wait(5), "no refresh was scheduled")
+
+        seen = []
+        handler.handle_range_update = lambda start, end: seen.append((start, end))
+        doc.flush_next_ticks()
+
+        self.assertEqual(seen, [newest])
+
+    def test_data_reaches_the_source_after_a_deferred_load_completes(self):
+        """The deferring update must not claim buffer coverage it never streamed.
+
+        If it did, the covering check would skip the position on every later update -
+        including the refresh the completed load schedules - and the chart would sit on
+        overview data forever.
+        """
+        name = "P_lazy_e2e"
+        position = self._deferred_position(name)
+        doc, handler = self._lazy_handler(position, name)
+
+        base = pd.Timestamp("2024-01-01T00:00:00Z")
+        times = [base + pd.Timedelta(seconds=idx) for idx in range(120)]
+
+        def load(_factory, _use_cache):
+            position.log_totals = pd.DataFrame({
+                "Datetime": times,
+                "LAeq": [50 + (idx % 7) for idx in range(len(times))],
+            })
+            position._log_data_loaded = True
+            return True
+
+        position.load_log_data_lazy = load
+
+        start_ms = int(times[0].value // 10**6)
+        end_ms = int(times[-1].value // 10**6)
+        source = doc.get_model_by_name(f"source_{name}_timeseries_log")
+
+        handler.handle_range_update(start_ms, end_ms)
+        self.assertEqual(len(source.data.get("Datetime", [])), 0, "should defer, not block")
+
+        self.assertTrue(doc.next_tick_event.wait(5), "no refresh was scheduled")
+        doc.flush_next_ticks()
+
+        self.assertGreater(len(source.data.get("Datetime", [])), 0,
+                           "log data never reached the source after the load completed")
+        self.assertEqual(list(source.data["LAeq"])[:3], [50, 51, 52])
+
+    def test_real_load_reports_failure_when_every_file_is_unreadable(self):
+        """Exercises the real load_log_data_lazy, not a stub that raises.
+
+        The method absorbs per-file errors, so it used to return normally with
+        _log_data_loaded set even when nothing had loaded. The handler then saw success
+        and would never retry once an unavailable share came back.
+        """
+        position = PositionData(name="P_real_fail")
+        position.log_file_paths = [{
+            "file_path": "/definitely/not/here/missing_log.csv",
+            "parser_type": "Svan",
+            "return_all_cols": False,
+        }]
+
+        parser_factory = MagicMock()
+        parser_factory.get_parser.return_value = None  # No parser will touch this path.
+
+        result = position.load_log_data_lazy(parser_factory, use_cache=False)
+
+        self.assertFalse(result, "a total failure must not report success")
+        self.assertFalse(position._log_data_loaded, "must stay eligible for a retry")
+        self.assertFalse(position.has_log_totals)
+        self.assertFalse(position.has_log_spectral)
+
+    def test_real_load_reports_failure_when_the_parser_raises(self):
+        position = PositionData(name="P_real_raise")
+        position.log_file_paths = [{
+            "file_path": "unreadable_log.csv",
+            "parser_type": "Svan",
+            "return_all_cols": False,
+        }]
+
+        parser = MagicMock()
+        parser.parse.side_effect = IOError("network share went away")
+        parser_factory = MagicMock()
+        parser_factory.get_parser.return_value = parser
+
+        result = position.load_log_data_lazy(parser_factory, use_cache=False)
+
+        self.assertFalse(result)
+        self.assertFalse(position._log_data_loaded)
+
+    def test_real_load_counts_partial_multi_file_success_as_loaded(self):
+        """One good file out of two is usable data; re-parsing the good one helps nobody."""
+        position = PositionData(name="P_partial")
+        position.log_file_paths = [
+            {"file_path": "good_log.csv", "parser_type": "Svan", "return_all_cols": False},
+            {"file_path": "bad_log.csv", "parser_type": "Svan", "return_all_cols": False},
+        ]
+
+        base = pd.Timestamp("2024-01-01T00:00:00Z")
+        good = ParsedData(
+            totals_df=pd.DataFrame({
+                "Datetime": [base, base + pd.Timedelta(seconds=1)],
+                "LAeq": [50, 51],
+            }),
+            original_file_path="good_log.csv",
+            parser_type="Svan",
+            data_profile="log",
+            sample_period_seconds=1.0,
+        )
+
+        good_parser = MagicMock()
+        good_parser.parse.return_value = good
+        good_parser.timezone = None
+        bad_parser = MagicMock()
+        bad_parser.parse.side_effect = ValueError("corrupt file")
+
+        parser_factory = MagicMock()
+        parser_factory.get_parser.side_effect = lambda path, **kwargs: (
+            good_parser if path == "good_log.csv" else bad_parser
+        )
+
+        result = position.load_log_data_lazy(parser_factory, use_cache=False)
+
+        self.assertTrue(result, "partial success should still surface the data we have")
+        self.assertTrue(position._log_data_loaded)
+        self.assertEqual(position.log_totals["LAeq"].tolist(), [50, 51])
+
+    def test_unreadable_real_load_is_retried_after_the_file_is_restored(self):
+        """The end-to-end recovery path: share goes away, comes back, user revisits."""
+        name = "P_restore"
+        position = PositionData(name=name)
+        position.log_file_paths = [{
+            "file_path": "flaky_log.csv",
+            "parser_type": "Svan",
+            "return_all_cols": False,
+        }]
+        doc, handler = self._lazy_handler(position, name)
+
+        base = pd.Timestamp("2024-01-01T00:00:00Z")
+        times = [base + pd.Timedelta(seconds=idx) for idx in range(30)]
+        restored = ParsedData(
+            totals_df=pd.DataFrame({"Datetime": times, "LAeq": list(range(50, 80))}),
+            original_file_path="flaky_log.csv",
+            parser_type="Svan",
+            data_profile="log",
+            sample_period_seconds=1.0,
+        )
+
+        available = {'ok': False}
+        parser = MagicMock()
+        parser.timezone = None
+
+        def parse(*_args, **_kwargs):
+            if not available['ok']:
+                raise IOError("share unavailable")
+            return restored
+
+        parser.parse.side_effect = parse
+        handler.app_data.parser_factory.get_parser.return_value = parser
+        handler.app_data.use_cache = False
+
+        start_ms = int(times[0].value // 10**6)
+        end_ms = int(times[-1].value // 10**6)
+        source = doc.get_model_by_name(f"source_{name}_timeseries_log")
+
+        # First visit: the share is down.
+        handler.handle_range_update(start_ms, end_ms)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not parser.parse.called:
+            time.sleep(0.02)
+        self.assertFalse(position._log_data_loaded)
+        self.assertEqual(len(doc._next_tick_callbacks), 0, "a failed load must not refresh")
+
+        # The share comes back and the user navigates here again.
+        available['ok'] = True
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not position._log_data_loaded:
+            handler.handle_range_update(start_ms, end_ms)
+            time.sleep(0.05)
+
+        self.assertTrue(position._log_data_loaded, "retry never succeeded after restore")
+        self.assertTrue(doc.next_tick_event.wait(5), "no refresh after the successful retry")
+        doc.flush_next_ticks()
+        self.assertGreater(len(source.data.get("Datetime", [])), 0)
+
+    def test_queued_position_loads_never_start_after_cleanup(self):
+        """Loads are serialized, so the queue must be cancelled, not left to drain."""
+        first = self._deferred_position("P_a")
+        second = self._deferred_position("P_b")
+        doc = FakeDoc({
+            "source_P_a_timeseries_log": ColumnDataSource(data={}),
+            "source_P_b_timeseries_log": ColumnDataSource(data={}),
+            "figure_P_a_timeseries": DummyFigure(width=320),
+            "figure_P_b_timeseries": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(
+            doc, DummyDataManager({"P_a": first, "P_b": second}), CHART_SETTINGS
+        )
+        self.addCleanup(handler.cleanup)
+
+        started_first = threading.Event()
+        let_first_finish = threading.Event()
+        second_started = threading.Event()
+
+        def slow_first(_factory, _use_cache):
+            started_first.set()
+            let_first_finish.wait(5)
+            first._log_data_loaded = True
+            return True
+
+        def should_not_run(_factory, _use_cache):
+            second_started.set()
+            second._log_data_loaded = True
+            return True
+
+        first.load_log_data_lazy = slow_first
+        second.load_log_data_lazy = should_not_run
+
+        # One range update queues both positions behind the single worker.
+        handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+        self.assertTrue(started_first.wait(5), "first load never started")
+
+        handler.cleanup()
+        let_first_finish.set()
+
+        # The second was still queued when the session closed; it must never begin.
+        self.assertFalse(second_started.wait(1.0),
+                         "a queued multi-day parse started after cleanup")
+
+    def test_repeated_handler_cleanup_is_safe(self):
+        position = self._deferred_position("P_twice")
+        doc, handler = self._lazy_handler(position, "P_twice")
+        position.load_log_data_lazy = lambda _f, _c: True
+
+        handler.cleanup()
+        handler.cleanup()
+
+        self.assertTrue(handler._disposed)
+
+    def test_failed_lazy_load_does_not_wedge_or_refresh(self):
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+
+        attempts = []
+
+        def failing_load(_factory, _use_cache):
+            attempts.append(1)
+            raise IOError("network drive unavailable")
+
+        position.load_log_data_lazy = failing_load
+
+        handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and not attempts:
+            time.sleep(0.02)
+        self.assertEqual(len(attempts), 1)
+
+        # A failure must not schedule a refresh that would find no data.
+        self.assertEqual(len(doc._next_tick_callbacks), 0)
+
+        # A later pan may retry, rather than the position being wedged forever.
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and len(attempts) < 2:
+            handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+            time.sleep(0.02)
+        self.assertGreaterEqual(len(attempts), 2)
+
+    def test_no_refresh_is_scheduled_after_cleanup(self):
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_load(_factory, _use_cache):
+            started.set()
+            release.wait(5)
+            position._log_data_loaded = True
+            return True
+
+        position.load_log_data_lazy = slow_load
+
+        handler.handle_range_update(1704067200000, 1704067200000 + 60_000)
+        self.assertTrue(started.wait(5), "lazy load never started")
+
+        handler.cleanup()
+        release.set()
+
+        # The session is gone; scheduling onto its document would be a leak at best.
+        time.sleep(0.3)
+        self.assertEqual(len(doc._next_tick_callbacks), 0)
+
+    def test_lazy_load_is_not_started_when_the_viewport_is_too_wide(self):
+        """The existing viewport gate still runs before any background work."""
+        position = self._deferred_position()
+        doc, handler = self._lazy_handler(position)
+        position.load_log_data_lazy = MagicMock()
+        position.sample_periods_seconds = {0.1}
+
+        # Far wider than the high-rate cap.
+        handler.handle_range_update(1704067200000, 1704067200000 + 86_400_000)
+
+        time.sleep(0.2)
+        position.load_log_data_lazy.assert_not_called()
+
+    def _slice_handler(self):
+        return ServerDataHandler(FakeDoc({}), DummyDataManager({}), CHART_SETTINGS)
+
+    def test_slice_by_time_is_inclusive_at_both_bounds(self):
+        handler = self._slice_handler()
+        frame = self._spectral_frame_at_cadence(1, n_rows=10)
+        times_ms = [int(value.value // 10**6) for value in frame["Datetime"]]
+
+        sliced = handler._slice_by_time(frame, times_ms[2], times_ms[5])
+
+        self.assertEqual(
+            [int(value.value // 10**6) for value in sliced["Datetime"]],
+            times_ms[2:6],
+        )
+
+    def test_slice_by_time_matches_mask_path_on_arbitrary_bounds(self):
+        """The binary-search path must agree with the mask it replaced."""
+        handler = self._slice_handler()
+        frame = self._spectral_frame_at_cadence(1, n_rows=64)
+        times_ms = [int(value.value // 10**6) for value in frame["Datetime"]]
+        first, last = times_ms[0], times_ms[-1]
+
+        bounds = [
+            (first - 5000, first - 1),      # entirely before
+            (last + 1, last + 5000),        # entirely after
+            (first - 5000, last + 5000),    # superset
+            (times_ms[3] + 250, times_ms[9] - 250),  # off-grid interior
+            (times_ms[7], times_ms[7]),     # single instant
+        ]
+
+        for start_ms, end_ms in bounds:
+            with self.subTest(start_ms=start_ms, end_ms=end_ms):
+                fast = handler._slice_by_time(frame, start_ms, end_ms)
+                # Force the fallback by poisoning the cached index for this frame.
+                handler._time_index_cache[id(frame)] = (frame, None)
+                masked = handler._slice_by_time(frame, start_ms, end_ms)
+                handler._time_index_cache.clear()
+
+                self.assertEqual(list(fast.index), list(masked.index))
+
+    def test_slice_by_time_handles_fractional_bounds_like_the_mask_path(self):
+        """Bokeh hands over float viewport bounds; integer rounding must not shift rows.
+
+        The needle is rounded to an int so numpy does not promote the whole int64 index
+        to float64 on every search, which costs 276us instead of 1.3us on a 4-day survey.
+        """
+        handler = self._slice_handler()
+        frame = self._spectral_frame_at_cadence(1, n_rows=32)
+        times_ms = [int(value.value // 10**6) for value in frame["Datetime"]]
+
+        fractional_bounds = [
+            (times_ms[4] + 0.5, times_ms[9] + 0.5),
+            (times_ms[4] - 0.5, times_ms[9] - 0.5),
+            (times_ms[4] + 0.001, times_ms[9] - 0.001),
+            (times_ms[4] - 0.999, times_ms[9] + 0.999),
+        ]
+
+        for start_ms, end_ms in fractional_bounds:
+            with self.subTest(start_ms=start_ms, end_ms=end_ms):
+                fast = handler._slice_by_time(frame, start_ms, end_ms)
+                handler._time_index_cache[id(frame)] = (frame, None)  # force the mask path
+                masked = handler._slice_by_time(frame, start_ms, end_ms)
+                handler._time_index_cache.clear()
+
+                self.assertEqual(list(fast.index), list(masked.index))
+
+    def test_slice_by_time_falls_back_when_datetime_unsorted(self):
+        handler = self._slice_handler()
+        frame = self._spectral_frame_at_cadence(1, n_rows=8)
+        shuffled = frame.iloc[[3, 0, 5, 1, 7, 2, 6, 4]].reset_index(drop=True)
+        times_ms = sorted(int(value.value // 10**6) for value in shuffled["Datetime"])
+
+        self.assertIsNone(handler._time_index_ms(shuffled))
+
+        sliced = handler._slice_by_time(shuffled, times_ms[1], times_ms[4])
+
+        self.assertEqual(
+            sorted(int(value.value // 10**6) for value in sliced["Datetime"]),
+            times_ms[1:5],
+        )
+
+    def test_time_index_cache_is_bounded(self):
+        handler = self._slice_handler()
+        frames = [self._spectral_frame_at_cadence(1, n_rows=4) for _ in range(40)]
+
+        for frame in frames:
+            handler._time_index_ms(frame)
+
+        self.assertLessEqual(
+            len(handler._time_index_cache),
+            ServerDataHandler._TIME_INDEX_CACHE_LIMIT,
         )
 
     def test_prepare_all_spectral_data_keeps_overview_and_log_buffers_identical(self):
@@ -239,7 +870,8 @@ class StreamingBackendTests(unittest.TestCase):
         handler.handle_range_update(self.start_ms, self.end_ms)
 
         timeseries_data = timeseries_log_source.data
-        self.assertEqual(timeseries_data["LAeq"], [50, 52, 54])
+        # Numeric columns stream as NumPy arrays so Bokeh uses its binary protocol.
+        self.assertEqual(list(timeseries_data["LAeq"]), [50, 52, 54])
         self.assertEqual(
             [int(value) for value in timeseries_data["Datetime"]],
             [self.start_ms, self.middle_ms, self.end_ms],
@@ -270,7 +902,9 @@ class StreamingBackendTests(unittest.TestCase):
         self.assertIn("initial_glyph_data_y", spectrogram_data)
         self.assertIn("initial_glyph_data_dw", spectrogram_data)
         self.assertIn("initial_glyph_data_dh", spectrogram_data)
-        self.assertIn("initial_glyph_data_image", spectrogram_data)
+        # The pixels are deliberately absent: they duplicate the leading chunk of
+        # levels_flat_transposed, which the client slices its display chunk from.
+        self.assertNotIn("initial_glyph_data_image", spectrogram_data)
 
         # Verify wrapping (list of lists for arrays)
         self.assertEqual(len(spectrogram_data["frequency_labels"]), 1)
@@ -438,7 +1072,7 @@ class StreamingBackendTests(unittest.TestCase):
         handler.handle_range_update(self.start_ms, wide_end_ms)
 
         self.assertIn("Datetime", timeseries_log_source.data)
-        self.assertEqual(timeseries_log_source.data["LAeq"], [50, 52, 54])
+        self.assertEqual(list(timeseries_log_source.data["LAeq"]), [50, 52, 54])
 
     def test_server_data_handler_skips_wide_high_sample_rate_viewport(self):
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")
@@ -862,7 +1496,9 @@ class StreamingBackendTests(unittest.TestCase):
 
         self.assertIsInstance(levels, np.ndarray, "levels_flat_transposed should be NumPy array")
         self.assertIsInstance(times_data, np.ndarray, "times_ms should be NumPy array")
-        self.assertEqual(levels.dtype, np.float32, "levels should be float32")
+        # Levels are rounded to int16 during preparation; upcasting only doubled the
+        # payload, so the prepared width is preserved on the wire.
+        self.assertEqual(levels.dtype, np.int16, "levels should stay int16")
         self.assertEqual(times_data.dtype, np.float64, "times should be float64")
 
     def test_reservoir_column_data_source_outer_lengths_valid(self):

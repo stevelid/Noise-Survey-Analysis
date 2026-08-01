@@ -224,16 +224,35 @@ class AudioPlaybackHandler:
             self._is_playing = False
             return False
 
-        # Stop existing playback cleanly before starting new playback.
-        # This is the key to handling rapid switching between positions.
-        self._perform_stop_actions()
-
-        # Find the correct file and offset using the current position's file_info
+        # Resolve the target before tearing anything down: this is a pure lookup over
+        # the indexed file list, and knowing the target lets us skip the reload
+        # entirely when it lands in the recording that is already open.
         filepath, offset_seconds, file_start_time, file_duration = self._find_file_for_timestamp(timestamp, self.current_position)
         if not filepath:
             logger.warning(f"No audio file found for timestamp: {timestamp} in position: {self.current_position or 'default'}")
+            self._perform_stop_actions()
             self._is_playing = False # Ensure state is correct
             return False # Indicate failure
+
+        # Fast path: the requested instant is inside the media already loaded, so seek
+        # in place.  Reloading costs a monitor-thread join, a fresh media object and two
+        # settling sleeps - well over half a second - for no change of source.
+        if filepath == self.current_file and self.player.get_media() is not None:
+            logger.debug(
+                "Seeking within already-loaded media to %.2fs offset (no reload)",
+                offset_seconds,
+            )
+            if position_callback:
+                self.position_callback = position_callback
+            if self._seek_within_current_media(offset_seconds):
+                self._is_playing = True
+                self._ensure_playback_monitor()
+                return True
+            logger.debug("In-place seek failed; falling back to a full reload.")
+
+        # Stop existing playback cleanly before starting new playback.
+        # This is the key to handling rapid switching between positions.
+        self._perform_stop_actions()
 
         # Output the current file being played to terminal
         if self.current_file != filepath:
@@ -287,21 +306,54 @@ class AudioPlaybackHandler:
             return False # Indicate failure
 
         self._is_playing = True
-        self.stop_monitor = False
+        self._restart_playback_monitor()
 
-        # Start the monitor thread (ensure previous one is stopped)
+        return True # Indicate successful initiation
+        # --- End of Original Core Play Logic ---
+
+    def _seek_within_current_media(self, offset_seconds: float) -> bool:
+        """
+        Move the already-loaded media to ``offset_seconds`` without reloading it.
+
+        Returns False if VLC rejects the seek, so callers can fall back to a reload.
+        """
+        try:
+            if self.player.set_time(int(offset_seconds * 1000)) == -1:
+                logger.warning(f"VLC failed to set time to {int(offset_seconds * 1000)}ms.")
+                return False
+            if not self.player.is_playing():
+                if self.player.play() == -1:
+                    logger.error("VLC failed to resume playback after an in-place seek.")
+                    return False
+            return True
+        except Exception as exc:
+            logger.error(f"Error seeking within current media: {exc}", exc_info=True)
+            return False
+
+    def _restart_playback_monitor(self):
+        """Stop any live monitor thread and start a fresh one."""
         if self.playback_monitor and self.playback_monitor.is_alive():
+            # The monitor itself calls play() to roll over to the next file, so it can
+            # reach here on its own thread; joining that would raise.  It breaks out of
+            # its loop straight after this call either way.
+            if self.playback_monitor is threading.current_thread():
+                logger.debug("Monitor thread is restarting itself; skipping join.")
+            else:
                 logger.warning("Previous monitor thread still alive before starting new one.")
-                self.stop_monitor = True # Tell the old one to stop
-                self.playback_monitor.join(0.5) # wait a bit for it. 
+                self.stop_monitor = True  # Tell the old one to stop
+                self.playback_monitor.join(0.5)  # wait a bit for it.
 
-        self.stop_monitor = False # Reset flag for new thread
+        self.stop_monitor = False  # Reset flag for new thread
         self.playback_monitor = threading.Thread(target=self._monitor_playback)
         self.playback_monitor.daemon = True
         self.playback_monitor.start()
 
-        return True # Indicate successful initiation
-        # --- End of Original Core Play Logic ---
+    def _ensure_playback_monitor(self):
+        """Start the monitor only if it is not already running (in-place seek path)."""
+        if self.playback_monitor and self.playback_monitor.is_alive():
+            self.stop_monitor = False
+            return
+        self._restart_playback_monitor()
 
     def pause(self):
         if not self.audio_available or not self.player:
@@ -351,11 +403,17 @@ class AudioPlaybackHandler:
         monitor_stopped = False
         if self.playback_monitor and self.playback_monitor.is_alive():
             self.stop_monitor = True
-            self.playback_monitor.join(0.5)
-            if not self.playback_monitor.is_alive():
+            # The monitor reaches here via its own file-rollover play() call; a thread
+            # cannot join itself, and it exits its loop immediately after regardless.
+            if self.playback_monitor is threading.current_thread():
+                logger.debug("Monitor thread is stopping itself; skipping join.")
                 monitor_stopped = True
             else:
-                logger.warning("Playback monitor thread did not stop cleanly.")
+                self.playback_monitor.join(0.5)
+                if not self.playback_monitor.is_alive():
+                    monitor_stopped = True
+                else:
+                    logger.warning("Playback monitor thread did not stop cleanly.")
         else:
             monitor_stopped = True
 
@@ -601,20 +659,17 @@ class AudioPlaybackHandler:
             if position_callback:
                 self.position_callback = position_callback
                 
-            # Set the time position in milliseconds
-            set_time_result = self.player.set_time(int(offset_seconds * 1000))
-            if set_time_result == -1:
+            if self.player.set_time(int(offset_seconds * 1000)) == -1:
                 logger.warning(f"VLC failed to set time to {int(offset_seconds * 1000)}ms.")
                 return False
-                
+
             # If the *handler's* desired state is 'playing' but the *player* is not, resume playback.
             if self._is_playing and not self.player.is_playing():
                 logger.info("Resuming playback after seek within same file")
-                play_result = self.player.play()
-                if play_result == -1:
+                if self.player.play() == -1:
                     logger.error("VLC failed to resume playback after seek within same file.")
                     return False
-                    
+
             return True
         else:
             # Different file or no current media - use regular play method
