@@ -1,4 +1,5 @@
 import logging
+import math
 import threading
 import time
 from bisect import bisect_left
@@ -785,9 +786,13 @@ class ServerDataHandler:
 
         times_ms = self._time_index_ms(df)
         if times_ms is not None:
-            # Bounds are inclusive at both ends, matching the mask path below.
-            left = int(np.searchsorted(times_ms, start, side='left'))
-            right = int(np.searchsorted(times_ms, end, side='right'))
+            # Search with integer bounds. The viewport arrives from Bokeh as floats, and
+            # a float needle promotes the whole int64 index to float64 on every call -
+            # 276us instead of 1.3us over a 4-day 1s survey.
+            # Rounding preserves the inclusive bounds: the first time >= start is the
+            # first >= ceil(start), and the last time <= end is the last <= floor(end).
+            left = int(np.searchsorted(times_ms, math.ceil(start), side='left'))
+            right = int(np.searchsorted(times_ms, math.floor(end), side='right'))
             return df.iloc[left:right], times_ms[left:right]
 
         times = pd.to_datetime(df['Datetime'])

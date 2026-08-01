@@ -518,6 +518,32 @@ class StreamingBackendTests(unittest.TestCase):
 
                 self.assertEqual(list(fast.index), list(masked.index))
 
+    def test_slice_by_time_handles_fractional_bounds_like_the_mask_path(self):
+        """Bokeh hands over float viewport bounds; integer rounding must not shift rows.
+
+        The needle is rounded to an int so numpy does not promote the whole int64 index
+        to float64 on every search, which costs 276us instead of 1.3us on a 4-day survey.
+        """
+        handler = self._slice_handler()
+        frame = self._spectral_frame_at_cadence(1, n_rows=32)
+        times_ms = [int(value.value // 10**6) for value in frame["Datetime"]]
+
+        fractional_bounds = [
+            (times_ms[4] + 0.5, times_ms[9] + 0.5),
+            (times_ms[4] - 0.5, times_ms[9] - 0.5),
+            (times_ms[4] + 0.001, times_ms[9] - 0.001),
+            (times_ms[4] - 0.999, times_ms[9] + 0.999),
+        ]
+
+        for start_ms, end_ms in fractional_bounds:
+            with self.subTest(start_ms=start_ms, end_ms=end_ms):
+                fast = handler._slice_by_time(frame, start_ms, end_ms)
+                handler._time_index_cache[id(frame)] = (frame, None)  # force the mask path
+                masked = handler._slice_by_time(frame, start_ms, end_ms)
+                handler._time_index_cache.clear()
+
+                self.assertEqual(list(fast.index), list(masked.index))
+
     def test_slice_by_time_falls_back_when_datetime_unsorted(self):
         handler = self._slice_handler()
         frame = self._spectral_frame_at_cadence(1, n_rows=8)
