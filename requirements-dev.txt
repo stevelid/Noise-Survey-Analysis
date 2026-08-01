@@ -1,0 +1,7 @@
+# Development and test dependencies.
+# Runtime deps live in requirements.txt; install both to run the test suites:
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   python -m pytest tests/
+#   npm install && npm test
+-r requirements.txt
+pytest>=7.0

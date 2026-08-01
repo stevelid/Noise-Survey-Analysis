@@ -44,7 +44,6 @@ from bokeh.models import (
 from bokeh.layouts import column, Row, Column
 from bokeh.palettes import Category10
 
-from matplotlib.figure import Figure
 
 from noise_survey_analysis.core.config import (
     CHART_SETTINGS,
@@ -1454,7 +1453,7 @@ class SpectrogramComponent:
         #source and figure
         self.source: ColumnDataSource = ColumnDataSource(data=dict()) # Holds the [transposed_matrix]
         self.source.name = "source_" + self.name_id
-        self.figure: Figure = self._create_empty_figure() # Create a blank figure initially
+        self.figure: figure = self._create_empty_figure() # Create a blank figure initially
         self.hover_div: Div = Div(text="<i>Hover over spectrogram for details</i>",
                                   name=f"{self.position_name}_spectrogram_hover_div",
                                   width=self.chart_settings['spectrogram_width'], height=40,
@@ -1473,7 +1472,7 @@ class SpectrogramComponent:
 
         logger.info(f"SpectrogramComponent initialized for '{self.position_name}'. Initial mode: '{self._current_display_mode}', Param: '{self._current_param}'")
 
-    def _create_empty_figure(self) -> Figure:
+    def _create_empty_figure(self) -> figure:
         """Creates a blank Bokeh figure as a placeholder."""
         title = f"{self.position_name} - Spectrogram"
         pan_tool = PanTool(dimensions="width")
@@ -2159,7 +2158,7 @@ class RangeSelectorComponent:
         
         self.attached_timeseries_component = attached_timeseries_component
         self.source: ColumnDataSource = self._attach_to_timeseries(self.attached_timeseries_component)
-        self.figure: Figure = self._create_selector_figure(self.source)
+        self.figure: figure = self._create_selector_figure(self.source)
         
         #interactive components
         self.tap_lines = Span(location=0, dimension='height', line_color='red', line_width=1, name=f"click_line_{self.name_id}")
@@ -2176,7 +2175,7 @@ class RangeSelectorComponent:
             attached_timeseries_component (TimeSeriesComponent): The time series component
                 to which the range selector will be attached.
         """
-        self.attached_chart_figure: Figure = attached_timeseries_component.figure
+        self.attached_chart_figure: figure = attached_timeseries_component.figure
         # The range selector uses the same data source as the main time series chart
         # or a specific overview DataFrame if the main chart switches between log/overview.
         # For simplicity here, we'll assume the attached component's source is suitable
@@ -2203,7 +2202,7 @@ class RangeSelectorComponent:
         
     
 
-    def _create_selector_figure(self, source: ColumnDataSource) -> Figure:
+    def _create_selector_figure(self, source: ColumnDataSource) -> figure:
         x_start, x_end = None, None
         # Check if Datetime data exists and is not empty
         if 'Datetime' in source.data and len(source.data['Datetime']) > 0:
@@ -2271,7 +2270,7 @@ class RangeSelectorComponent:
 
         return select_figure
 
-    def layout(self) -> Figure:
+    def layout(self) -> figure:
         """
         Returns the Bokeh layout object (the figure itself) for this component.
         """
@@ -2318,14 +2317,14 @@ class FrequencyBarComponent:
             width=self.settings['frequency_bar_width']
         )
         
-        self.figure: Figure = self._create_figure()
+        self.figure: figure = self._create_figure()
         
         # Initialize the table with empty data
         self._update_table(initial_data['levels'], initial_data['frequency_labels'])
         
         logger.info("FrequencyBarComponent initialized.")
 
-    def _create_figure(self) -> Figure:
+    def _create_figure(self) -> figure:
         """Creates and configures the Bokeh figure for the bar chart."""
         
         p = figure(

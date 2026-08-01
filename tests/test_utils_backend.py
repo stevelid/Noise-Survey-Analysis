@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -34,6 +35,10 @@ class UtilsTests(unittest.TestCase):
 
         self.assertFalse(added)
 
+    @unittest.skipUnless(
+        os.name == 'nt',
+        "Windows path semantics: os.path.commonpath does not treat '\\' as a separator elsewhere",
+    )
     def test_find_lowest_common_folder_returns_common_directory(self):
         paths = [
             r"C:\data\job\file1.csv",
