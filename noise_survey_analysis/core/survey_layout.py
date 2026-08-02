@@ -88,12 +88,37 @@ class FileFacts:
 
 @dataclass
 class SurveyGroup:
-    """A candidate position: one recorder in one place during one visit."""
+    """
+    A candidate position: one recorder, in one place, during one visit.
+
+    This is the unit the picker should present. A single NTi session emits about 5.5
+    files and a Svan position 2-3, so listing files makes the user do the grouping by
+    hand; listing groups does not.
+    """
     key: str
     label: str
     visit: str = ''
-    files: List[FileFacts] = field(default_factory=list)
+    sources: List[Dict] = field(default_factory=list)
+    instrument: str = ''
+    roles: List[str] = field(default_factory=list)
+    has_spectral: bool = False
+    start_time: str = ''
+    end_time: str = ''
+    duration_seconds: Optional[float] = None
+    total_size_bytes: int = 0
     is_spot_measurement: bool = False
+    recommended: bool = False
+
+    @property
+    def file_count(self) -> int:
+        return len(self.sources)
+
+    def describe_contents(self) -> str:
+        """e.g. 'log + summary + audio' - what this position actually offers."""
+        ordered = [role for role in ('log', 'summary', 'audio', 'raw', 'voice_note')
+                   if role in self.roles]
+        extras = sorted(r for r in self.roles if r and r not in ordered)
+        return ' + '.join(ordered + extras) or 'data'
 
 
 def find_survey_root(job_dir: str) -> str:
@@ -333,3 +358,120 @@ def is_spot_measurement(duration_seconds: Optional[float]) -> bool:
     if duration_seconds is None:
         return False
     return duration_seconds < SPOT_MEASUREMENT_MAX_SECONDS
+
+
+# --- Grouping scanned files into candidate positions --------------------------------
+
+def _group_key(source: Dict) -> tuple:
+    """
+    Identify the position a scanned source belongs to.
+
+    NTi emits ~5.5 files per session, so the session token is part of the key: without
+    it a folder of 13 manual readings presents as 70-odd rows. Svan files in one
+    position folder share a key and collapse to a single row.
+    """
+    return (
+        source.get('visit') or '',
+        source.get('group_label') or source.get('position_name') or '',
+        source.get('session') or '',
+    )
+
+
+def _min_iso(values: List[str]) -> str:
+    present = [v for v in values if v]
+    return min(present) if present else ''
+
+
+def _max_iso(values: List[str]) -> str:
+    present = [v for v in values if v]
+    return max(present) if present else ''
+
+
+def build_groups(sources: List[Dict]) -> List[SurveyGroup]:
+    """
+    Collapse scanned sources into candidate positions.
+
+    Ordering puts recommended groups first, then by visit and label, so the rows a user
+    most likely wants are at the top without them having to sort.
+    """
+    buckets: Dict[tuple, List[Dict]] = {}
+    for source in sources or []:
+        # Saved configs are an action, not a position; leave them out of grouping.
+        if source.get('parser_type') == 'config':
+            continue
+        buckets.setdefault(_group_key(source), []).append(source)
+
+    groups: List[SurveyGroup] = []
+    for (visit, label, session), members in buckets.items():
+        roles = sorted({(m.get('role') or '') for m in members if m.get('role')})
+        instruments = sorted({(m.get('instrument') or '') for m in members if m.get('instrument')})
+        starts = [m.get('start_time') or '' for m in members]
+        ends = [m.get('end_time') or '' for m in members]
+        durations = [m.get('duration_seconds') for m in members
+                     if isinstance(m.get('duration_seconds'), (int, float))]
+
+        # A position is a spot reading only when everything in it is. One long log
+        # alongside short extras still makes this a real measurement.
+        measured = [m for m in members if m.get('duration_seconds') is not None]
+        is_spot = bool(measured) and all(m.get('is_spot_measurement') for m in measured)
+
+        display_label = label or session or 'Unnamed position'
+        groups.append(SurveyGroup(
+            key='|'.join((visit, display_label, session)),
+            label=display_label,
+            visit=visit,
+            sources=members,
+            instrument=', '.join(instruments),
+            roles=roles,
+            has_spectral=any(bool(m.get('has_spectral')) for m in members),
+            start_time=_min_iso(starts),
+            end_time=_max_iso(ends),
+            duration_seconds=max(durations) if durations else None,
+            total_size_bytes=sum(int(m.get('file_size_bytes') or 0) for m in members),
+            is_spot_measurement=is_spot,
+            recommended=any(bool(m.get('recommended')) for m in members) and not is_spot,
+        ))
+
+    groups.sort(key=lambda g: (not g.recommended, g.visit, g.label))
+    return groups
+
+
+def list_visits(groups: List[SurveyGroup]) -> List[Dict]:
+    """
+    Summarise the visits present, newest first.
+
+    Multiple visits per job are the norm rather than the exception - a structural
+    survey found 16 of 20 jobs had several - so choosing one is the natural first
+    question the picker should ask.
+    """
+    summary: Dict[str, Dict] = {}
+    for group in groups:
+        entry = summary.setdefault(group.visit, {
+            'visit': group.visit,
+            'label': group.visit or 'Main survey',
+            'position_count': 0,
+            'recommended_count': 0,
+            'start_time': '',
+            'end_time': '',
+        })
+        entry['position_count'] += 1
+        if group.recommended:
+            entry['recommended_count'] += 1
+        entry['start_time'] = _min_iso([entry['start_time'], group.start_time])
+        entry['end_time'] = _max_iso([entry['end_time'], group.end_time])
+
+    # Newest first: the visit a user opens the picker for is usually the recent one.
+    return sorted(summary.values(), key=lambda e: (e['start_time'] or '', e['label']), reverse=True)
+
+
+def format_duration(seconds: Optional[float]) -> str:
+    """Human-readable span for a table cell."""
+    if seconds is None:
+        return ''
+    if seconds < 90:
+        return f"{seconds:.0f} s"
+    if seconds < 90 * 60:
+        return f"{seconds / 60:.0f} min"
+    if seconds < 48 * 3600:
+        return f"{seconds / 3600:.1f} h"
+    return f"{seconds / 86400:.1f} d"

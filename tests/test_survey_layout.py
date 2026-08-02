@@ -225,3 +225,134 @@ class TimeSpanProbeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def _source(visit='', label='P1', session='', role='log', duration=4 * 3600,
+            recommended=True, spot=False, spectral=False, size=1024,
+            start='2026-07-13T09:00:00', end='2026-07-17T09:00:00', instrument='Svan',
+            parser_type='svan'):
+    return {
+        'visit': visit, 'group_label': label, 'session': session, 'role': role,
+        'duration_seconds': duration, 'recommended': recommended,
+        'is_spot_measurement': spot, 'has_spectral': spectral,
+        'file_size_bytes': size, 'start_time': start, 'end_time': end,
+        'instrument': instrument, 'parser_type': parser_type,
+    }
+
+
+class GroupingTests(unittest.TestCase):
+    def test_svan_log_summary_and_audio_collapse_to_one_position(self):
+        groups = layout.build_groups([
+            _source(label='971-2', role='log'),
+            _source(label='971-2', role='summary'),
+            _source(label='971-2', role='audio', instrument='', parser_type='audio'),
+        ])
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].label, '971-2')
+        self.assertEqual(groups[0].file_count, 3)
+        self.assertEqual(groups[0].describe_contents(), 'log + summary + audio')
+
+    def test_nti_sessions_stay_separate_but_their_files_collapse(self):
+        """13 manual readings should be 13 rows, not the ~70 files they comprise."""
+        sources = []
+        for index in range(13):
+            session = f'2025-04-28_SLM_{index:03d}'
+            for role in ('log', 'summary', 'raw', 'log', 'summary'):
+                sources.append(_source(
+                    visit='5882 Manuals', label='5882 Manuals', session=session,
+                    role=role, duration=300, spot=True, recommended=False,
+                    instrument='NTi', parser_type='nti',
+                ))
+
+        groups = layout.build_groups(sources)
+
+        self.assertEqual(len(groups), 13)
+        self.assertTrue(all(g.file_count == 5 for g in groups))
+        self.assertTrue(all(g.is_spot_measurement for g in groups))
+        self.assertTrue(all(not g.recommended for g in groups))
+
+    def test_visits_separate_the_same_recorder(self):
+        groups = layout.build_groups([
+            _source(visit='', label='971-2'),
+            _source(visit='july 2026', label='971-2'),
+        ])
+        self.assertEqual(len(groups), 2)
+        self.assertEqual({g.visit for g in groups}, {'', 'july 2026'})
+
+    def test_a_long_log_beside_short_extras_is_not_a_spot_measurement(self):
+        groups = layout.build_groups([
+            _source(label='971-2', role='log', duration=4 * 86400, spot=False),
+            _source(label='971-2', role='summary', duration=120, spot=True),
+        ])
+        self.assertEqual(len(groups), 1)
+        self.assertFalse(groups[0].is_spot_measurement)
+        self.assertTrue(groups[0].recommended)
+
+    def test_group_span_covers_all_its_files(self):
+        groups = layout.build_groups([
+            _source(label='971-2', start='2026-07-13T09:00:00', end='2026-07-15T09:00:00'),
+            _source(label='971-2', role='summary',
+                    start='2026-07-12T08:00:00', end='2026-07-17T10:00:00'),
+        ])
+        self.assertEqual(groups[0].start_time, '2026-07-12T08:00:00')
+        self.assertEqual(groups[0].end_time, '2026-07-17T10:00:00')
+
+    def test_spectral_is_true_when_any_file_carries_it(self):
+        groups = layout.build_groups([
+            _source(label='4792-2', spectral=False),
+            _source(label='4792-2', role='summary', spectral=True),
+        ])
+        self.assertTrue(groups[0].has_spectral)
+
+    def test_recommended_groups_sort_first(self):
+        groups = layout.build_groups([
+            _source(visit='5882 Manuals', label='SLM_000', session='s0',
+                    duration=300, spot=True, recommended=False),
+            _source(visit='july 2026', label='971-2'),
+        ])
+        self.assertTrue(groups[0].recommended)
+        self.assertEqual(groups[0].label, '971-2')
+
+    def test_saved_configs_are_not_positions(self):
+        groups = layout.build_groups([
+            _source(label='Config (5882)', parser_type='config', role=''),
+            _source(label='971-2'),
+        ])
+        self.assertEqual([g.label for g in groups], ['971-2'])
+
+    def test_empty_scan_yields_no_groups(self):
+        self.assertEqual(layout.build_groups([]), [])
+        self.assertEqual(layout.build_groups(None), [])
+
+
+class VisitSummaryTests(unittest.TestCase):
+    def test_visits_are_summarised_newest_first(self):
+        groups = layout.build_groups([
+            _source(visit='', label='971-2',
+                    start='2025-04-28T09:00:00', end='2025-04-28T17:00:00'),
+            _source(visit='july 2026', label='971-2',
+                    start='2026-07-13T09:00:00', end='2026-07-17T09:00:00'),
+            _source(visit='july 2026', label='971-3',
+                    start='2026-07-13T09:00:00', end='2026-07-17T09:00:00'),
+        ])
+
+        visits = layout.list_visits(groups)
+
+        self.assertEqual([v['label'] for v in visits], ['july 2026', 'Main survey'])
+        self.assertEqual(visits[0]['position_count'], 2)
+        self.assertEqual(visits[0]['recommended_count'], 2)
+
+    def test_unnamed_visit_is_labelled_for_display(self):
+        visits = layout.list_visits(layout.build_groups([_source(visit='', label='L350')]))
+        self.assertEqual(visits[0]['label'], 'Main survey')
+        self.assertEqual(visits[0]['visit'], '')
+
+
+class DurationFormattingTests(unittest.TestCase):
+    def test_reads_naturally_across_scales(self):
+        self.assertEqual(layout.format_duration(45), '45 s')
+        self.assertEqual(layout.format_duration(600), '10 min')
+        self.assertEqual(layout.format_duration(4 * 3600), '4.0 h')
+        self.assertEqual(layout.format_duration(4 * 86400), '4.0 d')
+        self.assertEqual(layout.format_duration(None), '')
