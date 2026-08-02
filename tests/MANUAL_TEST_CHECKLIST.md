@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2026-08-01
-**Version:** 1.6.0
+**Last Updated:** 2026-08-02
+**Version:** 1.7.0
 
 ---
 
@@ -750,19 +750,86 @@ calling into freed resources.
 
 ## 12. Data Source Selector Panel 🔴 SERVER
 
-### 12.1 Highlighting Rules 🟢
-- [ ] **Setup:** Scan a job directory that contains CSV log/summary files and unrelated files
-- [ ] **Expected:** Only CSV/TXT files with expected naming and size bounds show highlighted styling
-- [ ] **Expected:** Other file types display without the old validity column or highlight badges
-- [ ] **Test:** Confirm log and summary CSVs highlight independently when their sizes meet expectations
+### 12.1 Survey Folder Is The Scan Boundary 🔴
+**Why:** Scanning the whole job folder dredged in Admin, Corres and Report material.
+A structural survey found `<job> Surveys` isolates ~99% of data files.
+- [ ] **Setup:** Scan a job that has a `<job> Surveys` folder alongside Admin/Corres/Report
+- [ ] **Expected:** No PDFs, quotes, letters or report documents appear as candidates
+- [ ] **Expected:** Server log shows `Survey root for '<job>': <job> Surveys`
+- [ ] **Test:** Scan a job with **no** Surveys folder (e.g. an older job)
+- [ ] **Expected:** Falls back to the job folder and still finds data — nothing is hidden
 
-### 12.2 Config Auto-Detection 🔴
+### 12.2 Positions, Not Files 🔴
+- [ ] **Setup:** Scan a job with a Svan position (log + summary, ideally with audio)
+- [ ] **Expected:** The position appears as **one row**, not one row per file
+- [ ] **Expected:** "Contains" reads e.g. `log + summary + audio`; Meter, Period, Duration and Files are populated
+- [ ] **Action:** Select that row and press "Add ▶"
+- [ ] **Expected:** All of its files appear in Included Files, sharing one position name
+- [ ] **Test:** Press "Add ▶" again with the same row selected
+- [ ] **Expected:** No duplicate rows are added
+
+### 12.3 NTi Sessions Stay Distinct 🔴
+- [ ] **Setup:** Scan a job with an NTi folder of several `SLM_nnn` sessions
+- [ ] **Expected:** Each session is **one row**, not ~5.5 rows of its individual files
+- [ ] **Expected:** Sessions are not merged together into a single position
+- [ ] **Expected:** Rows whose files are `RTA_3rd` are identified as having spectral content
+
+### 12.4 Visit Selection 🔴
+**Why:** Several visits per job is the norm — 16 of 20 in the folder survey.
+- [ ] **Setup:** Scan a job with more than one visit (e.g. a main survey plus "Verification Monitoring")
+- [ ] **Expected:** The Visit dropdown lists each visit with its position count and dates, plus "All visits"
+- [ ] **Expected:** A fresh scan lands on the **newest** visit, not on everything
+- [ ] **Expected:** The status line states how many positions are shown of the total
+- [ ] **Action:** Choose a different visit
+- [ ] **Expected:** The position list changes to that visit only
+- [ ] **Action:** Choose "All visits"
+- [ ] **Expected:** Every position from every visit is listed
+
+### 12.5 The Unnamed Visit Is Selectable 🔴
+**Why:** Files sitting loose in the Surveys folder form a visit with an empty name;
+it must not be conflated with "All visits".
+- [ ] **Setup:** Scan a job with data both loose in `<job> Surveys` and inside a visit subfolder
+- [ ] **Expected:** The dropdown offers "Main survey" separately from "All visits"
+- [ ] **Action:** Select "Main survey"
+- [ ] **Expected:** Only the loose-file positions are listed — **not** everything
+
+### 12.6 Short Manual Readings 🔴
+**Why:** Spot readings are not the usual dashboard use case, and one folder of them can
+otherwise dominate the list.
+- [ ] **Setup:** Scan a job containing a manual-measurement folder (many short sessions)
+- [ ] **Expected:** Those readings are **not** listed by default and **not** pre-selected
+- [ ] **Expected:** The status line says how many were hidden
+- [ ] **Action:** Tick "Include short manual readings"
+- [ ] **Expected:** They appear, one row per session, unticked
+- [ ] **Test:** A position with a long log plus short extras
+- [ ] **Expected:** It is treated as a real measurement, not hidden
+
+### 12.7 Recommendations And Position Names 🔴
+- [ ] **Expected:** Real measurements are pre-selected on scan, so "Add ▶" needs one click
+- [ ] **Expected:** Position names match the folder/meter exactly, including capitals and digits
+      (e.g. `5882 Warbrook House 971-2`, `6145-3 - front` — shown in full)
+- [ ] **Test:** Rename a position in Included Files, then check it again
+- [ ] **Expected:** Your capitalisation is preserved; only a leading lowercase letter is capitalised
+- [ ] **Test:** A position folder whose name contains "log" (e.g. "Catalogue Road")
+- [ ] **Expected:** The name is intact, not corrupted to "Cataue Road"
+
+### 12.8 Time Span Probing 🔴
+**Why:** Periods come from an ~8 KB read at each end of every candidate — about 4.5 ms
+per file on local storage, against ~2.5 s to parse a 71 MB log. Files are assumed to be
+available locally.
+- [ ] **Setup:** Scan a job with many candidate files
+- [ ] **Expected:** The scan completes promptly and Period/Duration are populated
+- [ ] **Note:** If a job is ever scanned while its files are online-only rather than
+      cached, probing may pull them down. `scan_directory_for_sources(..., probe_time_spans=False)`
+      disables it; Period, Duration and short-reading detection are then unavailable.
+
+### 12.9 Config Auto-Detection 🔴
 - [ ] **Setup:** Scan a directory containing a single valid `noise_survey_config_*.json`
 - [ ] **Expected:** "Load Config" button enables automatically
 - [ ] **Expected:** Config loads immediately into the Included Files table without manual selection
 - [ ] **Expected:** Status banner reports the auto-loaded config and warns if referenced files are missing
 
-### 12.3 Multiple Config Prompt 🔴
+### 12.10 Multiple Config Prompt 🔴
 - [ ] **Setup:** Scan a directory containing two or more valid config JSON files
 - [ ] **Expected:** Status banner prompts to select a config before loading
 - [ ] **Action:** Select one config in Available Files and press "Load Config"
