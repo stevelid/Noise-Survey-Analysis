@@ -71,6 +71,22 @@ class DataLoaderTests(unittest.TestCase):
             self.assertEqual(source["config_source_count"], 2)
             self.assertEqual(source["display_path"], "noise_survey_config_1234.json")
 
+    def test_position_folder_containing_log_substring_is_not_corrupted(self):
+        """Position names were previously substring-stripped, so "Catalogue" became "Cataue"."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data_dir = root / "Catalogue Road"
+            data_dir.mkdir()
+            (data_dir / "overview.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+
+            with patch(
+                "noise_survey_analysis.core.data_loaders.NoiseParserFactory.get_parser",
+                return_value=DemoFileParser(),
+            ):
+                sources = scan_directory_for_sources(str(root))
+
+            self.assertEqual(sources[0]["position_name"], "Catalogue Road")
+
     def test_scan_directory_uses_parser_metadata_and_cleans_position_name(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -87,7 +103,10 @@ class DataLoaderTests(unittest.TestCase):
 
             self.assertEqual(len(sources), 1)
             source = sources[0]
-            self.assertEqual(source["position_name"], "P1")
+            # The containing folder is the position label, kept verbatim. A structural
+            # survey of 44 real jobs found position folders are already clean labels
+            # ("971-2", "6145-3 - front"), and they get renamed in the dashboard anyway.
+            self.assertEqual(source["position_name"], "P1_summary")
             self.assertEqual(source["display_path"], "P1_summary/overview.csv")
             self.assertEqual(source["data_type"], "Demo")
             self.assertEqual(source["parser_type"], "demo")
