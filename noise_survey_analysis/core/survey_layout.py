@@ -70,7 +70,13 @@ NTI_SESSION_RE = re.compile(
     re.IGNORECASE,
 )
 
-SVAN_ROLE_RE = re.compile(r'^(?P<stem>.+?)[_\s-]*(?P<role>log|summary)\.csv$', re.IGNORECASE)
+# SvanFileParser accepts _LOG.CSV and _LOG_*.CSV (data_parsers.py: "_log_1s.csv,
+# _log_10s.csv"). Without the optional rate suffix those files miss the role entirely
+# and split away from their own summary into a separate, wrongly named position.
+SVAN_ROLE_RE = re.compile(
+    r'^(?P<stem>.+?)[_\s-]*(?P<role>log|summary)(?P<rate>_\d+[a-z]*)?\.csv$',
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -270,7 +276,8 @@ def position_label_from_filename(filename: str) -> str:
     if svan:
         stem = svan.group('stem')
 
-    cleaned = re.sub(r'[_\s-]*(log|summary|report|rpt_report)$', '', stem, flags=re.IGNORECASE)
+    cleaned = re.sub(r'[_\s-]*(log|summary|report|rpt_report)(_\d+[a-z]*)?$', '', stem,
+                     flags=re.IGNORECASE)
     return cleaned.strip(' _-') or stem
 
 
@@ -281,9 +288,13 @@ def position_label_from_filename(filename: str) -> str:
 # is affordable for every candidate in a job folder.
 
 _PROBE_BYTES = 8192
+# The separator between date and time must allow tabs: NTiFileParser reads its table
+# with sep='\t' and keeps Date and Time as separate columns, so real rows look like
+# "2025-04-28<TAB>11:00:00". Newlines are deliberately excluded so a date on one line
+# is never paired with a time on the next.
 _DATE_TOKEN_RE = re.compile(
-    r'\d{4}[-/]\d{2}[-/]\d{2}[ T]\d{2}:\d{2}(?::\d{2})?'
-    r'|\d{2}[-/]\d{2}[-/]\d{4}[ T]\d{2}:\d{2}(?::\d{2})?'
+    r'\d{4}[-/]\d{2}[-/]\d{2}[ \tT]+\d{2}:\d{2}(?::\d{2})?'
+    r'|\d{2}[-/]\d{2}[-/]\d{4}[ \tT]+\d{2}:\d{2}(?::\d{2})?'
 )
 
 

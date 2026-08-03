@@ -4,6 +4,7 @@ Built on a reconstruction of a real job folder: an unattended Svan survey, a fol
 short manual NTi readings, and a later visit in its own folder.
 """
 import datetime
+import json
 import os
 import tempfile
 import unittest
@@ -260,3 +261,130 @@ class FilterVisibilityTests(unittest.TestCase):
         # Nothing hidden, so the message is not replaced with a filter notice.
         self.assertEqual(len(self.selector.visible_groups), len(self.selector.survey_groups))
         self.assertEqual(self.selector.status_div.text, before)
+
+
+class ReviewFindingTests(unittest.TestCase):
+    """Cases from the Codex review of PR #81, each verified to fail beforehand."""
+
+    def _selector(self, job):
+        selector = DataSourceSelector(doc=MagicMock(), on_data_sources_selected=MagicMock())
+        selector.scanned_sources = scan_directory_for_sources(find_survey_root(job))
+        selector._update_available_files_table()
+        return selector
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_scan_status_keeps_the_filter_notice(self):
+        """_scan_directory used to overwrite it, so filtering was silent in the real UI."""
+        job = build_job_folder(self._tmp.name)
+        selector = self._selector(job)
+
+        selector._update_status(*selector._status_with_filter_notice("Scan complete."))
+
+        self.assertIn("Scan complete.", selector.status_div.text)
+        self.assertIn("position(s)", selector.status_div.text)
+        self.assertIn("short manual reading", selector.status_div.text)
+
+    def test_no_notice_is_appended_when_nothing_is_hidden(self):
+        job = build_job_folder(self._tmp.name)
+        selector = self._selector(job)
+        selector.visit_select.value = ALL_VISITS
+        selector.show_spot_checkbox.active = [0]
+        selector._render_visible_groups()
+
+        message, colour = selector._status_with_filter_notice("Scan complete.")
+
+        self.assertEqual(message, "Scan complete.")
+        self.assertEqual(colour, 'green')
+
+    def _job_with_configs(self, count):
+        job = build_job_folder(self._tmp.name)
+        surveys = os.path.join(job, '5882 Surveys')
+        paths = []
+        for index in range(count):
+            path = os.path.join(surveys, f'noise_survey_config_588{index}.json')
+            with open(path, 'w', encoding='utf-8') as handle:
+                json.dump({'job_number': f'588{index}', 'sources': []}, handle)
+            paths.append(path)
+        return job, paths
+
+    def test_multiple_configs_are_selectable(self):
+        """The position table no longer carries config rows, so they need their own control."""
+        job, paths = self._job_with_configs(2)
+        selector = self._selector(job)
+
+        self.assertTrue(selector.config_select.visible)
+        offered = [value for value, _ in selector.config_select.options]
+        self.assertEqual(sorted(offered), sorted(paths))
+        self.assertFalse(selector.load_config_button.disabled)
+
+    def test_loading_a_chosen_config_does_not_touch_the_position_table(self):
+        """_load_config used to index 'parser_type'/'fullpath', which no longer exist."""
+        job, paths = self._job_with_configs(2)
+        selector = self._selector(job)
+        selector.config_select.value = paths[1]
+        # Recommended positions are pre-selected; that must not confuse config loading.
+        self.assertTrue(selector.available_files_table.source.selected.indices)
+
+        selector._load_config()
+
+        self.assertIn(os.path.basename(paths[1]), selector.status_div.text)
+
+    def test_configs_are_not_listed_as_positions(self):
+        job, _ = self._job_with_configs(2)
+        selector = self._selector(job)
+        selector.visit_select.value = ALL_VISITS
+        selector._render_visible_groups()
+
+        positions = list(selector.available_files_source.data['position'])
+        self.assertFalse(any('noise_survey_config' in p for p in positions))
+
+    def test_config_control_is_hidden_when_a_job_has_none(self):
+        job = build_job_folder(self._tmp.name)
+        selector = self._selector(job)
+
+        self.assertFalse(selector.config_select.visible)
+        self.assertTrue(selector.load_config_button.disabled)
+
+
+class ScanIntegrationTests(unittest.TestCase):
+    """Drive _scan_directory itself, not the helpers it calls.
+
+    Testing the helpers in isolation missed two real defects: the survey root was
+    resolved by an exact "<job> surveys" name match that fails on a capitalised folder
+    off Windows, and the filter notice was overwritten by the scan's own status write.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        build_job_folder(self._tmp.name)
+
+        self.selector = DataSourceSelector(doc=MagicMock(), on_data_sources_selected=MagicMock())
+        self.selector.base_directory_input.value = self._tmp.name
+        self.selector.job_number_input.value = '5882'
+
+    def test_scan_resolves_the_capitalised_surveys_folder(self):
+        self.selector._scan_directory()
+
+        self.assertTrue(self.selector.current_job_directory.endswith('5882 Surveys'))
+        self.assertTrue(self.selector.scanned_sources)
+        for source in self.selector.scanned_sources:
+            self.assertIn('5882 Surveys', source['file_path'])
+
+    def test_scan_status_still_reports_hidden_positions(self):
+        self.selector._scan_directory()
+
+        text = self.selector.status_div.text
+        self.assertIn('Scan complete', text)
+        self.assertIn('position(s)', text)
+        self.assertIn('short manual reading', text)
+
+    def test_scan_populates_positions_and_visits(self):
+        self.selector._scan_directory()
+
+        self.assertTrue(self.selector.survey_groups)
+        visit_values = [value for value, _ in self.selector.visit_select.options]
+        self.assertIn('july 2026', visit_values)

@@ -356,3 +356,63 @@ class DurationFormattingTests(unittest.TestCase):
         self.assertEqual(layout.format_duration(4 * 3600), '4.0 h')
         self.assertEqual(layout.format_duration(4 * 86400), '4.0 d')
         self.assertEqual(layout.format_duration(None), '')
+
+
+class ReviewFindingTests(unittest.TestCase):
+    """Cases from the Codex review of PR #81, each verified to fail beforehand."""
+
+    def _write_nti_log(self, directory, name, start, rows):
+        """Real NTi shape: tab-separated, Date and Time as separate columns.
+
+        NTiFileParser reads its table with sep='\\t', so a comma-separated fixture with
+        a combined "Date & time" column is not what these files look like - and probing
+        such a fixture proved nothing.
+        """
+        path = os.path.join(directory, name)
+        with open(path, 'w', encoding='utf-8') as handle:
+            handle.write('# Broadband LOG Results\n')
+            handle.write('Date\tTime\tLAeq\n')
+            for index in range(rows):
+                stamp = start + pd.Timedelta(seconds=index)
+                handle.write(f"{stamp.strftime('%Y-%m-%d')}\t{stamp.strftime('%H:%M:%S')}\t55.0\n")
+        return path
+
+    def test_tab_separated_nti_timestamps_are_probed(self):
+        start = pd.Timestamp('2025-04-28 11:00:00')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_nti_log(tmp, '2025-04-28_SLM_000_123_Log.txt', start, rows=300)
+            probed_start, probed_end = layout.peek_time_span(path)
+
+        self.assertEqual(probed_start, start)
+        self.assertEqual(probed_end, start + pd.Timedelta(seconds=299))
+
+    def test_short_nti_reading_is_classified_as_spot(self):
+        """Without tab support the span was unknown, so these were recommended."""
+        start = pd.Timestamp('2025-04-28 11:00:00')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_nti_log(tmp, '2025-04-28_SLM_000_123_Log.txt', start, rows=300)
+            duration = layout.span_seconds(*layout.peek_time_span(path))
+
+        self.assertIsNotNone(duration)
+        self.assertTrue(layout.is_spot_measurement(duration))
+
+    def test_a_date_never_pairs_with_a_time_on_the_following_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'odd.txt')
+            with open(path, 'w', encoding='utf-8') as handle:
+                handle.write('2025-04-28\n11:00:00\n')
+            self.assertEqual(layout.peek_time_span(path), (None, None))
+
+    def test_suffixed_svan_log_names_keep_their_role(self):
+        """SvanFileParser accepts _LOG.CSV and _LOG_*.CSV, e.g. _log_1s.csv."""
+        for name in ('P1_log.csv', 'P1_log_1s.csv', 'P1_log_10s.csv', 'P1_LOG_100ms.csv'):
+            with self.subTest(name=name):
+                facts = layout.classify_file('/job/' + name, name)
+                self.assertEqual(facts.instrument, 'Svan')
+                self.assertEqual(facts.role, 'log')
+
+    def test_suffixed_svan_logs_group_with_their_own_summary(self):
+        """Otherwise "P1_log_1s" split away from "P1" as a separate, wrong position."""
+        for name in ('P1_log_1s.csv', 'P1_log_10s.csv', 'P1_summary.csv'):
+            with self.subTest(name=name):
+                self.assertEqual(layout.position_label_from_filename(name), 'P1')

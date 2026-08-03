@@ -118,9 +118,13 @@ class DataSourceSelector:
             labels=["Include short manual readings"], active=[], width=250,
             name="show_spot_measurements",
         )
+        self.config_label = Div(text="<b>Saved selection:</b>")
+        self.config_select = Select(value="", options=[], width=320, name="config_select",
+                                    visible=False)
         self.visit_row = row(
             column(self.visit_label, self.visit_select),
             column(Spacer(height=18), self.show_spot_checkbox),
+            column(self.config_label, self.config_select),
             sizing_mode="scale_width",
         )
 
@@ -255,7 +259,8 @@ class DataSourceSelector:
         if unique_new_sources:
             self.scanned_sources.extend(unique_new_sources)
             self._update_available_files_table()
-            self._update_status(f"Added {len(unique_new_sources)} new file(s) from drag and drop.", 'green')
+            self._update_status(*self._status_with_filter_notice(
+                f"Added {len(unique_new_sources)} new file(s) from drag and drop."))
             self._update_button_states()
         else:
             self._update_status("No new unique files were added from drag and drop.", 'orange')
@@ -348,14 +353,24 @@ class DataSourceSelector:
             index for index, group in enumerate(groups) if group.recommended
         ]
         self._update_button_states()
-        self._describe_current_filter(len(groups))
 
-    def _describe_current_filter(self, shown):
-        """Make a filtered view legible rather than leaving the user to wonder."""
+        notice = self.current_filter_notice()
+        if notice:
+            self._update_status(notice, 'blue')
+
+    def current_filter_notice(self):
+        """
+        Describe what the current filters are hiding, or '' when nothing is.
+
+        Returned rather than written straight to the status line, because the scan and
+        drag-and-drop paths set their own message afterwards; if this wrote directly it
+        would be overwritten and positions would be hidden silently.
+        """
         total = len(self.survey_groups)
-        hidden = total - shown
-        if not total:
-            return
+        shown = len(self.visible_groups)
+        if not total or shown >= total:
+            return ''
+
         parts = [f"Showing {shown} of {total} position(s)"]
         if self.visit_select.value != ALL_VISITS:
             selected = next((label for value, label in self.visit_select.options
@@ -364,8 +379,12 @@ class DataSourceSelector:
         spot_hidden = sum(1 for g in self.survey_groups if g.is_spot_measurement)
         if spot_hidden and 0 not in (self.show_spot_checkbox.active or []):
             parts.append(f"{spot_hidden} short manual reading(s) hidden")
-        if hidden:
-            self._update_status(' - '.join(parts) + ". Use the Visit list to see the rest.", 'blue')
+        return ' - '.join(parts) + ". Use the Visit list to see the rest."
+
+    def _status_with_filter_notice(self, message):
+        """Append the filter notice to a caller's own message, so neither is lost."""
+        notice = self.current_filter_notice()
+        return (f"{message} {notice}".strip(), 'blue' if notice else 'green')
 
     def _on_visit_change(self, attr, old, new):
         if self.survey_groups:
@@ -417,6 +436,16 @@ class DataSourceSelector:
         self.valid_config_paths = valid_configs
         self.load_config_button.disabled = not bool(valid_configs)
 
+        # Configs are chosen here rather than from the position table: they are not
+        # positions, and the table no longer carries per-file columns to index into.
+        self.config_select.options = [(path, os.path.basename(path)) for path in valid_configs]
+        self.config_select.visible = bool(valid_configs)
+        self.config_label.visible = bool(valid_configs)
+        if valid_configs and self.config_select.value not in valid_configs:
+            self.config_select.value = valid_configs[0]
+        elif not valid_configs:
+            self.config_select.value = ""
+
         if len(valid_configs) == 1:
             config_path = valid_configs[0]
             if (
@@ -434,7 +463,8 @@ class DataSourceSelector:
             if set(valid_configs) != previous_paths:
                 file_names = ', '.join(os.path.basename(path) for path in valid_configs)
                 self._update_status(
-                    f"Multiple configs found ({file_names}). Select one and click 'Load Config'.",
+                    f"Multiple configs found ({file_names}). Choose one under 'Saved selection' "
+                    f"and click 'Load Config'.",
                     'blue'
                 )
 
@@ -456,8 +486,11 @@ class DataSourceSelector:
                 return self._clear_table()
             
             job_dir = possible_dirs[0]
-            survey_dir_name = f"{job_num} surveys"
-            scan_target_dir = os.path.join(job_dir, survey_dir_name) if os.path.isdir(os.path.join(job_dir, survey_dir_name)) else job_dir
+            # Resolve via find_survey_root rather than matching an exact
+            # "<job> surveys" name: real folders are capitalised ("5882 Surveys"), and
+            # os.path.isdir is case-sensitive off Windows, so the exact-name check
+            # silently fell back to scanning the whole job folder.
+            scan_target_dir = survey_layout.find_survey_root(job_dir)
             
             self.current_job_directory = scan_target_dir
             self.scanned_sources = scan_directory_for_sources(scan_target_dir)
@@ -469,7 +502,8 @@ class DataSourceSelector:
             self._update_available_files_table()
             self.included_files_source.data = {k: [] for k in self.included_files_source.data.keys()}
             self._update_button_states()
-            self._update_status(f"Scan complete. Found {len(self.scanned_sources)} data source(s).", 'green')
+            self._update_status(*self._status_with_filter_notice(
+                f"Scan complete. Found {len(self.scanned_sources)} data source(s)."))
         except Exception as e:
             logger.exception(f"Error scanning directory: {e}")
             self._update_status(f"Error during scanning: {e}", 'red')
@@ -714,20 +748,13 @@ class DataSourceSelector:
 
     def _load_config(self):
         try:
-            available_data = self.available_files_source.data
-            selected_indices = self.available_files_table.source.selected.indices
-
-            config_path = None
-            for idx in selected_indices:
-                if available_data['parser_type'][idx] == 'config':
-                    config_path = available_data['fullpath'][idx]
-                    break
+            config_path = self.config_select.value or None
+            if config_path is None and len(self.valid_config_paths) == 1:
+                config_path = self.valid_config_paths[0]
 
             if not config_path:
-                if len(self.valid_config_paths) == 1:
-                    config_path = self.valid_config_paths[0]
-                else:
-                    return self._update_status("Please select a config file from the 'Available Files' list.", 'orange')
+                return self._update_status(
+                    "Please choose a config under 'Saved selection'.", 'orange')
 
             success, files_not_found = self._load_config_from_path(config_path)
             if success:
