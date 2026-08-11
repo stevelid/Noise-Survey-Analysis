@@ -1,0 +1,29 @@
+# Pinned runtime dependencies for the SHARED (team) deployment.
+#
+# Why this file exists:
+#   requirements.txt uses loose ">=" ranges, which is fine for development but
+#   means two team machines can end up on different library versions and behave
+#   differently. This file pins the direct dependencies to the versions that are
+#   known-good on the development machine.
+#
+#   The deploy step runs `pip download -r requirements-lock.txt` into a
+#   wheelhouse on the shared drive. Team machines install from that wheelhouse
+#   with --no-index, so every machine gets byte-identical packages and no
+#   internet connection is required.
+#
+# To refresh: update the versions below to match your dev environment, then
+# re-run deploy\deploy_to_shared.ps1 -RebuildWheelhouse
+#
+# Verified on Python 3.13 / Windows 11, 2026-08-03.
+
+pandas==2.2.3
+numpy==2.1.3
+bokeh==3.4.1
+openpyxl==3.1.5
+python-vlc==3.0.21203
+soundfile==0.13.1
+scipy==1.15.1
+pytz==2024.2
+
+# SLM Parsers (right-click "Extract TH data") additionally needs:
+xlrd==2.0.2

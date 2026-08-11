@@ -34,6 +34,10 @@ function createPanelModels() {
         visibilityToggle: { label: 'Regions', active: false, button_type: 'default' },
         autoDayNightButton: { disabled: true, button_type: 'light', visible: true },
         splitButton: { disabled: true, visible: true },
+        copyTargetSelect: { options: [], value: '', disabled: true, visible: false },
+        copyToAllPositionsButton: { label: 'Copy', disabled: true, visible: false },
+        centerRegionButton: { label: 'Centre on Region', disabled: true, visible: true },
+        recalculateRegionButton: { label: 'Recalculate', disabled: true, visible: true },
         copyButton: { disabled: true },
         deleteButton: { disabled: true },
         addAreaButton: { disabled: true, label: 'Add Area', button_type: 'default' },
@@ -114,5 +118,135 @@ describe('regionPanelRenderer.renderRegionPanel', () => {
         expect(panelModels.regionSource.selected.indices).toEqual([1]);
         expect(panelModels.regionSource.change.emit).toHaveBeenCalledTimes(3);
         expect(panelModels.regionSource.properties.data.change.emit).toHaveBeenCalledTimes(3);
+    });
+
+    it('offers one target position or all other positions in the compact copy control', () => {
+        const panelModels = createPanelModels();
+        const selectedRegion = {
+            id: 1,
+            positionId: 'P1',
+            areas: [{ start: 0, end: 1000 }],
+            start: 0,
+            end: 1000,
+            note: '',
+            color: '#1e88e5'
+        };
+        const state = {
+            regions: {
+                byId: { 1: selectedRegion },
+                allIds: [1],
+                selectedId: 1,
+                addAreaTargetId: null,
+                isMergeModeActive: false,
+                panelVisible: true,
+                overlaysVisible: true
+            },
+            interaction: {},
+            view: {
+                availablePositions: ['P1', 'P2', 'P6'],
+                positionDisplayTitles: { P1: 'Position 1', P2: 'Position 2', P6: 'Position 6' }
+            }
+        };
+
+        renderRegionPanel(panelModels, [selectedRegion], 1, state, {
+            panelVisible: true,
+            overlaysVisible: true,
+            positionCount: 3
+        });
+
+        expect(panelModels.copyTargetSelect.options).toEqual([
+            ['__all__', 'All other positions'],
+            ['P2', 'Position 2'],
+            ['P6', 'Position 6']
+        ]);
+        expect(panelModels.copyTargetSelect.value).toBe('__all__');
+        expect(panelModels.copyTargetSelect.visible).toBe(true);
+        expect(panelModels.copyTargetSelect.disabled).toBe(false);
+        expect(panelModels.copyToAllPositionsButton).toMatchObject({
+            label: 'Copy',
+            visible: true,
+            disabled: false
+        });
+    });
+
+    it('shows the only other position without an all-positions option', () => {
+        const panelModels = createPanelModels();
+        const selectedRegion = {
+            id: 1,
+            positionId: 'P1',
+            areas: [{ start: 0, end: 1000 }],
+            start: 0,
+            end: 1000,
+            note: '',
+            color: '#1e88e5'
+        };
+        const state = {
+            regions: {
+                byId: { 1: selectedRegion },
+                allIds: [1],
+                selectedId: 1,
+                addAreaTargetId: null,
+                isMergeModeActive: false,
+                panelVisible: true,
+                overlaysVisible: true
+            },
+            interaction: {},
+            view: {
+                availablePositions: ['P1', 'P6'],
+                positionDisplayTitles: { P6: 'Position 6' }
+            }
+        };
+
+        renderRegionPanel(panelModels, [selectedRegion], 1, state, {
+            panelVisible: true,
+            overlaysVisible: true,
+            positionCount: 2
+        });
+
+        expect(panelModels.copyTargetSelect.options).toEqual([['P6', 'Position 6']]);
+        expect(panelModels.copyTargetSelect.value).toBe('P6');
+    });
+
+    it('labels each region metric source and reflects the selected chart resolution', () => {
+        const panelModels = createPanelModels();
+        const regions = [
+            { id: 1, positionId: 'P1', areas: [{ start: 0, end: 1000 }], color: '#1e88e5' },
+            { id: 2, positionId: 'P2', areas: [{ start: 0, end: 1000 }], color: '#ef4444' }
+        ];
+        window.NoiseSurveyApp.regions.getRegionMetrics = vi.fn(region => ({
+            dataResolution: region.id === 1 ? 'log' : 'overview',
+            spectrum: { labels: [], values: [] }
+        }));
+        window.NoiseSurveyApp.dataCache = {
+            activeLineData: { P1: { dataViewType: 'log' } }
+        };
+        const state = {
+            regions: {
+                byId: { 1: regions[0], 2: regions[1] },
+                allIds: [1, 2],
+                selectedId: 1,
+                addAreaTargetId: null,
+                isMergeModeActive: false,
+                panelVisible: true,
+                overlaysVisible: true
+            },
+            interaction: {},
+            view: { availablePositions: ['P1', 'P2'] }
+        };
+
+        renderRegionPanel(panelModels, regions, 1, state, {
+            panelVisible: true,
+            overlaysVisible: true,
+            positionCount: 2
+        });
+
+        expect(panelModels.regionSource.data.data_source_label).toEqual(['Log', 'Overview']);
+        expect(panelModels.regionSource.data.data_source_key).toEqual(['log', 'overview']);
+        expect(panelModels.centerRegionButton).toMatchObject({ disabled: false, visible: true });
+        expect(panelModels.recalculateRegionButton).toMatchObject({
+            label: 'Recalculate (Log)',
+            disabled: false,
+            visible: true
+        });
     });
 });

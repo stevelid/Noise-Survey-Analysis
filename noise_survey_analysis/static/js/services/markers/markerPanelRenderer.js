@@ -169,6 +169,24 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         if (changed) {
+            // Clear any stale selection that would fall outside the new data
+            // before assigning it - Bokeh validates selection indices during
+            // the data-change emit and throws "Out of bounds" otherwise.
+            const staleSelection = markerSource.selected;
+            const nextLength = data.id.length;
+            if (staleSelection && Array.isArray(staleSelection.indices)
+                && staleSelection.indices.some(index => index >= nextLength)) {
+                if (markerTable) {
+                    markerTable.__suppressSelectionDispatch = true;
+                    const releaseStaleGuard = () => { markerTable.__suppressSelectionDispatch = false; };
+                    if (typeof queueMicrotask === 'function') {
+                        queueMicrotask(releaseStaleGuard);
+                    } else {
+                        Promise.resolve().then(releaseStaleGuard);
+                    }
+                }
+                staleSelection.indices = [];
+            }
             markerSource.data = data;
             emitColumnDataChange(markerSource);
         }

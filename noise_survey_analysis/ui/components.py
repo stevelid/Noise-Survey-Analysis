@@ -24,6 +24,7 @@ from bokeh.models import (
     Tap,
     Toggle,
     Spinner,
+    Slider,
     Button,
     Dropdown,
     Select,
@@ -31,6 +32,7 @@ from bokeh.models import (
     ColorBar,
     ColorPicker,
     DataTable,
+    NumberFormatter,
     Div,
     HTMLTemplateFormatter,
     LinearColorMapper,
@@ -121,6 +123,8 @@ class RegionPanelComponent:
                 "title": [],
                 "subtitle": [],
                 "color": [],
+                "data_source_label": [],
+                "data_source_key": [],
             },
             name="region_panel_source",
         )
@@ -132,6 +136,7 @@ class RegionPanelComponent:
                     <div class=\"region-card__title\"><%= title %></div>
                     <div class=\"region-card__subtitle\"><%= subtitle %></div>
                 </div>
+                <div class=\"region-card__source region-card__source--<%= data_source_key %>\"><%= data_source_label %></div>
             </div>
         """
 
@@ -145,6 +150,8 @@ class RegionPanelComponent:
                 ),
                 TableColumn(field="subtitle", title="Subtitle", visible=False),
                 TableColumn(field="color", title="Color", visible=False),
+                TableColumn(field="data_source_label", title="Source", visible=False),
+                TableColumn(field="data_source_key", title="Source Key", visible=False),
             ],
             width=panel_width,
             height=240,
@@ -244,6 +251,8 @@ class RegionPanelComponent:
                 display: flex;
                 flex-direction: column;
                 gap: 4px;
+                min-width: 0;
+                flex: 1;
             }
             .region-card__title {
                 font-weight: 600;
@@ -259,6 +268,28 @@ class RegionPanelComponent:
             }
             .region-panel-table .slick-row.selected .region-card__subtitle {
                 color: rgba(255, 255, 255, 0.85);
+            }
+            .region-card__source {
+                flex-shrink: 0;
+                border-radius: 999px;
+                padding: 3px 7px;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+                color: #475569;
+                background: #e2e8f0;
+            }
+            .region-card__source--log {
+                color: #166534;
+                background: #dcfce7;
+            }
+            .region-card__source--overview {
+                color: #92400e;
+                background: #fef3c7;
+            }
+            .region-panel-table .slick-row.selected .region-card__source {
+                color: #ffffff;
+                background: rgba(255, 255, 255, 0.2);
             }
         """
         ]
@@ -332,10 +363,36 @@ class RegionPanelComponent:
             disabled=True,
         )
 
+        self.copy_target_select = Select(
+            title="Copy Region To",
+            value="",
+            options=[],
+            width=panel_width - 94,
+            name="region_copy_target_select",
+            disabled=True,
+            visible=False,
+        )
+
         self.copy_to_all_positions_button = Button(
-            label="Copy to All Positions",
-            width=panel_width,
+            label="Copy",
+            width=86,
             name="region_copy_to_all_positions_button",
+            disabled=True,
+            visible=False,
+            align="end",
+        )
+
+        self.center_region_button = Button(
+            label="Centre on Region",
+            width=int(panel_width / 2) - 6,
+            name="region_center_button",
+            disabled=True,
+        )
+
+        self.recalculate_region_button = Button(
+            label="Recalculate",
+            width=int(panel_width / 2) - 6,
+            name="region_recalculate_button",
             disabled=True,
         )
 
@@ -364,7 +421,7 @@ class RegionPanelComponent:
             visible=False,
             styles={
                 "font-size": "12px",
-                "border-top": "1px solid #ddd",
+                "border-top": "1px solid #e2e8f0",
                 "padding-top": "6px",
             },
         )
@@ -376,7 +433,7 @@ class RegionPanelComponent:
             visible=False,
             styles={
                 "font-size": "12px",
-                "border-top": "1px solid #ddd",
+                "border-top": "1px solid #e2e8f0",
                 "padding-top": "6px",
             },
         )
@@ -400,6 +457,19 @@ class RegionPanelComponent:
             sizing_mode="stretch_width",
         )
 
+        copy_position_actions = Row(
+            children=[self.copy_target_select, self.copy_to_all_positions_button],
+            name="region_copy_position_actions",
+            sizing_mode="stretch_width",
+            spacing=8,
+        )
+
+        metric_actions = Row(
+            children=[self.center_region_button, self.recalculate_region_button],
+            name="region_metric_actions",
+            sizing_mode="stretch_width",
+        )
+
         self.detail_layout = column(
             self.region_table,
             self.color_picker,
@@ -407,7 +477,8 @@ class RegionPanelComponent:
             self.merge_select,
             secondary_actions,
             self.split_button,
-            self.copy_to_all_positions_button,
+            copy_position_actions,
+            metric_actions,
             self.note_input,
             self.metrics_div,
             self.frequency_copy_button,
@@ -740,14 +811,40 @@ class RegionPanelComponent:
         """)
         self.split_button.js_on_event('button_click', split_callback)
 
-        copy_to_all_positions_callback = CustomJS(code="""
+        copy_to_all_positions_callback = CustomJS(args={'targetSelect': self.copy_target_select}, code="""
             const store = window.NoiseSurveyApp?.store;
             const thunks = window.NoiseSurveyApp?.thunks;
-            if (typeof store?.dispatch === 'function' && typeof thunks?.copyRegionToAllPositionsIntent === 'function') {
+            if (typeof store?.dispatch !== 'function') {
+                return;
+            }
+            const target = String(targetSelect?.value || '');
+            if (target === '__all__' && typeof thunks?.copyRegionToAllPositionsIntent === 'function') {
                 store.dispatch(thunks.copyRegionToAllPositionsIntent());
+                return;
+            }
+            if (target && typeof thunks?.copyRegionToPositionIntent === 'function') {
+                store.dispatch(thunks.copyRegionToPositionIntent(target));
             }
         """)
         self.copy_to_all_positions_button.js_on_event('button_click', copy_to_all_positions_callback)
+
+        center_region_callback = CustomJS(code="""
+            const store = window.NoiseSurveyApp?.store;
+            const thunk = window.NoiseSurveyApp?.thunks?.centerViewportOnSelectedRegionIntent;
+            if (typeof store?.dispatch === 'function' && typeof thunk === 'function') {
+                store.dispatch(thunk());
+            }
+        """)
+        self.center_region_button.js_on_event('button_click', center_region_callback)
+
+        recalculate_region_callback = CustomJS(code="""
+            const store = window.NoiseSurveyApp?.store;
+            const thunk = window.NoiseSurveyApp?.thunks?.recalculateSelectedRegionIntent;
+            if (typeof store?.dispatch === 'function' && typeof thunk === 'function') {
+                store.dispatch(thunk());
+            }
+        """)
+        self.recalculate_region_button.js_on_event('button_click', recalculate_region_callback)
 
         visibility_callback = CustomJS(code="""
             const actions = window.NoiseSurveyApp?.actions;
@@ -931,7 +1028,7 @@ class MarkerPanelComponent:
             name="marker_metrics_div",
             styles={
                 "font-size": "12px",
-                "border-top": "1px solid #ddd",
+                "border-top": "1px solid #e2e8f0",
                 "padding-top": "6px",
             },
         )
@@ -1144,12 +1241,527 @@ class MarkerPanelComponent:
         return self.container
 
 
-class SidePanelComponent:
-    """Container that organises region and marker management into tabs."""
+class ClassificationPanelComponent:
+    """Bokeh widget panel for imported audio classifier intervals."""
 
-    def __init__(self, region_panel: RegionPanelComponent, marker_panel: MarkerPanelComponent) -> None:
+    def __init__(self) -> None:
+        panel_width = SIDE_PANEL_WIDTH
+
+        self.visibility_toggle = Toggle(
+            label="Classifications",
+            width=panel_width,
+            name="classification_visibility_toggle",
+            active=True,
+            button_type="primary",
+        )
+
+        self.classification_source = ColumnDataSource(
+            data={
+                "id": [],
+                "source": [],
+                "position": [],
+                "time_span": [],
+                "confidence": [],
+                "score_value": [],
+                "start_ms": [],
+                "start_display": [],
+                "state": [],
+                "color": [],
+                "role": [],
+            },
+            name="classification_panel_source",
+        )
+
+        # Sortable columns bind to the RAW numeric fields (start_ms, score_value)
+        # with display formatters, not to the pre-formatted text fields — binding
+        # to text would sort lexicographically ("9%" > "80%", "09:5" > "10:0").
+        # `time_span`/`confidence` are retained as hidden fields because the
+        # detail panel and existing consumers still read them.
+        self.classification_table = DataTable(
+            source=self.classification_source,
+            scroll_to_selection=True,
+            sortable=True,
+            columns=[
+                TableColumn(field="source", title="Source", width=int(panel_width * 0.40), sortable=True),
+                # Bound to the numeric `start_ms` so sorting is chronological,
+                # but rendered from the sibling `start_display` string. Bokeh's
+                # DateFormatter renders UTC, which would disagree with the
+                # browser-local times shown in the detail panel below (an hour
+                # out during BST); HTMLTemplateFormatter lets the column sort on
+                # the number while displaying the already-localised text.
+                TableColumn(
+                    field="start_ms",
+                    title="Start",
+                    width=int(panel_width * 0.30),
+                    sortable=True,
+                    formatter=HTMLTemplateFormatter(template="<%= start_display %>"),
+                ),
+                TableColumn(
+                    field="score_value",
+                    title="Score",
+                    width=int(panel_width * 0.18),
+                    sortable=True,
+                    formatter=NumberFormatter(format="0.00"),
+                ),
+                TableColumn(field="start_display", title="StartText", visible=False),
+                TableColumn(field="position", title="Pos", visible=False),
+                TableColumn(field="time_span", title="TimeSpan", visible=False),
+                TableColumn(field="confidence", title="ScoreText", visible=False),
+                TableColumn(field="state", title="State", visible=False),
+                TableColumn(field="color", title="Color", visible=False),
+                TableColumn(field="role", title="Role", visible=False),
+                TableColumn(field="id", title="ID", visible=False),
+            ],
+            width=panel_width,
+            height=240,
+            index_position=None,
+            header_row=True,
+            row_height=42,
+            name="classification_panel_table",
+            selectable=True,
+            editable=False,
+            reorderable=False,
+            autosize_mode="none",
+            sizing_mode="stretch_width",
+            css_classes=["classification-panel-table"],
+        )
+        self.classification_table.stylesheets = [
+            """
+            .classification-panel-table .bk-data-table {
+                border: none;
+                background: transparent;
+                font-family: 'Segoe UI', sans-serif;
+            }
+            .classification-panel-table .slick-header-columns {
+                background: rgba(148, 163, 184, 0.1);
+                border-bottom: 1px solid rgba(148, 163, 184, 0.4);
+            }
+            .classification-panel-table .slick-header-column {
+                font-weight: 600;
+                color: #1f2937;
+            }
+            .classification-panel-table .slick-row {
+                border: none !important;
+                margin: 4px 4px;
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.9);
+                box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+            }
+            .classification-panel-table .slick-row:hover {
+                background: rgba(46, 134, 171, 0.12) !important;
+            }
+            .classification-panel-table .slick-row.active,
+            .classification-panel-table .slick-row.selected {
+                background: #2e86ab !important;
+            }
+            .classification-panel-table .slick-row .slick-cell {
+                border: none !important;
+                background: transparent !important;
+                color: #1f2937;
+                font-size: 12px;
+            }
+            .classification-panel-table .slick-row.selected .slick-cell {
+                color: #ffffff;
+            }
+            .classification-panel-table .bk-cell-index {
+                display: none;
+            }
+            """
+        ]
+
+        self.message_div = Div(
+            text="<p class='classification-panel-empty'>No classifications imported.</p>",
+            width=panel_width,
+            name="classification_panel_message_div",
+            styles={"font-size": "12px", "line-height": "1.45"},
+        )
+
+        self.detail_div = Div(
+            text="<p class='classification-panel-empty'>Select a classification to view details.</p>",
+            width=panel_width,
+            name="classification_panel_detail_div",
+            styles={
+                "font-size": "12px",
+                "border-top": "1px solid #e2e8f0",
+                "padding-top": "6px",
+            },
+        )
+
+        button_width = int(panel_width / 2) - 6
+        self.import_button = Button(
+            label="Import",
+            width=button_width,
+            name="classification_import_button",
+            button_type="default",
+        )
+        self.export_button = Button(
+            label="Export",
+            width=button_width,
+            name="classification_export_button",
+            button_type="default",
+        )
+        self.elevate_button = Button(
+            label="Elevate to Region",
+            width=button_width,
+            name="classification_elevate_button",
+            button_type="success",
+            disabled=True,
+        )
+        self.delete_button = Button(
+            label="Delete",
+            width=button_width,
+            name="classification_delete_button",
+            button_type="danger",
+            disabled=True,
+        )
+
+        self.preview_button = Button(
+            label="Preview (P)",
+            width=button_width,
+            name="classification_preview_button",
+            button_type="primary",
+            disabled=True,
+        )
+
+        # --- Filter controls (Phase 4) ---
+        # Score is the raw model output, not a calibrated probability, so the
+        # control is deliberately labelled "Minimum score" rather than
+        # "confidence".
+        self.minimum_score_slider = Slider(
+            start=0.0,
+            end=1.0,
+            value=0.0,
+            step=0.01,
+            title="Minimum score",
+            width=panel_width,
+            name="classification_minimum_score_slider",
+        )
+
+        self.showing_count_div = Div(
+            text="",
+            width=panel_width,
+            name="classification_showing_count_div",
+            styles={"font-size": "11px", "color": "#475569", "padding": "2px 0"},
+        )
+
+        # Compact collapsible source list — kept collapsed by default so the
+        # narrow side panel does not fill with checkboxes.
+        self.source_filter_toggle = Toggle(
+            label="Sources",
+            width=panel_width,
+            active=False,
+            name="classification_source_filter_toggle",
+            button_type="default",
+        )
+        self.source_checkbox_group = CheckboxGroup(
+            labels=[],
+            active=[],
+            width=panel_width,
+            name="classification_source_checkbox_group",
+        )
+        self.source_all_button = Button(
+            label="All",
+            width=int(panel_width / 2) - 6,
+            name="classification_source_all_button",
+            button_type="default",
+        )
+        self.source_none_button = Button(
+            label="None",
+            width=int(panel_width / 2) - 6,
+            name="classification_source_none_button",
+            button_type="default",
+        )
+        source_action_row = Row(
+            children=[self.source_all_button, self.source_none_button],
+            name="classification_source_action_buttons",
+            sizing_mode="stretch_width",
+        )
+        self.source_filter_layout = column(
+            self.source_checkbox_group,
+            source_action_row,
+            name="classification_source_filter_layout",
+            sizing_mode="stretch_width",
+            visible=False,
+        )
+
+        # Direct/supporting role filter. Hidden entirely unless the imported
+        # set actually contains supporting events (renderer controls this).
+        self.role_checkbox_group = CheckboxGroup(
+            labels=["Direct", "Supporting"],
+            active=[0],
+            width=panel_width,
+            name="classification_role_checkbox_group",
+        )
+        self.role_filter_layout = column(
+            self.role_checkbox_group,
+            name="classification_role_filter_layout",
+            sizing_mode="stretch_width",
+            visible=False,
+        )
+
+        self.filter_layout = column(
+            self.minimum_score_slider,
+            self.source_filter_toggle,
+            self.source_filter_layout,
+            self.role_filter_layout,
+            self.showing_count_div,
+            name="classification_filter_layout",
+            sizing_mode="stretch_width",
+            visible=False,
+        )
+
+        import_export_row = Row(
+            children=[self.import_button, self.export_button],
+            name="classification_import_export_buttons",
+            sizing_mode="stretch_width",
+        )
+        action_row = Row(
+            children=[self.elevate_button, self.delete_button],
+            name="classification_action_buttons",
+            sizing_mode="stretch_width",
+        )
+        preview_row = Row(
+            children=[self.preview_button],
+            name="classification_preview_row",
+            sizing_mode="stretch_width",
+        )
+
+        self.detail_layout = column(
+            self.classification_table,
+            preview_row,
+            action_row,
+            self.detail_div,
+            name="classification_panel_detail",
+            sizing_mode="stretch_width",
+            visible=False,
+        )
+
+        self.container = column(
+            self.visibility_toggle,
+            import_export_row,
+            self.filter_layout,
+            self.detail_layout,
+            self.message_div,
+            name="classification_panel_container",
+            styles={
+                "border": "1px solid rgba(148, 163, 184, 0.25)",
+                "padding": "12px",
+                "background-color": "#ffffff",
+                "border-radius": "16px",
+                "box-shadow": "0 8px 20px rgba(15, 23, 42, 0.08)",
+            },
+            width=panel_width,
+        )
+
+        self._attach_callbacks()
+
+    def _attach_callbacks(self) -> None:
+        selection_callback = CustomJS(args={'source': self.classification_source, 'table': self.classification_table}, code="""
+            if (!source || !table) {
+                return;
+            }
+            const app = window.NoiseSurveyApp;
+            const actions = app?.actions;
+            const thunks = app?.thunks;
+            const store = app?.store;
+            if (!actions || typeof store?.dispatch !== 'function') {
+                return;
+            }
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            const ids = Array.isArray(source.data?.id) ? source.data.id : [];
+            const candidate = Number(ids[indices[0]]);
+
+            if (table.__suppressSelectionDispatch) {
+                return;
+            }
+            if (!indices.length || !Number.isFinite(candidate)) {
+                if (typeof actions.classificationClearSelection === 'function') {
+                    store.dispatch(actions.classificationClearSelection());
+                }
+                return;
+            }
+            if (typeof thunks?.selectClassificationIntent === 'function') {
+                store.dispatch(thunks.selectClassificationIntent(candidate));
+            } else if (typeof actions.classificationSelect === 'function') {
+                store.dispatch(actions.classificationSelect(candidate));
+            }
+        """)
+        self.classification_source.selected.js_on_change('indices', selection_callback)
+
+        visibility_callback = CustomJS(code="""
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            if (!actions?.classificationVisibilitySet || typeof store?.dispatch !== 'function') {
+                return;
+            }
+            const isVisible = !!cb_obj.active;
+            store.dispatch(actions.classificationVisibilitySet({ showPanel: isVisible, showOverlays: isVisible }));
+        """)
+        self.visibility_toggle.js_on_change('active', visibility_callback)
+
+        import_callback = CustomJS(code="""
+            const session = window.NoiseSurveyApp?.session;
+            if (typeof session?.handleImportClassifications !== 'function') {
+                console.error('[Classifications] Import handler is unavailable.');
+                return;
+            }
+            session.handleImportClassifications();
+        """)
+        self.import_button.js_on_event('button_click', import_callback)
+
+        export_callback = CustomJS(code="""
+            const session = window.NoiseSurveyApp?.session;
+            if (typeof session?.handleExportClassifications !== 'function') {
+                console.error('[Classifications] Export handler is unavailable.');
+                return;
+            }
+            session.handleExportClassifications();
+        """)
+        self.export_button.js_on_event('button_click', export_callback)
+
+        elevate_callback = CustomJS(args={'source': self.classification_source}, code="""
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                return;
+            }
+            const ids = Array.isArray(source.data?.id) ? source.data.id : [];
+            const classificationId = Number(ids[indices[0]]);
+            const thunks = window.NoiseSurveyApp?.thunks;
+            const store = window.NoiseSurveyApp?.store;
+            if (Number.isFinite(classificationId) && typeof thunks?.elevateClassificationToRegionIntent === 'function'
+                && typeof store?.dispatch === 'function') {
+                store.dispatch(thunks.elevateClassificationToRegionIntent(classificationId));
+            }
+        """)
+        self.elevate_button.js_on_event('button_click', elevate_callback)
+
+        delete_callback = CustomJS(args={'source': self.classification_source}, code="""
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                return;
+            }
+            const ids = Array.isArray(source.data?.id) ? source.data.id : [];
+            const classificationId = Number(ids[indices[0]]);
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            if (Number.isFinite(classificationId) && typeof actions?.classificationRemove === 'function'
+                && typeof store?.dispatch === 'function') {
+                store.dispatch(actions.classificationRemove(classificationId));
+            }
+        """)
+        self.delete_button.js_on_event('button_click', delete_callback)
+
+        preview_callback = CustomJS(code="""
+            const thunks = window.NoiseSurveyApp?.features?.classifications?.thunks;
+            const store = window.NoiseSurveyApp?.store;
+            if (typeof thunks?.previewSelectedClassificationIntent === 'function'
+                && typeof store?.dispatch === 'function') {
+                store.dispatch(thunks.previewSelectedClassificationIntent());
+            }
+        """)
+        self.preview_button.js_on_event('button_click', preview_callback)
+
+        # --- Filter control callbacks (Phase 4) ---
+        minimum_score_callback = CustomJS(code="""
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            if (typeof actions?.classificationMinimumScoreSet !== 'function'
+                || typeof store?.dispatch !== 'function') {
+                return;
+            }
+            store.dispatch(actions.classificationMinimumScoreSet(Number(cb_obj.value)));
+        """)
+        self.minimum_score_slider.js_on_change('value', minimum_score_callback)
+
+        source_filter_toggle_callback = CustomJS(args={'toggle': self.source_filter_toggle}, code="""
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            if (toggle.__suppressDispatch) {
+                return;
+            }
+            if (typeof actions?.classificationSourceFilterExpandedSet === 'function'
+                && typeof store?.dispatch === 'function') {
+                store.dispatch(actions.classificationSourceFilterExpandedSet(!!cb_obj.active));
+            }
+        """)
+        self.source_filter_toggle.js_on_change('active', source_filter_toggle_callback)
+
+        # The checkbox group's `active` list is index-based; map indices back to
+        # source IDs via the label order the renderer last wrote.
+        source_checkbox_callback = CustomJS(args={'group': self.source_checkbox_group}, code="""
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            if (typeof store?.dispatch !== 'function' || !actions) {
+                return;
+            }
+            if (group.__suppressDispatch) {
+                return;
+            }
+            const sourceIds = Array.isArray(group.__sourceIds) ? group.__sourceIds : [];
+            const active = Array.isArray(cb_obj.active) ? cb_obj.active : [];
+            sourceIds.forEach((sourceId, index) => {
+                const visible = active.includes(index);
+                if (typeof actions.classificationSourceVisibilitySet === 'function') {
+                    store.dispatch(actions.classificationSourceVisibilitySet(sourceId, visible));
+                }
+            });
+        """)
+        self.source_checkbox_group.js_on_change('active', source_checkbox_callback)
+
+        source_all_callback = CustomJS(code="""
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            if (typeof actions?.classificationAllSourcesVisibilitySet === 'function'
+                && typeof store?.dispatch === 'function') {
+                store.dispatch(actions.classificationAllSourcesVisibilitySet(true));
+            }
+        """)
+        self.source_all_button.js_on_event('button_click', source_all_callback)
+
+        source_none_callback = CustomJS(code="""
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            if (typeof actions?.classificationAllSourcesVisibilitySet === 'function'
+                && typeof store?.dispatch === 'function') {
+                store.dispatch(actions.classificationAllSourcesVisibilitySet(false));
+            }
+        """)
+        self.source_none_button.js_on_event('button_click', source_none_callback)
+
+        role_checkbox_callback = CustomJS(args={'group': self.role_checkbox_group}, code="""
+            const actions = window.NoiseSurveyApp?.actions;
+            const store = window.NoiseSurveyApp?.store;
+            if (typeof actions?.classificationRoleVisibilitySet !== 'function'
+                || typeof store?.dispatch !== 'function') {
+                return;
+            }
+            if (group.__suppressDispatch) {
+                return;
+            }
+            const active = Array.isArray(cb_obj.active) ? cb_obj.active : [];
+            store.dispatch(actions.classificationRoleVisibilitySet({
+                showDirect: active.includes(0),
+                showSupporting: active.includes(1)
+            }));
+        """)
+        self.role_checkbox_group.js_on_change('active', role_checkbox_callback)
+
+    def layout(self):
+        return self.container
+
+
+class SidePanelComponent:
+    """Container that organises region, marker, and classifier panels into tabs."""
+
+    def __init__(
+        self,
+        region_panel: RegionPanelComponent,
+        marker_panel: MarkerPanelComponent,
+        classification_panel: Optional[ClassificationPanelComponent] = None,
+    ) -> None:
         self.region_panel = region_panel
         self.marker_panel = marker_panel
+        self.classification_panel = classification_panel
 
         self.region_tab = TabPanel(
             child=self.region_panel.layout(),
@@ -1161,12 +1773,35 @@ class SidePanelComponent:
             title="Markers",
             name="markers_tab_panel",
         )
+        self.classification_tab = None
+        tabs = [self.region_tab, self.marker_tab]
+        if self.classification_panel is not None:
+            self.classification_tab = TabPanel(
+                child=self.classification_panel.layout(),
+                title="Classifications",
+                name="classifications_tab_panel",
+            )
+            tabs.append(self.classification_tab)
 
         self.tabs = Tabs(
-            tabs=[self.region_tab, self.marker_tab],
+            tabs=tabs,
             name="side_panel_tabs",
             width=SIDE_PANEL_WIDTH + 32,
         )
+
+        # Keep the store in sync with user tab clicks; without this the next
+        # render pass forces the tabs back to state.view.activeSidePanelTab.
+        self.tabs.js_on_change("active", CustomJS(code="""
+            const app = window.NoiseSurveyApp;
+            if (app?.store?.dispatch && app?.actions?.setActiveSidePanelTab) {
+                const current = app.store.getState()?.view?.activeSidePanelTab;
+                if (current !== cb_obj.active) {
+                    app.store.dispatch(app.actions.setActiveSidePanelTab(cb_obj.active));
+                }
+            } else {
+                console.error('NoiseSurveyApp.actions.setActiveSidePanelTab not available!');
+            }
+        """))
 
     def layout(self):
         return self.tabs
@@ -1849,7 +2484,7 @@ class ControlsComponent:
 
         # Active position display
         active_position_display = Div(
-            text="<span style='font-size: 11px; color: #666;'>Audio not available</span>",
+            text="<span style='font-size: 11px; color: #64748b;'>Audio not available</span>",
             width=140,
             height=30,
             name="global_active_position_display",
@@ -1862,7 +2497,7 @@ class ControlsComponent:
             width=350,
             height=30,
             name="global_audio_file_info_display",
-            styles={"display": "flex", "align-items": "center", "padding-left": "8px", "font-size": "10px", "color": "#555"}
+            styles={"display": "flex", "align-items": "center", "padding-left": "8px", "font-size": "10px", "color": "#64748b"}
         )
 
         controls_layout = Row(
@@ -1875,9 +2510,9 @@ class ControlsComponent:
             styles={
                 "gap": "4px",
                 "padding": "4px 12px",
-                "border": "1px solid #d0d0d0",
+                "border": "1px solid #cbd5e1",
                 "border-radius": "4px",
-                "background-color": "#f8f9fa",
+                "background-color": "#f8fafc",
                 "margin-left": "16px"
             }
         )
@@ -1909,8 +2544,8 @@ class ControlsComponent:
             }
         """))
         label = Div(
-            text="Log threshold (min):",
-            width=130,
+            text="Log max window (min):",
+            width=145,
             height=30,
             styles={'line-height': '30px', 'font-size': '9pt', 'white-space': 'nowrap'}
         )
@@ -2057,13 +2692,14 @@ class ControlsComponent:
             self.view_toggle,
             self.log_threshold_spinner,
             self.hover_toggle,
+            self.clear_markers_button,
             self.status_chips['layout'],
             name="view_controls_group",
             styles={
                 "gap": "8px",
                 "align-items": "center",
                 "padding": "4px 8px",
-                "border": "1px solid #d1d5db",
+                "border": "1px solid #cbd5e1",
                 "border-radius": "8px",
                 "background-color": "#ffffff",
                 "flex-wrap": "wrap",
@@ -2092,7 +2728,7 @@ class ControlsComponent:
                 "gap": "8px",
                 "position": "sticky",
                 "top": "0px",
-                "background": "#f3f4f6",
+                "background": "#f1f5f9",
                 "padding": "10px 12px",
                 "box-shadow": "0 2px 6px rgba(0, 0, 0, 0.08)",
                 "z-index": "100"
@@ -2114,10 +2750,13 @@ class ControlsComponent:
             height=30,
             name="session_actions_dropdown",
             menu=[
+                ("Save Setup to Config", "save_setup_to_config"),
                 ("Save Workspace", "save"),
                 ("Load Workspace", "load"),
                 ("Export Annotations (CSV)", "export_annotations_csv"),
                 ("Import Annotations (CSV)", "import_annotations_csv"),
+                ("Export Classifications (CSV)", "export_classifications_csv"),
+                ("Import Classifications (CSV/JSON)", "import_classifications"),
                 ("Generate Static HTML (Offline)", "generate_static_html"),
             ],
         )
@@ -2422,7 +3061,7 @@ class FrequencyBarComponent:
         table_html = """
         <style>
             .freq-html-table { border-collapse: collapse; width: 100%; font-size: 0.9em; table-layout: fixed; }
-            .freq-html-table th, .freq-html-table td { border: 1px solid #ddd; padding: 6px; text-align: center; white-space: nowrap; }
+            .freq-html-table th, .freq-html-table td { border: 1px solid #e2e8f0; padding: 6px; text-align: center; white-space: nowrap; }
             .freq-html-table th { background-color: #f2f2f2; font-weight: bold; }
         </style>
         <table class="freq-html-table"><tr>"""
@@ -2491,9 +3130,9 @@ class ComparisonPanelComponent:
             width=panel_width,
             name="comparison_slice_info_div",
             styles={
-                "border": "1px solid #ccc",
+                "border": "1px solid #cbd5e1",
                 "padding": "8px",
-                "background-color": "#fafafa",
+                "background-color": "#f1f5f9",
                 "font-size": "12px",
                 "margin-bottom": "8px"
             }
@@ -2527,17 +3166,17 @@ class ComparisonPanelComponent:
             <style>
                 .comparison-metrics-table { width: 100%; border-collapse: collapse; font-size: 12px; }
                 .comparison-metrics-table th, .comparison-metrics-table td {
-                    border: 1px solid #ddd;
+                    border: 1px solid #e2e8f0;
                     padding: 4px 6px;
                     text-align: center;
                 }
                 .comparison-metrics-table th {
-                    background-color: #f5f5f5;
+                    background-color: #f1f5f9;
                     font-weight: 600;
                 }
                 .comparison-metrics-table__placeholder {
                     font-style: italic;
-                    color: #666;
+                    color: #64748b;
                 }
             </style>
             <table class="comparison-metrics-table">
@@ -2563,9 +3202,9 @@ class ComparisonPanelComponent:
             height=220,
             name="comparison_metrics_div",
             styles={
-                "border": "1px solid #ccc",
+                "border": "1px solid #cbd5e1",
                 "padding": "12px",
-                "background-color": "#fafafa",
+                "background-color": "#f1f5f9",
                 "overflow-y": "auto"
             }
         )
@@ -2650,9 +3289,9 @@ class ComparisonFrequencyBarComponent:
             width=chart_width,
             name="comparison_frequency_table",
             styles={
-                "border": "1px solid #ccc",
+                "border": "1px solid #cbd5e1",
                 "padding": "12px",
-                "background-color": "#fafafa",
+                "background-color": "#f1f5f9",
                 "margin-top": "8px"
             }
         )
@@ -2669,13 +3308,13 @@ class ComparisonFrequencyBarComponent:
             <table class="comparison-frequency-table" style="width:100%; border-collapse: collapse; font-size:12px;">
                 <thead>
                     <tr>
-                        <th style="border:1px solid #ddd; padding:4px; background:#f5f5f5;">Position</th>
-                        <th style="border:1px solid #ddd; padding:4px; background:#f5f5f5;">Spectrum</th>
+                        <th style="border:1px solid #e2e8f0; padding:4px; background:#f1f5f9;">Position</th>
+                        <th style="border:1px solid #e2e8f0; padding:4px; background:#f1f5f9;">Spectrum</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td colspan="2" style="border:1px solid #ddd; padding:6px; text-align:center; font-style:italic; color:#666;">
+                        <td colspan="2" style="border:1px solid #e2e8f0; padding:6px; text-align:center; font-style:italic; color:#64748b;">
                             Select a time slice to view averaged spectra.
                         </td>
                     </tr>
@@ -2960,7 +3599,12 @@ def create_audio_controls_for_position(position_id: str) -> dict:
     }
 
 
-def create_position_title_and_offsets(position_id: str, display_title: str = None) -> dict:
+def create_position_title_and_offsets(
+    position_id: str,
+    display_title: str = None,
+    chart_offset_seconds: float = 0.0,
+    audio_offset_seconds: float = 0.0,
+) -> dict:
     """
     Creates position title display and offset controls (without playback buttons).
     This is used for all positions to show title and allow offset adjustments.
@@ -2968,6 +3612,11 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
     Args:
         position_id (str): The identifier for the measurement position (e.g., 'SW', 'N').
         display_title (str): Optional custom display title. If None, uses position_id.
+        chart_offset_seconds (float): Initial chart offset, normally restored from
+            the job config. Set at construction rather than assigned afterwards so
+            the value is part of the document the browser first receives; a later
+            assignment races the JS store initialisation and gets reset to zero.
+        audio_offset_seconds (float): Initial audio offset, same reasoning.
     
     Returns:
         dict: A dictionary containing the Bokeh widgets and their containing 'layout'.
@@ -2977,7 +3626,7 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
     
     # Position title display
     title_div = Div(
-        text=f"<strong style='font-size: 13px; color: #2c3e50; white-space: nowrap;'>{display_title}</strong>",
+        text=f"<strong style='font-size: 13px; color: #0f172a; white-space: nowrap;'>{display_title}</strong>",
         width=220,
         height=35,
         name=f"position_title_{position_id}",
@@ -2986,7 +3635,7 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
 
     # Chart Offset controls
     chart_offset_label = Div(
-        text="<span style='font-size: 10px; color: #555;'>Chart Offset (s):</span>",
+        text="<span style='font-size: 10px; color: #64748b;'>Chart Offset (s):</span>",
         width=85,
         height=35,
         styles={"display": "flex", "align-items": "center", "padding-left": "8px"},
@@ -2998,7 +3647,7 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
         low=-6000,
         high=6000,
         step=0.1,
-        value=0.0,
+        value=float(chart_offset_seconds or 0.0),
         format="0.0",
         name=f"chart_offset_spinner_{position_id}"
     )
@@ -3016,7 +3665,7 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
 
     # Audio Offset controls
     audio_offset_label = Div(
-        text="<span style='font-size: 10px; color: #555;'>Audio Offset (s):</span>",
+        text="<span style='font-size: 10px; color: #64748b;'>Audio Offset (s):</span>",
         width=85,
         height=35,
         styles={"display": "flex", "align-items": "center", "padding-left": "8px"},
@@ -3028,7 +3677,7 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
         low=-6000,
         high=6000,
         step=0.1,
-        value=0.0,
+        value=float(audio_offset_seconds or 0.0),
         format="0.0",
         name=f"audio_offset_spinner_{position_id}"
     )
@@ -3056,7 +3705,7 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
             "padding-left": "8px",
             "white-space": "nowrap",
             "font-size": "10px",
-            "color": "#555"
+            "color": "#64748b"
         }
     )
 
@@ -3070,9 +3719,9 @@ def create_position_title_and_offsets(position_id: str, display_title: str = Non
         name=f"position_controls_{position_id}",
         styles={
             "gap": "6px",
-            "background-color": "#f5f5f5",
-            "border-top": "1px solid #e0e0e0",
-            "border-bottom": "1px solid #e0e0e0",
+            "background-color": "#f1f5f9",
+            "border-top": "1px solid #e2e8f0",
+            "border-bottom": "1px solid #e2e8f0",
             "padding": "4px 12px",
             "align-items": "center",
             "justify-content": "space-between",
@@ -3128,11 +3777,11 @@ class SummaryTableComponent:
         style = f"""
         <style>
             .summary-html-table {{ border-collapse: collapse; width: 100%; font-size: {font_size}; table-layout: fixed; margin-top: 10px; margin-bottom: {margin_bottom};}}
-            .summary-html-table th, .summary-html-table td {{ border: 1px solid #ddd; padding: {padding}; text-align: center; }}
+            .summary-html-table th, .summary-html-table td {{ border: 1px solid #e2e8f0; padding: {padding}; text-align: center; }}
             .summary-html-table th {{ background-color: #f2f2f2; font-weight: bold; }}
             .summary-html-table .position-header {{ text-align: left; font-weight: bold; }}
-            .summary-html-table .placeholder {{ color: #888; font-style: italic; }}
-            .summary-html-table .timestamp-info {{ background-color: #f9f9f9; font-size: 0.85em; color: #666; }}
+            .summary-html-table .placeholder {{ color: #94a3b8; font-style: italic; }}
+            .summary-html-table .timestamp-info {{ background-color: #f1f5f9; font-size: 0.85em; color: #64748b; }}
         </style>
         """
         

@@ -153,6 +153,8 @@ describe('NoiseSurveyApp.features.regions.utils (extra coverage)', () => {
         expect(exported).toHaveLength(1);
         expect(exported[0].color).toBe('#123456');
         expect(exported[0].areas).toEqual([{ start: 0, end: 1000 }]);
+        expect(exported[0].dataSource).toBe('overview');
+        expect(exported[0].spectrumDataSource).toBe('none');
         expect(exported[0].metrics.dataResolution).toBe('overview');
         expect(exported[0].metrics.laeq).toBeCloseTo(51.1, 1);
     });

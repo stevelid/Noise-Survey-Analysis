@@ -54,6 +54,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         MARKERS_REPLACED: 'markers/markersReplaced',
         MARKERS_VISIBILITY_SET: 'markers/visibilitySet',
 
+        // Classifications
+        CLASSIFICATIONS_ADDED: 'classifications/classificationsAdded',
+        CLASSIFICATIONS_REPLACED: 'classifications/classificationsReplaced',
+        CLASSIFICATION_UPDATED: 'classifications/classificationUpdated',
+        CLASSIFICATION_REMOVED: 'classifications/classificationRemoved',
+        CLASSIFICATION_SELECTED: 'classifications/classificationSelected',
+        CLASSIFICATION_SELECTION_CLEARED: 'classifications/classificationSelectionCleared',
+        CLASSIFICATION_VISIBILITY_SET: 'classifications/visibilitySet',
+        CLASSIFICATION_MINIMUM_SCORE_SET: 'classifications/minimumScoreSet',
+        CLASSIFICATION_SOURCE_VISIBILITY_SET: 'classifications/sourceVisibilitySet',
+        CLASSIFICATION_ALL_SOURCES_VISIBILITY_SET: 'classifications/allSourcesVisibilitySet',
+        CLASSIFICATION_ROLE_VISIBILITY_SET: 'classifications/roleVisibilitySet',
+        CLASSIFICATION_SOURCE_FILTER_EXPANDED_SET: 'classifications/sourceFilterExpandedSet',
+
         // Regions
         REGION_ADDED: 'regions/regionAdded',
         REGIONS_ADDED: 'regions/regionsAdded',
@@ -67,6 +81,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REGION_MERGE_MODE_SET: 'regions/regionMergeModeSet',
         REGIONS_REPLACED: 'regions/regionsReplaced',
         REGION_VISIBILITY_SET: 'regions/visibilitySet',
+        REGION_METRICS_RECALCULATED: 'regions/metricsRecalculated',
 
         REGION_CREATION_STARTED: 'interaction/regionCreationStarted',
         REGION_CREATION_CANCELLED: 'interaction/regionCreationCancelled',
@@ -202,6 +217,71 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             payload: { enabled: typeof enabled === 'boolean' ? enabled : Boolean(enabled) }
         }),
 
+        classificationsAdded: (classifications) => ({
+            type: actionTypes.CLASSIFICATIONS_ADDED,
+            payload: { classifications }
+        }),
+
+        classificationsReplaceAll: (classifications) => ({
+            type: actionTypes.CLASSIFICATIONS_REPLACED,
+            payload: { classifications }
+        }),
+
+        classificationUpdate: (id, changes) => ({
+            type: actionTypes.CLASSIFICATION_UPDATED,
+            payload: { id, changes }
+        }),
+
+        classificationRemove: (id) => ({
+            type: actionTypes.CLASSIFICATION_REMOVED,
+            payload: { id }
+        }),
+
+        classificationSelect: (id) => ({
+            type: actionTypes.CLASSIFICATION_SELECTED,
+            payload: { id }
+        }),
+
+        classificationClearSelection: () => ({
+            type: actionTypes.CLASSIFICATION_SELECTION_CLEARED
+        }),
+
+        classificationVisibilitySet: (config) => ({
+            type: actionTypes.CLASSIFICATION_VISIBILITY_SET,
+            payload: {
+                showPanel: typeof config?.showPanel === 'boolean' ? config.showPanel : undefined,
+                showOverlays: typeof config?.showOverlays === 'boolean' ? config.showOverlays : undefined,
+            }
+        }),
+
+        classificationMinimumScoreSet: (minimumScore) => ({
+            type: actionTypes.CLASSIFICATION_MINIMUM_SCORE_SET,
+            payload: { minimumScore: Number.isFinite(Number(minimumScore)) ? Number(minimumScore) : 0.0 }
+        }),
+
+        classificationSourceVisibilitySet: (sourceId, visible) => ({
+            type: actionTypes.CLASSIFICATION_SOURCE_VISIBILITY_SET,
+            payload: { sourceId, visible: Boolean(visible) }
+        }),
+
+        classificationAllSourcesVisibilitySet: (visible) => ({
+            type: actionTypes.CLASSIFICATION_ALL_SOURCES_VISIBILITY_SET,
+            payload: { visible: Boolean(visible) }
+        }),
+
+        classificationRoleVisibilitySet: (roleConfig) => ({
+            type: actionTypes.CLASSIFICATION_ROLE_VISIBILITY_SET,
+            payload: {
+                showDirect: typeof roleConfig?.showDirect === 'boolean' ? roleConfig.showDirect : undefined,
+                showSupporting: typeof roleConfig?.showSupporting === 'boolean' ? roleConfig.showSupporting : undefined
+            }
+        }),
+
+        classificationSourceFilterExpandedSet: (expanded) => ({
+            type: actionTypes.CLASSIFICATION_SOURCE_FILTER_EXPANDED_SET,
+            payload: { expanded: Boolean(expanded) }
+        }),
+
         regionAdd: (positionId, start, end) => ({
             type: actionTypes.REGION_ADDED,
             payload: { positionId, start, end }
@@ -257,6 +337,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             payload: { isActive: Boolean(isActive) }
         }),
 
+        regionMetricsRecalculated: (id, resolution) => ({
+            type: actionTypes.REGION_METRICS_RECALCULATED,
+            payload: { id, resolution }
+        }),
+
         audioStatusUpdate: (status) => ({ type: actionTypes.AUDIO_STATUS_UPDATE, payload: { status } }),
 
         audioPlayPauseToggle: (positionId, isActive) => ({
@@ -298,6 +383,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
     if (!Number.isFinite(app.constants.sidePanelTabs.markers)) {
         app.constants.sidePanelTabs.markers = 1;
+    }
+    if (!Number.isFinite(app.constants.sidePanelTabs.classifications)) {
+        app.constants.sidePanelTabs.classifications = 2;
     }
 
 })(window.NoiseSurveyApp);

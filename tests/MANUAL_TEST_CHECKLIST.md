@@ -241,6 +241,7 @@
 - [ ] **Action:** Make changes, click Menu → "Load Workspace"
 - [ ] **Expected:** Previous workspace state restores
 - [ ] **Action:** Click Menu → "Export Annotations (CSV)"
+- [ ] **Expected:** Each region row states its broadband data source in `metrics_data_resolution` and its spectral source in `metrics_spectrum_source`
 - [ ] **Expected:** CSV file downloads with all regions and markers
 - [ ] **Action:** Click Menu → "Import Annotations (CSV)"
 - [ ] **Expected:** File picker opens
@@ -330,7 +331,30 @@
 - [ ] **Expected:** Each new region appears in table
 - [ ] **Expected:** Original region is deleted
 
-### 4.11 Copy Spectrum Values Button 🟡 PARTIAL
+### 4.11 Copy Region to Position 🟢
+- [ ] **Action:** Create and select a region on Position 1 when at least three positions are loaded
+- [ ] **Expected:** "Copy Region To" lists each other position and "All other positions", but not Position 1
+- [ ] **Action:** Select Position 6 and click "Copy"
+- [ ] **Expected:** An identical region (areas, colour, and note) is added to Position 6 only; Position 1 remains unchanged
+- [ ] **Action:** Select "All other positions" and click "Copy"
+- [ ] **Expected:** An identical region is added to every position except the source position
+
+### 4.12 Region Data Source Labels 🟢
+- [ ] **Action:** View regions calculated from log and overview data
+- [ ] **Expected:** Each region card shows a "Log", "Overview", or "No data" badge matching its calculated metrics
+- [ ] **Expected:** When deferred log data arrives for a position, affected badges and details refresh without recreating the regions
+
+### 4.13 Centre and Recalculate Region 🟢
+- [ ] **Action:** Select an off-screen region and click "Centre on Region"
+- [ ] **Expected:** The viewport centres on the complete region and keeps the current width unless it must widen to fit the region
+- [ ] **Action:** Zoom until the selected position displays overview data
+- [ ] **Expected:** The button reads "Recalculate (Overview)"
+- [ ] **Action:** Click it
+- [ ] **Expected:** The region badge and detail source read "Overview" and the exported annotation reports overview
+- [ ] **Action:** Zoom until the selected position displays log data and recalculate again
+- [ ] **Expected:** The badge/detail/export source read "Log"; log spectral data is used when available
+
+### 4.14 Copy Spectrum Values Button 🟡 PARTIAL
 - [ ] **Action:** Select a region with spectrum data, click "Copy Spectrum Values"
 - [ ] **Expected:** Spectrum data copies to clipboard
 - [ ] **Action:** Paste into spreadsheet
@@ -835,6 +859,118 @@ available locally.
 - [ ] **Action:** Select one config in Available Files and press "Load Config"
 - [ ] **Expected:** Selected config populates the Included Files table while other configs remain available
 - [ ] **Test:** With multiple configs present, pressing "Load Config" without a selection keeps the prompt visible
+
+---
+
+## 13. Classification Review 🟡 PARTIAL
+
+**Setup:** Import a classifier CSV via Side Panel → Classifications → Import.
+A job 6461 motorcycle export is available at
+`G:\My Drive\Venta AI\skills\classify-survey-audio\references\manual-test\6461_motorcycle_classifications.csv`
+(85 events, mixed `on`/`uncertain` states, single source).
+Audio-dependent steps (13.4) need 🔴 SERVER plus loaded audio.
+
+### 13.1 Chart Box Selection 🟢
+- [ ] **Action:** Click a classification box on the time series chart
+- [ ] **Expected:** That classification becomes selected (box gains a thick white outline)
+- [ ] **Expected:** Side panel switches to the Classifications tab
+- [ ] **Expected:** Matching table row highlights
+- [ ] **Expected:** Table scrolls to the row if it was off-screen
+- [ ] **Expected:** Detail panel below the table populates
+- [ ] **Expected:** Tap/seek line does **NOT** move
+- [ ] **Expected:** Viewport does **NOT** change
+- [ ] **Expected:** Audio does **NOT** start, stop or restart
+- [ ] **Test:** Clicking empty chart space still performs the normal tap/seek
+
+### 13.2 Hover Tooltip 🟢
+- [ ] **Action:** Hover the pointer over a classification box
+- [ ] **Expected:** Tooltip shows Category, Start, End, Score, Role, State, Description
+- [ ] **Expected:** Tooltip appears **only** over classification boxes
+- [ ] **Test:** Normal line/spectrogram hover elsewhere on the chart still works
+
+### 13.3 Table Sorting 🟢
+- [ ] **Action:** Click the "Start" column header
+- [ ] **Expected:** Rows sort chronologically (**not** alphabetically — check that a
+      23:xx event sorts after a 09:xx event on the same day, and that events
+      spanning midnight order correctly)
+- [ ] **Action:** Click the "Score" column header
+- [ ] **Expected:** Rows sort numerically (0.09 sorts below 0.50, **not** as text)
+- [ ] **Action:** Sort by Score descending, then click a chart box
+- [ ] **Expected:** The correct sorted row highlights and scrolls into view
+- [ ] **Action:** Click a sorted row
+- [ ] **Expected:** The correct chart box highlights
+- [ ] **Expected:** Start column times match the times shown in the detail panel
+      (timezone consistency — they must not differ by an hour)
+
+### 13.4 Preview with `P` Key 🔴 SERVER
+- [ ] **Action:** Select a classification, then press `P`
+- [ ] **Expected:** Seek jumps to 1 second before the event start
+- [ ] **Expected:** Viewport centres on the event
+- [ ] **Expected:** If the viewport was wider than 120 s it becomes a 60 s window
+- [ ] **Expected:** If the viewport was already ≤ 120 s its width is preserved
+- [ ] **Expected:** Audio starts playing at that position
+- [ ] **Test:** `P` with no classification selected does nothing
+- [ ] **Test:** `P` while typing in a notes/text field does nothing (no preview, text types normally)
+- [ ] **Test:** `P` while audio is already playing the **same** position does not restart it
+- [ ] **Test:** `P` while audio is playing a **different** position switches to this one
+- [ ] **Test:** The "Preview (P)" button in the detail panel does the same thing
+- [ ] **Test:** Preview button is disabled when no visible classification is selected
+
+### 13.5 Minimum Score Filter 🟢
+- [ ] **Action:** Drag the "Minimum score" slider up
+- [ ] **Expected:** Low-scoring boxes disappear from the chart
+- [ ] **Expected:** Table rows reduce to match
+- [ ] **Expected:** "Showing N of M" caption updates
+- [ ] **Expected:** Imported data is **not** deleted — reducing the slider restores them
+- [ ] **Test:** Entries with no score remain visible at any slider value
+
+### 13.6 Source Visibility 🟢
+- [ ] **Action:** Click the "Sources (n/m)" toggle
+- [ ] **Expected:** Checkbox list expands showing each source with its event count
+- [ ] **Action:** Untick a source
+- [ ] **Expected:** That source's boxes, table rows and right-hand lane label all disappear
+- [ ] **Expected:** "Sources (n/m)" count updates
+- [ ] **Action:** Press "None" then "All"
+- [ ] **Expected:** All sources hide, then all reappear
+- [ ] **Test:** Collapsing the toggle hides the list without changing the filter
+
+### 13.7 Direct / Supporting Roles 🟢
+- [ ] **Setup:** Import a file containing supporting events, e.g.
+      `G:\My Drive\Venta AI\skills\classify-survey-audio\references\manual-test\6461_supporting_vehicle_classifications.csv`
+- [ ] **Expected:** Direct/Supporting checkboxes appear, with Supporting **off** by default
+- [ ] **Action:** Tick Supporting
+- [ ] **Expected:** Supporting events appear in chart and table
+- [ ] **Test:** With a direct-only file imported, the Direct/Supporting control is hidden entirely
+
+### 13.8 Selected-but-Hidden Handling 🟢
+- [ ] **Action:** Select a classification, then filter it out (raise the score slider above it)
+- [ ] **Expected:** Message "Selected classification is hidden by current filters"
+- [ ] **Expected:** No misleading highlighted table row remains
+- [ ] **Action:** Restore the filter
+- [ ] **Expected:** The classification is still selected and its details return
+
+### 13.9 Right-Hand Lane Labels 🟢
+- [ ] **Expected:** One "● Source" label per visible classification lane at the right edge
+- [ ] **Expected:** Label colour matches the category colour used for the boxes
+- [ ] **Action:** Pan and zoom the x-axis
+- [ ] **Expected:** Labels stay pinned to the right edge
+- [ ] **Expected:** Labels do not appear on the spectrogram
+
+### 13.10 Score Shading 🟢
+- [ ] **Expected:** Boxes use three discrete shades of the category colour
+      (light < 0.20, base 0.20–0.50, dark ≥ 0.50)
+- [ ] **Expected:** Category remains identifiable by hue at every shade
+- [ ] **Expected:** The selected box's outline stays clearly visible on all three shades
+
+### 13.11 Regression 🟡 PARTIAL
+- [ ] **Test:** Existing classification CSV import still works
+- [ ] **Test:** Classification JSON import still works
+- [ ] **Test:** Classification export still works
+- [ ] **Test:** "Elevate to Region" still creates a region with the classification's note
+- [ ] **Test:** Save a workspace with filters set, reload it — filters restore
+- [ ] **Test:** Load a workspace saved **before** filters existed — it loads with default filters
+- [ ] **Test:** A dashboard with no classifications imported behaves exactly as before
+- [ ] **Test:** Marker, region, chart and audio interactions are unaffected
 
 ---
 

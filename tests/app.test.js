@@ -21,6 +21,7 @@ beforeEach(() => {
     renderControlWidgets: vi.fn(),
     renderMarkers: vi.fn(),
     renderRegions: vi.fn(),
+    renderClassifications: vi.fn(),
     renderSidePanel: vi.fn(),
     renderActiveTool: vi.fn(),
   };

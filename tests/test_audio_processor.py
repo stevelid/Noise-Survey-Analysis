@@ -164,6 +164,88 @@ class AudioProcessorTests(unittest.TestCase):
         self.assertTrue(pd.isna(anchored.loc[1, "Datetime"]))
         self.assertIn("no close measurement segment", anchored.loc[1, "anchor_warning"])
 
+    def test_explicit_recorded_start_takes_precedence_over_modified_time(self):
+        segments = [{
+            "start": pd.Timestamp("2024-06-01T09:00:00Z"),
+            "end": pd.Timestamp("2024-06-01T10:00:00Z"),
+        }]
+        audio_df = pd.DataFrame([{
+            "filename": "R1.WAV",
+            "recorded_start_time": pd.Timestamp("2024-06-01T09:10:00.250Z"),
+            "modified_time": pd.Timestamp("2024-06-01T09:40:05Z"),
+            "duration_sec": 1800,
+            "anchor_source": "svl_wave_marker+embedded_wav_metadata",
+            "anchor_confidence": "high",
+        }])
+
+        anchored = self.processor._anchor_audio_files_to_segments(audio_df, segments, "P1")
+
+        self.assertEqual(anchored.loc[0, "Datetime"], pd.Timestamp("2024-06-01T09:10:00.250Z"))
+        self.assertEqual(
+            anchored.loc[0, "anchor_source"],
+            "svl_wave_marker+embedded_wav_metadata",
+        )
+
+    def test_bounded_correlation_recovers_known_offset(self):
+        envelope = pd.Series(
+            [40 + ((index * 17) % 23) + (index % 5) for index in range(120)],
+            dtype=float,
+        ).to_numpy()
+        nominal_start = pd.Timestamp("2024-01-01T12:00:00Z")
+        true_lag = 17
+        measurement_index = pd.date_range(
+            nominal_start - pd.Timedelta(minutes=5),
+            periods=720,
+            freq="s",
+        )
+        measurement = pd.Series(float("nan"), index=measurement_index)
+        aligned_index = pd.date_range(
+            nominal_start + pd.Timedelta(seconds=true_lag),
+            periods=len(envelope),
+            freq="s",
+        )
+        measurement.loc[aligned_index] = envelope
+
+        result = self.processor._find_bounded_correlation_lag(
+            envelope,
+            nominal_start,
+            measurement,
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["lag_seconds"], true_lag)
+        self.assertGreater(result["score"], 0.999)
+
+    def test_bounded_correlation_covers_offset_just_over_five_minutes(self):
+        envelope = pd.Series(
+            [45 + ((index * 19) % 31) + (index % 7) for index in range(180)],
+            dtype=float,
+        ).to_numpy()
+        nominal_start = pd.Timestamp("2026-06-30T12:30:00Z")
+        true_lag = 313
+        measurement_index = pd.date_range(
+            nominal_start - pd.Timedelta(minutes=10),
+            periods=1500,
+            freq="s",
+        )
+        measurement = pd.Series(float("nan"), index=measurement_index)
+        aligned_index = pd.date_range(
+            nominal_start + pd.Timedelta(seconds=true_lag),
+            periods=len(envelope),
+            freq="s",
+        )
+        measurement.loc[aligned_index] = envelope
+
+        result = self.processor._find_bounded_correlation_lag(
+            envelope,
+            nominal_start,
+            measurement,
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["lag_seconds"], true_lag)
+        self.assertGreater(result["score"], 0.999)
+
 
 if __name__ == "__main__":
     unittest.main()

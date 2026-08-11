@@ -1,4 +1,4 @@
-﻿// noise_survey_analysis/static/js/services/renderers.js
+// noise_survey_analysis/static/js/services/renderers.js
 
 /**
  * @fileoverview Contains all rendering functions that update the UI of the Noise Survey app.
@@ -49,6 +49,37 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             second: '2-digit',
             hour12: false
         });
+    }
+
+    function formatFrequencyBandLabel(label, index) {
+        const text = label === null || label === undefined ? '' : String(label).trim();
+        return text || `Band ${index + 1}`;
+    }
+
+    function formatFrequencySliceTitle(freqData) {
+        const timestamp = Number(freqData?.timestamp);
+        const hasSelection = Number.isFinite(timestamp)
+            && Array.isArray(freqData?.frequency_labels)
+            && freqData.frequency_labels.length > 0;
+
+        if (!hasSelection) {
+            return 'Frequency Slice: no selection';
+        }
+
+        const position = freqData?.sourceposition === null || freqData?.sourceposition === undefined
+            ? ''
+            : String(freqData.sourceposition).trim();
+        const param = freqData?.param === null || freqData?.param === undefined
+            ? ''
+            : String(freqData.param).trim();
+        const setBy = freqData?.setBy === null || freqData?.setBy === undefined
+            ? ''
+            : String(freqData.setBy).trim();
+
+        const positionText = position || 'Unknown position';
+        const paramText = param || 'Parameter';
+        const setByText = setBy || 'selection';
+        return `Frequency Slice: ${positionText} | ${paramText} @ ${new Date(timestamp).toLocaleTimeString()} | ${setByText}`;
     }
 
     const constants = app.constants || {};
@@ -581,8 +612,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         <table class="freq-html-table">
             <tr>`;
 
-        labels.forEach(label => {
-            tableHtml += `<th title=\"${label}\">${label}</th>`;
+        labels.forEach((label, index) => {
+            const safeLabel = escapeHtml(formatFrequencyBandLabel(label, index));
+            tableHtml += `<th title=\"${safeLabel}\">${safeLabel}</th>`;
         });
 
         tableHtml += `</tr><tr>`;
@@ -602,13 +634,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const { models } = app.registry;
         if (!models) return;
 
-        const freqData = dataCache.activeFreqBarData;
+        const freqData = dataCache.activeFreqBarData || {};
+        const labels = Array.isArray(freqData.frequency_labels)
+            ? freqData.frequency_labels.map(formatFrequencyBandLabel)
+            : [];
+        const levels = Array.isArray(freqData.levels) ? freqData.levels : [];
         models.barSource.data = {
-            'levels': freqData.levels,
-            'frequency_labels': freqData.frequency_labels
+            'levels': levels,
+            'frequency_labels': labels
         };
-        models.barChart.x_range.factors = freqData.frequency_labels;
-        models.barChart.title.text = `Slice: ${freqData.sourceposition} | ${freqData.param} @ ${new Date(freqData.timestamp).toLocaleTimeString()} | by ${freqData.setBy}`;
+        models.barChart.x_range.factors = labels;
+        models.barChart.title.text = formatFrequencySliceTitle(freqData);
         models.barSource.change.emit();
 
         // Also update the HTML table
@@ -855,7 +891,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     spectrumDiv: models?.regionPanelSpectrumDiv,
                     visibilityToggle: models?.regionVisibilityToggle,
                     autoDayNightButton: models?.regionAutoDayNightButton,
+                    copyTargetSelect: models?.regionPanelCopyTargetSelect,
                     copyToAllPositionsButton: models?.regionPanelCopyToAllPositionsButton,
+                    centerRegionButton: models?.regionPanelCenterButton,
+                    recalculateRegionButton: models?.regionPanelRecalculateButton,
                 };
                 const availablePositions = Array.isArray(state?.view?.availablePositions)
                     ? state.view.availablePositions
@@ -878,6 +917,63 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 );
             }
     
+        }
+
+        function renderClassifications(state) {
+            const { controllers, models } = app.registry;
+            const classificationsState = state?.classifications;
+            if (!classificationsState) return;
+
+            const selectors = app.features?.classifications?.selectors || {};
+            const visibleList = selectors.selectVisibleClassifications
+                ? selectors.selectVisibleClassifications(state)
+                : (Array.isArray(classificationsState.allIds)
+                    ? classificationsState.allIds.map(id => classificationsState.byId?.[id]).filter(Boolean)
+                    : []);
+
+            const panelVisible = classificationsState.panelVisible !== false;
+            const overlaysVisible = classificationsState.overlaysVisible !== false;
+            const selectedId = Number.isFinite(classificationsState.selectedId)
+                ? classificationsState.selectedId
+                : null;
+            const classificationsForCharts = overlaysVisible ? visibleList : [];
+
+            if (controllers?.chartsByName) {
+                controllers.chartsByName.forEach(chart => {
+                    if (typeof chart.syncClassifications === 'function') {
+                        chart.syncClassifications(classificationsForCharts, overlaysVisible, selectedId);
+                    }
+                });
+            }
+
+            const classificationPanelRenderer = app.services?.classificationPanelRenderer;
+            if (classificationPanelRenderer && typeof classificationPanelRenderer.renderClassificationPanel === 'function') {
+                classificationPanelRenderer.renderClassificationPanel(
+                    {
+                        classificationSource: models?.classificationPanelSource,
+                        classificationTable: models?.classificationPanelTable,
+                        messageDiv: models?.classificationPanelMessageDiv,
+                        detail: models?.classificationPanelDetail,
+                        detailDiv: models?.classificationPanelDetailDiv,
+                        importButton: models?.classificationPanelImportButton,
+                        exportButton: models?.classificationPanelExportButton,
+                        elevateButton: models?.classificationPanelElevateButton,
+                        deleteButton: models?.classificationPanelDeleteButton,
+                        visibilityToggle: models?.classificationVisibilityToggle,
+                        previewButton: models?.classificationPanelPreviewButton,
+                        filterLayout: models?.classificationPanelFilterLayout,
+                        minimumScoreSlider: models?.classificationPanelMinimumScoreSlider,
+                        showingCountDiv: models?.classificationPanelShowingCountDiv,
+                        sourceFilterToggle: models?.classificationPanelSourceFilterToggle,
+                        sourceFilterLayout: models?.classificationPanelSourceFilterLayout,
+                        sourceCheckboxGroup: models?.classificationPanelSourceCheckboxGroup,
+                        roleFilterLayout: models?.classificationPanelRoleFilterLayout,
+                        roleCheckboxGroup: models?.classificationPanelRoleCheckboxGroup,
+                    },
+                    classificationsState,
+                    state
+                );
+            }
         }
     
     function renderSidePanel(state) {
@@ -922,6 +1018,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
         if (models.markerPanelLayout) {
             models.markerPanelLayout.visible = !isComparisonActive;
+        }
+        if (models.classificationPanelLayout) {
+            models.classificationPanelLayout.visible = !isComparisonActive;
         }
         if (models.comparisonPanelLayout) {
             models.comparisonPanelLayout.visible = isComparisonActive;
@@ -1092,6 +1191,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         renderLabels: renderLabels,
         renderMarkers: renderMarkers,
         renderRegions: renderRegions,
+        renderClassifications: renderClassifications,
         renderFrequencyTable: renderFrequencyTable,
         renderFrequencyBar: renderFrequencyBar,
         renderControlWidgets: renderControlWidgets,

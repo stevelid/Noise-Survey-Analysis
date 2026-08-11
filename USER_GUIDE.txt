@@ -52,29 +52,40 @@ Key Features:
 ================================================================================
 
 System Requirements:
-- Python 3.8 or higher
-- VLC Media Player (required for audio playback)
+- Windows 10 or 11
+- VLC Media Player, 64-bit (required for audio playback only - everything
+  else works without it)
 - Modern web browser (Chrome, Firefox, or Edge recommended)
 - Minimum 4GB RAM (8GB+ recommended for large datasets)
 - Display resolution: 1920x1080 or higher recommended
 
-Installation:
+Python is required, but you do not have to install it yourself - see below.
 
-1. Ensure Python 3.8+ is installed on your system
-   - Check version: python --version
+Installation (Venta team):
 
+1. Open this folder:
+   G:\Shared drives\Venta\Software\Noise Survey Analysis
+
+2. Double-click setup_noise_survey.bat
+
+That is the whole installation. It finds Python (and installs it if the
+machine does not have it), builds a private Python environment, installs
+everything from the offline package store in that same shared folder, checks
+VLC, and puts a "Noise Survey Analysis" shortcut on your desktop.
+
+You only ever run setup once. After that, use the desktop shortcut. The
+application runs from the shared drive, so you are always on the current
+version, and the launcher repairs its own environment if anything breaks.
+
+If something does not work, double-click diagnose_noise_survey.bat and send
+Steve the report it produces.
+
+Installation (development machine):
+
+1. Install Python 3.10 or newer
 2. Install VLC Media Player from https://www.videolan.org/vlc/
-   - This is required for synchronized audio playback
-
-3. Clone or download the Noise Survey Analysis repository
-
-4. Open a terminal/command prompt in the application directory
-
-5. Install required Python packages:
-   pip install -r requirements.txt
-
-6. Verify installation by running:
-   bokeh serve noise_survey_analysis --show
+3. pip install -r requirements.txt
+4. bokeh serve noise_survey_analysis --show
 
 First-Time Setup:
 
@@ -85,8 +96,9 @@ First-Time Setup:
 2. Launch the application using one of the methods in Section 3
 
 3. Use the Data Source Selector to choose your files:
-   - Drag and drop files or folders onto the window
-   - Or use the "Scan Job Directory" feature for organized projects
+   - The Base Directory is already set to G:\Shared drives\Venta\Jobs
+   - Type the job number and click "Scan Job Directory"
+   - Or drag and drop files or folders onto the window
 
 4. Assign position names (e.g., "North", "East", "West")
 
@@ -153,30 +165,49 @@ Key fields:
 - position: Display name for the measurement location
 - parser_type: svan, nti, sentry, or audio
 
-Running the Application:
+Running the Application (Venta team):
 
-There are three ways to run the application:
+A) From the desktop shortcut
+   Double-click "Noise Survey Analysis".
+
+   - Opens the Data Source Selector
+   - Full audio playback support
+   - Best for active analysis work
+
+B) Straight into a saved config
+   Right-click a noise_survey_config_XXXX.json file and choose
+   "Open in Noise Survey Analysis".
+
+   - Loads data directly from the saved configuration
+   - Bypasses the file selector
+   - Ideal for returning to previous work
+
+C) Generating a config for a job
+   Double-click generate_config.bat in the shared folder and type the job
+   number. It scans the job's Surveys folder and writes
+   noise_survey_config_<job>.json next to the data.
+
+Keep the black launcher window open while you work - closing it stops the
+dashboard. The browser opens automatically. If port 5006 is already busy the
+launcher picks the next free port and tells you which one it used.
+
+Running the Application (development machine):
 
 A) Interactive Server Mode (Full Features)
    bokeh serve noise_survey_analysis --show
-   
-   - Opens the Data Source Selector
-   - Full audio playback support
-   - Real-time interaction with Python backend
-   - Best for active analysis work
 
 B) Server Mode with Configuration
    bokeh serve noise_survey_analysis --show --args --config path/to/config.json
-   
-   - Loads data directly from saved configuration
-   - Bypasses the file selector
-   - Ideal for returning to previous work
+
    - Can also load saved workspace state:
      --args --config config.json --state workspace.json
+   - Add --control-port 8765 to script the dashboard (see CONTROL_API.md)
+   - Add --unused-session-lifetime 300000 for large surveys, so a slow first
+     load is not discarded before it finishes
 
 C) Static HTML Generation (For Sharing)
    python -m noise_survey_analysis.main --generate-static path/to/config.json
-   
+
    - Creates a single .html file
    - No Python server required to view
    - Audio playback disabled
@@ -190,6 +221,11 @@ Opening the Generated Dashboard:
   - Or open it in any web browser
   - File is self-contained and portable
   - Can be viewed offline
+
+A large survey can take a couple of minutes to appear the first time. The
+page shows "Initializing Dashboard..." while it works. Do not reload, and do
+not open the address a second time - each time you open it you start a
+separate session, which makes it slower rather than faster.
 
 ================================================================================
 4. UNDERSTANDING THE INTERFACE

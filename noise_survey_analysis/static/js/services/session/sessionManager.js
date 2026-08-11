@@ -862,6 +862,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (Array.isArray(parsed)) {
             imported = importRegionsFromJson(parsed) || imported;
         } else if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.classifications)) {
+                try {
+                    imported = importClassificationEntries(parsed.classifications) > 0 || imported;
+                } catch (error) {
+                    console.warn('[Session] Classification JSON import skipped:', error);
+                }
+            }
             if (Array.isArray(parsed.regions)) {
                 imported = importRegionsFromJson(parsed.regions) || imported;
             }
@@ -1224,12 +1231,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-        actionSource.data.command = [command];
-        actionSource.data.request_id = [requestId];
-        actionSource.data.payload = [payload ?? null];
-        if (actionSource.change && typeof actionSource.change.emit === 'function') {
-            actionSource.change.emit();
-        }
+        // Assign `data` as a whole rather than mutating its columns in place.
+        // Bokeh only emits a document patch when the property itself is set, so
+        // an in-place mutation plus change.emit() notifies BokehJS listeners but
+        // never reaches the server, and the Python on_change handler never runs.
+        actionSource.data = {
+            command: [command],
+            request_id: [requestId],
+            payload: [payload ?? null],
+        };
         return true;
     }
 
@@ -1250,8 +1260,27 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         console.info('[Session] Static HTML export requested.');
     }
 
+    function handleSaveSetupToConfig() {
+        if (window.location?.protocol === 'file:') {
+            showToast('Saving to config is only available in live server mode.', 'warning', 4500);
+            return;
+        }
+
+        ensureSessionStatusListener();
+        const sent = triggerServerSessionAction('save_setup_to_config', null);
+        if (!sent) {
+            showToast('Saving to config is unavailable in this session.', 'error', 5000);
+            console.error('[Session] Session action source is unavailable.');
+            return;
+        }
+        console.info('[Session] Save setup to config requested.');
+    }
+
     function handleMenuAction(action) {
         switch (action) {
+            case 'save_setup_to_config':
+                handleSaveSetupToConfig();
+                break;
             case 'save':
                 saveWorkspace();
                 break;
@@ -1265,6 +1294,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             case 'import_annotations_csv':
             case 'import_regions':
                 handleImportCsv();
+                break;
+            case 'export_classifications_csv':
+                handleExportClassifications();
+                break;
+            case 'import_classifications':
+            case 'import_classifications_csv':
+                handleImportClassifications();
                 break;
             case 'generate_static_html':
                 handleGenerateStaticHtml();
@@ -1295,6 +1331,80 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const filename = `annotations-${timestamp}.csv`;
         triggerCsvDownload(filename, csvText);
+    }
+
+    function handleExportClassifications() {
+        if (!app.store || typeof app.store.getState !== 'function') {
+            console.error('[Session] Store not available; cannot export classifications.');
+            return;
+        }
+        const selectAllClassifications = app.features?.classifications?.selectors?.selectAllClassifications;
+        const buildClassificationsCsv = app.features?.classifications?.utils?.buildClassificationsCsv;
+        if (typeof selectAllClassifications !== 'function' || typeof buildClassificationsCsv !== 'function') {
+            console.error('[Session] Classification export helpers are unavailable.');
+            return;
+        }
+        const classifications = selectAllClassifications(app.store.getState());
+        const csvText = buildClassificationsCsv(classifications);
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        triggerCsvDownload(`classifications-${timestamp}.csv`, csvText);
+    }
+
+    function importClassificationEntries(entries) {
+        if (!Array.isArray(entries) || !entries.length) {
+            throw new Error('No classifier intervals found in file.');
+        }
+        if (!app.actions?.classificationsReplaceAll || typeof app.store?.dispatch !== 'function') {
+            throw new Error('Classification store actions are unavailable.');
+        }
+        app.store.dispatch(app.actions.classificationsReplaceAll(entries));
+        const state = app.store.getState();
+        const count = Array.isArray(state?.classifications?.allIds) ? state.classifications.allIds.length : 0;
+        if (!count) {
+            throw new Error('No valid classifier intervals were imported.');
+        }
+        return count;
+    }
+
+    function handleImportClassifications() {
+        if (!app.store || typeof app.store.dispatch !== 'function') {
+            console.error('[Session] Store not available; cannot import classifications.');
+            return;
+        }
+
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.csv,text/csv,application/json,.json';
+        fileInput.addEventListener('change', event => {
+            const file = event.target?.files?.[0];
+            if (!file) {
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                const fileText = typeof reader.result === 'string' ? reader.result : '';
+                const utils = app.features?.classifications?.utils || {};
+                try {
+                    const treatAsJson = shouldTreatContentAsJson(file.name, fileText);
+                    const entries = treatAsJson
+                        ? (typeof utils.parseClassificationsJson === 'function' ? utils.parseClassificationsJson(fileText) : [])
+                        : (typeof utils.parseClassificationsCsv === 'function' ? utils.parseClassificationsCsv(fileText) : []);
+                    const count = importClassificationEntries(entries);
+                    console.info(`[Session] Imported ${count} classifier interval(s).`);
+                    showToast(`Imported ${count} classifier interval(s).`, 'info', 3000);
+                } catch (error) {
+                    console.error('[Session] Failed to import classifications:', error);
+                    showToast(error?.message || 'Failed to import classifications.', 'error', 5000);
+                }
+            };
+            reader.onerror = () => {
+                console.error('[Session] Failed to read classification file:', reader.error);
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        });
+        fileInput.click();
     }
 
     function handleImportCsv() {
@@ -1382,7 +1492,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         parseAnnotationsCsv,
         CSV_HEADER: CSV_HEADER.slice(),
         METRIC_COLUMNS: METRIC_COLUMNS.slice(),
-        PROVENANCE_COLUMNS: PROVENANCE_COLUMNS.slice()
+        PROVENANCE_COLUMNS: PROVENANCE_COLUMNS.slice(),
+        importClassificationEntries
     };
 
     app.session = {
@@ -1393,6 +1504,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         applyInitialWorkspaceState,
         handleExportCsv,
         handleImportCsv,
+        handleExportClassifications,
+        handleImportClassifications,
         handleGenerateStaticHtml,
         handleImportAnnotations: handleImportCsv,
         ensureSessionStatusListener,

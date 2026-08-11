@@ -3,6 +3,7 @@ import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from numbers import Real
 from typing import Dict, Optional
 
 import numpy as np
@@ -23,14 +24,46 @@ from noise_survey_analysis.core.data_processors import (
     _peek_log_file_time_step_ms,
 )
 from noise_survey_analysis.core.data_manager import DataManager
+from noise_survey_analysis.core.meter_alignment import MeterAlignmentProcessor
+from noise_survey_analysis.core import status_console
 from noise_survey_analysis.core.utils import to_bokeh_ms
 
 logger = logging.getLogger(__name__)
+
+# Streams faster than this are routine and stay out of the status pane.
+_STREAM_REPORT_MS = 250.0
 
 
 def _debug_position() -> str:
     import os
     return os.environ.get('NSA_DEBUG_POSITION', '')
+
+
+def _short_position(position_id: str) -> str:
+    """Trim a position name to its leading label so status lines stay readable."""
+    text = str(position_id)
+    for separator in (' - ', ' – '):
+        if separator in text:
+            return text.split(separator, 1)[0]
+    return text[:24]
+
+
+def _format_window(start_ms: float, end_ms: float) -> str:
+    """Render a viewport as ``dd/mm HH:MM +span``."""
+    try:
+        start = pd.to_datetime(float(start_ms), unit='ms')
+        span_seconds = abs(float(end_ms) - float(start_ms)) / 1000.0
+        if span_seconds < 90:
+            span = f"{span_seconds:.0f}s"
+        elif span_seconds < 5400:
+            span = f"{span_seconds / 60:.0f} min"
+        elif span_seconds < 172800:
+            span = f"{span_seconds / 3600:.1f} h"
+        else:
+            span = f"{span_seconds / 86400:.1f} d"
+        return f"{start:%d/%m %H:%M} +{span}"
+    except (ValueError, TypeError, OverflowError):
+        return "viewport"
 
 
 def _to_bokeh_ms(values) -> np.ndarray:
@@ -54,7 +87,14 @@ class ServerDataHandler:
         self.position_models = self._collect_position_models()
         self._buffer_bounds = {}  # Track buffer bounds per position for edge detection
         self._spectrogram_chunk_bounds = {}
+        # position_id -> manual chart-offset (ms) reported by the chart_offset_spinner.
+        # Populated via set_position_chart_offset(); see the comment in
+        # handle_range_update() for why the buffered/streamed window has to be
+        # shifted by this before slicing a position's (un-offset) dataframe.
+        self._position_chart_offsets: Dict[str, float] = {}
         self._range_update_counter = 0
+        self._meter_alignment_attempted = False
+        self._last_stream_rows: Dict[str, int] = {}
         self._display_buffer_width = {}  # position_id -> pinned Image glyph buffer width
         self._time_index_cache = {}  # id(df) -> (df, int64 ms array or None)
         self._last_requested_range = None  # newest viewport, for deferred refreshes
@@ -131,7 +171,11 @@ class ServerDataHandler:
 
 
     def handle_range_update(self, start_ms: float, end_ms: float) -> None:
-        if not isinstance(start_ms, (int, float)) or not isinstance(end_ms, (int, float)):
+        # Bokeh preserves NumPy scalar types when a Range1d is initialized from
+        # NumPy-backed ColumnDataSource values.  ``np.int64`` is a real number but
+        # is not an instance of Python's built-in ``int``, so the old guard silently
+        # discarded genuine browser range updates before lazy log loading could start.
+        if not isinstance(start_ms, Real) or not isinstance(end_ms, Real):
             return
 
         self._range_update_counter += 1
@@ -157,6 +201,18 @@ class ServerDataHandler:
             sample_period_seconds = self._get_effective_sample_period(position_data)
             buffer_bounds = self._buffer_bounds.get(position_id)
             chunk_bounds = self._spectrogram_chunk_bounds.get(position_id)
+
+            # The shared x_range carries "displayed" time (real data time + this
+            # position's manual chart offset - see applyDatetimeOffset/getChartOffsetMs
+            # in static/js/data-processors.js). This position's own dataframe is
+            # still indexed in real, un-offset time, so the window we buffer/slice
+            # from it has to be shifted back by the offset before it is used for
+            # anything below. Keep start_ms/end_ms (the raw shared viewport) for
+            # width checks and logging only.
+            offset_ms = self._position_offset_ms(position_id)
+            pos_start_ms = start_ms - offset_ms
+            pos_end_ms = end_ms - offset_ms
+
             if viewport_width_seconds > max_viewport_seconds:
                 logger.debug(
                     "Viewport too large for %s (%.0fs > %.0fs), skipping log stream [request=%s sample_period=%.3fs buffer_bounds=%s chunk_bounds=%s]",
@@ -170,14 +226,17 @@ class ServerDataHandler:
                 )
                 continue
 
-            if not self._buffer_covers_viewport(position_id, start_ms, end_ms):
-                buffer_start, buffer_end = self._calculate_buffer(start_ms, end_ms, position_data)
+            if not self._buffer_covers_viewport(position_id, pos_start_ms, pos_end_ms):
+                buffer_start, buffer_end = self._calculate_buffer(pos_start_ms, pos_end_ms, position_data)
                 logger.debug(
-                    "[RANGE] request=%s position=%s action=refresh_buffer viewport=(%s, %s) existing_buffer=%s new_buffer=(%s, %s) chunk_bounds=%s",
+                    "[RANGE] request=%s position=%s action=refresh_buffer viewport=(%s, %s) offset_ms=%s effective_viewport=(%s, %s) existing_buffer=%s new_buffer=(%s, %s) chunk_bounds=%s",
                     request_id,
                     position_id,
                     start_ms,
                     end_ms,
+                    offset_ms,
+                    pos_start_ms,
+                    pos_end_ms,
                     buffer_bounds,
                     buffer_start,
                     buffer_end,
@@ -187,8 +246,8 @@ class ServerDataHandler:
                     position_id,
                     buffer_start,
                     buffer_end,
-                    viewport_start_ms=start_ms,
-                    viewport_end_ms=end_ms,
+                    viewport_start_ms=pos_start_ms,
+                    viewport_end_ms=pos_end_ms,
                     sample_period_seconds=sample_period_seconds,
                 )
                 # Only record coverage when data actually went out. A deferred lazy load
@@ -206,15 +265,18 @@ class ServerDataHandler:
             # chunk-window gate, the viewport no longer has to fit inside one
             # fixed display chunk — the browser extracts the display chunk from
             # the wider reservoir client-side.
-            reservoir_coverage = self._spectrogram_chunk_coverage_ratio(position_id, start_ms, end_ms)
+            reservoir_coverage = self._spectrogram_chunk_coverage_ratio(position_id, pos_start_ms, pos_end_ms)
             if position_data.has_log_spectral and reservoir_coverage < 0.98:
                 buffer_start, buffer_end = self._buffer_bounds[position_id]
                 logger.debug(
-                    "[RANGE] request=%s position=%s action=refresh_reservoir viewport=(%s, %s) buffer=(%s, %s) reservoir_bounds=%s reservoir_coverage=%.3f",
+                    "[RANGE] request=%s position=%s action=refresh_reservoir viewport=(%s, %s) offset_ms=%s effective_viewport=(%s, %s) buffer=(%s, %s) reservoir_bounds=%s reservoir_coverage=%.3f",
                     request_id,
                     position_id,
                     start_ms,
                     end_ms,
+                    offset_ms,
+                    pos_start_ms,
+                    pos_end_ms,
                     buffer_start,
                     buffer_end,
                     chunk_bounds,
@@ -224,8 +286,8 @@ class ServerDataHandler:
                     position_id,
                     buffer_start,
                     buffer_end,
-                    viewport_start_ms=start_ms,
-                    viewport_end_ms=end_ms,
+                    viewport_start_ms=pos_start_ms,
+                    viewport_end_ms=pos_end_ms,
                     sample_period_seconds=sample_period_seconds,
                     refresh_totals=False,
                 )
@@ -238,6 +300,94 @@ class ServerDataHandler:
                     chunk_bounds,
                     reservoir_coverage,
                 )
+
+        self._attempt_meter_alignment()
+
+    def _position_offset_ms(self, position_id: str) -> float:
+        """Return this position's manual chart offset in milliseconds (0 if unset)."""
+        return self._position_chart_offsets.get(position_id, 0.0)
+
+    def set_position_chart_offset(self, position_id: str, offset_seconds) -> None:
+        """
+        Record a position's chart-offset spinner value so buffering/streaming can
+        account for it (see the offset comment in ``handle_range_update``).
+
+        Called from the Python-side ``on_change`` handler attached to
+        ``chart_offset_spinner_{position_id}`` (see ``app_callbacks.py``), which is
+        how the value set client-side by the user (or written automatically by
+        ``_attempt_meter_alignment``) reaches this session. Invalidates any cached
+        buffer/reservoir bounds for the position and, if a viewport is already
+        known, immediately re-runs the range update so a change made while zoomed
+        into the Log view takes effect without requiring the user to pan.
+        """
+        try:
+            offset_ms = float(offset_seconds or 0.0) * 1000.0
+        except (TypeError, ValueError):
+            logger.warning("Ignoring non-numeric chart offset for '%s': %r", position_id, offset_seconds)
+            return
+
+        previous_ms = self._position_chart_offsets.get(position_id, 0.0)
+        if abs(offset_ms - previous_ms) < 1e-6:
+            return
+
+        logger.info(
+            "Chart offset for '%s' changed %.3fs -> %.3fs; invalidating buffered bounds.",
+            position_id,
+            previous_ms / 1000.0,
+            offset_ms / 1000.0,
+        )
+        self._position_chart_offsets[position_id] = offset_ms
+        self._buffer_bounds.pop(position_id, None)
+        self._spectrogram_chunk_bounds.pop(position_id, None)
+
+        if self._last_requested_range is not None:
+            try:
+                self.handle_range_update(*self._last_requested_range)
+            except Exception:
+                logger.error(
+                    "Failed to re-run range update for '%s' after chart offset change",
+                    position_id,
+                    exc_info=True,
+                )
+
+    def _attempt_meter_alignment(self) -> None:
+        """Apply a safe chart offset once all position logs are available."""
+        if self._meter_alignment_attempted:
+            return
+
+        positions_with_logs = []
+        for position_id in self.app_data.positions():
+            position_data = self.app_data[position_id]
+            log_paths = getattr(position_data, 'log_file_paths', None) or []
+            if not log_paths:
+                continue
+            if not getattr(position_data, '_log_data_loaded', False):
+                return
+            if getattr(position_data, 'has_log_totals', False):
+                positions_with_logs.append(position_id)
+
+        if len(positions_with_logs) < 2:
+            return
+
+        self._meter_alignment_attempted = True
+        results = MeterAlignmentProcessor().align_positions(self.app_data)
+        for position_id, result in results.items():
+            if not result.get('accepted') or not result.get('chart_offset_seconds'):
+                continue
+            spinner = self.doc.get_model_by_name(f"chart_offset_spinner_{position_id}")
+            if spinner is None:
+                logger.warning("No chart-offset control found for auto-aligned position '%s'.", position_id)
+                continue
+            current_value = float(spinner.value or 0.0)
+            if abs(current_value) > 0.0001:
+                logger.info(
+                    "Keeping manual chart offset for '%s' (%+.1fs); automatic estimate was %+.1fs.",
+                    position_id,
+                    current_value,
+                    result['chart_offset_seconds'],
+                )
+                continue
+            spinner.value = float(result['chart_offset_seconds'])
 
     def _update_position(
         self,
@@ -254,7 +404,7 @@ class ServerDataHandler:
         update_started_at = time.perf_counter()
         totals_update_ms = 0.0
         spectrogram_update_ms = 0.0
-        
+
         # Lazy load log data if not already loaded
         # Use getattr for backward compatibility with cached PositionData objects
         log_data_loaded = getattr(position_data, '_log_data_loaded', False)
@@ -268,6 +418,11 @@ class ServerDataHandler:
             # log source is empty. The load re-enters this method when it completes.
             self._ensure_lazy_load_started(position_id, position_data)
             return False
+
+        status_console.start_phase(
+            'data',
+            f"{_short_position(position_id)}: loading {_format_window(start_ms, end_ms)}",
+        )
 
         if viewport_start_ms is None:
             viewport_start_ms = start_ms
@@ -288,10 +443,10 @@ class ServerDataHandler:
         logger.debug(f"[UPDATE] Position {position_id}: model_bundle keys={list(model_bundle.keys())}")
         if refresh_totals and position_data.has_log_totals:
             totals_started_at = time.perf_counter()
-            self._update_log_totals(position_data.log_totals, model_bundle, start_ms, end_ms)
+            self._update_log_totals(position_data.log_totals, model_bundle, start_ms, end_ms, position_id)
             totals_update_ms = (time.perf_counter() - totals_started_at) * 1000
         if position_data.has_log_spectral:
-            logger.info(f"[UPDATE] Updating spectrogram for {position_id}")
+            logger.debug(f"[UPDATE] Updating spectrogram for {position_id}")
             spectrogram_started_at = time.perf_counter()
             self._update_log_spectrogram(
                 position_data.log_spectral,
@@ -305,16 +460,32 @@ class ServerDataHandler:
                 sample_period_seconds=sample_period_seconds,
             )
             spectrogram_update_ms = (time.perf_counter() - spectrogram_started_at) * 1000
-        logger.info(
+        total_ms = (time.perf_counter() - update_started_at) * 1000
+        logger.debug(
             "[STREAM PERF] position=%s totals_update_ms=%.1f spectrogram_update_ms=%.1f total_ms=%.1f",
             position_id,
             totals_update_ms,
             spectrogram_update_ms,
-            (time.perf_counter() - update_started_at) * 1000,
+            total_ms,
         )
+        # The live line always clears; only streams slow enough to be worth
+        # remembering are promoted into the scrolling history, so a fast pan
+        # does not flood it with 20 ms entries.
+        rows = self._last_stream_rows.get(position_id, 0)
+        if total_ms >= _STREAM_REPORT_MS:
+            parts = [f"{rows:,} rows"]
+            if spectrogram_update_ms > 0:
+                parts.append("spectra")
+            status_console.end_phase(
+                f"{_short_position(position_id)}: {_format_window(start_ms, end_ms)} "
+                f"streamed {', '.join(parts)}",
+                category='ok',
+            )
+        else:
+            status_console.end_phase()
         return True
 
-    def _update_log_totals(self, df: pd.DataFrame, model_bundle: Dict[str, object], start_ms: float, end_ms: float) -> None:
+    def _update_log_totals(self, df: pd.DataFrame, model_bundle: Dict[str, object], start_ms: float, end_ms: float, position_id: str = '') -> None:
         timeseries_source = model_bundle.get('timeseries_log_source')
         if timeseries_source is None:
             logger.warning(f"[UPDATE] timeseries_log_source is None - cannot push log totals")
@@ -329,11 +500,11 @@ class ServerDataHandler:
         if sliced.empty:
             logger.debug(f"[UPDATE] Sliced log_totals is empty for range {start_ms}-{end_ms}")
             return
-        logger.info(f"[UPDATE] Pushing {len(sliced)} log totals rows to timeseries source")
+        logger.debug(f"[UPDATE] Pushing {len(sliced)} log totals rows to timeseries source")
         figure = model_bundle.get('timeseries_figure')
         debug_pos = _debug_position()
         if debug_pos and figure is not None and getattr(figure, 'name', '') == f'figure_{debug_pos}_timeseries':
-            logger.info(
+            logger.debug(
                 "[TH DEBUG] rows=%s first=%s last=%s requested_start_ms=%s requested_end_ms=%s",
                 len(sliced),
                 sliced['Datetime'].iloc[0],
@@ -365,7 +536,8 @@ class ServerDataHandler:
         push_started_at = time.perf_counter()
         timeseries_source.data = data_dict
         push_ms = (time.perf_counter() - push_started_at) * 1000
-        logger.info(
+        self._last_stream_rows[position_id] = len(sliced)
+        logger.debug(
             "[TH PERF] rows=%s cols=%s slice_ms=%.1f build_ms=%.1f push_ms=%.1f total_ms=%.1f",
             len(sliced),
             len(data_dict),
@@ -607,7 +779,7 @@ class ServerDataHandler:
         figure = model_bundle.get('spectrogram_figure')
         debug_pos = _debug_position()
         if debug_pos and figure is not None and getattr(figure, 'name', '') == f'figure_{debug_pos}_spectrogram':
-            logger.info(
+            logger.debug(
                 "[SPEC DEBUG] rows=%s first=%s last=%s requested_start_ms=%s requested_end_ms=%s param=%s",
                 len(sliced),
                 sliced['Datetime'].iloc[0],
@@ -652,7 +824,7 @@ class ServerDataHandler:
                 log_cells,
             )
             if debug_pos and figure is not None and getattr(figure, 'name', '') == f'figure_{debug_pos}_spectrogram':
-                logger.info(
+                logger.debug(
                     "[SPEC DEBUG] prepared n_times=%s chunk_time_length=%s time_step=%s min_time=%s max_time=%s initial_x=%s initial_dw=%s cells=%s",
                     prepared['n_times'],
                     prepared['chunk_time_length'],
@@ -724,7 +896,7 @@ class ServerDataHandler:
             if position_id is not None:
                 self._spectrogram_chunk_bounds[position_id] = (float(reservoir_times[0]), float(reservoir_times[-1]))
             push_ms = (time.perf_counter() - push_started_at) * 1000
-            logger.info(
+            logger.debug(
                 "[SPEC PERF] param=%s rows=%s bands=%s chunk_time_length=%s reservoir_n_times=%s levels_len=%s subset_ms=%.1f slice_ms=%.1f prepare_ms=%.1f build_ms=%.1f push_ms=%.1f total_ms=%.1f",
                 param,
                 len(sliced),

@@ -157,11 +157,19 @@ def generate_config_file(job_number, scan_dir, config_name=None):
         return None
 
     # Build config structure
+    config_url_path = scan_dir.replace('\\', '/').replace(' ', '%20').replace('&', '%26')
     config_data = {
         "version": "1.2",
         "created_at": datetime.now().isoformat(),
         "config_base_path": scan_dir.replace('\\', '/'),
         "output_filename": f"{job_number}_survey_dashboard.html",
+        "_instructions": (
+            "To launch the dashboard: "
+            "1) cd \"G:/My Drive/Programing/Noise Survey Analysis\" && "
+            "bokeh serve noise_survey_analysis --unused-session-lifetime 300000  "
+            "2) open http://localhost:5006/noise_survey_analysis?config="
+            f"{config_url_path}/{config_name or f'noise_survey_config_{job_number}.json'}"
+        ),
         "sources": []
     }
 

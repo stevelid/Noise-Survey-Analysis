@@ -19,6 +19,7 @@ current_file = Path(__file__)
 project_root = current_file.parent.parent  # Go up to "Noise Survey Analysis"
 sys.path.insert(0, str(project_root))
 
+from noise_survey_analysis.ui.theme import apply_theme
 from noise_survey_analysis.ui.components import (
     TimeSeriesComponent,
     SpectrogramComponent,
@@ -32,6 +33,7 @@ from noise_survey_analysis.ui.components import (
     create_position_title_and_offsets,
     RegionPanelComponent,
     MarkerPanelComponent,
+    ClassificationPanelComponent,
     SidePanelComponent,
 )
 from noise_survey_analysis.core.data_processors import (
@@ -146,7 +148,8 @@ class DashBuilder:
                      source_configs=None,
                      saved_workspace_state=None,
                      job_number=None,
-                     server_mode: bool = False):
+                     server_mode: bool = False,
+                     position_offsets=None):
         """
         The main public method that constructs the entire application layout.
         This is the primary entry point for this class.
@@ -159,7 +162,7 @@ class DashBuilder:
             saved_workspace_state: Optional saved workspace state to restore.
             job_number: Optional job number/identifier to display in the dashboard title.
         """
-        print("INFO: DashboardBuilder: Starting UI construction...")
+        logger.info("DashboardBuilder: Starting UI construction...")
 
         # The sequence of operations is clear and logical
         self.server_mode = bool(server_mode)
@@ -172,18 +175,19 @@ class DashBuilder:
         self.job_number = job_number
         self.position_display_titles = self._extract_position_display_titles(self.source_configs)
         self.saved_workspace_state = saved_workspace_state
-        self._create_components(app_data, prepared_glyph_data, available_params, chart_settings)
+        self._create_components(app_data, prepared_glyph_data, available_params, chart_settings,
+                                position_offsets=position_offsets)
         self._wire_up_interactions()
         self._assemble_and_add_layout(doc)
         self._initialize_javascript(doc)
 
-        print("INFO: DashboardBuilder: Build complete.")
+        logger.info("DashboardBuilder: Build complete.")
 
     # --- Private Helper Methods: The Step-by-Step Build Process ---
 
     def _prepare_glyph_data(self, app_data: DataManager) -> dict:
         """Step 1: Prepare glyph data for all positions."""
-        print("INFO: DashboardBuilder: Preparing glyph data for all positions.")
+        logger.info("DashboardBuilder: Preparing glyph data for all positions.")
         
         processor = GlyphDataProcessor()
         all_prepared_glyph_data = {}
@@ -285,6 +289,11 @@ class DashBuilder:
         return {
             'levels_flat_transposed': [levels_flat_list],
             'times_ms': [self._to_list(prepared.get('times_ms'))],
+            # A static export embeds the complete prepared log dataset.  Mark it
+            # with the same reservoir contract used by the live server so the
+            # browser treats the full time range as locally available instead of
+            # mistaking it for one display-sized streamed chunk.
+            'parameter': [param_to_use],
             'frequency_labels': [self._to_list(prepared.get('frequency_labels'))],
             'frequencies_hz': [self._to_list(prepared.get('frequencies_hz'))],
             'n_times': [int(prepared.get('n_times', 0))],
@@ -300,6 +309,7 @@ class DashBuilder:
             'initial_glyph_data_dw': [self._to_list(initial_glyph_data.get('dw'))],
             'initial_glyph_data_dh': [self._to_list(initial_glyph_data.get('dh'))],
             'initial_glyph_data_image': [image_matrix_list],
+            'is_reservoir_payload': [True],
         }
 
     def _populate_static_log_sources(
@@ -321,7 +331,8 @@ class DashBuilder:
         )
     
     
-    def _create_components(self, app_data: DataManager, prepared_glyph_data: dict, available_params: list, chart_settings: dict):
+    def _create_components(self, app_data: DataManager, prepared_glyph_data: dict, available_params: list, chart_settings: dict,
+                           position_offsets=None):
         """Step 2: Instantiates all component classes for each position."""
         logger.info("DashboardBuilder: Creating individual UI components...")
 
@@ -340,10 +351,12 @@ class DashBuilder:
 
         region_panel_div = RegionPanelComponent()
         marker_panel_div = MarkerPanelComponent()
-        side_panel = SidePanelComponent(region_panel_div, marker_panel_div)
+        classification_panel_div = ClassificationPanelComponent()
+        side_panel = SidePanelComponent(region_panel_div, marker_panel_div, classification_panel_div)
 
         self.shared_components['region_panel'] = region_panel_div
         self.shared_components['marker_panel'] = marker_panel_div
+        self.shared_components['classification_panel'] = classification_panel_div
         self.shared_components['side_panel'] = side_panel
 
         first_position_processed = False
@@ -377,9 +390,12 @@ class DashBuilder:
 
             # Create position title and offset controls for all positions
             # (Audio playback buttons are now global)
+            _saved = (position_offsets or {}).get(position_name) or {}
             position_controls = create_position_title_and_offsets(
                 position_id=position_name,
-                display_title=position_name  # Could use custom titles from config if available
+                display_title=position_name,  # Could use custom titles from config if available
+                chart_offset_seconds=_saved.get('chart_offset_seconds', 0.0),
+                audio_offset_seconds=_saved.get('audio_offset_seconds', 0.0),
             )
 
             self.components[position_name] = {
@@ -422,7 +438,7 @@ class DashBuilder:
     
     def _wire_up_interactions(self):
         """Step 3: Handles the logic that connects components to each other."""
-        print("INFO: DashboardBuilder: Wiring up interactions between components...")
+        logger.info("DashboardBuilder: Wiring up interactions between components...")
 
         master_x_range = None
         
@@ -521,7 +537,7 @@ class DashBuilder:
 
     def _assemble_and_add_layout(self, doc):
         """Step 4: Gets the .layout() from each component and assembles the final page."""
-        print("INFO: DashboardBuilder: Assembling final Bokeh layout...")
+        logger.info("DashboardBuilder: Assembling final Bokeh layout...")
         
         position_layouts = []
         for position_name, comp_dict in self.components.items():
@@ -538,7 +554,7 @@ class DashBuilder:
                 spec_layout,
                 name=f"layout_{position_name}",
                 styles={
-                    "border": "1px solid #d7dde5",
+                    "border": "1px solid #e2e8f0",
                     "border-radius": "10px",
                     "padding": "8px 10px",
                     "margin-bottom": "10px",
@@ -575,6 +591,11 @@ class DashBuilder:
         marker_panel_layout.name = "marker_panel_layout"
         marker_panel_layout.visible = True
         self.shared_components['marker_panel_layout'] = marker_panel_layout
+
+        classification_panel_layout = self.shared_components['classification_panel'].layout()
+        classification_panel_layout.name = "classification_panel_layout"
+        classification_panel_layout.visible = True
+        self.shared_components['classification_panel_layout'] = classification_panel_layout
 
         comparison_panel_layout = self.shared_components['comparison_panel'].layout()
         comparison_panel_layout.visible = False
@@ -619,6 +640,7 @@ class DashBuilder:
 
         final_layout = main_layout
 
+        apply_theme(final_layout)
         doc.add_root(final_layout)
         doc.title = "Noise Survey Analysis Dashboard"
 
@@ -637,6 +659,10 @@ class DashBuilder:
                 'features/markers/markersReducer.js',
                 'features/markers/markersSelectors.js',
                 'features/markers/markersThunks.js',
+                'features/classifications/classificationReducer.js',
+                'features/classifications/classificationSelectors.js',
+                'features/classifications/classificationUtils.js',
+                'features/classifications/classificationThunks.js',
                 'features/regions/regionReducer.js',
                 'features/regions/regionSelectors.js',
                 'features/regions/regionUtils.js',
@@ -660,6 +686,7 @@ class DashBuilder:
                 'data-processors.js', # Calls app.utils at run time; must load after utils.js
                 'services/markers/markerPanelRenderer.js',
                 'services/regions/regionPanelRenderer.js',
+                'services/classifications/classificationPanelRenderer.js',
                 'services/renderers/controlWidgetsRenderer.js',
                 'services/renderers.js',
                 'services/session/sessionManager.js',
@@ -672,14 +699,14 @@ class DashBuilder:
 
         all_js_code = []
         for file_name in js_files_order:
-            print(f"INFO: Loading JS file: {file_name}")
+            logger.info(f"Loading JS file: {file_name}")
             all_js_code.append(load_js_file(file_name))
         
         return "\n\n".join(all_js_code)
 
     def _initialize_javascript(self, doc):
         """Step 5: Gathers all models and sends them to the JavaScript front-end."""
-        print("INFO: DashboardBuilder: Preparing and initializing JavaScript...")
+        logger.info("DashboardBuilder: Preparing and initializing JavaScript...")
 
         # This method builds the "bridge dictionary" of Python models
         js_models_for_args = self._assemble_js_bridge_dictionary()
@@ -795,6 +822,7 @@ class DashBuilder:
             'frequencyBarLayout': self.shared_components.get('freq_bar_layout'),
             'regionPanelLayout': self.shared_components.get('region_panel_layout'),
             'markerPanelLayout': self.shared_components.get('marker_panel_layout'),
+            'classificationPanelLayout': self.shared_components.get('classification_panel_layout'),
             'comparisonPanelLayout': self.shared_components.get('comparison_panel_layout'),
             'sidePanelTabs': self.shared_components.get('side_panel_tabs'),
             'sidePanelContainer': self.shared_components.get('side_panel_container'),
@@ -829,7 +857,10 @@ class DashBuilder:
             'regionPanelSpectrumDiv': self.shared_components['region_panel'].spectrum_div,
             'regionVisibilityToggle': self.shared_components['region_panel'].visibility_toggle,
             'regionAutoDayNightButton': self.shared_components['region_panel'].auto_daynight_button,
+            'regionPanelCopyTargetSelect': self.shared_components['region_panel'].copy_target_select,
             'regionPanelCopyToAllPositionsButton': self.shared_components['region_panel'].copy_to_all_positions_button,
+            'regionPanelCenterButton': self.shared_components['region_panel'].center_region_button,
+            'regionPanelRecalculateButton': self.shared_components['region_panel'].recalculate_region_button,
             'markerPanelDiv': self.shared_components['marker_panel'].container,
             'markerPanelSource': self.shared_components['marker_panel'].marker_source,
             'markerPanelTable': self.shared_components['marker_panel'].marker_table,
@@ -842,6 +873,26 @@ class DashBuilder:
             'markerPanelDeleteButton': self.shared_components['marker_panel'].delete_button,
             'markerPanelAddAtTapButton': self.shared_components['marker_panel'].add_at_tap_button,
             'markerVisibilityToggle': self.shared_components['marker_panel'].visibility_toggle,
+            'classificationPanelDiv': self.shared_components['classification_panel'].container,
+            'classificationPanelSource': self.shared_components['classification_panel'].classification_source,
+            'classificationPanelTable': self.shared_components['classification_panel'].classification_table,
+            'classificationPanelMessageDiv': self.shared_components['classification_panel'].message_div,
+            'classificationPanelDetail': self.shared_components['classification_panel'].detail_layout,
+            'classificationPanelDetailDiv': self.shared_components['classification_panel'].detail_div,
+            'classificationPanelImportButton': self.shared_components['classification_panel'].import_button,
+            'classificationPanelExportButton': self.shared_components['classification_panel'].export_button,
+            'classificationPanelElevateButton': self.shared_components['classification_panel'].elevate_button,
+            'classificationPanelDeleteButton': self.shared_components['classification_panel'].delete_button,
+            'classificationVisibilityToggle': self.shared_components['classification_panel'].visibility_toggle,
+            'classificationPanelPreviewButton': self.shared_components['classification_panel'].preview_button,
+            'classificationPanelFilterLayout': self.shared_components['classification_panel'].filter_layout,
+            'classificationPanelMinimumScoreSlider': self.shared_components['classification_panel'].minimum_score_slider,
+            'classificationPanelShowingCountDiv': self.shared_components['classification_panel'].showing_count_div,
+            'classificationPanelSourceFilterToggle': self.shared_components['classification_panel'].source_filter_toggle,
+            'classificationPanelSourceFilterLayout': self.shared_components['classification_panel'].source_filter_layout,
+            'classificationPanelSourceCheckboxGroup': self.shared_components['classification_panel'].source_checkbox_group,
+            'classificationPanelRoleFilterLayout': self.shared_components['classification_panel'].role_filter_layout,
+            'classificationPanelRoleCheckboxGroup': self.shared_components['classification_panel'].role_checkbox_group,
         }
 
         # Populate position-specific models

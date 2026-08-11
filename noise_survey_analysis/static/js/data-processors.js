@@ -640,14 +640,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     const overviewClone = cloneDataColumns(overviewData || {});
                     applyDatetimeOffset(overviewClone, positionOffsetMs);
                     nextActiveLine = overviewClone;
+                    const logViewThresholdSeconds = calculateSharedLogDisplayThreshold(models, viewState);
+                    const viewportWidthMs = Number.isFinite(effectiveMax) && Number.isFinite(effectiveMin)
+                        ? effectiveMax - effectiveMin : Infinity;
+                    const viewportWidthSeconds = viewportWidthMs / 1000;
+                    const viewportTooLarge = viewportWidthSeconds > logViewThresholdSeconds;
+                    const pendingBecauseViewportTooLarge = logDataExists && viewportTooLarge;
                     displayDetails = createDisplayMetadata({
                         type: 'overview',
                         reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)',
-                        statusCode: logDataExists ? 'loading_log' : 'overview_only',
-                        statusLabel: logDataExists ? 'Waiting for log data' : 'Overview data only',
+                        statusCode: pendingBecauseViewportTooLarge ? 'zoom_required' : (logDataExists ? 'loading_log' : 'overview_only'),
+                        statusLabel: pendingBecauseViewportTooLarge ? 'Zoom in for log data' : (logDataExists ? 'Waiting for log data' : 'Overview data only'),
                         requestedViewType: viewType,
                         logDataExists,
-                        isLoading: logDataExists,
+                        isLoading: logDataExists && !pendingBecauseViewportTooLarge,
+                        requiresZoom: pendingBecauseViewportTooLarge,
                     });
                 }
             } else {
@@ -1036,6 +1043,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 } else {
                     // Log view active, but no log data exists
+                    const pendingBecauseViewportTooLarge = logDataExists && viewportTooLarge;
                     ({ finalDataToUse, finalGlyphData, displayMetadata } = buildOverviewSpectrogramFallback(
                         overviewData,
                         position,
@@ -1043,13 +1051,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         models,
                         {
                             reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)',
-                            statusCode: logDataExists ? 'loading_log' : 'overview_only',
-                            statusLabel: logDataExists ? 'Waiting for log spectrogram' : 'Overview data only',
+                            statusCode: pendingBecauseViewportTooLarge ? 'zoom_required' : (logDataExists ? 'loading_log' : 'overview_only'),
+                            statusLabel: pendingBecauseViewportTooLarge ? 'Zoom in for log spectrogram' : (logDataExists ? 'Waiting for log spectrogram' : 'Overview data only'),
                             requestedViewType: viewType,
                             selectedParameter: parameter,
                             displayedParameter: parameter,
                             logDataExists,
-                            isLoading: logDataExists,
+                            isLoading: logDataExists && !pendingBecauseViewportTooLarge,
+                            requiresZoom: pendingBecauseViewportTooLarge,
                         }
                     ));
                 }

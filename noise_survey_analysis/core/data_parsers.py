@@ -7,10 +7,13 @@ import pandas as pd
 import numpy as np
 import re
 import os
+import json
+import struct
 import logging
 from io import StringIO
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 import wave
 import contextlib
@@ -1298,6 +1301,122 @@ class GenericFileParser(AbstractNoiseParser):
 
 
 class AudioFileParser(AbstractNoiseParser):
+    def _to_utc_timestamp(self, value: Any) -> Optional[pd.Timestamp]:
+        """Interpret instrument timestamps in the configured local timezone."""
+        if value in (None, ""):
+            return None
+        try:
+            timestamp = pd.Timestamp(value)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.tz_localize(
+                    self.timezone,
+                    ambiguous="raise",
+                    nonexistent="shift_forward",
+                )
+            return timestamp.tz_convert("UTC")
+        except Exception as exc:
+            logger.warning("Could not parse audio timestamp %r: %s", value, exc)
+            return None
+
+    @staticmethod
+    def _decode_riff_info(payload: bytes) -> Dict[str, str]:
+        """Decode a RIFF LIST/INFO payload into four-character metadata keys."""
+        if not payload.startswith(b"INFO"):
+            return {}
+        result: Dict[str, str] = {}
+        offset = 4
+        while offset + 8 <= len(payload):
+            key = payload[offset:offset + 4].decode("ascii", errors="replace")
+            size = struct.unpack("<I", payload[offset + 4:offset + 8])[0]
+            start = offset + 8
+            end = start + size
+            if end > len(payload):
+                break
+            result[key] = payload[start:end].rstrip(b"\x00 ").decode(
+                "utf-8",
+                errors="replace",
+            )
+            offset = end + (size & 1)
+        return result
+
+    def _read_wav_timestamp_metadata(self, filepath: str) -> Dict[str, Any]:
+        """Read SVAN RIFF INFO or NTi BWF start metadata without decoding audio."""
+        metadata: Dict[str, Any] = {}
+        try:
+            with open(filepath, "rb") as wav_file:
+                header = wav_file.read(12)
+                if len(header) != 12 or header[0:4] not in (b"RIFF", b"RF64") or header[8:12] != b"WAVE":
+                    return metadata
+                while True:
+                    chunk_header = wav_file.read(8)
+                    if len(chunk_header) < 8:
+                        break
+                    chunk_id, chunk_size = struct.unpack("<4sI", chunk_header)
+                    if chunk_id == b"LIST" and chunk_size <= 1024 * 1024:
+                        info = self._decode_riff_info(wav_file.read(chunk_size))
+                        metadata.update({f"riff_{key.lower()}": value for key, value in info.items()})
+                    elif chunk_id == b"bext":
+                        payload = wav_file.read(min(chunk_size, 1024))
+                        if len(payload) >= 338:
+                            metadata["bext_date"] = payload[320:330].rstrip(b"\x00 ").decode("ascii", errors="replace")
+                            metadata["bext_time"] = payload[330:338].rstrip(b"\x00 ").decode("ascii", errors="replace")
+                        remaining = chunk_size - len(payload)
+                        if remaining > 0:
+                            wav_file.seek(remaining, os.SEEK_CUR)
+                    else:
+                        wav_file.seek(chunk_size, os.SEEK_CUR)
+                    if chunk_size & 1:
+                        wav_file.seek(1, os.SEEK_CUR)
+        except (OSError, EOFError, struct.error) as exc:
+            logger.debug("Could not inspect WAV metadata for %s: %s", filepath, exc)
+            return metadata
+
+        start_timestamp = None
+        info_date = metadata.get("riff_icrd")
+        info_comment = metadata.get("riff_icmt", "")
+        if info_date:
+            match = re.search(r"\b(\d{2}:\d{2}:\d{2})(?:[ .](\d{3}))?\b", info_comment)
+            if match:
+                fractional = f".{match.group(2)}" if match.group(2) else ""
+                start_timestamp = self._to_utc_timestamp(
+                    f"{info_date.strip()} {match.group(1)}{fractional}"
+                )
+        if start_timestamp is None and metadata.get("bext_date") and metadata.get("bext_time"):
+            start_timestamp = self._to_utc_timestamp(
+                f"{metadata['bext_date']} {metadata['bext_time']}"
+            )
+        metadata["embedded_start_time"] = start_timestamp
+        metadata["audio_filter"] = metadata.get("riff_icnt", "")
+        return metadata
+
+    def _read_audio_indexes(self, directory: str) -> Dict[str, Dict[str, Any]]:
+        """Load parser-produced SVL wave markers found beside the audio files."""
+        mappings: Dict[str, Dict[str, Any]] = {}
+        try:
+            index_names = [
+                name for name in os.listdir(directory)
+                if name.lower().endswith("_audio_index.json")
+            ]
+        except OSError:
+            return mappings
+        for index_name in sorted(index_names):
+            index_path = os.path.join(directory, index_name)
+            try:
+                with open(index_path, "r", encoding="utf-8") as index_file:
+                    payload = json.load(index_file)
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Ignoring invalid audio index %s: %s", index_path, exc)
+                continue
+            for entry in payload.get("files", []):
+                filename = str(entry.get("filename") or entry.get("stored_name") or "").strip()
+                if not filename:
+                    continue
+                enriched = dict(entry)
+                enriched["index_path"] = index_path
+                mappings[filename.casefold()] = enriched
+                mappings[Path(filename).stem.casefold()] = enriched
+        return mappings
+
     def _get_wav_duration(self, filepath: str) -> float:
         """Reads the duration in seconds from an audio file.
 
@@ -1338,6 +1457,7 @@ class AudioFileParser(AbstractNoiseParser):
 
             if os.path.isdir(path):
                 parsed_data_obj.metadata['type'] = 'directory_scan'
+                audio_indexes = self._read_audio_indexes(path)
                 for item_name in os.listdir(path):
                     item_path = os.path.join(path, item_name)
 
@@ -1347,13 +1467,46 @@ class AudioFileParser(AbstractNoiseParser):
                         stats = os.stat(item_path)
                         duration = self._get_wav_duration(item_path)
                         if duration > 0:
+                            wav_metadata = self._read_wav_timestamp_metadata(item_path)
+                            embedded_start = wav_metadata.get("embedded_start_time")
+                            index_entry = (
+                                audio_indexes.get(item_name.casefold())
+                                or audio_indexes.get(Path(item_name).stem.casefold())
+                            )
+                            indexed_start = self._to_utc_timestamp(
+                                index_entry.get("start_time") if index_entry else None
+                            )
+                            recorded_start = indexed_start
+                            anchor_source = "svl_wave_marker" if indexed_start is not None else ""
+                            anchor_warning = ""
+                            if embedded_start is not None:
+                                if indexed_start is None:
+                                    recorded_start = embedded_start
+                                    anchor_source = "embedded_wav_metadata"
+                                else:
+                                    difference = abs((embedded_start - indexed_start).total_seconds())
+                                    if difference <= 2.0:
+                                        recorded_start = embedded_start
+                                        anchor_source = "svl_wave_marker+embedded_wav_metadata"
+                                    else:
+                                        anchor_warning = (
+                                            f"embedded timestamp differs from SVL marker by {difference:.3f}s"
+                                        )
+                            modified_time = pd.to_datetime(stats.st_mtime, unit='s', utc=True).round('s')
                             audio_files_details.append({
                                 'filename': item_name,
                                 'full_path': item_path,
                                 'size_mb': round(stats.st_size / (1024 * 1024), 2),
-                                'modified_time': pd.to_datetime(stats.st_mtime, unit='s', utc=True).round('s'),
-                                'Datetime': pd.to_datetime(stats.st_mtime, unit='s', utc=True).round('s'),
-                                'duration_sec': duration
+                                'modified_time': modified_time,
+                                'Datetime': recorded_start if recorded_start is not None else modified_time,
+                                'recorded_start_time': recorded_start,
+                                'embedded_start_time': embedded_start,
+                                'indexed_start_time': indexed_start,
+                                'anchor_source': anchor_source or 'filesystem_modified_time',
+                                'anchor_confidence': 'high' if recorded_start is not None else 'low',
+                                'anchor_warning': anchor_warning,
+                                'audio_filter': wav_metadata.get('audio_filter', ''),
+                                'duration_sec': duration,
                             })
             else:
                 parsed_data_obj.metadata['error'] = "Path is not a directory. Audio parser only scans directories."; return parsed_data_obj

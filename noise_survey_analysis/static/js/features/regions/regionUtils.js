@@ -234,63 +234,53 @@ function calcLAeq(values) {
         };
     }
 
-    function chooseDataset(region, sources, state) {
+    function chooseDataset(region, sources, state, resolution = 'auto') {
         if (!sources) return null;
         const displayAreas = getRegionAreas(region);
         if (!displayAreas.length) return null;
         const offsetMs = getChartOffsetMs(region, state);
         const areas = getSourceQueryAreas(displayAreas, offsetMs);
 
-        const logData = sources.log?.data;
-        if (logData?.Datetime && logData.LAeq) {
-            const laeqLog = sliceTimeSeriesForAreas(logData.Datetime, logData.LAeq, areas);
-            if (laeqLog.length) {
-                let la90Log = null;
-                if (logData.LAF90) {
-                    const slicedLA90 = sliceTimeSeriesForAreas(logData.Datetime, logData.LAF90, areas);
-                    if (slicedLA90.length) {
-                        la90Log = slicedLA90;
-                    }
+        const tryDataset = dataset => {
+            const data = sources?.[dataset]?.data;
+            if (!data?.Datetime || !data.LAeq) return null;
+            const laeqValues = sliceTimeSeriesForAreas(data.Datetime, data.LAeq, areas);
+            if (!laeqValues.length) return null;
+            let la90Values = null;
+            if (data.LAF90) {
+                const slicedLA90 = sliceTimeSeriesForAreas(data.Datetime, data.LAF90, areas);
+                if (slicedLA90.length) {
+                    la90Values = slicedLA90;
                 }
-                return {
-                    dataset: 'log',
-                    data: logData,
-                    laeqValues: laeqLog,
-                    la90Values: la90Log
-                };
             }
+            return { dataset, data, laeqValues, la90Values };
+        };
+
+        const normalizedResolution = resolution === 'log' || resolution === 'overview'
+            ? resolution
+            : 'auto';
+        if (normalizedResolution !== 'auto') {
+            return tryDataset(normalizedResolution);
         }
 
-        const overviewData = sources.overview?.data;
-        if (overviewData?.Datetime && overviewData.LAeq) {
-            const laeqOverview = sliceTimeSeriesForAreas(overviewData.Datetime, overviewData.LAeq, areas);
-            if (laeqOverview.length) {
-                let la90Overview = null;
-                if (overviewData.LAF90) {
-                    const slicedLA90 = sliceTimeSeriesForAreas(overviewData.Datetime, overviewData.LAF90, areas);
-                    if (slicedLA90.length) {
-                        la90Overview = slicedLA90;
-                    }
-                }
-                return {
-                    dataset: 'overview',
-                    data: overviewData,
-                    laeqValues: laeqOverview,
-                    la90Values: la90Overview
-                };
-            }
-        }
+        const logSelection = tryDataset('log');
+        if (logSelection) return logSelection;
+        const overviewSelection = tryDataset('overview');
+        if (overviewSelection) return overviewSelection;
 
         return null;
     }
 
-    function computeRegionMetrics(region, state, dataCache, models) {
+    function computeRegionMetrics(region, state, dataCache, models, options = {}) {
         const displayAreas = getRegionAreas(region);
         const durationMs = sumAreaDurations(displayAreas);
         const offsetMs = getChartOffsetMs(region, state);
         const sourceAreas = getSourceQueryAreas(displayAreas, offsetMs);
         const sources = models?.timeSeriesSources?.[region.positionId];
-        const selection = chooseDataset(region, sources, state);
+        const requestedResolution = options?.resolution === 'log' || options?.resolution === 'overview'
+            ? options.resolution
+            : 'auto';
+        const selection = chooseDataset(region, sources, state, requestedResolution);
 
         if (!selection) {
             return {
@@ -338,21 +328,20 @@ function calcLAeq(values) {
         const selectedParam = state?.view?.selectedParameter;
         const prepared = models?.preparedGlyphData?.[region.positionId];
 
-        // Resolve spectral parameter: prefer selected, fall back to LZeq
-        const spectralParam = selectedParam && prepared?.log?.prepared_params?.[selectedParam]
+        // Keep broadband and spectral calculations on the same resolution.
+        const selectedPrepared = prepared?.[selection.dataset]?.prepared_params;
+        const spectralParam = selectedParam && selectedPrepared?.[selectedParam]
             ? selectedParam
-            : (selectedParam && prepared?.overview?.prepared_params?.[selectedParam]
-                ? selectedParam
-                : 'LZeq');
+            : 'LZeq';
         const logSpectral = prepared?.log?.prepared_params?.[spectralParam];
         const overviewSpectral = prepared?.overview?.prepared_params?.[spectralParam];
 
         let spectrumSource = null;
         let spectrum = { labels: [], values: [] };
-        if (logSpectral) {
+        if (selection.dataset === 'log' && logSpectral) {
             spectrumSource = 'log';
             spectrum = computeSpectrumAverage(logSpectral, sourceAreas);
-        } else if (overviewSpectral) {
+        } else if (selection.dataset === 'overview' && overviewSpectral) {
             spectrumSource = 'overview';
             spectrum = computeSpectrumAverage(overviewSpectral, sourceAreas);
         }
@@ -380,7 +369,7 @@ function calcLAeq(values) {
      * Gets metrics for a region, using cache if available.
      * Calculates and caches if not found.
      */
-    function getRegionMetrics(region, state, dataCache, models) {
+    function getRegionMetrics(region, state, dataCache, models, options = {}) {
         if (!region) {
             return null;
         }
@@ -389,11 +378,11 @@ function calcLAeq(values) {
         const offsetMs = getChartOffsetMs(region, state);
         const cacheKey = `${regionId}_${parameter}_${offsetMs}`;
 
-        if (_metricsCache.has(cacheKey)) {
+        if (!options?.force && _metricsCache.has(cacheKey)) {
             return _metricsCache.get(cacheKey);
         }
 
-        const metrics = computeRegionMetrics(region, state, dataCache, models);
+        const metrics = computeRegionMetrics(region, state, dataCache, models, options);
         _metricsCache.set(cacheKey, metrics);
         return metrics;
     }
@@ -424,6 +413,20 @@ function calcLAeq(values) {
         keysToDelete.forEach(key => _metricsCache.delete(key));
     }
 
+    /** Invalidates metrics for regions belonging to one refreshed position. */
+    function invalidatePositionMetrics(positionId, state) {
+        if (positionId === undefined || positionId === null) return;
+        const regionsState = state?.regions;
+        if (!regionsState?.byId || !Array.isArray(regionsState.allIds)) return;
+        const positionKey = String(positionId);
+        regionsState.allIds.forEach(regionId => {
+            const region = regionsState.byId[regionId];
+            if (region && String(region.positionId) === positionKey) {
+                invalidateRegionMetrics(regionId);
+            }
+        });
+    }
+
     function exportRegions(state, dataCache, models) {
         const regionsState = state?.regions;
         if (!regionsState) return '[]';
@@ -445,6 +448,8 @@ function calcLAeq(values) {
                     sourceAreas: sourceAreas.map(area => ({ start: area.start, end: area.end })),
                     note: region.note || '',
                     metrics: metrics,
+                    dataSource: metrics?.dataResolution ?? 'none',
+                    spectrumDataSource: metrics?.spectrum?.source ?? 'none',
                     color: typeof region.color === 'string' ? region.color : null
                 };
             });
@@ -606,6 +611,7 @@ function calcLAeq(values) {
         getRegionMetrics,
         invalidateMetricsCache,
         invalidateRegionMetrics,
+        invalidatePositionMetrics,
         exportRegions,
         importRegions,
         formatRegionSummary,

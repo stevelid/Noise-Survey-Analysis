@@ -1,0 +1,21 @@
+# Pinned versions used for the YAMNet local-processing benchmark (proof of
+# concept only — this is NOT the dashboard's requirements.txt and is not
+# wired into the main project environment).
+#
+# Installed into an isolated venv at .venv-yamnet-benchmark (see README.md).
+# Python 3.13.14 was the only interpreter available on this machine at the
+# time of the benchmark; TensorFlow 2.21.0 ships a cp313 Windows wheel so no
+# alternate interpreter was required.
+
+tensorflow==2.21.0
+tensorflow-hub==0.16.1
+# tensorflow-hub 0.16.1 imports pkg_resources, which modern setuptools
+# (>=81) no longer ships by default. Pin setuptools below 81 in this venv
+# only — do not apply this pin to the main project environment.
+setuptools<81
+numpy==2.5.1
+pandas==3.0.5
+soundfile==0.14.0
+scipy==1.18.0
+pyarrow==25.0.0
+psutil==7.2.2

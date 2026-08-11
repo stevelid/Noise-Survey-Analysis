@@ -42,6 +42,92 @@ def _extract_source_file_paths(source: Dict[str, Any]) -> List[str]:
     return paths
 
 
+def save_state_to_config(
+    config_path: str | Path,
+    positions: Optional[Dict[str, Dict[str, float]]] = None,
+    default_view: Optional[Dict[str, Any]] = None,
+) -> Path | None:
+    """Merge durable setup state into an existing config file.
+
+    Only the ``positions`` and ``default_view`` blocks are touched. The
+    ``sources`` array and every other key are read back and rewritten intact,
+    because this file is the job's source-of-truth for what data gets loaded
+    and it lives in the shared job folder.
+
+    The write goes to a temporary file in the same directory and is then moved
+    over the original, so an interrupted save cannot leave a job with a
+    half-written config.
+
+    Returns the config path on success, or None on failure.
+    """
+    target = Path(config_path)
+    try:
+        with open(target, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        if not isinstance(config, dict):
+            logger.error("Config at %s is not a JSON object; refusing to write state.", target)
+            return None
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        logger.error("Cannot read config at %s to merge state: %s", target, exc)
+        return None
+
+    if positions:
+        merged = config.get('positions')
+        if not isinstance(merged, dict):
+            merged = {}
+        for name, entry in positions.items():
+            if not isinstance(entry, dict):
+                continue
+            existing = merged.get(name) if isinstance(merged.get(name), dict) else {}
+            updated = dict(existing)
+            for key in ('chart_offset_seconds', 'audio_offset_seconds'):
+                if key in entry:
+                    try:
+                        updated[key] = round(float(entry[key]), 4)
+                    except (TypeError, ValueError):
+                        continue
+            if updated:
+                merged[str(name)] = updated
+        config['positions'] = merged
+
+    if default_view:
+        view_block = {}
+        for key in ('start', 'end'):
+            if default_view.get(key) is not None:
+                try:
+                    view_block[key] = float(default_view[key])
+                except (TypeError, ValueError):
+                    continue
+        for key in ('view', 'param'):
+            value = default_view.get(key)
+            if isinstance(value, str) and value.strip():
+                view_block[key] = value.strip()
+        if view_block:
+            config['default_view'] = view_block
+
+    config['state_saved_at'] = datetime.now().isoformat()
+
+    tmp_path = target.with_suffix(target.suffix + '.tmp')
+    try:
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2)
+        os.replace(tmp_path, target)
+    except OSError as exc:
+        logger.error("Failed to write config state to %s: %s", target, exc)
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        return None
+
+    logger.info(
+        "Saved setup state to %s (%d position offset(s), default_view=%s).",
+        target, len(positions or {}), bool(default_view),
+    )
+    return target
+
+
 def save_config_from_selected_sources(selected_sources: list) -> Path | None:
     """
     Save a configuration JSON derived from the selector's selected sources.

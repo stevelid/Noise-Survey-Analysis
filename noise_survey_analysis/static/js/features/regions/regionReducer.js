@@ -20,7 +20,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         addAreaTargetId: null,
         isMergeModeActive: false,
         panelVisible: true,
-        overlaysVisible: true
+        overlaysVisible: true,
+        metricsRevision: 0
     };
 
     function normalizeColor(color, fallback = DEFAULT_REGION_COLOR) {
@@ -303,7 +304,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 addAreaTargetId: null,
                 isMergeModeActive: false,
                 panelVisible: state.panelVisible,
-                overlaysVisible: state.overlaysVisible
+                overlaysVisible: state.overlaysVisible,
+                metricsRevision: (Number(state.metricsRevision) || 0) + 1
             };
         }
 
@@ -348,7 +350,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             addAreaTargetId: null,
             isMergeModeActive: false,
             panelVisible: state.panelVisible,
-            overlaysVisible: state.overlaysVisible
+            overlaysVisible: state.overlaysVisible,
+            metricsRevision: (Number(state.metricsRevision) || 0) + 1
         };
     }
 
@@ -463,6 +466,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     isMergeModeActive: nextValue
                 };
             }
+
+            case actionTypes.REGION_METRICS_RECALCULATED:
+                return {
+                    ...state,
+                    metricsRevision: (Number(state.metricsRevision) || 0) + 1
+                };
 
             default:
                 return state;

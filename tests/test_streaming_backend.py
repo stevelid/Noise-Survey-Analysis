@@ -434,12 +434,15 @@ class StreamingBackendTests(unittest.TestCase):
         parser_factory = MagicMock()
         parser_factory.get_parser.return_value = None  # No parser will touch this path.
 
-        result = position.load_log_data_lazy(parser_factory, use_cache=False)
+        with patch("noise_survey_analysis.core.data_manager.status_console.end_phase") as end_phase:
+            result = position.load_log_data_lazy(parser_factory, use_cache=False)
 
         self.assertFalse(result, "a total failure must not report success")
         self.assertFalse(position._log_data_loaded, "must stay eligible for a retry")
         self.assertFalse(position.has_log_totals)
         self.assertFalse(position.has_log_spectral)
+        end_phase.assert_called_once()
+        self.assertEqual(end_phase.call_args.kwargs["category"], "warn")
 
     def test_real_load_reports_failure_when_the_parser_raises(self):
         position = PositionData(name="P_real_raise")
@@ -909,6 +912,22 @@ class StreamingBackendTests(unittest.TestCase):
         # Verify wrapping (list of lists for arrays)
         self.assertEqual(len(spectrogram_data["frequency_labels"]), 1)
         self.assertEqual(len(spectrogram_data["frequency_labels"][0]), 2)  # 2 frequency bands inside wrapper
+
+    def test_server_data_handler_accepts_numpy_integer_range_bounds(self):
+        timeseries_log_source = ColumnDataSource(data={})
+        spectrogram_log_source = ColumnDataSource(data={})
+        doc = FakeDoc({
+            "source_P1_timeseries_log": timeseries_log_source,
+            "source_P1_spectrogram_log": spectrogram_log_source,
+            "figure_P1_timeseries": DummyFigure(width=320),
+            "figure_P1_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({"P1": self.position}), CHART_SETTINGS)
+
+        handler.handle_range_update(np.int64(self.start_ms), np.int64(self.end_ms))
+
+        self.assertEqual(list(timeseries_log_source.data["LAeq"]), [50, 52, 54])
+        self.assertIn("levels_flat_transposed", spectrogram_log_source.data)
 
     def test_deferred_high_rate_log_viewport_is_rejected_before_lazy_load(self):
         base_time = pd.Timestamp("2024-01-01T00:00:00Z")

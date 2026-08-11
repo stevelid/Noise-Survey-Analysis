@@ -17,13 +17,13 @@ from noise_survey_analysis.visualization.dashBuilder import DashBuilder
 logger = logging.getLogger(__name__)
 
 
-def generate_static_html(config_path: str, resources: str = "CDN") -> Optional[Path]:
+def generate_static_html(config_path: str, resources: str = "INLINE") -> Optional[Path]:
     """
     Builds the dashboard layout from a config file and saves it as a standalone HTML file.
 
     Args:
         config_path: Path to the saved JSON config (as produced by the selector or provided manually)
-        resources: 'CDN' (default) or 'INLINE' to control Bokeh resource embedding
+        resources: 'INLINE' (default) or 'CDN' to control Bokeh resource embedding
 
     Returns:
         pathlib.Path to the written HTML on success, or None on failure.

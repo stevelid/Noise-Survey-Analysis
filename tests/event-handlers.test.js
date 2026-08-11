@@ -12,6 +12,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
     let store;
     let dispatchSpy;
     let handleTapIntentSpy;
+    let selectClassificationIntentSpy;
     let createRegionIntentSpy;
     let resizeSelectedRegionIntentSpy;
     let nudgeTapLineIntentSpy;
@@ -48,6 +49,7 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         };
 
         handleTapIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'handleTapIntent').mockImplementation(() => () => {});
+        selectClassificationIntentSpy = vi.spyOn(window.NoiseSurveyApp.features.classifications.thunks, 'selectClassificationIntent').mockImplementation(() => () => {});
         createRegionIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'createRegionIntent').mockImplementation(() => () => {});
         resizeSelectedRegionIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'resizeSelectedRegionIntent').mockImplementation(() => () => {});
         nudgeTapLineIntentSpy = vi.spyOn(window.NoiseSurveyApp.thunks, 'nudgeTapLineIntent').mockImplementation(() => () => {});
@@ -94,6 +96,33 @@ describe('NoiseSurveyApp.eventHandlers', () => {
                 modifiers: { ctrl: true }
             });
             expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
+        });
+
+        it('should select a classification box without dispatching a seek tap', () => {
+            window.NoiseSurveyApp.registry.controllers.chartsByName.set('figure_P1_timeseries', {
+                classificationOverlay: {
+                    renderer: { visible: true },
+                    source: {
+                        data: {
+                            left: [100],
+                            right: [200],
+                            bottom: [10],
+                            top: [20],
+                            classification_id: [7]
+                        }
+                    }
+                }
+            });
+
+            eventHandlers.handleTap({
+                origin: { name: 'figure_P1_timeseries' },
+                x: 150,
+                y: 15
+            });
+
+            expect(selectClassificationIntentSpy).toHaveBeenCalledWith(7);
+            expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
+            expect(handleTapIntentSpy).not.toHaveBeenCalled();
         });
     });
 

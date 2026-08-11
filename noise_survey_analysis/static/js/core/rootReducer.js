@@ -13,6 +13,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const viewFeature = app.features?.view || {};
     const interactionFeature = app.features?.interaction || {};
     const markersFeature = app.features?.markers || {};
+    const classificationsFeature = app.features?.classifications || {};
     const regionsFeature = app.features?.regions || {};
     const audioFeature = app.features?.audio || {};
 
@@ -23,6 +24,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function deepClone(value) {
         return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+    }
+
+    function normalizeRehydratedClassifications(baseClassifications, providedClassifications) {
+        if (!providedClassifications) {
+            return baseClassifications;
+        }
+        const merged = { ...baseClassifications, ...providedClassifications };
+        // `filters` is a nested object, so a shallow spread would drop any
+        // sub-key the saved workspace predates (e.g. a workspace saved before a
+        // new filter field was added). Merge it one level deeper so missing
+        // sub-keys fall back to their defaults instead of becoming undefined.
+        merged.filters = {
+            ...baseClassifications.filters,
+            ...(providedClassifications.filters || {})
+        };
+        return merged;
     }
 
     function normalizeRehydratedViewState(baseView, providedView) {
@@ -52,6 +69,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             view: deepClone(viewFeature.initialState),
             interaction: deepClone(interactionFeature.initialState),
             markers: deepClone(markersFeature.initialState),
+            classifications: deepClone(classificationsFeature.initialState),
             regions: deepClone(regionsFeature.initialState),
             audio: deepClone(audioFeature.initialState),
             system: deepClone(initialSystemState)
@@ -87,6 +105,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 view: normalizeRehydratedViewState(baseState.view, providedState.view),
                 interaction: providedState.interaction ? { ...baseState.interaction, ...providedState.interaction } : baseState.interaction,
                 markers: providedState.markers ? { ...baseState.markers, ...providedState.markers } : baseState.markers,
+                classifications: normalizeRehydratedClassifications(baseState.classifications, providedState.classifications),
                 regions: providedState.regions ? { ...baseState.regions, ...providedState.regions } : baseState.regions,
                 audio: providedState.audio ? { ...baseState.audio, ...providedState.audio } : baseState.audio,
                 system: { ...baseState.system, ...(providedState.system || {}), initialized: true },
@@ -113,6 +132,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             ? markersFeature.markersReducer(previousState.markers, action, previousState)
             : previousState.markers;
 
+        const nextClassifications = typeof classificationsFeature.classificationsReducer === 'function'
+            ? classificationsFeature.classificationsReducer(previousState.classifications, action, previousState)
+            : previousState.classifications;
+
         const nextRegions = typeof regionsFeature.regionsReducer === 'function'
             ? regionsFeature.regionsReducer(previousState.regions, action)
             : previousState.regions;
@@ -127,6 +150,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             view: nextView,
             interaction: nextInteraction,
             markers: nextMarkers,
+            classifications: nextClassifications,
             regions: nextRegions,
             audio: nextAudio,
             system: nextSystem

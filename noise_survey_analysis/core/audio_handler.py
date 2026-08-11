@@ -38,6 +38,8 @@ import pandas as pd # Make sure pandas is imported
 # Configure Logging
 logger = logging.getLogger(__name__)
 
+from noise_survey_analysis.core import status_console
+
 class AudioPlaybackHandler:
     """
     Handles audio playback from audio files based on timestamp selection.
@@ -89,7 +91,7 @@ class AudioPlaybackHandler:
                 self.audio_available = False
 
         # --- NEW, SIMPLIFIED INITIALIZATION LOGIC ---
-        logger.info("AudioPlaybackHandler: Indexing pre-processed audio data...")
+        logger.debug("AudioPlaybackHandler: Indexing pre-processed audio data...")
         for position_name, data_dict in position_data.items():
             if not getattr(data_dict, 'has_audio_files', False):
                 continue
@@ -114,12 +116,12 @@ class AudioPlaybackHandler:
                 files_to_process.append((row['full_path'], row['Datetime'], row['duration_sec']))
             
             self.file_info_by_position[position_name] = files_to_process
-            logger.info(f"Indexed {len(files_to_process)} pre-anchored audio files for position '{position_name}'.")
+            logger.debug(f"Indexed {len(files_to_process)} pre-anchored audio files for position '{position_name}'.")
             if files_to_process:
                 first_start = files_to_process[0][1]
                 last_start = files_to_process[-1][1]
                 last_dur = files_to_process[-1][2]
-                logger.info(f"  Audio range for '{position_name}': {first_start} -> {last_start} + {last_dur}s")
+                logger.debug(f"  Audio range for '{position_name}': {first_start} -> {last_start} + {last_dur}s")
 
     def set_current_position(self, position: str) -> bool:
         """
@@ -224,6 +226,10 @@ class AudioPlaybackHandler:
             self._is_playing = False
             return False
 
+        # Capture the transport state before any fallback teardown so status
+        # reporting can distinguish a seek from a fresh play.
+        was_playing = self._is_playing
+
         # Resolve the target before tearing anything down: this is a pure lookup over
         # the indexed file list, and knowing the target lets us skip the reload
         # entirely when it lands in the recording that is already open.
@@ -247,6 +253,13 @@ class AudioPlaybackHandler:
             if self._seek_within_current_media(offset_seconds):
                 self._is_playing = True
                 self._ensure_playback_monitor()
+                position_info = f" ({self.current_position})" if self.current_position else ""
+                when = timestamp.strftime('%d/%m %H:%M:%S') if timestamp is not None else 'start'
+                status_console.event(
+                    'audio',
+                    f"{'seek' if was_playing else 'play'} {when}{position_info}  "
+                    f"{os.path.basename(filepath)} +{offset_seconds:.1f}s",
+                )
                 return True
             logger.debug("In-place seek failed; falling back to a full reload.")
 
@@ -255,10 +268,18 @@ class AudioPlaybackHandler:
         self._perform_stop_actions()
 
         # Output the current file being played to terminal
+        position_info = f" ({self.current_position})" if self.current_position else ""
         if self.current_file != filepath:
-            position_info = f" (position: {self.current_position})" if self.current_position else ""
             logger.info(f"Playing file: {os.path.basename(filepath)}{position_info}")
-            print(f"Now playing: {os.path.basename(filepath)}{position_info}")
+
+        # A cross-file seek takes the reload path, so report the requested time
+        # after the previous transport has been stopped.
+        when = timestamp.strftime('%d/%m %H:%M:%S') if timestamp is not None else 'start'
+        status_console.event(
+            'audio',
+            f"{'seek' if was_playing else 'play'} {when}{position_info}  "
+            f"{os.path.basename(filepath)} +{offset_seconds:.1f}s",
+        )
 
         # Store current state
         self.current_file = filepath
@@ -364,6 +385,7 @@ class AudioPlaybackHandler:
             self.player.pause()
             self._is_playing = False
             logger.info("Playback paused")
+            status_console.event('audio', 'paused')
             return True
         return False
 
@@ -378,6 +400,7 @@ class AudioPlaybackHandler:
                  self.player.play()
                  self._is_playing = True
                  logger.info("Playback resumed")
+                 status_console.event('audio', 'resumed')
                  return True
             else:
                  logger.warning(f"Cannot resume playback, player state is {self.player.get_state()}")
@@ -427,6 +450,7 @@ class AudioPlaybackHandler:
 
         if was_playing_or_paused:
             logger.info("Playback stopped")
+            status_console.event('audio', 'stopped')
             return True
         return False
 
@@ -491,14 +515,14 @@ class AudioPlaybackHandler:
         while not self.stop_monitor and self.player.get_media():
             current_state = self.player.get_state()
             if current_state in [vlc.State.Ended, vlc.State.Stopped, vlc.State.Error]:
-                logger.info(f"Monitor: Playback ended/stopped/errored (State: {current_state}). Stopping monitor.")
+                logger.debug(f"Monitor: Playback ended/stopped/errored (State: {current_state}). Stopping monitor.")
                 self._is_playing = False
                 break
             if current_state not in [vlc.State.Playing, vlc.State.Paused, vlc.State.Buffering]:
                  logger.debug(f"Monitor: Player in unexpected state: {current_state}")
 
             if last_file is None or self.current_file != last_file:
-                logger.info(f"Monitor: File changed to: {os.path.basename(self.current_file)}")
+                logger.debug(f"Monitor: File changed to: {os.path.basename(self.current_file)}")
                 last_file = self.current_file
 
             current_pos = self.get_current_position()
@@ -510,7 +534,7 @@ class AudioPlaybackHandler:
                 file_end_time = self.media_start_time + datetime.timedelta(seconds=self.current_file_duration)
                 #check if we are within 200ms of the end
                 if current_pos >= (file_end_time - datetime.timedelta(milliseconds=200)):
-                     logger.info(f"Monitor: Reached end of file duration for {os.path.basename(self.current_file)}. Attempting to play next part.")
+                     logger.debug(f"Monitor: Reached end of file duration for {os.path.basename(self.current_file)}. Attempting to play next part.")
                      next_timestamp = current_pos + datetime.timedelta(milliseconds=100)
                      # Call the main play method (which includes the lockout)
                      if not self.play(next_timestamp, self.position_callback):

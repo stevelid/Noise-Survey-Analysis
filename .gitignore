@@ -126,3 +126,10 @@ bokeh*.log
 *.chunks.js
 refactor_plan_*.md
 analysis_*.md
+
+# Local benchmark outputs (large Parquet/audio files and client-specific results)
+tools/music_detection_benchmark/results/
+tools/panns_benchmark/results/
+tools/yamnet_benchmark/results/
+tools/yamnet_benchmark/data/
+tools/yamnet_benchmark/tfhub_cache/

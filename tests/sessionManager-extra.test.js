@@ -264,7 +264,10 @@ describe('NoiseSurveyApp.session extra flows', () => {
         expect(app.registry.models.sessionActionSource.data.command).toEqual(['generate_static_html']);
         expect(app.registry.models.sessionActionSource.data.payload).toEqual([null]);
         expect(app.registry.models.sessionActionSource.data.request_id[0]).toMatch(/^\d+-[0-9a-f]+$/);
-        expect(app.registry.models.sessionActionSource.change.emit).toHaveBeenCalledTimes(1);
+        // Replacing ColumnDataSource.data is itself the Bokeh property change. An
+        // extra change.emit() would notify local listeners but does not create the
+        // server document patch that this command relies on.
+        expect(app.registry.models.sessionActionSource.change.emit).not.toHaveBeenCalled();
         expect(document.body.textContent).toContain('Static HTML export started');
 
         app.registry.models.sessionStatusSource.data = {

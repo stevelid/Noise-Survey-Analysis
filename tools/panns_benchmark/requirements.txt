@@ -1,0 +1,15 @@
+# Pinned versions used for the PANNs (Cnn14_DecisionLevelMax) local-processing
+# benchmark — proof of concept only, mirrors tools/yamnet_benchmark for a
+# like-for-like comparison. Installed into an isolated venv at
+# .venv-panns-benchmark (see README.md) — NOT the same venv as the YAMNet
+# benchmark (torch vs. tensorflow, kept separate deliberately).
+
+torch==2.13.0+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+panns_inference
+numpy==2.4.6
+pandas==3.0.5
+soundfile==0.14.0
+scipy==1.18.0
+pyarrow==25.0.0
+psutil==7.2.2

@@ -337,6 +337,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didHoverChange = state.interaction.hover !== prev.interaction.hover;
         const didAudioPositionChange = state.audio.activePositionId !== prev.audio.activePositionId;
         const didDataRefresh = lastActionType === actionTypes.DATA_REFRESHED;
+        const didClassificationsChange = state.classifications !== prev.classifications;
+        if (didDataRefresh && app.regions?.invalidatePositionMetrics) {
+            app.regions.invalidatePositionMetrics(state.system?.lastAction?.payload?.positionId, state);
+        }
 
         const isHeavyUpdateRequested = isInitialLoad
             || didViewportChange
@@ -459,7 +463,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         // render the side panel
-        if (didMarkersChange || didRegionsChange || didActiveSidePanelTabChange || didPendingRegionChange) {
+        if (didMarkersChange || didRegionsChange || didClassificationsChange || didActiveSidePanelTabChange || didPendingRegionChange || didDataRefresh) {
             _guardedRender('renderSidePanel', () => {
                 app.renderers.renderSidePanel(state);
             }, renderContext);
@@ -475,6 +479,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (isInitialLoad || didRegionsChange || didPendingRegionChange) {
             _guardedRender('renderRegions', () => {
                 app.renderers.renderRegions(state, dataCache);
+            }, renderContext);
+        }
+
+        if (isInitialLoad || didClassificationsChange) {
+            _guardedRender('renderClassifications', () => {
+                app.renderers.renderClassifications(state);
             }, renderContext);
         }
 

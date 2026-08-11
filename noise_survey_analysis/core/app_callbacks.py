@@ -45,6 +45,7 @@ class AppCallbacks:
         session_action_source: Optional[ColumnDataSource] = None,
         session_status_source: Optional[ColumnDataSource] = None,
         static_export_request_handler: Optional[Callable[..., dict]] = None,
+        save_setup_request_handler: Optional[Callable[..., dict]] = None,
         server_data_handler=None,
         streaming_enabled: bool = STREAMING_ENABLED,
         streaming_debounce_ms: int = STREAMING_DEBOUNCE_MS,
@@ -56,6 +57,7 @@ class AppCallbacks:
         self.session_action_source = session_action_source
         self.session_status_source = session_status_source
         self.static_export_request_handler = static_export_request_handler
+        self.save_setup_request_handler = save_setup_request_handler
         self.server_data_handler = server_data_handler
         self.streaming_enabled = streaming_enabled
         self.streaming_debounce_ms = streaming_debounce_ms
@@ -230,6 +232,29 @@ class AppCallbacks:
             return
 
         logger.info(f"Received session action command: {command} (request_id={request_id})")
+
+        if command == 'save_setup_to_config':
+            # Cheap and synchronous -- a small JSON rewrite, no need to thread it.
+            if not callable(self.save_setup_request_handler):
+                self._publish_session_status(
+                    'error',
+                    'Saving setup to config is unavailable in this session.',
+                    done=True,
+                    request_id=request_id,
+                )
+            else:
+                result = self.save_setup_request_handler(payload=payload, request_id=request_id)
+                success = bool(result.get('success')) if isinstance(result, dict) else bool(result)
+                message = result.get('message', '') if isinstance(result, dict) else ''
+                self._publish_session_status(
+                    'info' if success else 'error',
+                    message or ('Setup saved.' if success else 'Saving setup failed.'),
+                    done=True,
+                    output_path=result.get('output_path', '') if isinstance(result, dict) else '',
+                    request_id=request_id,
+                )
+            self._clear_session_action_command()
+            return
 
         if command != 'generate_static_html':
             self._publish_session_status(
@@ -534,6 +559,29 @@ class AppCallbacks:
 
         master_x_range.on_change('start', schedule_range_update)
         master_x_range.on_change('end', schedule_range_update)
+
+        # The Chart Offset (s) spinner next to each position is otherwise wired
+        # entirely client-side (js_on_change -> handlePositionChartOffsetChange,
+        # see components.py) so the Overview chart - fully preloaded in the
+        # browser - can apply it without a server round trip. The Log/spectrogram
+        # view streams from the server though, so without this the server has no
+        # idea a position's data needs shifting and buffers the wrong window once
+        # the offset exceeds the small buffer margin. Mirror each spinner's value
+        # into the server_data_handler so it can shift what it buffers/streams for
+        # that position to match what the client displays.
+        for position_id in self.server_data_handler.app_data.positions():
+            spinner = self.doc.get_model_by_name(f"chart_offset_spinner_{position_id}")
+            if spinner is None:
+                continue
+
+            def on_chart_offset_change(attr, old, new, position_id=position_id):
+                self.server_data_handler.set_position_chart_offset(position_id, new)
+
+            spinner.on_change('value', on_chart_offset_change)
+            # Pick up any initial value already on the widget (e.g. restored from a
+            # saved workspace/job config) rather than waiting for the first change.
+            if spinner.value:
+                self.server_data_handler.set_position_chart_offset(position_id, spinner.value)
 
         param_select = self.doc.get_model_by_name('global_parameter_selector')
         if param_select:

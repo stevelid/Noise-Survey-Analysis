@@ -23,16 +23,21 @@ from ..core import survey_layout
 logger = logging.getLogger(__name__)
 
 # --- Default Base Directory ---
+# config.DEFAULT_BASE_JOB_DIR already resolves the Venta Jobs folder across drive
+# letters. Keep showing it even when it is missing: an empty box or the user's
+# home folder hides the real problem, which is that Google Drive is not mounted.
 if not os.path.isdir(DEFAULT_BASE_JOB_DIR):
-    DEFAULT_BASE_JOB_DIR = os.path.expanduser("~")
-    logger.warning(f"Default base job directory not found. Falling back to: {DEFAULT_BASE_JOB_DIR}")
+    logger.warning(
+        "Base job directory is not available: %s. Check that Google Drive is running.",
+        DEFAULT_BASE_JOB_DIR,
+    )
 
 
 # Sentinel for the "no visit filter" option.
 ALL_VISITS = "\x00all"
 
 PRIORITY_HIGHLIGHT_COLOR = "#1f3c88"
-PRIORITY_HIGHLIGHT_TEXT_COLOR = "#f8f9fa"
+PRIORITY_HIGHLIGHT_TEXT_COLOR = "#f8fafc"
 DEFAULT_TEXT_COLOR = "#212529"
 
 
@@ -103,8 +108,8 @@ class DataSourceSelector:
         )
         
         self.status_div = Div(
-            text="Enter Base Directory and Job Number, then click 'Scan Job Directory'. Or drag and drop files/folders anywhere on this panel.",
-            width=800, styles={'color': 'blue', 'font-style': 'italic', 'margin-top': '10px'} 
+            text="Enter a Job Number and click 'Scan Job Directory'. Or drag and drop files/folders anywhere on this panel.",
+            width=800, styles={'color': '#2563eb', 'font-style': 'italic', 'margin-top': '10px'}
         )
 
         # Multiple visits per job are the norm - a structural survey found 16 of 20
@@ -187,7 +192,7 @@ class DataSourceSelector:
         
         self.info_div = Div(
             text="Scan results summary will appear here.", width=800,
-            styles={'background-color': '#f0f0f0', 'padding': '10px', 'border-radius': '5px', 'margin-top': '10px'}
+            styles={'background-color': '#f1f5f9', 'padding': '10px', 'border-radius': '5px', 'margin-top': '10px'}
         )
 
         self.save_config_button = Button(label="Save Config", button_type="warning", width=120, disabled=True)
@@ -470,8 +475,15 @@ class DataSourceSelector:
 
     def _scan_directory(self, event=None):
         base_dir, job_num = self.base_directory_input.value.strip(), self.job_number_input.value.strip()
-        if not (base_dir and job_num and os.path.isdir(base_dir)):
-            self._update_status("Please provide a valid Base Directory and Job Number.", 'red')
+        if not base_dir or not os.path.isdir(base_dir):
+            self._update_status(
+                f"Base Directory not available: '{base_dir}'. Check that Google Drive is running "
+                "and that you have access to the Venta shared drive.",
+                'red'
+            )
+            return
+        if not job_num:
+            self._update_status("Please enter a Job Number.", 'red')
             return
         
         self._update_status(f"Scanning for job '{job_num}' in '{base_dir}'...", 'blue')
@@ -605,7 +617,7 @@ class DataSourceSelector:
         
         let editDialog = `
         <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                    background: white; border: 2px solid #ccc; border-radius: 8px; 
+                    background: white; border: 2px solid #cbd5e1; border-radius: 8px;
                     padding: 20px; z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.3);
                     max-height: 80vh; overflow-y: auto; min-width: 500px;">
             <h3>Bulk Edit Position Names</h3>

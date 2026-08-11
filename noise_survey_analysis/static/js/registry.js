@@ -143,6 +143,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             chartVisibility[chart.name] = checkbox ? checkbox.active.includes(0) : true;
         });
 
+        // Seed offsets from the spinners so saved values in the job config
+        // survive initialization. The spinners carry whatever the server put
+        // there; without this the store starts at zero and the first render
+        // pushes that zero straight back onto the spinner, silently discarding
+        // the saved offset. State is held in milliseconds, spinners in seconds.
+        const positionChartOffsets = {};
+        const positionAudioOffsets = {};
+        availablePositions.forEach(pos => {
+            // models.positionControls is the set the renderer also writes back
+            // to; models.audio_controls is a different, unpopulated shape.
+            const controls = models.positionControls?.[pos];
+            const chartSeconds = Number(controls?.chart_offset_spinner?.value);
+            const audioSeconds = Number(controls?.audio_offset_spinner?.value);
+            positionChartOffsets[pos] = Number.isFinite(chartSeconds) ? chartSeconds * 1000 : 0;
+            positionAudioOffsets[pos] = Number.isFinite(audioSeconds) ? audioSeconds * 1000 : 0;
+        });
+
         const initialStatePayload = {
             availablePositions: availablePositions,
             selectedParameter: models.paramSelect?.value || 'LZeq',
@@ -150,6 +167,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             chartVisibility: chartVisibility,
             hoverEnabled: true,
             positionDisplayTitles: models.positionDisplayTitles,
+            positionChartOffsets: positionChartOffsets,
+            positionAudioOffsets: positionAudioOffsets,
             logViewThreshold: {
                 mode: 'auto',
                 seconds: null

@@ -269,6 +269,65 @@ describe('rootReducer', () => {
         });
     });
 
+    describe('Classification Actions', () => {
+        it('should replace classifications with normalized interval data', () => {
+            const state = rootReducer(initialState, actions.classificationsReplaceAll([
+                {
+                    id: 4,
+                    position_id: 'P1',
+                    source_id: 'fan',
+                    source_label: 'Extract fan',
+                    start: 2000,
+                    end: 1000,
+                    confidence: 87,
+                    description: 'steady fan',
+                    audio_file: 'clip.wav'
+                },
+                {
+                    positionId: '',
+                    sourceId: 'invalid',
+                    start: 1,
+                    end: 2
+                }
+            ]));
+
+            expect(state.classifications.allIds).toEqual([4]);
+            expect(state.classifications.byId[4]).toMatchObject({
+                positionId: 'P1',
+                sourceId: 'fan',
+                sourceLabel: 'Extract fan',
+                start: 1000,
+                end: 2000,
+                confidence: 0.87,
+                description: 'steady fan',
+                audioFile: 'clip.wav'
+            });
+            expect(state.classifications.selectedId).toBe(4);
+            expect(state.classifications.counter).toBe(5);
+        });
+
+        it('should add, select, update, remove, and toggle classification visibility', () => {
+            let state = rootReducer(initialState, actions.classificationsAdded([
+                { positionId: 'P1', sourceId: 'music', start: 1000, end: 2000 }
+            ]));
+            expect(state.classifications.allIds).toEqual([1]);
+            expect(state.classifications.selectedId).toBe(1);
+
+            state = rootReducer(state, actions.classificationUpdate(1, { state: 'uncertain', confidence: '0.6' }));
+            expect(state.classifications.byId[1].state).toBe('uncertain');
+            expect(state.classifications.byId[1].confidence).toBe(0.6);
+
+            state = rootReducer(state, actions.classificationSelect(null));
+            expect(state.classifications.selectedId).toBeNull();
+            state = rootReducer(state, actions.classificationVisibilitySet({ showPanel: false, showOverlays: false }));
+            expect(state.classifications.panelVisible).toBe(false);
+            expect(state.classifications.overlaysVisible).toBe(false);
+
+            state = rootReducer(state, actions.classificationRemove(1));
+            expect(state.classifications.allIds).toEqual([]);
+        });
+    });
+
     describe('Region Actions', () => {
         it('should add a region and select it', () => {
             const state = rootReducer(initialState, actions.regionAdd('P1', 2000, 1000));

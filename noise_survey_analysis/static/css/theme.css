@@ -1,0 +1,177 @@
+/*
+ * Noise Survey Analysis - shared widget theme.
+ * Slate palette with blue accent (design language carried over from the V2 prototype).
+ *
+ * This stylesheet is attached to every Bokeh UI element's shadow root by
+ * noise_survey_analysis/ui/theme.py (Bokeh 3 widgets render inside shadow DOM,
+ * so document-level CSS cannot reach their internals). Design tokens (--nsa-*)
+ * are defined at document level in theme.py and inherit across shadow
+ * boundaries as CSS custom properties.
+ */
+
+:host {
+  font-family: var(--nsa-font, 'Segoe UI', system-ui, sans-serif);
+}
+
+/* ---- Buttons (Button, Toggle, Dropdown) ---------------------------------- */
+
+.bk-btn {
+  border-radius: 6px;
+  font-family: var(--nsa-font, 'Segoe UI', system-ui, sans-serif);
+  font-size: 12px;
+  transition: background-color 0.12s ease, border-color 0.12s ease,
+    box-shadow 0.12s ease, color 0.12s ease;
+}
+
+.bk-btn-default {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.bk-btn-default:hover:not(.bk-active) {
+  background-color: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.bk-btn-default.bk-active {
+  background-color: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.2);
+}
+
+.bk-btn-primary {
+  background-color: #2563eb;
+  border: 1px solid #1d4ed8;
+  color: #ffffff;
+}
+
+.bk-btn-primary:hover {
+  background-color: #1d4ed8;
+}
+
+.bk-btn-success {
+  background-color: #059669;
+  border: 1px solid #047857;
+  color: #ffffff;
+}
+
+.bk-btn-success:hover {
+  background-color: #047857;
+}
+
+.bk-btn-warning {
+  background-color: #f59e0b;
+  border: 1px solid #d97706;
+  color: #ffffff;
+}
+
+.bk-btn-danger {
+  background-color: #dc2626;
+  border: 1px solid #b91c1c;
+  color: #ffffff;
+}
+
+/* ---- Inputs (TextInput, Select, Spinner, NumericInput) ------------------- */
+
+.bk-input {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background-color: #ffffff;
+  color: #0f172a;
+  font-family: var(--nsa-font, 'Segoe UI', system-ui, sans-serif);
+  font-size: 12px;
+}
+
+.bk-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.bk-input-group label {
+  font-size: 12px;
+  color: #334155;
+}
+
+/* Spinner increment/decrement buttons */
+.bk-spin-btn {
+  color: #64748b;
+}
+
+.bk-spin-btn:hover {
+  color: #2563eb;
+}
+
+/* Checkboxes and radio buttons pick up the accent colour */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: #2563eb;
+}
+
+/* ---- Dropdown menus ------------------------------------------------------ */
+
+.bk-menu {
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  font-size: 12px;
+  color: #334155;
+}
+
+.bk-menu > :not(.bk-divider) {
+  padding: 6px 12px;
+}
+
+.bk-menu > :not(.bk-divider):hover {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+}
+
+/* ---- Tabs ---------------------------------------------------------------- */
+
+.bk-header {
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 12px;
+}
+
+.bk-tab {
+  color: #64748b;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 6px 14px;
+  background: transparent;
+}
+
+.bk-tab:hover {
+  color: #334155;
+}
+
+.bk-tab.bk-active {
+  color: #2563eb;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid #2563eb;
+}
+
+/* ---- Sliders (noUiSlider) ------------------------------------------------ */
+
+.noUi-connect {
+  background: #2563eb;
+}
+
+.noUi-handle {
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15);
+}
+
+/* ---- Misc ---------------------------------------------------------------- */
+
+/* Divider lines used by some widgets */
+.bk-divider {
+  background-color: #e2e8f0;
+}

@@ -12,6 +12,58 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const DEFAULT_BACKGROUND_COLOR = '#ffffff';
     let lastLoggedStatusSignature = null;
 
+    // --- Loading elapsed timer -------------------------------------------
+    // The server does its streaming work inside a single Bokeh document
+    // callback, so anything it pushes mid-load is not flushed until that
+    // callback returns. A server-driven "loading" indicator is therefore
+    // invisible for exactly as long as it would be useful. The client already
+    // knows when it dispatched a range change, so the elapsed time is measured
+    // here instead.
+    //
+    // The ticker writes straight to the DOM rather than to the Bokeh Div
+    // model: assigning to a model property syncs back over the websocket, and
+    // ticking a model four times a second while the server is already
+    // struggling is the one thing this must not do.
+    const LOADING_TICK_MS = 100;
+    const LOADING_SLOW_SECONDS = 5;
+    let loadingStartedAt = null;
+    let loadingTimerId = null;
+
+    function paintElapsed() {
+        if (loadingStartedAt === null) return;
+        const seconds = (Date.now() - loadingStartedAt) / 1000;
+        const text = seconds < 10 ? `${seconds.toFixed(1)} s` : `${Math.round(seconds)} s`;
+        const nodes = document.querySelectorAll('[data-nsa-elapsed]');
+        for (const node of nodes) {
+            node.textContent = ` ${text}`;
+            // Colour shift is the "is it stuck?" cue, without a second widget.
+            node.style.color = seconds >= LOADING_SLOW_SECONDS ? '#b91c1c' : '#9a3412';
+        }
+    }
+
+    function syncLoadingTimer(isLoading) {
+        if (isLoading) {
+            if (loadingStartedAt === null) {
+                loadingStartedAt = Date.now();
+            }
+            if (loadingTimerId === null) {
+                loadingTimerId = window.setInterval(paintElapsed, LOADING_TICK_MS);
+            }
+            return;
+        }
+        loadingStartedAt = null;
+        if (loadingTimerId !== null) {
+            window.clearInterval(loadingTimerId);
+            loadingTimerId = null;
+        }
+    }
+
+    function elapsedLabel() {
+        if (loadingStartedAt === null) return '0.0 s';
+        const seconds = (Date.now() - loadingStartedAt) / 1000;
+        return seconds < 10 ? `${seconds.toFixed(1)} s` : `${Math.round(seconds)} s`;
+    }
+
     function escapeInlineText(value) {
         return String(value ?? '')
             .replace(/&/g, '&amp;')
@@ -26,6 +78,41 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (value === 'overview') return 'Overview';
         if (value === 'none') return 'None';
         return 'Unknown';
+    }
+
+    function formatThresholdLabel(seconds) {
+        const numericSeconds = Number(seconds);
+        if (!Number.isFinite(numericSeconds) || numericSeconds <= 0) {
+            return null;
+        }
+
+        const minutes = numericSeconds / 60;
+        if (!Number.isFinite(minutes) || minutes <= 0) {
+            return null;
+        }
+
+        if (minutes >= 60) {
+            const hours = minutes / 60;
+            const roundedHours = Math.round(hours);
+            if (Math.abs(hours - roundedHours) < 0.01) {
+                return `${roundedHours} h`;
+            }
+            return `${hours.toFixed(1)} h`;
+        }
+
+        const roundedMinutes = Math.round(minutes);
+        if (Math.abs(minutes - roundedMinutes) < 0.01) {
+            return `${roundedMinutes} min`;
+        }
+        return `${minutes.toFixed(1)} min`;
+    }
+
+    function resolveLogThresholdLabel(models, viewState) {
+        const resolution = app.features?.view?.resolution;
+        const thresholdSeconds = resolution?.resolveLogThresholdSeconds
+            ? resolution.resolveLogThresholdSeconds(models || {}, viewState || {})
+            : null;
+        return formatThresholdLabel(thresholdSeconds);
     }
 
     function extractChartNameFromCheckbox(checkbox) {
@@ -84,6 +171,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         return derivedMap;
+    }
+
+    function resolveAudioAlignment(models, positionId) {
+        const data = models?.audio_availability_source?.data;
+        const positions = Array.isArray(data?.position_id) ? data.position_id : [];
+        const index = positions.indexOf(positionId);
+        if (index < 0) return null;
+        const read = field => Array.isArray(data?.[field]) ? data[field][index] : null;
+        return {
+            source: read('anchor_source'),
+            confidence: read('anchor_confidence'),
+            warning: read('anchor_warning'),
+            correlationOffsetSec: Number(read('correlation_offset_sec')),
+            correlationScore: Number(read('correlation_score'))
+        };
     }
 
     function syncPlotVisibilityMenu(models, chartVisibility) {
@@ -175,11 +277,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return firstVisible || availablePositions[0] || null;
     }
 
-    function buildStatusSummary(positionId, details, viewState, displayTitles) {
+    function buildStatusSummary(positionId, details, viewState, displayTitles, models) {
         const spec = details?.spec || details?.spectrogram || null;
         const line = details?.line || null;
         const primary = spec || line || null;
         const isLoading = Boolean(spec?.isLoading) || Boolean(line?.isLoading);
+        const requiresZoom = Boolean(spec?.requiresZoom) || Boolean(line?.requiresZoom);
+        const thresholdLabel = resolveLogThresholdLabel(models, viewState);
         const selectedParameter = viewState.selectedParameter || '--';
         const displayedParameter = spec?.displayedParameter || primary?.displayedParameter || selectedParameter;
         const requestedMode = titleCaseMode(viewState.globalViewType);
@@ -199,13 +303,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             statusLabel,
             parameterLabel,
             isLoading,
+            requiresZoom,
+            thresholdLabel,
             signature: [
                 positionId || 'none',
                 requestedMode,
                 displayedMode,
                 statusLabel,
                 parameterLabel,
-                isLoading ? 'loading' : 'steady'
+                isLoading ? 'loading' : (requiresZoom ? 'zoom' : 'steady'),
+                thresholdLabel || ''
             ].join('|')
         };
     }
@@ -255,7 +362,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             statusPosition,
             statusPosition ? displayDetailsByPosition?.[statusPosition] : null,
             viewState,
-            displayTitles
+            displayTitles,
+            models
         );
 
         if (statusSummary.signature && statusSummary.signature !== lastLoggedStatusSignature) {
@@ -276,9 +384,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             } else if (statusSummary.requestedMode !== statusSummary.displayedMode) {
                 displayText = `${statusSummary.displayedMode} shown`;
             }
+            syncLoadingTimer(statusSummary.isLoading);
             const suffix = statusSummary.isLoading
-                ? ` <span style='color:#9a3412;'>· Loading log</span>`
-                : '';
+                ? ` <span style='color:#9a3412;'>· Loading log<span data-nsa-elapsed style='color:#9a3412;'> ${escapeInlineText(elapsedLabel())}</span></span>`
+                : (statusSummary.requiresZoom
+                    ? ` <span style='color:#2563eb;'>· Zoom &lt;= ${escapeInlineText(statusSummary.thresholdLabel || 'limit')} for log</span>`
+                    : '');
             models.viewStatusChip.text = `<span style='font-size:11px;color:#0f172a;'>${escapeInlineText(displayText)}${suffix}</span>`;
         }
         if (models.focusStatusChip) {
@@ -348,11 +459,25 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         const startMonth = String(fileStartDate.getMonth() + 1).padStart(2, '0');
                         const startYear = String(fileStartDate.getFullYear()).slice(-2);
                         const startTimeFormatted = `${startHours}:${startMinutes}:${startSeconds} ${startDay}/${startMonth}/${startYear}`;
+                        const alignment = resolveAudioAlignment(models, activePositionId);
+                        let alignmentText = '';
+                        if (alignment?.source) {
+                            const sourceLabel = escapeInlineText(
+                                String(alignment.source).replace(/_/g, ' ').replace(/\+/g, ' + ')
+                            );
+                            const confidenceLabel = alignment.confidence
+                                ? `, ${escapeInlineText(alignment.confidence)}`
+                                : '';
+                            alignmentText = ` | Anchor: ${sourceLabel}${confidenceLabel}`;
+                            if (Number.isFinite(alignment.correlationScore)) {
+                                alignmentText += `, r=${alignment.correlationScore.toFixed(3)}`;
+                            }
+                        }
 
                         fileInfoText = `<span style='font-size: 10px; color: #555;'>` +
                             `<b>${fileName}</b> | ` +
                             `${positionFormatted} | ` +
-                            `Start: ${startTimeFormatted}` +
+                            `Start: ${startTimeFormatted}${alignmentText}` +
                             `</span>`;
                     }
                     if (globalAudioControls.audio_file_info_display.text !== fileInfoText) {

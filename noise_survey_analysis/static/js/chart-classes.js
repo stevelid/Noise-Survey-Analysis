@@ -29,6 +29,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const UNSELECTED_MARKER_LINE_WIDTH = 2;
     const SELECTED_MARKER_LINE_ALPHA = 0.95;
     const UNSELECTED_MARKER_LINE_ALPHA = 0.7;
+    const DEFAULT_CLASSIFICATION_FILL_ALPHA = 0.28;
+    const SELECTED_CLASSIFICATION_FILL_ALPHA = 0.46;
+    const OFF_CLASSIFICATION_FILL_ALPHA = 0.08;
+    const CLASSIFICATION_LINE_ALPHA = 0.75;
+    const OFF_CLASSIFICATION_LINE_ALPHA = 0.22;
+    const SELECTED_CLASSIFICATION_LINE_ALPHA = 1.0;
+    const SELECTED_CLASSIFICATION_LINE_WIDTH = 3;
+    const DEFAULT_CLASSIFICATION_LINE_WIDTH = 1;
+    // High-contrast outline so the selection stays obvious across all three
+    // score shades (light/base/dark) of any category hue.
+    const SELECTED_CLASSIFICATION_LINE_COLOR = '#ffffff';
+    const OFF_CLASSIFICATION_COLOR = '#64748b';
+    const FALLBACK_CLASSIFICATION_COLOR = '#2e86ab';
+    // Fraction of a lane's height left as padding above each box.
+    const CLASSIFICATION_LANE_TOP_PADDING_RATIO = 0.12;
+    const CLASSIFICATION_LANE_LABEL_PREFIX = '● ';
+    const CLASSIFICATION_LANE_LABEL_FALLBACK_COLOR = '#1f2937';
 
     function normalizeMarkerColor(color) {
         if (typeof color === 'string') {
@@ -67,6 +84,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.positionId = positionId; // Store the position ID
             this.regionOverlay = null;
             this.markerOverlay = null; // Glyph-based marker overlay
+            this.classificationOverlay = null;
+        }
+
+        /**
+         * Whether this chart type should draw the right-hand classification
+         * lane labels ("● Motorcycle" etc.). Off by default — only the time
+         * series carries them, so they are not duplicated on the spectrogram
+         * (see classification_review_ui_plan.md, Phase 6).
+         */
+        get supportsClassificationLaneLabels() {
+            return false;
         }
 
         setVisible(isVisible) {
@@ -450,6 +478,365 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return data;
         }
 
+        syncClassifications(classificationList, areClassificationsVisible, selectedId) {
+            const overlay = this._ensureClassificationOverlay();
+            if (!overlay) {
+                return;
+            }
+            const { source, renderer } = overlay;
+            const nextData = this._buildClassificationOverlayData(classificationList, selectedId);
+
+            source.__suppressSelectionDispatch = true;
+            source.data = nextData;
+            if (source.change && typeof source.change.emit === 'function') {
+                source.change.emit();
+            }
+            source.__suppressSelectionDispatch = false;
+
+            renderer.visible = areClassificationsVisible && nextData.left.length > 0;
+
+            // Sync lane labels
+            this._syncClassificationLaneLabels(nextData, areClassificationsVisible);
+
+            if (typeof this.model?.request_render === 'function') {
+                this.model.request_render();
+            } else if (this.model?.change?.emit) {
+                this.model.change.emit();
+            }
+        }
+
+        _ensureClassificationOverlay() {
+            if (this.classificationOverlay?.source && this.classificationOverlay?.renderer) {
+                return this.classificationOverlay;
+            }
+            if (!window.Bokeh || !window.Bokeh.Models) {
+                return null;
+            }
+
+            const ColumnDataSource = Bokeh.Models.get('ColumnDataSource');
+            const Quad = Bokeh.Models.get('Quad');
+            const GlyphRenderer = Bokeh.Models.get('GlyphRenderer');
+            const CustomJS = Bokeh.Models.get('CustomJS');
+            const HoverTool = Bokeh.Models.get('HoverTool');
+            const LabelSet = Bokeh.Models.get('LabelSet');
+
+            if (!ColumnDataSource || !Quad || !GlyphRenderer) {
+                console.error('[Chart._ensureClassificationOverlay] Required Bokeh models are not available.');
+                return null;
+            }
+
+            // This overlay is entirely client-side (a visual layer plus a JS-only
+            // Redux dispatch on tap — no server round-trip needed), so every model
+            // below is built via `new Model(...)` rather than `doc.create_model`.
+            // `doc.create_model` does NOT run the real Bokeh.js constructor and
+            // does not correctly initialise default sub-models — in particular
+            // `source.selected` comes back without a working `js_on_change`
+            // (confirmed: this was the only place in the file relying on
+            // `.selected.js_on_change()` on a `doc.create_model`-built source,
+            // which is why the bug wasn't caught by the existing marker/region
+            // overlay code that uses the same conditional pattern for other
+            // properties). `add_glyph`/`add_tools`/`add_layout` already register
+            // whatever model instance they're given with the chart correctly,
+            // regardless of how it was constructed.
+            const initialData = this._emptyClassificationOverlayData();
+            const source = new ColumnDataSource({
+                data: initialData,
+                name: `classification_overlay_source_${this.name}`,
+            });
+
+            // This Selection exists only in the browser. Prevent Bokeh server
+            // patches from referring to a child model the Python document does
+            // not know about; JS callbacks still run when syncable is false.
+            if (source.selected) {
+                source.selected.syncable = false;
+            }
+
+            const glyphProps = {
+                left: { field: 'left' },
+                right: { field: 'right' },
+                bottom: { field: 'bottom' },
+                top: { field: 'top' },
+                fill_color: { field: 'fill_color' },
+                fill_alpha: { field: 'fill_alpha' },
+                line_color: { field: 'line_color' },
+                line_alpha: { field: 'line_alpha' },
+                line_width: { field: 'line_width' }
+            };
+            const glyph = new Quad(glyphProps);
+            const rendererProps = {
+                data_source: source,
+                glyph,
+                level: 'overlay',
+                visible: false,
+                name: `classification_overlay_renderer_${this.name}`
+            };
+            const renderer = new GlyphRenderer(rendererProps);
+
+            let rendererAdded = false;
+            if (typeof this.model?.add_glyph === 'function') {
+                try {
+                    const addedRenderer = this.model.add_glyph(glyph, source);
+                    if (addedRenderer) {
+                        this.classificationOverlay = { source, renderer: addedRenderer };
+                        rendererAdded = true;
+                    }
+                } catch (error) {
+                    console.warn('[Chart._ensureClassificationOverlay] add_glyph failed, falling back.', error);
+                }
+            }
+            if (!rendererAdded) {
+                if (typeof this.model?.add_renderers === 'function') {
+                    this.model.add_renderers(renderer);
+                } else if (Array.isArray(this.model?.renderers)) {
+                    this.model.renderers.push(renderer);
+                }
+                this.classificationOverlay = { source, renderer };
+            }
+
+            // The client-created Selection model does not expose Bokeh's
+            // CustomJS `js_on_change` helper. Connect directly to its JS
+            // signal so programmatic/table selections can still update the
+            // Redux selection state. Plot clicks are handled by the shared
+            // tap handler, which performs the same quad hit-test before
+            // deciding whether a click should seek audio.
+            if (source.selected && source.selected.change && typeof source.selected.change.connect === 'function') {
+                source.selected.change.connect(() => {
+                    if (source.__suppressSelectionDispatch) return;
+                    const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+                    if (!indices.length) return;
+                    const data = source.data || {};
+                    const ids = Array.isArray(data.classification_id) ? data.classification_id : [];
+                    const selectedId = Number(ids[indices[0]]);
+                    if (!Number.isFinite(selectedId)) return;
+
+                    const noiseSurveyApp = window.NoiseSurveyApp;
+                    const selectIntent = noiseSurveyApp?.features?.classifications?.thunks?.selectClassificationIntent;
+                    if (typeof selectIntent === 'function' && typeof noiseSurveyApp?.store?.dispatch === 'function') {
+                        noiseSurveyApp.store.dispatch(selectIntent(selectedId));
+                    }
+                });
+            } else {
+                console.warn('[Chart._ensureClassificationOverlay] source.selected.change.connect '
+                    + 'unavailable — chart-click selection will not work for this chart.');
+            }
+
+            // Restricted HoverTool
+            if (HoverTool && this.model) {
+                const hoverProps = {
+                    renderers: [this.classificationOverlay.renderer],
+                    tooltips: [
+                        ['Category', '@label'],
+                        ['Start', '@start_str'],
+                        ['End', '@end_str'],
+                        ['Score', '@score_str'],
+                        ['Role', '@role_str'],
+                        ['State', '@state'],
+                        ['Description', '@description']
+                    ],
+                    attachment: 'above',
+                    show_arrow: false,
+                    name: `classification_hover_tool_${this.name}`
+                };
+                const hoverTool = new HoverTool(hoverProps);
+                if (typeof this.model.add_tools === 'function') {
+                    this.model.add_tools(hoverTool);
+                }
+                this.classificationHoverTool = hoverTool;
+            }
+
+            // Right-hand lane labels model
+            if (LabelSet && this.model && this.supportsClassificationLaneLabels) {
+                const labelSource = new ColumnDataSource({
+                    data: { x: [], y: [], text: [], text_color: [] },
+                    name: `classification_lane_labels_source_${this.name}`,
+                });
+
+                const labelSetProps = {
+                    x: 'x',
+                    y: 'y',
+                    text: 'text',
+                    text_color: 'text_color',
+                    text_font_size: '11px',
+                    text_font_style: 'bold',
+                    text_align: 'right',
+                    text_baseline: 'middle',
+                    x_offset: -8,
+                    source: labelSource,
+                    level: 'annotation',
+                    name: `classification_lane_labels_${this.name}`
+                };
+                const labelSet = new LabelSet(labelSetProps);
+
+                if (typeof this.model.add_layout === 'function') {
+                    this.model.add_layout(labelSet);
+                }
+                this.classificationLabelOverlay = { source: labelSource, labelSet };
+
+                // Re-align labels on x_range changes. Not every chart's x_range is
+                // a full Bokeh model with js_on_change (shared/linked ranges can
+                // arrive as plainer objects), so check before wiring the callback —
+                // without it the labels simply don't re-pin on pan/zoom, which is
+                // far better than throwing and killing the whole render pass.
+                const xRange = this.model.x_range;
+                if (xRange && CustomJS && typeof xRange.js_on_change === 'function') {
+                    const rangeCallback = new CustomJS({
+                        args: { labelSource, x_range: xRange },
+                        code: `
+                            const end = x_range?.end;
+                            if (!Number.isFinite(end) || !labelSource?.data?.x) return;
+                            const len = labelSource.data.x.length;
+                            if (!len) return;
+                            labelSource.data.x = Array(len).fill(end);
+                            if (labelSource.change && typeof labelSource.change.emit === 'function') {
+                                labelSource.change.emit();
+                            }
+                        `
+                    });
+                    xRange.js_on_change('end', rangeCallback);
+                } else if (xRange && CustomJS) {
+                    console.warn('[Chart._ensureClassificationOverlay] x_range has no '
+                        + 'js_on_change — classification lane labels will not re-align on pan/zoom.');
+                }
+            }
+
+            return this.classificationOverlay;
+        }
+
+        _emptyClassificationOverlayData() {
+            return {
+                left: [],
+                right: [],
+                bottom: [],
+                top: [],
+                fill_color: [],
+                fill_alpha: [],
+                line_color: [],
+                line_alpha: [],
+                line_width: [],
+                classification_id: [],
+                source_id: [],
+                label: [],
+                start_str: [],
+                end_str: [],
+                score_str: [],
+                role_str: [],
+                state: [],
+                description: []
+            };
+        }
+
+        _buildClassificationOverlayData(classificationList, selectedId) {
+            const data = this._emptyClassificationOverlayData();
+            const entries = (Array.isArray(classificationList) ? classificationList : [])
+                .filter(entry => entry && entry.positionId === this.positionId);
+            if (!entries.length) {
+                return data;
+            }
+
+            const yRange = this.model?.y_range;
+            const yStart = Number(yRange?.start);
+            const yEnd = Number(yRange?.end);
+            const hasValidRange = Number.isFinite(yStart) && Number.isFinite(yEnd) && yStart !== yEnd;
+            const rangeBottom = hasValidRange ? Math.min(yStart, yEnd) : 0;
+            const rangeTop = hasValidRange ? Math.max(yStart, yEnd) : 1;
+            const rangeHeight = Math.max(rangeTop - rangeBottom, 1);
+            const bandBottom = rangeBottom + rangeHeight * 0.02;
+            const bandTop = rangeBottom + rangeHeight * 0.26;
+            const sources = Array.from(new Set(entries.map(entry => entry.sourceId || entry.sourceLabel || 'source'))).sort();
+            const laneHeight = (bandTop - bandBottom) / Math.max(sources.length, 1);
+
+            const utils = window.NoiseSurveyApp?.features?.classifications?.utils;
+            const getShadedColorForScore = utils?.getShadedColorForScore;
+
+            entries.forEach(entry => {
+                const start = Number(entry.start);
+                const end = Number(entry.end);
+                if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
+                    return;
+                }
+                const sourceKey = entry.sourceId || entry.sourceLabel || 'source';
+                const laneIndex = Math.max(0, sources.indexOf(sourceKey));
+                const lanePadding = laneHeight * CLASSIFICATION_LANE_TOP_PADDING_RATIO;
+                const laneBottom = bandBottom + laneIndex * laneHeight + lanePadding;
+                const laneTop = bandBottom + (laneIndex + 1) * laneHeight - lanePadding;
+                const isSelected = Number.isFinite(selectedId) && entry.id === selectedId;
+                const isOff = String(entry.state || '').toLowerCase() === 'off';
+
+                const baseColor = entry.color || FALLBACK_CLASSIFICATION_COLOR;
+                const color = isOff
+                    ? OFF_CLASSIFICATION_COLOR
+                    : (typeof getShadedColorForScore === 'function'
+                        ? getShadedColorForScore(baseColor, entry.confidence)
+                        : baseColor);
+
+                data.left.push(start);
+                data.right.push(end);
+                data.bottom.push(laneBottom);
+                data.top.push(laneTop);
+                data.fill_color.push(color);
+                data.fill_alpha.push(isSelected ? SELECTED_CLASSIFICATION_FILL_ALPHA : (isOff ? OFF_CLASSIFICATION_FILL_ALPHA : DEFAULT_CLASSIFICATION_FILL_ALPHA));
+                data.line_color.push(isSelected ? SELECTED_CLASSIFICATION_LINE_COLOR : color);
+                data.line_alpha.push(isOff
+                    ? OFF_CLASSIFICATION_LINE_ALPHA
+                    : (isSelected ? SELECTED_CLASSIFICATION_LINE_ALPHA : CLASSIFICATION_LINE_ALPHA));
+                data.line_width.push(isSelected ? SELECTED_CLASSIFICATION_LINE_WIDTH : DEFAULT_CLASSIFICATION_LINE_WIDTH);
+                data.classification_id.push(entry.id);
+                data.source_id.push(sourceKey);
+                data.label.push(entry.sourceLabel || sourceKey);
+                data.start_str.push(new Date(start).toLocaleTimeString());
+                data.end_str.push(new Date(end).toLocaleTimeString());
+                data.score_str.push(Number.isFinite(entry.confidence) ? `${Math.round(entry.confidence * 100)}%` : 'N/A');
+                data.role_str.push(entry.role === 'supporting' ? 'Supporting' : 'Direct');
+                data.state.push(entry.state || 'on');
+                data.description.push(entry.description || '');
+            });
+
+            // Save computed lane info for right-hand labels
+            this._lastComputedLaneInfo = {
+                sources,
+                bandBottom,
+                laneHeight,
+                xMax: Number(this.model?.x_range?.end) || 0
+            };
+
+            return data;
+        }
+
+        _syncClassificationLaneLabels(overlayData, areClassificationsVisible) {
+            if (!this.classificationLabelOverlay?.source || !this._lastComputedLaneInfo) {
+                return;
+            }
+            const { source } = this.classificationLabelOverlay;
+            if (!areClassificationsVisible || !overlayData || !overlayData.left.length) {
+                source.data = { x: [], y: [], text: [], text_color: [] };
+                if (source.change?.emit) source.change.emit();
+                return;
+            }
+
+            const { sources, bandBottom, laneHeight } = this._lastComputedLaneInfo;
+            const xMax = Number(this.model?.x_range?.end) || 0;
+            const x = [];
+            const y = [];
+            const text = [];
+            const text_color = [];
+
+            // Map each unique source to label text and color
+            sources.forEach(sourceKey => {
+                const sampleIndex = overlayData.source_id.indexOf(sourceKey);
+                if (sampleIndex >= 0) {
+                    const laneIndex = sources.indexOf(sourceKey);
+                    const laneMidpoint = bandBottom + laneIndex * laneHeight + laneHeight * 0.5;
+                    x.push(xMax);
+                    y.push(laneMidpoint);
+                    text.push(`${CLASSIFICATION_LANE_LABEL_PREFIX}${overlayData.label[sampleIndex]}`);
+                    text_color.push(overlayData.fill_color[sampleIndex] || CLASSIFICATION_LANE_LABEL_FALLBACK_COLOR);
+                }
+            });
+
+            source.data = { x, y, text, text_color };
+            if (source.change?.emit) source.change.emit();
+        }
+
         update() {
             throw new Error("Update method must be implemented by subclass.");
         }
@@ -466,6 +853,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.lastDisplayDetails = { reason: '' };
             this.displayName = this.positionId;
             this._lastDataHash = null; // For change detection
+        }
+
+        /** Lane labels live on the time series only — see base class. */
+        get supportsClassificationLaneLabels() {
+            return true;
         }
 
         _computeDataHash(data) {

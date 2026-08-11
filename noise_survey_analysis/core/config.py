@@ -183,10 +183,39 @@ LOG_VIEW_BUFFER_FRACTION_DEFAULT = 0.5
 LOG_VIEW_BUFFER_FRACTION_HIGH_RATE = 0.1  # 10% buffer for data faster than 1s
 LOG_VIEW_HIGH_RATE_THRESHOLD_SECONDS = 1.0  # Sample periods <= this are "high rate"
 
-# Default base directory for job files
+# --- Default base directory for job files ---
+# Venta jobs always live on the Venta shared drive, which Google Drive syncs to
+# every machine, normally as G:. The drive letter is the only thing that varies,
+# so try the usual one first and then look for the same folder on any other
+# drive before giving up. NOISE_SURVEY_BASE_JOB_DIR overrides all of this.
+VENTA_JOBS_SUBPATH = os.path.join('Shared drives', 'Venta', 'Jobs')
+VENTA_JOBS_DIR = os.path.join('G:' + os.sep, VENTA_JOBS_SUBPATH)
+
+
+def _find_venta_jobs_dir():
+    """Locate the Venta Jobs folder, falling back to the expected G: path."""
+    if os.path.isdir(VENTA_JOBS_DIR):
+        return VENTA_JOBS_DIR
+
+    for letter in 'GHIJKLMNOPQRSTUVWXYZDE':
+        candidate = os.path.join(letter + ':' + os.sep, VENTA_JOBS_SUBPATH)
+        if os.path.isdir(candidate):
+            logger.info("Venta Jobs folder found on %s:", letter)
+            return candidate
+
+    # Nothing mounted. Return the expected path anyway rather than silently
+    # dropping the user somewhere unrelated - the missing drive is the problem
+    # worth showing them.
+    logger.warning(
+        "Venta Jobs folder not found. Is Google Drive running? Expected: %s",
+        VENTA_JOBS_DIR,
+    )
+    return VENTA_JOBS_DIR
+
+
 DEFAULT_BASE_JOB_DIR = _get_env_text(
     'NOISE_SURVEY_BASE_JOB_DIR',
-    os.path.expanduser('~'),
+    _find_venta_jobs_dir(),
 )
 
 # --- General Application Settings ---
@@ -212,6 +241,39 @@ AUDIO_ANCHORING_SETTINGS = {
     'warning_match_hours': 2,
     # Tolerance for duration vs. segment length comparisons (seconds).
     'duration_tolerance_seconds': 300,
+    # Verify/refine proposed anchors by comparing short audio RMS envelopes
+    # with the logger broadband series.
+    'correlation_enabled': True,
+    # Keep the search bounded, but allow for meter/audio clock errors a little
+    # beyond five minutes. Job 6461 had a genuine +313 s offset which the old
+    # +/-300 s limit missed by 13 seconds.
+    'correlation_search_seconds': 600,
+    'correlation_window_seconds': 300,
+    'correlation_max_windows': 3,
+    'correlation_min_score': 0.80,
+    'correlation_max_lag_spread_seconds': 2,
+    # Sub-second adjustments are more likely to be bin-edge effects than a
+    # real clock error. Keep them as QA metadata without shifting playback.
+    'correlation_min_apply_seconds': 2,
+}
+
+# Automatic clock alignment between different monitoring positions. This is
+# deliberately conservative: nearby meters can still record substantially
+# different sound, so offsets are only applied when several independent
+# high-information windows agree closely.
+METER_ALIGNMENT_SETTINGS = {
+    'enabled': True,
+    'search_seconds': 300,
+    'window_seconds': 600,
+    'max_windows': 8,
+    'candidate_step_seconds': 300,
+    'min_overlap_seconds': 1800,
+    'min_window_score': 0.55,
+    'min_window_margin': 0.03,
+    'min_accepted_windows': 3,
+    'min_median_score': 0.70,
+    'max_lag_spread_seconds': 2.0,
+    'max_drift_seconds': 2.0,
 }
 
 # --- New Data Source Configuration ---

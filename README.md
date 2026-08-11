@@ -1,4 +1,6 @@
 # TL;DR
+See `QUICKSTART.md` for the fast path: start the server and load a job's config file.
+
 bokeh serve noise_survey_analysis --show
 bokeh serve noise_survey_analysis --show --args --config /path/to/your/workspace.json
 python -m noise_survey_analysis.main --generate-static /path/to/your/config.json
@@ -26,6 +28,8 @@ This tool provides a powerful, interactive dashboard for analyzing noise survey 
     *   Clicking on a chart sets a persistent cursor and updates a detailed "Frequency Slice" bar chart.
 *   **Synchronized Audio Playback (Live Server Only):**
     *   Listen to `.wav` audio recordings synchronized with the visualization timeline.
+    *   Audio start precedence is: parser-produced `*_audio_index.json` wave marker plus embedded WAV/BWF timestamp, embedded timestamp alone, then filesystem modified-time minus duration as a last resort.
+    *   When high-resolution logger data is available, short bounded RMS-envelope correlation windows verify the proposed anchor and only apply a shift when multiple strong, unique matches agree. The playback panel shows anchor provenance and confidence.
     *   Playback seeks automatically when you click on the charts.
     *   Clear visual indicators show which position is currently playing.
     *   Controls for play/pause, playback speed, and a +20dB volume boost for quiet recordings.
@@ -197,6 +201,53 @@ Tip: Markers and regions are stored per position, so you can maintain independen
 Use the **Menu ▸ Export Annotations (CSV)** command to download a spreadsheet-friendly file containing every marker and region in the current session. The export includes the columns `type`, `id`, `positionId`, `start_utc`, `end_utc`, `note`, and `color`. Marker rows leave `end_utc` empty and record the marker timestamp in `start_utc`. All timestamps are written in UTC using the Excel-ready format `YYYY-MM-DD HH:mm:ss.sss`.
 
 Choose **Menu ▸ Import Annotations (CSV)** to restore annotations captured in the same format. The importer treats all timestamps as UTC milliseconds, rebuilds region areas, and preserves notes and colours before replacing the in-memory marker and region lists. This keeps annotations portable between workspaces and makes it easy to share review notes with collaborators.
+
+### Classification annotation files
+
+Use **Menu ▸ Import Classifications (CSV/JSON)** or the **Classifications ▸ Import** button to load intervals produced by an external audio classifier. These intervals are kept in a separate layer from manual markers and regions. Importing a classification file replaces the current classification layer, but does not replace existing markers or regions.
+
+CSV files must contain one row per classified interval. Required columns are `position_id`, `source_id`, `start`, and `end`. The parser also accepts common aliases such as `position`, `source`, `start_utc`, `end_utc`, `start_ms`, and `end_ms`.
+
+Recommended CSV shape:
+
+```csv
+position_id,source_id,source_label,start,end,state,confidence,description,audio_file,color
+P1,extract_fan,Extract fan,2026-06-20 13:05:10,2026-06-20 13:22:40,on,0.91,steady tonal fan,audio_001.wav,#e4572e
+P2,music,Music,2026-06-20T21:15:00Z,2026-06-20T21:28:00Z,uncertain,0.62,possible amplified music,audio_009.wav,#7a5c99
+```
+
+Field notes:
+
+* `position_id` must match the dashboard measurement position ID.
+* `source_id` is the stable machine-readable source key, for example `extract_fan`.
+* `source_label` is the display label shown in the panel.
+* `start` and `end` may be epoch milliseconds or ISO-like date/time strings. Date/time strings without a timezone are treated as UTC.
+* `state` may be `on`, `off`, or `uncertain`; blank values default to `on`.
+* `confidence` may be `0-1` or `0-100`; both are normalised internally.
+* `description`, `audio_file`, and `color` are optional.
+
+JSON files may either be a bare array of classification objects or an object containing `classifications`, `audio_classifications`, or typed `annotations`:
+
+```json
+{
+  "classifications": [
+    {
+      "positionId": "P1",
+      "sourceId": "extract_fan",
+      "sourceLabel": "Extract fan",
+      "start": "2026-06-20T13:05:10Z",
+      "end": "2026-06-20T13:22:40Z",
+      "state": "on",
+      "confidence": 0.91,
+      "description": "steady tonal fan",
+      "audioFile": "audio_001.wav",
+      "color": "#e4572e"
+    }
+  ]
+}
+```
+
+Imported classification intervals appear as low-height coloured lanes on the charts for their own position. Select an interval in the Classifications tab and use **Elevate to Region** to convert it into a normal region for metrics, notes, and reporting.
 
 ### Workspace saves
 

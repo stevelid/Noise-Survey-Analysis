@@ -63,6 +63,10 @@ describe('Annotation CSV helpers', () => {
         const headerCells = lines[0].split(',');
         expect(headerCells.slice(0, helpers.CSV_HEADER.length)).toEqual(helpers.CSV_HEADER);
         expect(headerCells).toEqual(expect.arrayContaining(helpers.METRIC_COLUMNS));
+        expect(headerCells).toEqual(expect.arrayContaining([
+            'metrics_data_resolution',
+            'metrics_spectrum_source'
+        ]));
         expect(headerCells).toEqual(expect.arrayContaining(['band_63', 'band_125']));
         expect(lines).toHaveLength(3);
         expect(lines[1]).toContain('marker');
@@ -74,6 +78,7 @@ describe('Annotation CSV helpers', () => {
         expect(lines[2]).toContain('55.123');
         expect(lines[2]).toContain('71.6');
         expect(lines[2]).toContain('true');
+        expect(lines[2]).toMatch(/,log,/);
 
         const { markers, regions } = helpers.parseAnnotationsCsv(csv);
         expect(markers).toHaveLength(1);

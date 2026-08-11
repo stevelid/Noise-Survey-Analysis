@@ -132,3 +132,79 @@ def load_config_and_prepare_sources(config_path='config.json'):
     source_configurations = list(grouped_sources.values())
 
     return output_filename, source_configurations, job_number
+
+
+def load_config_extras(config_path='config.json'):
+    """Read the durable setup blocks from a config file.
+
+    These describe how to interpret the survey data rather than what was on
+    screen: per-position clock and audio offsets, and the view to open at.
+    Offsets in particular are facts about the recording -- if a meter's clock
+    ran 313 s fast that is true every time the job is opened -- so they belong
+    beside the source list rather than in a session workspace.
+
+    Kept separate from :func:`load_config_and_prepare_sources` so its 3-tuple
+    contract (relied on by the static exporter and its tests) is unchanged.
+
+    Returns:
+        dict: ``{'positions': {name: {chart_offset_seconds, audio_offset_seconds}},
+        'default_view': {...}}``. Always returns the keys, empty when absent.
+    """
+    empty = {'positions': {}, 'default_view': {}}
+
+    current_file = Path(__file__)
+    project_root = current_file.parent.parent.parent
+    config_full_path = Path(config_path) if os.path.isabs(config_path) else project_root / config_path
+
+    try:
+        with open(config_full_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        logger.debug("No config extras available from %s: %s", config_full_path, exc)
+        return empty
+    if not isinstance(config, dict):
+        return empty
+
+    positions = {}
+    raw_positions = config.get('positions')
+    if isinstance(raw_positions, dict):
+        for name, entry in raw_positions.items():
+            if not isinstance(entry, dict):
+                continue
+            parsed = {}
+            for key in ('chart_offset_seconds', 'audio_offset_seconds'):
+                value = entry.get(key)
+                try:
+                    if value is not None:
+                        parsed[key] = float(value)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Ignoring non-numeric %s for position '%s' in %s.",
+                        key, name, config_full_path,
+                    )
+            if parsed:
+                positions[str(name)] = parsed
+
+    default_view = {}
+    raw_view = config.get('default_view')
+    if isinstance(raw_view, dict):
+        # Same vocabulary as the URL deep-link params, so both go through the
+        # one validation path in control.validation with the URL winning.
+        for key in ('start', 'end'):
+            value = raw_view.get(key)
+            try:
+                if value is not None:
+                    default_view[key] = float(value)
+            except (TypeError, ValueError):
+                logger.warning("Ignoring non-numeric default_view.%s in %s.", key, config_full_path)
+        for key in ('view', 'param'):
+            value = raw_view.get(key)
+            if isinstance(value, str) and value.strip():
+                default_view[key] = value.strip()
+
+    if positions or default_view:
+        logger.info(
+            "Loaded config extras: %d position offset(s), default_view keys=%s",
+            len(positions), sorted(default_view) or 'none',
+        )
+    return {'positions': positions, 'default_view': default_view}

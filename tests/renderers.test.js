@@ -886,6 +886,27 @@ describe('NoiseSurveyApp.renderers', () => {
             const expectedHtml = `\n        <style>\n            .freq-html-table { border-collapse: collapse; width: 100%; font-size: 0.9em; table-layout: fixed; }\n            .freq-html-table th, .freq-html-table td { border: 1px solid #ddd; padding: 6px; text-align: center; white-space: nowrap; }\n            .freq-html-table th { background-color: #f2f2f2; font-weight: bold; }\n        </style>\n        <table class="freq-html-table">\n            <tr><th title="100Hz">100Hz</th><th title="200Hz">200Hz</th></tr><tr><td>10.0</td><td>30.0</td></tr></table>`;
             expect(window.NoiseSurveyApp.registry.models.freqTableDiv.text).toBe(expectedHtml);
         });
+
+        it('should replace missing frequency labels with stable band labels', () => {
+            const mockState = { interaction: { tap: { isActive: true, timestamp: 150, position: 'P1' } } };
+            const mockDataCache = {
+                activeSpectralData: {
+                    P1: {
+                        times_ms: [100, 200],
+                        frequencies_hz: [100, 200],
+                        frequency_labels: [null, ''],
+                        levels_flat_transposed: [10, 20, 30, 40],
+                        n_times: 2,
+                        n_freqs: 2
+                    }
+                }
+            };
+            window.NoiseSurveyApp.registry.models.config = {};
+            renderers.renderFrequencyTable(mockState, mockDataCache);
+            expect(window.NoiseSurveyApp.registry.models.freqTableDiv.text).toContain('<th title="Band 1">Band 1</th>');
+            expect(window.NoiseSurveyApp.registry.models.freqTableDiv.text).toContain('<th title="Band 2">Band 2</th>');
+            expect(window.NoiseSurveyApp.registry.models.freqTableDiv.text).not.toContain('null');
+        });
     });
 
     describe('renderFrequencyBar', () => {
@@ -906,8 +927,27 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(window.NoiseSurveyApp.registry.models.barSource.data.levels).toEqual([1, 2, 3]);
             expect(window.NoiseSurveyApp.registry.models.barSource.data.frequency_labels).toEqual(['A', 'B', 'C']);
             expect(window.NoiseSurveyApp.registry.models.barChart.x_range.factors).toEqual(['A', 'B', 'C']);
-            expect(window.NoiseSurveyApp.registry.models.barChart.title.text).toContain('Slice: P1 | LAeq @');
+            expect(window.NoiseSurveyApp.registry.models.barChart.title.text).toContain('Frequency Slice: P1 | LAeq @');
             expect(window.NoiseSurveyApp.registry.models.barSource.change.emit).toHaveBeenCalled();
+        });
+
+        it('should show an empty-state title without literal null values', () => {
+            const mockState = { interaction: { tap: { isActive: false } } };
+            const mockDataCache = {
+                activeFreqBarData: {
+                    levels: [],
+                    frequency_labels: [],
+                    sourceposition: '',
+                    param: null,
+                    timestamp: null,
+                    setBy: null
+                }
+            };
+
+            renderers.renderFrequencyBar(mockState, mockDataCache);
+
+            expect(window.NoiseSurveyApp.registry.models.barChart.title.text).toBe('Frequency Slice: no selection');
+            expect(window.NoiseSurveyApp.registry.models.barChart.title.text).not.toContain('null');
         });
     });
 
@@ -956,6 +996,40 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(globalControls.playback_rate_button.label).toBe('1.5x');
             expect(globalControls.volume_boost_button.active).toBe(true);
             expect(globalControls.volume_boost_button.button_type).toBe('warning');
+        });
+
+        it('shows audio anchor provenance and correlation confidence', () => {
+            window.NoiseSurveyApp.registry.models.audio_availability_source = {
+                data: {
+                    position_id: ['P1'],
+                    has_audio: [true],
+                    anchor_source: ['svl_wave_marker+embedded_wav_metadata'],
+                    anchor_confidence: ['high'],
+                    anchor_warning: [''],
+                    correlation_offset_sec: [0],
+                    correlation_score: [0.988]
+                }
+            };
+            const mockState = {
+                audio: {
+                    isPlaying: true,
+                    activePositionId: 'P1',
+                    playbackRate: 1.0,
+                    volumeBoost: false,
+                    currentFileName: 'R11.WAV',
+                    currentTime: Date.UTC(2026, 5, 24, 12, 16, 0),
+                    currentFileStartTime: Date.UTC(2026, 5, 24, 12, 15, 0)
+                },
+                view: { availablePositions: ['P1'], selectedParameter: 'LAeq' }
+            };
+            const displayDetails = { P1: { line: { reason: '' }, spectrogram: { reason: '' } } };
+
+            renderers.renderControlWidgets(mockState, displayDetails);
+
+            const text = window.NoiseSurveyApp.registry.models.globalAudioControls.audio_file_info_display.text;
+            expect(text).toContain('svl wave marker + embedded wav metadata');
+            expect(text).toContain('high');
+            expect(text).toContain('r=0.988');
         });
 
         it('shows audio paused when audio exists but is not playing', () => {

@@ -672,12 +672,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
-    /**
-     * Copies the currently selected region to all other positions.
-     * Each new region spans the same time areas and computes metrics
-     * from its own position's data.
-     */
-    function copyRegionToAllPositionsIntent() {
+    function copySelectedRegionToPositionsIntent(requestedPositionIds = null) {
         return function (dispatch, getState) {
             if (!actions || typeof getState !== 'function') return;
             const state = getState();
@@ -694,7 +689,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             const availablePositions = Array.isArray(state?.view?.availablePositions)
                 ? state.view.availablePositions : [];
-            const targets = availablePositions.filter(pid => pid !== sourceRegion.positionId);
+            const sourcePositionKey = String(sourceRegion.positionId);
+            const requestedKeys = Array.isArray(requestedPositionIds)
+                ? new Set(requestedPositionIds.map(positionId => String(positionId)))
+                : null;
+            const targets = availablePositions.filter(positionId => {
+                const positionKey = String(positionId);
+                return positionKey !== sourcePositionKey
+                    && (requestedKeys === null || requestedKeys.has(positionKey));
+            });
             if (!targets.length) return;
 
             const regions = targets.map(positionId => ({
@@ -707,6 +710,78 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             dispatch(actions.regionsAdded(regions));
             app.regions?.invalidateMetricsCache?.();
             dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
+        };
+    }
+
+    /**
+     * Copies the currently selected region to all other positions.
+     * Each new region spans the same time areas and computes metrics
+     * from its own position's data.
+     */
+    function copyRegionToAllPositionsIntent() {
+        return copySelectedRegionToPositionsIntent(null);
+    }
+
+    /** Copy the currently selected region to one validated target position. */
+    function copyRegionToPositionIntent(targetPositionId) {
+        return copySelectedRegionToPositionsIntent([targetPositionId]);
+    }
+
+    /** Centre the current viewport on the selected region, widening it if needed. */
+    function centerViewportOnSelectedRegionIntent() {
+        return function (dispatch, getState) {
+            if (!actions?.viewportChange || typeof getState !== 'function') return;
+            const state = getState();
+            const regionsState = regionSelectors.selectRegionsState
+                ? regionSelectors.selectRegionsState(state) : state?.regions;
+            const selectedId = regionsState?.selectedId;
+            const region = Number.isFinite(selectedId) ? regionsState?.byId?.[selectedId] : null;
+            const areas = getRegionAreas(region);
+            if (!areas.length) return;
+
+            const regionStart = Math.min(...areas.map(area => Number(area.start)).filter(Number.isFinite));
+            const regionEnd = Math.max(...areas.map(area => Number(area.end)).filter(Number.isFinite));
+            if (!Number.isFinite(regionStart) || !Number.isFinite(regionEnd) || regionStart >= regionEnd) return;
+
+            const viewportMin = Number(state?.view?.viewport?.min);
+            const viewportMax = Number(state?.view?.viewport?.max);
+            const currentWidth = Number.isFinite(viewportMin) && Number.isFinite(viewportMax) && viewportMax > viewportMin
+                ? viewportMax - viewportMin
+                : 0;
+            const paddedRegionWidth = Math.max(1000, (regionEnd - regionStart) * 1.2);
+            const viewportWidth = Math.max(currentWidth, paddedRegionWidth);
+            const centre = (regionStart + regionEnd) / 2;
+            dispatch(actions.viewportChange(centre - viewportWidth / 2, centre + viewportWidth / 2));
+        };
+    }
+
+    /** Recalculate the selected region from the resolution currently displayed on its chart. */
+    function recalculateSelectedRegionIntent() {
+        return function (dispatch, getState) {
+            if (typeof getState !== 'function') return;
+            const state = getState();
+            const regionsState = regionSelectors.selectRegionsState
+                ? regionSelectors.selectRegionsState(state) : state?.regions;
+            const selectedId = regionsState?.selectedId;
+            const region = Number.isFinite(selectedId) ? regionsState?.byId?.[selectedId] : null;
+            if (!region || !app.regions?.getRegionMetrics) return;
+
+            const activeResolution = app.dataCache?.activeLineData?.[region.positionId]?.dataViewType;
+            const resolution = activeResolution === 'log' || activeResolution === 'overview'
+                ? activeResolution
+                : (state?.view?.globalViewType === 'overview' ? 'overview' : 'auto');
+
+            app.regions.invalidateRegionMetrics?.(region.id);
+            app.regions.getRegionMetrics(
+                region,
+                state,
+                app.dataCache,
+                app.registry?.models,
+                { resolution, force: true }
+            );
+            if (actions?.regionMetricsRecalculated) {
+                dispatch(actions.regionMetricsRecalculated(region.id, resolution));
+            }
         };
     }
 
@@ -725,7 +800,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         resizeSelectedRegionIntent,
         splitSelectedRegionIntent,
         toggleRegionCreationIntent,
-        copyRegionToAllPositionsIntent
+        copyRegionToAllPositionsIntent,
+        copyRegionToPositionIntent,
+        centerViewportOnSelectedRegionIntent,
+        recalculateSelectedRegionIntent
     };
     app.features.regions.__test__ = app.features.regions.__test__ || {};
     app.features.regions.__test__.collectPositionTimestampStats = collectPositionTimestampStats;

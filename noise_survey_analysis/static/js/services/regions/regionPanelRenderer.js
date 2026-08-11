@@ -290,6 +290,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return `${position} • ${segmentLabel} • ${duration}`;
     }
 
+    function getMetricsSourceLabel(metrics) {
+        if (metrics?.dataResolution === 'log') {
+            return { label: 'Log', key: 'log' };
+        }
+        if (metrics?.dataResolution === 'overview') {
+            return { label: 'Overview', key: 'overview' };
+        }
+        return { label: 'No data', key: 'none' };
+    }
+
     function ensureArrayEquals(a, b) {
         if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
             return false;
@@ -342,11 +352,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return { selectedRegion: null, resolvedSelectedId: null };
         }
 
+        const metricSources = regionList.map(region => {
+            const metrics = app.regions?.getRegionMetrics
+                ? app.regions.getRegionMetrics(region, state, app.dataCache, app.registry?.models)
+                : null;
+            return getMetricsSourceLabel(metrics);
+        });
         const nextData = {
             id: regionList.map(region => region.id ?? null),
             title: regionList.map(region => buildRegionLabel(region, state)),
             subtitle: regionList.map(region => buildRegionSubtitle(region)),
             color: regionList.map(region => normalizeColor(region.color)),
+            data_source_label: metricSources.map(source => source.label),
+            data_source_key: metricSources.map(source => source.key),
         };
 
         const currentData = regionSource.data || {};
@@ -357,6 +375,24 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         if (dataChanged) {
+            // Clear any stale selection that would fall outside the new data
+            // before assigning it - Bokeh validates selection indices during
+            // the data-change emit and throws "Out of bounds" otherwise.
+            const staleSelection = regionSource.selected;
+            const nextLength = nextData.id.length;
+            if (staleSelection && Array.isArray(staleSelection.indices)
+                && staleSelection.indices.some(index => index >= nextLength)) {
+                if (regionTable) {
+                    regionTable.__suppressSelectionDispatch = true;
+                    const releaseStaleGuard = () => { regionTable.__suppressSelectionDispatch = false; };
+                    if (typeof queueMicrotask === 'function') {
+                        queueMicrotask(releaseStaleGuard);
+                    } else {
+                        Promise.resolve().then(releaseStaleGuard);
+                    }
+                }
+                staleSelection.indices = [];
+            }
             regionSource.data = nextData;
             emitColumnDataChange(regionSource);
         }
@@ -367,7 +403,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const explicitIndex = regionList.findIndex(entry => entry.id === selectedId);
                 if (explicitIndex >= 0) return explicitIndex;
             }
-            return 0;
+            // No implicit fallback to row 0: highlighting a row the store does
+            // not consider selected leaves the table visually selected while
+            // Delete/notes/etc. do nothing, and clicking that row emits no
+            // selection-change event so it cannot actually be selected.
+            return -1;
         })();
 
         const desiredSelection = desiredIndex >= 0 ? [desiredIndex] : [];
@@ -515,7 +555,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function updateButtons(models, hasSelection, selectedRegion, state, isMergeModeActive, panelVisible) {
-        const { copyButton, deleteButton, addAreaButton, mergeButton, mergeSelect, splitButton, copyToAllPositionsButton } = models;
+        const {
+            copyButton,
+            deleteButton,
+            addAreaButton,
+            mergeButton,
+            mergeSelect,
+            splitButton,
+            copyTargetSelect,
+            copyToAllPositionsButton,
+            centerRegionButton,
+            recalculateRegionButton
+        } = models;
         const addAreaTargetId = state?.regions?.addAreaTargetId ?? null;
         const hasOtherRegions = state?.regions?.allIds.length > 1;
         const mergeOptionsAvailable = Array.isArray(mergeSelect?.options) && mergeSelect.options.length > 0;
@@ -553,26 +604,65 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             splitButton.disabled = !(hasSelection && areaCount > 1);
             splitButton.visible = panelVisible;
         }
+        const availablePositions = Array.isArray(state?.view?.availablePositions)
+            ? state.view.availablePositions : [];
+        const currentPosition = selectedRegion?.positionId;
+        const otherPositions = hasSelection
+            ? availablePositions.filter(pid => String(pid) !== String(currentPosition))
+            : [];
+        const controlsVisible = panelVisible && availablePositions.length > 1;
+        const canCopy = hasSelection && otherPositions.length > 0;
+        const titles = state?.view?.positionDisplayTitles || {};
+        const targetOptions = otherPositions.length > 1
+            ? [['__all__', 'All other positions']]
+            : [];
+        otherPositions.forEach(positionId => {
+            const positionKey = String(positionId);
+            targetOptions.push([positionKey, titles[positionId] || positionKey]);
+        });
+
+        if (copyTargetSelect) {
+            if (!ensureArrayEquals(copyTargetSelect.options || [], targetOptions)) {
+                copyTargetSelect.options = targetOptions;
+            }
+            const optionValues = targetOptions.map(option => option[0]);
+            const defaultValue = optionValues.includes('__all__')
+                ? '__all__'
+                : (optionValues[0] || '');
+            const nextValue = optionValues.includes(copyTargetSelect.value)
+                ? copyTargetSelect.value
+                : defaultValue;
+            if (copyTargetSelect.value !== nextValue) {
+                copyTargetSelect.value = nextValue;
+            }
+            copyTargetSelect.disabled = !canCopy;
+            copyTargetSelect.visible = controlsVisible;
+        }
         if (copyToAllPositionsButton) {
-            const availablePositions = Array.isArray(state?.view?.availablePositions)
-                ? state.view.availablePositions : [];
-            const currentPosition = selectedRegion?.positionId;
-            const otherPositions = availablePositions.filter(pid => pid !== currentPosition);
-            const canCopy = hasSelection && otherPositions.length > 0;
             copyToAllPositionsButton.disabled = !canCopy;
-            copyToAllPositionsButton.visible = panelVisible && availablePositions.length > 1;
-            if (canCopy && otherPositions.length === 1) {
-                const titles = state?.view?.positionDisplayTitles || {};
-                const targetName = titles[otherPositions[0]] || otherPositions[0];
-                const label = 'Copy to ' + targetName;
-                if (copyToAllPositionsButton.label !== label) {
-                    copyToAllPositionsButton.label = label;
-                }
-            } else {
-                const label = 'Copy to All Positions';
-                if (copyToAllPositionsButton.label !== label) {
-                    copyToAllPositionsButton.label = label;
-                }
+            copyToAllPositionsButton.visible = controlsVisible;
+            if (copyToAllPositionsButton.label !== 'Copy') {
+                copyToAllPositionsButton.label = 'Copy';
+            }
+        }
+        if (centerRegionButton) {
+            centerRegionButton.disabled = !hasSelection;
+            centerRegionButton.visible = panelVisible;
+        }
+        if (recalculateRegionButton) {
+            recalculateRegionButton.disabled = !hasSelection;
+            recalculateRegionButton.visible = panelVisible;
+            const activeResolution = selectedRegion
+                ? app.dataCache?.activeLineData?.[selectedRegion.positionId]?.dataViewType
+                : null;
+            const resolutionLabel = activeResolution === 'log'
+                ? 'Log'
+                : (activeResolution === 'overview' ? 'Overview' : null);
+            const desiredLabel = resolutionLabel
+                ? `Recalculate (${resolutionLabel})`
+                : 'Recalculate';
+            if (recalculateRegionButton.label !== desiredLabel) {
+                recalculateRegionButton.label = desiredLabel;
             }
         }
     }
@@ -688,7 +778,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             autoDayNightButton,
             splitButton,
-            copyToAllPositionsButton
+            copyTargetSelect,
+            copyToAllPositionsButton,
+            centerRegionButton,
+            recalculateRegionButton
 
         } = panelModels;
 

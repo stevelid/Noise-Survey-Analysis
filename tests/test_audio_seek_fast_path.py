@@ -3,7 +3,7 @@ import datetime
 import threading
 import time
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from noise_survey_analysis.core.app_callbacks import AppCallbacks
 from noise_survey_analysis.core.audio_handler import AudioPlaybackHandler
@@ -43,19 +43,23 @@ class AudioSeekFastPathTests(unittest.TestCase):
         handler.current_file = "/audio/rec_0000.wav"
         handler.media_start_time = self.file_start
         handler.current_file_duration = self.duration
+        handler._is_playing = True
         handler.player.get_media.return_value = object()  # media already open
         # Pretend the monitor is already running so no real thread is spawned.
         handler.playback_monitor = MagicMock()
         handler.playback_monitor.is_alive.return_value = True
 
         target = self.file_start + datetime.timedelta(seconds=125)
-        self.assertTrue(handler.play(target))
+        with patch("noise_survey_analysis.core.audio_handler.status_console.event") as event:
+            self.assertTrue(handler.play(target))
 
         handler.vlc_instance.media_new.assert_not_called()
         handler.player.set_media.assert_not_called()
         handler.player.stop.assert_not_called()
         handler.player.set_time.assert_called_once_with(125 * 1000)
         self.assertTrue(handler._is_playing)
+        event.assert_called_once()
+        self.assertIn("seek 01/01 00:02:05", event.call_args.args[1])
 
     def test_seek_into_a_different_file_still_reloads(self):
         handler = _build_handler(self.files + [self.second_file])

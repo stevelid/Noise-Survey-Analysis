@@ -4,9 +4,47 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from noise_survey_analysis.export.static_export import generate_static_html
+from noise_survey_analysis.visualization.dashBuilder import DashBuilder
 
 
 class StaticExportTests(unittest.TestCase):
+    def test_static_spectrogram_payload_is_marked_as_full_local_reservoir(self):
+        prepared = {
+            "log": {
+                "prepared_params": {
+                    "LZeq": {
+                        "times_ms": [1000, 2000, 3000, 4000],
+                        "levels_flat_transposed": [40, 41, 42, 43, 50, 51, 52, 53],
+                        "frequency_labels": ["63 Hz", "125 Hz"],
+                        "frequencies_hz": [63, 125],
+                        "n_times": 4,
+                        "n_freqs": 2,
+                        "chunk_time_length": 2,
+                        "time_step": 1000,
+                        "min_val": 40,
+                        "max_val": 53,
+                        "min_time": 1000,
+                        "max_time": 4000,
+                        "initial_glyph_data": {
+                            "x": [1000],
+                            "y": [-0.5],
+                            "dw": [2000],
+                            "dh": [2],
+                            "image": [[40, 41], [50, 51]],
+                        },
+                    }
+                }
+            }
+        }
+
+        payload = DashBuilder()._build_static_spectrogram_log_source_data(prepared, "LZeq")
+
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["parameter"], ["LZeq"])
+        self.assertEqual(payload["is_reservoir_payload"], [True])
+        self.assertEqual(payload["n_times"], [4])
+        self.assertEqual(len(payload["times_ms"][0]), 4)
+
     def test_generate_static_html_uses_job_number_filename_and_writes_output(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "job_config.json"

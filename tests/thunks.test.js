@@ -43,6 +43,35 @@ describe('NoiseSurveyApp thunks', () => {
         expect(state.view.activeSidePanelTab).toBe(constants.sidePanelTabs.regions);
     });
 
+    it('elevateClassificationToRegionIntent creates and selects a region', () => {
+        store.dispatch(actions.classificationsReplaceAll([
+            {
+                positionId: 'P2',
+                sourceId: 'extract',
+                sourceLabel: 'Extract fan',
+                start: 1000,
+                end: 2500,
+                confidence: 0.8,
+                description: 'fan running',
+                color: '#123456'
+            }
+        ]));
+        store.dispatch(thunks.elevateClassificationToRegionIntent(1));
+
+        const state = store.getState();
+        expect(state.regions.allIds).toEqual([1]);
+        expect(state.regions.byId[1]).toMatchObject({
+            positionId: 'P2',
+            start: 1000,
+            end: 2500,
+            note: 'Extract fan | confidence: 80% | fan running',
+            color: '#123456'
+        });
+        expect(state.classifications.byId[1].elevatedRegionId).toBe(1);
+        expect(state.regions.selectedId).toBe(1);
+        expect(state.view.activeSidePanelTab).toBe(constants.sidePanelTabs.regions);
+    });
+
     it('handleTapIntent removes region on ctrl click', () => {
         store.dispatch(actions.regionAdd('P1', 1000, 2000));
         const thunk = thunks.handleTapIntent({

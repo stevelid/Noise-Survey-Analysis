@@ -19,9 +19,74 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // --- Helper Functions ---
     const _getChartPositionByName = (chartName) => {
         if (!chartName) return null;
+        // Chart names follow "figure_{positionId}_{chartType}" and position ids
+        // may themselves contain underscores, so strip the known prefix/suffix
+        // (mirrors the availablePositions derivation in registry.js) instead of
+        // splitting on '_', which truncates ids like "971-4_2026-02-02".
+        const prefix = 'figure_';
+        const suffixes = ['_timeseries', '_spectrogram'];
+        if (chartName.startsWith(prefix)) {
+            const stripped = chartName.slice(prefix.length);
+            for (const suffix of suffixes) {
+                if (stripped.endsWith(suffix)) {
+                    const positionId = stripped.slice(0, -suffix.length);
+                    return positionId || null;
+                }
+            }
+        }
         const parts = chartName.split('_');
         return parts.length >= 2 ? parts[1] : null;
     };
+
+    function _getClassificationHit(chartName, timestamp, y) {
+        if (!Number.isFinite(timestamp) || !Number.isFinite(y)) {
+            return null;
+        }
+
+        const chartsByName = app.registry?.controllers?.chartsByName;
+        const chart = chartsByName && typeof chartsByName.get === 'function'
+            ? chartsByName.get(chartName)
+            : null;
+        const overlay = chart?.classificationOverlay;
+        if (!overlay?.renderer?.visible || !overlay?.source?.data) {
+            return null;
+        }
+
+        const data = overlay.source.data;
+        const left = data.left;
+        const right = data.right;
+        const bottom = data.bottom;
+        const top = data.top;
+        const ids = data.classification_id;
+        const length = Math.min(
+            Number(left?.length) || 0,
+            Number(right?.length) || 0,
+            Number(bottom?.length) || 0,
+            Number(top?.length) || 0,
+            Number(ids?.length) || 0
+        );
+
+        for (let index = 0; index < length; index += 1) {
+            const leftValue = Number(left[index]);
+            const rightValue = Number(right[index]);
+            const bottomValue = Number(bottom[index]);
+            const topValue = Number(top[index]);
+            if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)
+                || !Number.isFinite(bottomValue) || !Number.isFinite(topValue)) {
+                continue;
+            }
+            if (timestamp >= leftValue && timestamp <= rightValue
+                && y >= Math.min(bottomValue, topValue)
+                && y <= Math.max(bottomValue, topValue)) {
+                return {
+                    index,
+                    id: Number(ids[index])
+                };
+            }
+        }
+
+        return null;
+    }
 
     // --- Event Handlers ---
 
@@ -32,6 +97,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!positionId) return;
         const timestamp = cb_obj?.x;
         if (!Number.isFinite(timestamp)) return;
+
+        // A classification quad lives on the same plot-level tap surface. A
+        // hit must select the classification without turning a review click
+        // into an audio seek.
+        const classificationHit = _getClassificationHit(chartName, timestamp, Number(cb_obj?.y));
+        if (classificationHit) {
+            const selectIntent = app.features?.classifications?.thunks?.selectClassificationIntent;
+            const dispatch = app.store && app.store.dispatch;
+            if (Number.isFinite(classificationHit.id)
+                && typeof selectIntent === 'function'
+                && typeof dispatch === 'function') {
+                dispatch(selectIntent(classificationHit.id));
+            }
+            return;
+        }
 
         const thunkCreator = app.thunks && app.thunks.handleTapIntent;
         const dispatch = app.store && app.store.dispatch;
@@ -408,8 +488,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const isEscape = rawKey === 'Escape';
         const isMarkerKey = normalizedKey === 'm';
         const isRegionKey = normalizedKey === 'r';
+        const isPreviewKey = normalizedKey === 'p';
         const isArrowKey = rawKey === 'ArrowLeft' || rawKey === 'ArrowRight';
         const isDeleteKey = rawKey === 'Delete' || rawKey === 'Backspace';
+
+        if (isPreviewKey && !isCtrlOrMeta) {
+            if (typeof e.preventDefault === 'function') e.preventDefault();
+            const previewThunk = app.features?.classifications?.thunks?.previewSelectedClassificationIntent;
+            if (typeof previewThunk === 'function') {
+                dispatch(previewThunk());
+            }
+            return;
+        }
 
         if (!(isSpace || isEscape || isMarkerKey || isRegionKey || isArrowKey || isDeleteKey)) {
             return;

@@ -30,6 +30,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         'markers/markerUpdated',
         'markers/markerColorSet',
         'markers/markersReplaced',
+        'classifications/classificationsAdded',
+        'classifications/classificationsReplaced',
+        'classifications/classificationUpdated',
+        'classifications/classificationRemoved',
         'view/positionChartOffsetSet',
     ]);
 
@@ -49,6 +53,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return (
             next.regions !== prev.regions ||
             next.markers !== prev.markers ||
+            next.classifications !== prev.classifications ||
             (next.view && prev.view && next.view.positionChartOffsets !== prev.view.positionChartOffsets)
         );
     }
