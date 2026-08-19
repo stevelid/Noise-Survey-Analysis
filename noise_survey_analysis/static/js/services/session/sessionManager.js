@@ -519,7 +519,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 rowData.duration_ms = formatNumberValue(metrics.durationMs, 0);
                 rowData.metrics_laeq = formatNumberValue(metrics.laeq);
                 rowData.metrics_lafmax = formatNumberValue(metrics.lafmax);
-                rowData.metrics_la90 = formatNumberValue(metrics.la90);
+                // Only export LA90 when the metrics say it is meaningful. Overview data
+                // yields a percentile of 15-minute aggregates, which the panel hides for
+                // that reason - exporting the number anyway puts it into reports.
+                rowData.metrics_la90 = metrics.la90Available ? formatNumberValue(metrics.la90) : '';
                 rowData.metrics_la90_available = metrics.la90Available ? 'true' : '';
                 const spectrum = extractRegionSpectrum(region, resolvedState, dataCache, models);
                 assignSpectrumValues(rowData, spectrum, bandLookup);

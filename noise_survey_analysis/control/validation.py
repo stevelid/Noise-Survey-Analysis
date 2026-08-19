@@ -149,7 +149,15 @@ def validate_command_payload(command: str, payload: dict[str, Any]) -> dict[str,
         half_width_ms = payload.get("half_width_ms")
         result: dict[str, Any] = {"timestamp": ts}
         if half_width_ms is not None:
-            hw = float(half_width_ms)
+            # A non-numeric type (list, dict, ...) raises TypeError from float(),
+            # which callers do not expect: the HTTP handler only turns ValueError
+            # into a 400, so anything else escapes as an unanswered request.
+            try:
+                hw = float(half_width_ms)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"half_width_ms must be a number, got {half_width_ms!r}"
+                ) from None
             if not math.isfinite(hw) or hw <= 0:
                 raise ValueError("half_width_ms must be a positive finite number")
             result["half_width_ms"] = hw

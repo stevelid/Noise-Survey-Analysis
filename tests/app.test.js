@@ -188,4 +188,63 @@ describe('NoiseSurveyApp.app orchestrator', () => {
 
     expect(window.NoiseSurveyApp.renderers.renderControlWidgets).toHaveBeenCalled();
   });
+
+  it('replays a heavy update that was throttled during audio playback', () => {
+    window.NoiseSurveyApp.init.initialize({});
+
+    // Freeze the clock so every dispatch lands inside the 50ms throttle window.
+    const startTime = performance.now() + 10_000;
+    const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(startTime);
+    const frames = [];
+    const rafSpy = vi.spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation(callback => {
+        frames.push(callback);
+        return frames.length;
+      });
+
+    try {
+      window.NoiseSurveyApp.store.dispatch(
+        window.NoiseSurveyApp.actions.audioStatusUpdate({ is_playing: [true] })
+      );
+      // First viewport change sets the heavy-update timestamp.
+      window.NoiseSurveyApp.store.dispatch(
+        window.NoiseSurveyApp.actions.viewportChange(0, 2000)
+      );
+      vi.clearAllMocks();
+
+      // Second one lands within the throttle window and must not be lost.
+      window.NoiseSurveyApp.store.dispatch(
+        window.NoiseSurveyApp.actions.viewportChange(3000, 4000)
+      );
+      expect(window.NoiseSurveyApp.data_processors.updateActiveData).not.toHaveBeenCalled();
+      expect(frames).toHaveLength(1);
+
+      // The deferred frame reprocesses the pan even though nothing changed since.
+      nowSpy.mockReturnValue(startTime + 200);
+      frames.shift()();
+      expect(window.NoiseSurveyApp.data_processors.updateActiveData).toHaveBeenCalled();
+      expect(window.NoiseSurveyApp.renderers.renderPrimaryCharts).toHaveBeenCalled();
+    } finally {
+      rafSpy.mockRestore();
+      nowSpy.mockRestore();
+    }
+  });
+  it('drops cached region metrics when an undo rewrites region geometry', () => {
+    window.NoiseSurveyApp.init.initialize({});
+    const invalidateSpy = vi.spyOn(window.NoiseSurveyApp.regions, 'invalidateMetricsCache');
+
+    window.NoiseSurveyApp.store.dispatch(
+      window.NoiseSurveyApp.actions.regionAdd('P1', 1000, 2000)
+    );
+    invalidateSpy.mockClear();
+
+    window.NoiseSurveyApp.store.dispatch(window.NoiseSurveyApp.actions.undo());
+    expect(invalidateSpy).toHaveBeenCalled();
+
+    invalidateSpy.mockClear();
+    window.NoiseSurveyApp.store.dispatch(window.NoiseSurveyApp.actions.redo());
+    expect(invalidateSpy).toHaveBeenCalled();
+
+    invalidateSpy.mockRestore();
+  });
 });

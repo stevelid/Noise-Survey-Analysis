@@ -272,6 +272,15 @@ class TestValidateCommandPayload(unittest.TestCase):
                 {"timestamp": 1710000000000, "half_width_ms": -1},
             )
 
+    def test_center_on_timestamp_non_numeric_half_width_raises_value_error(self):
+        for bad in ([], {}, "soon"):
+            with self.subTest(half_width_ms=bad):
+                with self.assertRaises(ValueError):
+                    validate_command_payload(
+                        "center_on_timestamp",
+                        {"timestamp": 1710000000000, "half_width_ms": bad},
+                    )
+
     def test_apply_workspace_path(self):
         import tempfile, os, json
         with tempfile.NamedTemporaryFile(

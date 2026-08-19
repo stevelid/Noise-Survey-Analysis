@@ -524,7 +524,7 @@ class DashBuilder:
         #add callback to x_range ranges
         if master_x_range is not None:
             range_update_js = CustomJS(code="""
-                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers.handleRangeUpdate) {
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleRangeUpdate) {
                     window.NoiseSurveyApp.eventHandlers.handleRangeUpdate(cb_obj);
                 } else {
                     console.error('NoiseSurveyApp.eventHandlers.handleRangeUpdate not defined!');
@@ -722,7 +722,7 @@ class DashBuilder:
             // Its value is the entire dictionary of models we built in Python.
             const models = all_models;
 
-                if (window.NoiseSurveyApp && typeof window.NoiseSurveyApp.init.initialize === 'function') {{
+                if (window.NoiseSurveyApp && window.NoiseSurveyApp.init && typeof window.NoiseSurveyApp.init.initialize === 'function') {{
                     console.log('DEBUG: Found NoiseSurveyApp, calling init...');
                     window.NoiseSurveyApp.init.initialize(models);
                 }} else {{

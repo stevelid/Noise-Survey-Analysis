@@ -123,7 +123,9 @@ class _ControlHandler(BaseHTTPRequestHandler):
         # --- Validate payload ---
         try:
             validated_payload = validate_command_payload(cmd.command, cmd.payload or {})
-        except ValueError as exc:
+        except (ValueError, TypeError) as exc:
+            # A malformed payload is the client's problem, not a server error:
+            # answer with 400 rather than letting the handler die mid-response.
             self._send_json(400, {"success": False, "message": str(exc)})
             return
 

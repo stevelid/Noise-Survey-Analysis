@@ -59,6 +59,81 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     /**
+     * Captures only the slices undo/redo owns.
+     *
+     * Snapshotting the whole state would mean an undo also rewinds everything the
+     * user did *after* the annotation edit — viewport, audio playback, selected
+     * parameter — and would restore a stale `system.lastAction`, which the audio
+     * side-effect handler in app.js reads and would replay (e.g. re-sending a
+     * `play` command for an old tap).
+     */
+    function captureSlices(state) {
+        if (!state || typeof state !== 'object') {
+            return null;
+        }
+        return {
+            regions: snapshot(state.regions),
+            markers: snapshot(state.markers),
+            classifications: snapshot(state.classifications),
+            positionChartOffsets: snapshot(state.view?.positionChartOffsets)
+        };
+    }
+
+    function isEquivalent(left, right) {
+        if (left === right) return true;
+        if (left === undefined || right === undefined) return false;
+        try {
+            return JSON.stringify(left) === JSON.stringify(right);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * Merges a captured slice set back onto the *current* state, leaving every
+     * other slice — and the identity of anything that did not actually change —
+     * untouched so renderers keep their cheap referential change checks.
+     */
+    function applySlices(state, slices, action) {
+        if (!slices) {
+            return state;
+        }
+        let nextState = state;
+        const replace = (key) => {
+            if (slices[key] !== undefined && !isEquivalent(nextState[key], slices[key])) {
+                nextState = { ...nextState, [key]: snapshot(slices[key]) };
+            }
+        };
+        replace('regions');
+        replace('markers');
+        replace('classifications');
+
+        const currentOffsets = nextState.view?.positionChartOffsets;
+        if (slices.positionChartOffsets !== undefined
+            && !isEquivalent(currentOffsets, slices.positionChartOffsets)) {
+            nextState = {
+                ...nextState,
+                view: {
+                    ...nextState.view,
+                    positionChartOffsets: snapshot(slices.positionChartOffsets)
+                }
+            };
+        }
+
+        if (nextState === state) {
+            return state;
+        }
+
+        return {
+            ...nextState,
+            system: {
+                ...nextState.system,
+                lastAction: action
+            }
+        };
+    }
+
+    /**
      * Wraps a root reducer with undo/redo capability.
      * @param {Function} rootReducer
      * @returns {Function} A new reducer (state, action) => nextState
@@ -72,8 +147,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 if (past.length === 0) return state;
                 const previous = past[past.length - 1];
                 past = past.slice(0, past.length - 1);
-                future = [snapshot(state), ...future];
-                return previous;
+                future = [captureSlices(state), ...future];
+                return applySlices(state, previous, action);
             }
 
             // REDO
@@ -81,8 +156,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 if (future.length === 0) return state;
                 const next = future[0];
                 future = future.slice(1);
-                past = [...past, snapshot(state)].slice(-HISTORY_LIMIT);
-                return next;
+                past = [...past, captureSlices(state)].slice(-HISTORY_LIMIT);
+                return applySlices(state, next, action);
             }
 
             // Run inner reducer
@@ -92,7 +167,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // Push to history only for undoable actions that actually changed relevant state
             if (isUndoableAction(action)) {
                 if (next !== prev && hasRelevantChange(prev || {}, next)) {
-                    past = [...past, snapshot(prev)].slice(-HISTORY_LIMIT);
+                    past = [...past, captureSlices(prev)].slice(-HISTORY_LIMIT);
                     future = []; // clear redo stack on new undoable action
                 }
             }

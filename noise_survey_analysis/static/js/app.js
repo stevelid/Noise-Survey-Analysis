@@ -17,6 +17,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     let previousState; // used to track state changes
     let _lastHeavyUpdateTime = 0; // Timestamp of last heavy update for throttling
     let _pendingHeavyUpdate = null; // Pending heavy update RAF handle
+    // A heavy update that was throttled away is replayed on the next frame. The
+    // deferred pass compares the state against itself (previousState has already
+    // advanced), so it cannot rediscover what changed - this flag carries that
+    // intent across, otherwise the throttled update is simply lost and the charts
+    // keep showing the pre-pan slice until something else forces a redraw.
+    let _deferredHeavyUpdate = false;
     const HEAVY_UPDATE_THROTTLE_MS = 50; // Minimum ms between heavy updates during audio playback
 
     // The mutable, non-serializable data cache for large data arrays.
@@ -288,7 +294,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * then orchestrates all necessary data processing, rendering, and side effects.
      * @param {boolean} [isInitialLoad=false] - A flag to force a full update.
      */
-    let _renderErrorCooldown = 0;
+    // Starts at -Infinity so the first error is always reported: seeding it with 0
+    // swallowed everything thrown in the first 5s after page load, which is exactly
+    // the initial-render window worth seeing.
+    let _renderErrorCooldown = -Infinity;
     const RENDER_ERROR_COOLDOWN_MS = 5000;
 
     function _guardedRender(label, fn, context) {
@@ -341,8 +350,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (didDataRefresh && app.regions?.invalidatePositionMetrics) {
             app.regions.invalidatePositionMetrics(state.system?.lastAction?.payload?.positionId, state);
         }
+        // Undo/redo rewrites region geometry without going through the region thunks,
+        // which are what normally drop cached metrics, so the panel would otherwise
+        // keep showing the metrics of the bounds that were just undone.
+        const isHistoryAction = lastActionType === actionTypes.HISTORY_UNDO
+            || lastActionType === actionTypes.HISTORY_REDO;
+        if (isHistoryAction && didRegionsChange && app.regions?.invalidateMetricsCache) {
+            app.regions.invalidateMetricsCache();
+        }
+
+        const wasHeavyUpdateDeferred = _deferredHeavyUpdate;
+        _deferredHeavyUpdate = false;
 
         const isHeavyUpdateRequested = isInitialLoad
+            || wasHeavyUpdateDeferred
             || didViewportChange
             || didParamChange
             || didViewToggleChange
@@ -362,9 +383,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const isCriticalUpdate = isInitialLoad || didParamChange || didViewToggleChange;
         const isHeavyUpdate = isHeavyUpdateRequested && (!shouldThrottle || isCriticalUpdate);
         
-        // If we're throttling a viewport change during audio, schedule it for later
-        if (isHeavyUpdateRequested && shouldThrottle && !isCriticalUpdate && didViewportChange) {
-            if (_pendingHeavyUpdate === null) {
+        // If we're throttling a heavy update during audio, schedule it for later
+        if (isHeavyUpdateRequested && !isHeavyUpdate) {
+            _deferredHeavyUpdate = true;
+            if (_pendingHeavyUpdate === null && typeof requestAnimationFrame === 'function') {
                 _pendingHeavyUpdate = requestAnimationFrame(() => {
                     _pendingHeavyUpdate = null;
                     // Re-trigger state change processing
