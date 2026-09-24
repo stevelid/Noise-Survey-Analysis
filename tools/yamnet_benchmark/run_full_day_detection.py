@@ -76,10 +76,36 @@ def local_offset_to_epoch_ms(offset_seconds: float, survey_start_local: datetime
     return int(round(aware.astimezone(timezone.utc).timestamp() * 1000))
 
 
+def _read_with_retry(source_path: Path, pos: int, n: int, max_attempts: int = 5):
+    """Multi-hour reads over a mounted Google Drive Shared Drive occasionally hit a
+    transient libsndfile 'System error' (network hiccup, not a real corrupt-file
+    condition) — retry with backoff rather than aborting a run hours in."""
+    import time as _time
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return sf.read(str(source_path), start=pos, frames=n, dtype="float32", always_2d=True)
+        except sf.LibsndfileError as exc:
+            last_exc = exc
+            if attempt == max_attempts:
+                break
+            wait = min(2 ** attempt, 30)
+            print(f"  [retry] transient read error at frame {pos} (attempt {attempt}/{max_attempts}): "
+                  f"{exc} — retrying in {wait}s")
+            _time.sleep(wait)
+    raise last_exc
+
+
 def iter_source_chunks(source_path: Path, offset_seconds: float, duration_seconds: float,
-                        chunk_seconds: float, overlap_seconds: float):
+                        chunk_seconds: float, overlap_seconds: float,
+                        timings: dict | None = None):
     """Read contiguous (overlapping) chunks directly from the source WAV via
-    partial soundfile reads — never loads the whole day into memory at once."""
+    partial soundfile reads — never loads the whole day into memory at once.
+
+    `timings`, if given, accumulates seconds spent purely in the file read into
+    timings['audio_read_seconds'] so callers can separate I/O cost from model
+    cost. Purely additive: chunk boundaries, overlap handling and the yielded
+    values are unchanged, since exported timestamps depend on them."""
     info = sf.info(str(source_path))
     sr = info.samplerate
     start_frame_abs = int(round(offset_seconds * sr))
@@ -99,7 +125,12 @@ def iter_source_chunks(source_path: Path, offset_seconds: float, duration_second
     pos = start_frame_abs
     while pos < end_frame_abs:
         n = min(chunk_frames, end_frame_abs - pos)
-        data, read_sr = sf.read(str(source_path), start=pos, frames=n, dtype="float32", always_2d=True)
+        _t_read = time.perf_counter()
+        data, read_sr = _read_with_retry(source_path, pos, n)
+        if timings is not None:
+            timings["audio_read_seconds"] = (
+                timings.get("audio_read_seconds", 0.0) + (time.perf_counter() - _t_read)
+            )
         if data.shape[1] > 1:
             data = data.mean(axis=1)
         else:
