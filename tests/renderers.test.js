@@ -31,6 +31,13 @@ describe('NoiseSurveyApp.renderers', () => {
     let mockRegionSetNote;
     let mockRegionSetColor;
 
+    it('moves the shared chart range to the viewport in state', () => {
+        const range = { start: 0, end: 1000 };
+        window.NoiseSurveyApp.registry = { models: { charts: [{ x_range: range }, { x_range: range }] } };
+        window.NoiseSurveyApp.renderers.renderViewport({ view: { viewport: { min: 3900, max: 5100 } } });
+        expect(range).toEqual({ start: 3900, end: 5100 });
+    });
+
     beforeEach(() => {
         vi.useFakeTimers(); // Use fake timers for debounce testing
         vi.restoreAllMocks(); // Ensure any spies from previous tests are reset

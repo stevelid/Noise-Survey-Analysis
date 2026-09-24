@@ -30,6 +30,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         positionDisplayTitles: {},
         chartVisibility: {},
         viewport: { min: null, max: null },
+        regionJumpHistory: [],
+        regionNoteFocusRequestId: 0,
         globalViewType: 'log',
         selectedParameter: 'LZeq',
         hoverEnabled: true,
@@ -150,6 +152,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     availablePositions,
                     selectedParameter: action.payload?.selectedParameter ?? state.selectedParameter,
                     viewport: action.payload?.viewport ?? state.viewport,
+                    regionJumpHistory: [],
+                    regionNoteFocusRequestId: 0,
                     logViewThreshold: normalizeLogThreshold(payloadLogThreshold),
                     chartVisibility: action.payload?.chartVisibility ?? state.chartVisibility,
                     positionChartOffsets: initialChartOffsets,
@@ -169,6 +173,39 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return {
                     ...state,
                     viewport: action.payload
+                };
+
+            case actionTypes.REGION_VIEWPORT_CENTERED: {
+                const { min, max } = action.payload || {};
+                if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) return state;
+                const current = state.viewport;
+                if (current?.min === min && current?.max === max) return state;
+                const history = Array.isArray(state.regionJumpHistory) ? state.regionJumpHistory : [];
+                const canSaveCurrent = Number.isFinite(current?.min)
+                    && Number.isFinite(current?.max) && current.min < current.max;
+                return {
+                    ...state,
+                    viewport: { min, max },
+                    regionJumpHistory: canSaveCurrent
+                        ? [...history, { min: current.min, max: current.max }].slice(-20)
+                        : history
+                };
+            }
+
+            case actionTypes.REGION_VIEWPORT_RESTORED: {
+                const history = Array.isArray(state.regionJumpHistory) ? state.regionJumpHistory : [];
+                if (!history.length) return state;
+                return {
+                    ...state,
+                    viewport: history[history.length - 1],
+                    regionJumpHistory: history.slice(0, -1)
+                };
+            }
+
+            case actionTypes.REGION_NOTE_FOCUS_REQUESTED:
+                return {
+                    ...state,
+                    regionNoteFocusRequestId: (Number(state.regionNoteFocusRequestId) || 0) + 1
                 };
 
             case actionTypes.POSITION_CHART_OFFSET_SET: {

@@ -88,6 +88,50 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         ? sidePanelTabs.regions
         : 0;
 
+    function renderViewport(state) {
+        const viewport = state?.view?.viewport;
+        const min = viewport?.min;
+        const max = viewport?.max;
+        if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) return;
+
+        // All time series and spectrogram charts share this range, as does the
+        // navigator's RangeTool. Updating it moves the visible viewport.
+        const range = app.registry?.models?.charts?.[0]?.x_range;
+        if (!range) return;
+        if (range.start !== min) range.start = min;
+        if (range.end !== max) range.end = max;
+    }
+
+    function findRegionNoteTextarea() {
+        const roots = [document];
+        while (roots.length) {
+            const root = roots.shift();
+            const host = root.querySelector('.region-note-input');
+            if (host) {
+                const textarea = host.shadowRoot?.querySelector('textarea') || host.querySelector('textarea');
+                if (textarea) return textarea;
+            }
+            for (const element of root.querySelectorAll('*')) {
+                if (element.shadowRoot) roots.push(element.shadowRoot);
+            }
+        }
+        return null;
+    }
+
+    function focusRegionNoteInput() {
+        let attempts = 0;
+        const focus = () => {
+            const textarea = findRegionNoteTextarea();
+            if (textarea && !textarea.disabled && textarea.getClientRects().length) {
+                textarea.focus();
+                textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+            } else if (++attempts < 6) {
+                requestAnimationFrame(focus);
+            }
+        };
+        requestAnimationFrame(focus);
+    }
+
     const COMPARISON_METRICS_STYLE = `
         <style>
             .comparison-metrics-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -894,6 +938,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     copyTargetSelect: models?.regionPanelCopyTargetSelect,
                     copyToAllPositionsButton: models?.regionPanelCopyToAllPositionsButton,
                     centerRegionButton: models?.regionPanelCenterButton,
+                    backToPreviousViewButton: models?.regionPanelBackButton,
                     recalculateRegionButton: models?.regionPanelRecalculateButton,
                 };
                 const availablePositions = Array.isArray(state?.view?.availablePositions)
@@ -1183,6 +1228,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     // Attach the public functions to the global object
     app.renderers = {
+        renderViewport: renderViewport,
+        focusRegionNoteInput: focusRegionNoteInput,
         renderPrimaryCharts: renderPrimaryCharts,
         renderOverlays: renderOverlays,
         renderAllVisuals: renderAllVisuals,

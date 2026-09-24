@@ -860,6 +860,7 @@ class DashBuilder:
             'regionPanelCopyTargetSelect': self.shared_components['region_panel'].copy_target_select,
             'regionPanelCopyToAllPositionsButton': self.shared_components['region_panel'].copy_to_all_positions_button,
             'regionPanelCenterButton': self.shared_components['region_panel'].center_region_button,
+            'regionPanelBackButton': self.shared_components['region_panel'].back_to_previous_view_button,
             'regionPanelRecalculateButton': self.shared_components['region_panel'].recalculate_region_button,
             'markerPanelDiv': self.shared_components['marker_panel'].container,
             'markerPanelSource': self.shared_components['marker_panel'].marker_source,

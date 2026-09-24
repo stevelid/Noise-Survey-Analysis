@@ -226,6 +226,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             // --- 3. SETUP KEYBOARD & OTHER GLOBAL EVENT LISTENERS ---
             document.addEventListener('keydown', app.eventHandlers.handleKeyPress);
+            if (typeof app.eventHandlers.handleRegionListDoubleClick === 'function') {
+                document.addEventListener('dblclick', app.eventHandlers.handleRegionListDoubleClick);
+            }
             document.addEventListener('keydown', handleDragToolKeyDown);
             document.addEventListener('keyup', handleDragToolKeyUp);
             app.store.dispatch(app.actions.keyboardSetupComplete());
@@ -319,6 +322,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // --- A. DETERMINE UPDATE TYPE (HEAVY vs. LIGHT) ---
         const didViewportChange = state.view.viewport !== prev.view.viewport;
+        const didRegionJumpHistoryChange = state.view.regionJumpHistory !== prev.view.regionJumpHistory;
+        const didRegionNoteFocusRequest = state.view.regionNoteFocusRequestId !== prev.view.regionNoteFocusRequestId;
         const didParamChange = state.view.selectedParameter !== prev.view.selectedParameter;
         const didViewToggleChange = state.view.globalViewType !== prev.view.globalViewType;
         const didVisibilityChange = state.view.chartVisibility !== prev.view.chartVisibility;
@@ -429,6 +434,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             didChartOffsetsChange
         };
 
+        if (didViewportChange && typeof app.renderers?.renderViewport === 'function') {
+            _guardedRender('renderViewport', () => {
+                app.renderers.renderViewport(state);
+            }, renderContext);
+        }
+
         if (isHeavyUpdate) {
             // 3. Render the main charts with the new data
             _guardedRender('renderPrimaryCharts', () => {
@@ -476,7 +487,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }, renderContext);
         }
 
-        if (isInitialLoad || didRegionsChange || didPendingRegionChange) {
+        if (isInitialLoad || didRegionsChange || didPendingRegionChange || didRegionJumpHistoryChange) {
             _guardedRender('renderRegions', () => {
                 app.renderers.renderRegions(state, dataCache);
             }, renderContext);
@@ -497,6 +508,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if ((isInitialLoad || didActiveDragToolChange) && typeof app.renderers.renderActiveTool === 'function') {
             _guardedRender('renderActiveTool', () => {
                 app.renderers.renderActiveTool(state, models);
+            }, renderContext);
+        }
+
+        if (didRegionNoteFocusRequest && typeof app.renderers?.focusRegionNoteInput === 'function') {
+            _guardedRender('focusRegionNoteInput', () => {
+                app.renderers.focusRegionNoteInput();
             }, renderContext);
         }
 

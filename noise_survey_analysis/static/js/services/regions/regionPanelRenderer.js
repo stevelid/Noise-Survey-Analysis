@@ -55,6 +55,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     const REGION_TIPS_HTML = `
         <ul class="region-panel-hints">
+            <li>Double-click a region in the list to centre it on the charts.</li>
+            <li>Press <kbd>N</kbd> to edit the selected region's note; <kbd>Esc</kbd> returns to chart shortcuts.</li>
             <li>Click and drag on a chart to draw a new region instantly.</li>
             <li>Press <kbd>R</kbd> while a tap line is active to toggle make region mode; <kbd>Esc</kbd> cancels it.</li>
             <li>Hold <kbd>Shift</kbd> and click to span a region between the previous tap and your new click.</li>
@@ -565,6 +567,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             copyTargetSelect,
             copyToAllPositionsButton,
             centerRegionButton,
+            backToPreviousViewButton,
             recalculateRegionButton
         } = models;
         const addAreaTargetId = state?.regions?.addAreaTargetId ?? null;
@@ -648,6 +651,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (centerRegionButton) {
             centerRegionButton.disabled = !hasSelection;
             centerRegionButton.visible = panelVisible;
+        }
+        if (backToPreviousViewButton) {
+            backToPreviousViewButton.disabled = !(state?.view?.regionJumpHistory?.length > 0);
+            backToPreviousViewButton.visible = panelVisible;
         }
         if (recalculateRegionButton) {
             recalculateRegionButton.disabled = !hasSelection;
@@ -781,6 +788,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             copyTargetSelect,
             copyToAllPositionsButton,
             centerRegionButton,
+            backToPreviousViewButton,
             recalculateRegionButton
 
         } = panelModels;

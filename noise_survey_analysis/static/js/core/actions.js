@@ -27,6 +27,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         // View
         VIEWPORT_CHANGE: 'VIEWPORT_CHANGE',
+        REGION_VIEWPORT_CENTERED: 'view/regionViewportCentered',
+        REGION_VIEWPORT_RESTORED: 'view/regionViewportRestored',
+        REGION_NOTE_FOCUS_REQUESTED: 'view/regionNoteFocusRequested',
         PARAM_CHANGE: 'view/PARAM_CHANGE',
         VIEW_TOGGLE: 'view/VIEW_TOGGLE',
         VISIBILITY_CHANGE: 'VISIBILITY_CHANGE',
@@ -123,6 +126,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         viewToggle: (newViewType) => ({ type: actionTypes.VIEW_TOGGLE, payload: { newViewType } }),
         
         viewportChange: (min, max) => ({ type: actionTypes.VIEWPORT_CHANGE, payload: { min, max } }),
+
+        regionViewportCentered: (min, max) => ({
+            type: actionTypes.REGION_VIEWPORT_CENTERED,
+            payload: { min, max }
+        }),
+        regionViewportRestored: () => ({ type: actionTypes.REGION_VIEWPORT_RESTORED }),
+        regionNoteFocusRequested: () => ({ type: actionTypes.REGION_NOTE_FOCUS_REQUESTED }),
 
         setActiveSidePanelTab: (index) => ({
             type: actionTypes.VIEW_ACTIVE_SIDE_PANEL_TAB_SET,

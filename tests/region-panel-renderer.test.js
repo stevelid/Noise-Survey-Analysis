@@ -37,6 +37,7 @@ function createPanelModels() {
         copyTargetSelect: { options: [], value: '', disabled: true, visible: false },
         copyToAllPositionsButton: { label: 'Copy', disabled: true, visible: false },
         centerRegionButton: { label: 'Centre on Region', disabled: true, visible: true },
+        backToPreviousViewButton: { disabled: true, visible: true },
         recalculateRegionButton: { label: 'Recalculate', disabled: true, visible: true },
         copyButton: { disabled: true },
         deleteButton: { disabled: true },
@@ -243,6 +244,12 @@ describe('regionPanelRenderer.renderRegionPanel', () => {
         expect(panelModels.regionSource.data.data_source_label).toEqual(['Log', 'Overview']);
         expect(panelModels.regionSource.data.data_source_key).toEqual(['log', 'overview']);
         expect(panelModels.centerRegionButton).toMatchObject({ disabled: false, visible: true });
+        expect(panelModels.backToPreviousViewButton.disabled).toBe(true);
+        renderRegionPanel(panelModels, regions, 1, {
+            ...state,
+            view: { ...state.view, regionJumpHistory: [{ min: 0, max: 1000 }] }
+        }, { panelVisible: true, overlaysVisible: true, positionCount: 2 });
+        expect(panelModels.backToPreviousViewButton.disabled).toBe(false);
         expect(panelModels.recalculateRegionButton).toMatchObject({
             label: 'Recalculate (Log)',
             disabled: false,

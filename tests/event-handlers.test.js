@@ -126,6 +126,34 @@ describe('NoiseSurveyApp.eventHandlers', () => {
         });
     });
 
+    describe('handleRegionListDoubleClick', () => {
+        it('centres the region selected in the clicked list row', () => {
+            const intent = vi.spyOn(window.NoiseSurveyApp.thunks, 'centerViewportOnRegionIntent')
+                .mockReturnValue(() => {});
+            window.NoiseSurveyApp.registry.models.regionPanelSource = {
+                data: { id: [4, 9] },
+                selected: { indices: [1] }
+            };
+            const node = name => ({ classList: { contains: value => value === name } });
+
+            eventHandlers.handleRegionListDoubleClick({
+                composedPath: () => [node('slick-row'), node('region-panel-table'), document]
+            });
+
+            expect(intent).toHaveBeenCalledWith(9);
+            expect(dispatchSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('ignores double clicks outside region rows', () => {
+            const intent = vi.spyOn(window.NoiseSurveyApp.thunks, 'centerViewportOnRegionIntent')
+                .mockReturnValue(() => {});
+            eventHandlers.handleRegionListDoubleClick({
+                composedPath: () => [document]
+            });
+            expect(intent).not.toHaveBeenCalled();
+        });
+    });
+
     describe('handleRegionBoxSelect', () => {
         it('should add a region when shift-drag completes (shiftKey flag)', () => {
             const geometryEvent = {
@@ -342,6 +370,30 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             expect(event.preventDefault).toHaveBeenCalled();
             expect(toggleRegionCreationIntentSpy).toHaveBeenCalled();
             expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
+        });
+
+        it('requests note focus with N and leaves the note field with Escape', () => {
+            const focusNoteIntent = vi.spyOn(window.NoiseSurveyApp.thunks, 'focusSelectedRegionNoteIntent')
+                .mockReturnValue(() => {});
+            const nKey = { key: 'n', preventDefault: vi.fn(), target: document.body };
+            eventHandlers.handleKeyPress(nKey);
+            expect(nKey.preventDefault).toHaveBeenCalled();
+            expect(focusNoteIntent).toHaveBeenCalledTimes(1);
+
+            const textarea = document.createElement('textarea');
+            const host = document.createElement('div');
+            host.classList.add('region-note-input');
+            const blur = vi.spyOn(textarea, 'blur');
+            const escape = {
+                key: 'Escape',
+                target: textarea,
+                composedPath: () => [textarea, host],
+                preventDefault: vi.fn()
+            };
+            eventHandlers.handleKeyPress(escape);
+            expect(blur).toHaveBeenCalledTimes(1);
+            expect(escape.preventDefault).toHaveBeenCalled();
+            expect(handleKeyboardShortcutIntentSpy).toHaveBeenCalledTimes(1);
         });
     });
 

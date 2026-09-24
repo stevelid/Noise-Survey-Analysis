@@ -15,6 +15,7 @@ beforeEach(() => {
   defaultDisplayDetails = { P1: { line: { reason: ' (Overview)' }, spec: { reason: ' (Overview)' } } };
 
   window.NoiseSurveyApp.renderers = {
+    renderViewport: vi.fn(),
     renderPrimaryCharts: vi.fn(),
     renderFrequencyBar: vi.fn(),
     renderOverlays: vi.fn(),
@@ -123,6 +124,9 @@ describe('NoiseSurveyApp.app orchestrator', () => {
     const vp = window.NoiseSurveyApp.store.getState().view.viewport;
     expect(vp.min).toBe(0);
     expect(vp.max).toBe(2000);
+    expect(window.NoiseSurveyApp.renderers.renderViewport).toHaveBeenCalledWith(
+      expect.objectContaining({ view: expect.objectContaining({ viewport: vp }) })
+    );
 
     const primaryCallWithDetails = window.NoiseSurveyApp.renderers.renderPrimaryCharts.mock.calls.find(([, , details]) => !!details);
     expect(primaryCallWithDetails?.[2]).toEqual({

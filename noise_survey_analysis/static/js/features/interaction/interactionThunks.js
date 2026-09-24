@@ -199,6 +199,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            if (normalizedKey === 'n' && !ctrlKey && !altKey) {
+                const focusNoteThunk = thunks.focusSelectedRegionNoteIntent;
+                if (typeof focusNoteThunk === 'function') {
+                    dispatch(focusNoteThunk());
+                }
+                return;
+            }
+
             if (rawKey !== 'ArrowLeft' && rawKey !== 'ArrowRight') {
                 return;
             }

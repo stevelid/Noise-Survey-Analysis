@@ -139,6 +139,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }));
     }
 
+    function handleRegionListDoubleClick(event) {
+        const path = typeof event?.composedPath === 'function' ? event.composedPath() : [];
+        const hasClass = (node, name) => node?.classList?.contains?.(name);
+        if (!path.some(node => hasClass(node, 'region-panel-table'))
+            || !path.some(node => hasClass(node, 'slick-row'))) return;
+
+        const source = app.registry?.models?.regionPanelSource;
+        const indices = source?.selected?.indices;
+        if (!Array.isArray(indices) || indices.length !== 1) return;
+        const regionId = Number(source?.data?.id?.[indices[0]]);
+        const intent = app.thunks?.centerViewportOnRegionIntent;
+        if (Number.isFinite(regionId) && typeof intent === 'function'
+            && typeof app.store?.dispatch === 'function') {
+            app.store.dispatch(intent(regionId));
+        }
+    }
+
     function handleRegionBoxSelect(cb_obj) {
         const chartName = cb_obj?.origin?.name || cb_obj?.model?.name;
         if (!chartName || chartName === 'frequency_bar') return;
@@ -444,6 +461,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         // Ignore keyboard events from editable elements
         if (app.utils && typeof app.utils.isEditableEvent === 'function') {
             if (app.utils.isEditableEvent(e)) {
+                const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+                if (e.key === 'Escape' && path.some(node => node?.classList?.contains?.('region-note-input'))) {
+                    const textarea = path.find(node => node?.tagName === 'TEXTAREA');
+                    textarea?.blur?.();
+                    e.preventDefault?.();
+                }
                 return;
             }
         }
@@ -488,6 +511,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const isEscape = rawKey === 'Escape';
         const isMarkerKey = normalizedKey === 'm';
         const isRegionKey = normalizedKey === 'r';
+        const isNoteKey = normalizedKey === 'n' && !isCtrlOrMeta && !e.altKey;
         const isPreviewKey = normalizedKey === 'p';
         const isArrowKey = rawKey === 'ArrowLeft' || rawKey === 'ArrowRight';
         const isDeleteKey = rawKey === 'Delete' || rawKey === 'Backspace';
@@ -501,11 +525,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return;
         }
 
-        if (!(isSpace || isEscape || isMarkerKey || isRegionKey || isArrowKey || isDeleteKey)) {
+        if (!(isSpace || isEscape || isMarkerKey || isRegionKey || isNoteKey || isArrowKey || isDeleteKey)) {
             return;
         }
 
-        if (isSpace || isEscape || isMarkerKey || isRegionKey || isArrowKey || isDeleteKey) {
+        if (isSpace || isEscape || isMarkerKey || isRegionKey || isNoteKey || isArrowKey || isDeleteKey) {
             if (typeof e.preventDefault === 'function') {
                 e.preventDefault();
             }
@@ -545,6 +569,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // Attach the public functions to the global object with error handling
     app.eventHandlers = {
         handleTap: withErrorHandling(handleTap, 'handleTap'),
+        handleRegionListDoubleClick: withErrorHandling(handleRegionListDoubleClick, 'handleRegionListDoubleClick'),
         handleChartHover: withErrorHandling(handleChartHover, 'handleChartHover'),
         handleRangeUpdate: withErrorHandling(handleRangeUpdate, 'handleRangeUpdate'),
         handleDoubleClick: withErrorHandling(handleDoubleClick, 'handleDoubleClick'),

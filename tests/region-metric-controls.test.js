@@ -37,6 +37,43 @@ describe('region metric view controls', () => {
         expect(app.store.getState().view.viewport).toEqual({ min: -500, max: 9500 });
     });
 
+    it('selects a double-clicked region before centring the viewport', () => {
+        app.store.dispatch(app.actions.regionsAdded([{
+            id: 2,
+            positionId: 'P1',
+            areas: [{ start: 8000, end: 9000 }]
+        }]));
+
+        app.store.dispatch(app.thunks.centerViewportOnRegionIntent(2));
+
+        expect(app.store.getState().regions.selectedId).toBe(2);
+        expect(app.store.getState().view.viewport).toEqual({ min: 7900, max: 9100 });
+    });
+
+    it('returns through earlier views after consecutive region jumps', () => {
+        app.store.dispatch(app.thunks.centerViewportOnSelectedRegionIntent());
+        app.store.dispatch(app.actions.viewportChange(10000, 11000));
+        app.store.dispatch(app.thunks.centerViewportOnSelectedRegionIntent());
+
+        app.store.dispatch(app.thunks.returnToPreviousRegionViewIntent());
+        expect(app.store.getState().view.viewport).toEqual({ min: 10000, max: 11000 });
+        app.store.dispatch(app.thunks.returnToPreviousRegionViewIntent());
+        expect(app.store.getState().view.viewport).toEqual({ min: 0, max: 1000 });
+        expect(app.store.getState().view.regionJumpHistory).toEqual([]);
+    });
+
+    it('reveals the selected region and requests note focus', () => {
+        app.store.dispatch(app.actions.regionVisibilitySet({ showPanel: false }));
+        app.store.dispatch(app.actions.setActiveSidePanelTab(1));
+
+        app.store.dispatch(app.thunks.focusSelectedRegionNoteIntent());
+
+        const state = app.store.getState();
+        expect(state.regions.panelVisible).toBe(true);
+        expect(state.view.activeSidePanelTab).toBe(0);
+        expect(state.view.regionNoteFocusRequestId).toBe(1);
+    });
+
     it('recalculates from the currently displayed overview or log data', () => {
         app.registry.models.timeSeriesSources.P1 = {
             log: { data: { Datetime: [4000, 4500, 5000], LAeq: [40, 40, 40] } },

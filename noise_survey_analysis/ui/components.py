@@ -389,6 +389,13 @@ class RegionPanelComponent:
             disabled=True,
         )
 
+        self.back_to_previous_view_button = Button(
+            label="Back to Previous View",
+            width=panel_width,
+            name="region_back_to_previous_view_button",
+            disabled=True,
+        )
+
         self.recalculate_region_button = Button(
             label="Recalculate",
             width=int(panel_width / 2) - 6,
@@ -397,13 +404,14 @@ class RegionPanelComponent:
         )
 
         self.note_input = TextAreaInput(
-            title="Notes",
+            title="Notes (N to focus, Esc to leave)",
             value="",
             rows=4,
             width=panel_width,
             name="region_note_input",
             placeholder="Add notes...",
             disabled=True,
+            css_classes=["region-note-input"],
         )
 
         self.frequency_copy_button = Button(
@@ -479,6 +487,7 @@ class RegionPanelComponent:
             self.split_button,
             copy_position_actions,
             metric_actions,
+            self.back_to_previous_view_button,
             self.note_input,
             self.metrics_div,
             self.frequency_copy_button,
@@ -836,6 +845,15 @@ class RegionPanelComponent:
             }
         """)
         self.center_region_button.js_on_event('button_click', center_region_callback)
+
+        back_to_previous_view_callback = CustomJS(code="""
+            const store = window.NoiseSurveyApp?.store;
+            const thunk = window.NoiseSurveyApp?.thunks?.returnToPreviousRegionViewIntent;
+            if (typeof store?.dispatch === 'function' && typeof thunk === 'function') {
+                store.dispatch(thunk());
+            }
+        """)
+        self.back_to_previous_view_button.js_on_event('button_click', back_to_previous_view_callback)
 
         recalculate_region_callback = CustomJS(code="""
             const store = window.NoiseSurveyApp?.store;

@@ -730,7 +730,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     /** Centre the current viewport on the selected region, widening it if needed. */
     function centerViewportOnSelectedRegionIntent() {
         return function (dispatch, getState) {
-            if (!actions?.viewportChange || typeof getState !== 'function') return;
+            if (!actions?.regionViewportCentered || typeof getState !== 'function') return;
             const state = getState();
             const regionsState = regionSelectors.selectRegionsState
                 ? regionSelectors.selectRegionsState(state) : state?.regions;
@@ -751,7 +751,47 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const paddedRegionWidth = Math.max(1000, (regionEnd - regionStart) * 1.2);
             const viewportWidth = Math.max(currentWidth, paddedRegionWidth);
             const centre = (regionStart + regionEnd) / 2;
-            dispatch(actions.viewportChange(centre - viewportWidth / 2, centre + viewportWidth / 2));
+            dispatch(actions.regionViewportCentered(centre - viewportWidth / 2, centre + viewportWidth / 2));
+        };
+    }
+
+    /** Select a region from the list and centre the viewport on it. */
+    function centerViewportOnRegionIntent(regionId) {
+        return function (dispatch, getState) {
+            const id = Number(regionId);
+            if (!Number.isFinite(id) || typeof getState !== 'function') return;
+            const state = getState();
+            const region = regionSelectors.selectRegionById
+                ? regionSelectors.selectRegionById(state, id)
+                : state?.regions?.byId?.[id];
+            if (!region) return;
+            if (state?.regions?.selectedId !== id) {
+                dispatch(actions.regionSelect(id));
+            }
+            dispatch(centerViewportOnSelectedRegionIntent());
+        };
+    }
+
+    function returnToPreviousRegionViewIntent() {
+        return function (dispatch, getState) {
+            const history = getState()?.view?.regionJumpHistory;
+            if (Array.isArray(history) && history.length && actions?.regionViewportRestored) {
+                dispatch(actions.regionViewportRestored());
+            }
+        };
+    }
+
+    function focusSelectedRegionNoteIntent() {
+        return function (dispatch, getState) {
+            const state = getState();
+            if (!regionSelectors.selectSelectedRegion?.(state)) return;
+            if (state.regions.panelVisible === false) {
+                dispatch(actions.regionVisibilitySet({ showPanel: true }));
+            }
+            if (state.view.activeSidePanelTab !== SIDE_PANEL_TAB_REGIONS) {
+                dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
+            }
+            dispatch(actions.regionNoteFocusRequested());
         };
     }
 
@@ -803,6 +843,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         copyRegionToAllPositionsIntent,
         copyRegionToPositionIntent,
         centerViewportOnSelectedRegionIntent,
+        centerViewportOnRegionIntent,
+        returnToPreviousRegionViewIntent,
+        focusSelectedRegionNoteIntent,
         recalculateSelectedRegionIntent
     };
     app.features.regions.__test__ = app.features.regions.__test__ || {};
