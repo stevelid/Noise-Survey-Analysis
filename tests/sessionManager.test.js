@@ -12,6 +12,37 @@ beforeAll(() => {
     }
 });
 
+// Quote-aware split: region rows carry JSON columns that contain commas.
+function splitCsvLine(line) {
+    const cells = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (inQuotes) {
+            if (char === '"') {
+                if (line[i + 1] === '"') {
+                    current += '"';
+                    i += 1;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                current += char;
+            }
+        } else if (char === '"') {
+            inQuotes = true;
+        } else if (char === ',') {
+            cells.push(current);
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+    cells.push(current);
+    return cells;
+}
+
 describe('Annotation CSV helpers', () => {
     it('formats timestamps in Excel-friendly UTC format', () => {
         const timestamp = Date.UTC(2023, 0, 15, 13, 45, 12, 34);
@@ -240,6 +271,45 @@ describe('Annotation CSV region offset provenance', () => {
         expect(rawCells[headerCells.indexOf('chart_offset_ms')]).toBe('');
         expect(rawCells[headerCells.indexOf('source_start_utc')]).toBe('');
         expect(rawCells[headerCells.indexOf('source_end_utc')]).toBe('');
+    });
+
+    it('leaves metrics_la90 blank when the metrics say LA90 is not available', () => {
+        window.NoiseSurveyApp.regions.invalidateMetricsCache();
+        const start = Date.UTC(2024, 0, 5, 9, 0, 0, 0);
+        const end = Date.UTC(2024, 0, 5, 9, 30, 0, 0);
+        const region = {
+            id: 11, positionId: 'P1', start, end,
+            areas: [{ start, end }], note: ''
+        };
+        const state = { view: { selectedParameter: 'LAeq' } };
+        // Overview-only source: LA90 there is a percentile of 15-minute aggregates,
+        // which the region panel hides.
+        const models = {
+            timeSeriesSources: {
+                P1: {
+                    overview: {
+                        data: {
+                            Datetime: [start, start + 900000, end],
+                            LAeq: [55, 60, 58]
+                        }
+                    }
+                }
+            }
+        };
+
+        const metrics = window.NoiseSurveyApp.regions.getRegionMetrics(region, state, {}, models);
+        expect(metrics.dataResolution).toBe('overview');
+        expect(metrics.la90Available).toBe(false);
+        expect(metrics.la90).not.toBeNull();
+
+        const csv = helpers.buildAnnotationsCsv([], [region], state, { dataCache: {}, models });
+        const headerCells = splitCsvLine(csv.split('\n')[0]);
+        const cells = splitCsvLine(csv.split('\n')[1]);
+        expect(cells[headerCells.indexOf('metrics_la90')]).toBe('');
+        expect(cells[headerCells.indexOf('metrics_la90_available')]).toBe('');
+        // The available metrics are still exported.
+        expect(cells[headerCells.indexOf('metrics_laeq')]).not.toBe('');
+        window.NoiseSurveyApp.regions.invalidateMetricsCache();
     });
 
     it('CSV import without provenance columns remains backward-compatible', () => {

@@ -8,6 +8,45 @@ const { comparisonMetrics, calcMetrics } = window.NoiseSurveyApp;
 const processComparisonSliceMetrics = comparisonMetrics.processComparisonSliceMetrics;
 
 describe('processComparisonSliceMetrics', () => {
+    it('uses the meter LAF90 column for LA90 when it is present, like the region panel', () => {
+        const logData = {
+            Datetime: [0, 1000, 2000, 3000],
+            LAeq: [40, 50, 60, 50],
+            LAFmax: [55, 65, 70, 68],
+            LAF90: [30, 31, 45, 33]
+        };
+        const timeSeriesSources = {
+            P1: {
+                log: { data: logData },
+                overview: { data: { Datetime: [], LAeq: [] } }
+            }
+        };
+
+        const result = processComparisonSliceMetrics({
+            start: 1000,
+            end: 3000,
+            positionIds: ['P1'],
+            timeSeriesSources,
+            preparedGlyphData: {},
+            selectedParameter: 'LAeq'
+        });
+
+        const metrics = result.metricsRows[0];
+        const expectedLa90 = calcMetrics.calcLA90([31, 45, 33]);
+        expect(metrics.la90).toBeCloseTo(expectedLa90 ?? 0, 6);
+        expect(metrics.la90).not.toBeCloseTo(calcMetrics.calcLA90([50, 60, 50]) ?? 0, 6);
+
+        // Same window through the region path must agree.
+        const region = { id: 1, positionId: 'P1', areas: [{ start: 1000, end: 3000 }] };
+        const regionMetrics = window.NoiseSurveyApp.regions.computeRegionMetrics(
+            region,
+            { view: { selectedParameter: 'LAeq' } },
+            {},
+            { timeSeriesSources }
+        );
+        expect(metrics.la90).toBeCloseTo(regionMetrics.la90 ?? 0, 6);
+    });
+
     it('calculates metrics and spectrum for log data', () => {
         const timeSeriesSources = {
             P1: {

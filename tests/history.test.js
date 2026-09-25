@@ -258,4 +258,63 @@ describe('history', () => {
             expect(store.getState()).toBe(stateAt50);
         });
     });
+    describe('undo/redo only rewind the annotation slices', () => {
+        it('keeps viewport and selected parameter changed after the undoable action', () => {
+            const store = freshStore();
+            store.dispatch(app.actions.regionAdd('P1', 1000, 2000));
+            store.dispatch(app.actions.viewportChange(50000, 60000));
+            store.dispatch(app.actions.paramChange('LZeq'));
+
+            const beforeUndo = store.getState();
+            store.dispatch(app.actions.undo());
+            const afterUndo = store.getState();
+
+            expect(afterUndo.regions.allIds).toHaveLength(0);
+            expect(afterUndo.view.viewport).toEqual(beforeUndo.view.viewport);
+            expect(afterUndo.view.selectedParameter).toBe('LZeq');
+            // Untouched slices keep their identity so renderers can skip work.
+            expect(afterUndo.audio).toBe(beforeUndo.audio);
+            expect(afterUndo.interaction).toBe(beforeUndo.interaction);
+            expect(afterUndo.view.viewport).toBe(beforeUndo.view.viewport);
+        });
+
+        it('keeps state changed since the undo when redoing', () => {
+            const store = freshStore();
+            store.dispatch(app.actions.markerAdd(5000));
+            store.dispatch(app.actions.undo());
+            store.dispatch(app.actions.viewportChange(1000, 2000));
+
+            const beforeRedo = store.getState();
+            store.dispatch(app.actions.redo());
+            const afterRedo = store.getState();
+
+            expect(afterRedo.markers.allIds).toHaveLength(1);
+            expect(afterRedo.view.viewport).toBe(beforeRedo.view.viewport);
+        });
+
+        it('records the undo/redo action itself as system.lastAction', () => {
+            const store = freshStore();
+            store.dispatch(app.actions.tap(100, 'P1', 'line_P1'));
+            store.dispatch(app.actions.regionAdd('P1', 1000, 2000));
+
+            store.dispatch(app.actions.undo());
+            expect(store.getState().system.lastAction.type).toBe(app.actionTypes.HISTORY_UNDO);
+
+            store.dispatch(app.actions.redo());
+            expect(store.getState().system.lastAction.type).toBe(app.actionTypes.HISTORY_REDO);
+        });
+
+        it('restores chart offsets without replacing unrelated view fields', () => {
+            const store = freshStore();
+            store.dispatch(app.actions.positionChartOffsetSet('P1', 1500));
+            store.dispatch(app.actions.viewportChange(7000, 8000));
+
+            const beforeUndo = store.getState();
+            store.dispatch(app.actions.undo());
+            const afterUndo = store.getState();
+
+            expect(afterUndo.view.positionChartOffsets.P1 ?? 0).toBe(0);
+            expect(afterUndo.view.viewport).toBe(beforeUndo.view.viewport);
+        });
+    });
 });

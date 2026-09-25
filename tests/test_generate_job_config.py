@@ -23,7 +23,16 @@ class GenerateJobConfigCliTests(unittest.TestCase):
         args = generator.build_parser().parse_args(["5882"])
 
         self.assertEqual(args.base_dir, cfg.DEFAULT_BASE_JOB_DIR)
-        self.assertNotIn("G:/Shared drives/Venta/Jobs", args.base_dir)
+
+    def test_base_dir_default_follows_environment_override(self):
+        override = os.path.join(os.sep + "srv", "jobs")
+        with patch.dict(os.environ, {"NOISE_SURVEY_BASE_JOB_DIR": override}, clear=True):
+            cfg, generator = self._reload_modules()
+
+            args = generator.build_parser().parse_args(["5882"])
+
+        self.assertEqual(cfg.DEFAULT_BASE_JOB_DIR, override)
+        self.assertEqual(args.base_dir, override)
 
     def test_base_dir_can_be_overridden_positionally(self):
         args = generate_job_config.build_parser().parse_args(["5882", r"D:\Jobs"])

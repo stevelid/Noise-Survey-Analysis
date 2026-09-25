@@ -30,6 +30,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             ? broadbandParam
             : 'LAeq';
 
+        // Regions read LA90 from the meter's own LAF90 column when it exists and only
+        // fall back to a percentile of the LAeq samples otherwise (see
+        // features/regions/regionUtils.js). Comparison mode has to resolve it the same
+        // way, or the same time slice reports two different LA90 values.
+        function sliceLa90(dataObj) {
+            if (!dataObj?.LAF90) return null;
+            const values = calcMetrics.sliceTimeSeries(dataObj.Datetime, dataObj.LAF90, start, end);
+            return values.length ? values : null;
+        }
+
         function tryDataset(datasetName, dataObj) {
             if (!dataObj?.Datetime) return null;
             const paramValues = calcMetrics.sliceTimeSeries(dataObj.Datetime, dataObj[effectiveParam], start, end);
@@ -40,7 +50,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     data: dataObj,
                     broadbandValues: paramValues,
                     broadbandParam: effectiveParam,
-                    laeqValues: laeqValues.length ? laeqValues : paramValues
+                    laeqValues: laeqValues.length ? laeqValues : paramValues,
+                    la90Values: sliceLa90(dataObj)
                 };
             }
             // Fallback to LAeq if selected parameter not available
@@ -51,7 +62,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     data: dataObj,
                     broadbandValues: laeqValues,
                     broadbandParam: 'LAeq',
-                    laeqValues
+                    laeqValues,
+                    la90Values: sliceLa90(dataObj)
                 };
             }
             return null;
@@ -204,7 +216,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
             const lafmax = lafmaxAvailable ? calcMetrics.calcLAMax(lafmaxValues) : null;
             const la90 = selection.dataset === 'log'
-                ? calcMetrics.calcLA90(selection.laeqValues)
+                ? calcMetrics.calcLA90(
+                    Array.isArray(selection.la90Values) && selection.la90Values.length
+                        ? selection.la90Values
+                        : selection.laeqValues
+                )
                 : null;
 
             const glyphData = preparedGlyphData[positionId] || {};
