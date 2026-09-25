@@ -302,12 +302,13 @@ class RegionPanelComponent:
             disabled=True,
         )
 
+        # Placeholder only: the JS region panel renderer replaces this with the
+        # full keyboard shortcut reference on first render.
         region_message_html = (
             "<div>"
-            "<strong>Region tips</strong><br>"
-            "1. Click chart then press <kbd>R</kbd> to start/end.<br>"
-            "2. Hold <kbd>Shift</kbd> + drag to create a span.<br>"
-            "3. <kbd>Ctrl</kbd> + click removes region under cursor."
+            "<strong>No regions yet</strong><br>"
+            "Drag on a chart to draw a region, or click a chart and press <kbd>R</kbd> "
+            "to pin the start and again to set the end."
             "</div>"
         )
         self.message_div = Div(
@@ -390,28 +391,39 @@ class RegionPanelComponent:
         )
 
         self.back_to_previous_view_button = Button(
-            label="Back to Previous View",
-            width=panel_width,
+            label="Back (B)",
+            width=int(panel_width / 2) - 6,
             name="region_back_to_previous_view_button",
             disabled=True,
         )
 
         self.recalculate_region_button = Button(
             label="Recalculate",
-            width=int(panel_width / 2) - 6,
+            width=panel_width,
             name="region_recalculate_button",
             disabled=True,
         )
 
         self.note_input = TextAreaInput(
-            title="Notes (N to focus, Esc to leave)",
+            title="Notes",
             value="",
             rows=4,
             width=panel_width,
             name="region_note_input",
-            placeholder="Add notes...",
+            placeholder="Add notes... (N to edit, Esc or Ctrl+Enter to save)",
             disabled=True,
             css_classes=["region-note-input"],
+        )
+
+        # Save indicator for the note ("Unsaved changes" / "Saved"). It is a
+        # separate Div because changing the TextAreaInput's own title makes
+        # Bokeh re-render the textarea, which would drop focus mid-typing.
+        self.note_status_div = Div(
+            text="",
+            width=panel_width,
+            name="region_note_status_div",
+            visible=False,
+            styles={"font-size": "11px", "color": "#64748b", "margin-top": "-4px"},
         )
 
         self.frequency_copy_button = Button(
@@ -472,23 +484,28 @@ class RegionPanelComponent:
             spacing=8,
         )
 
-        metric_actions = Row(
-            children=[self.center_region_button, self.recalculate_region_button],
-            name="region_metric_actions",
+        # Centre and Back are used together when reviewing regions, so they
+        # sit side by side directly under the list.
+        navigation_actions = Row(
+            children=[self.center_region_button, self.back_to_previous_view_button],
+            name="region_navigation_actions",
             sizing_mode="stretch_width",
         )
 
+        # The note sits next to the list so the region and its note are visible
+        # together; editing actions follow below.
         self.detail_layout = column(
             self.region_table,
+            navigation_actions,
+            self.note_input,
+            self.note_status_div,
             self.color_picker,
             primary_actions,
             self.merge_select,
             secondary_actions,
             self.split_button,
             copy_position_actions,
-            metric_actions,
-            self.back_to_previous_view_button,
-            self.note_input,
+            self.recalculate_region_button,
             self.metrics_div,
             self.frequency_copy_button,
             self.frequency_table_div,
@@ -558,13 +575,30 @@ class RegionPanelComponent:
             if (!Number.isFinite(regionId)) {
                 return;
             }
-            const actions = window.NoiseSurveyApp?.actions;
             const store = window.NoiseSurveyApp?.store;
-            if (actions?.regionSetNote && typeof store?.dispatch === 'function') {
-                store.dispatch(actions.regionSetNote(regionId, cb_obj.value ?? ''));
+            const thunk = window.NoiseSurveyApp?.thunks?.saveRegionNoteIntent;
+            if (typeof thunk === 'function' && typeof store?.dispatch === 'function') {
+                store.dispatch(thunk(regionId, cb_obj.value ?? ''));
             }
         """)
         self.note_input.js_on_change('value', note_callback)
+
+        # Fires on every keystroke so the label can show "unsaved" until the
+        # note is committed (on blur, Esc or Ctrl+Enter).
+        note_draft_callback = CustomJS(args={'source': self.region_source}, code="""
+            const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];
+            if (!indices.length) {
+                return;
+            }
+            const ids = Array.isArray(source.data?.id) ? source.data.id : [];
+            const regionId = Number(ids[indices[0]]);
+            const store = window.NoiseSurveyApp?.store;
+            const thunk = window.NoiseSurveyApp?.thunks?.updateRegionNoteDraftIntent;
+            if (Number.isFinite(regionId) && typeof thunk === 'function' && typeof store?.dispatch === 'function') {
+                store.dispatch(thunk(regionId, cb_obj.value_input ?? ''));
+            }
+        """)
+        self.note_input.js_on_change('value_input', note_draft_callback)
 
         color_callback = CustomJS(args={'source': self.region_source}, code="""
             const indices = Array.isArray(source.selected?.indices) ? source.selected.indices : [];

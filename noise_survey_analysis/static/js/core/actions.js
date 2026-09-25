@@ -30,6 +30,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REGION_VIEWPORT_CENTERED: 'view/regionViewportCentered',
         REGION_VIEWPORT_RESTORED: 'view/regionViewportRestored',
         REGION_NOTE_FOCUS_REQUESTED: 'view/regionNoteFocusRequested',
+        REGION_NOTE_STATUS_SET: 'view/regionNoteStatusSet',
+        NOTICE_SHOWN: 'view/noticeShown',
         PARAM_CHANGE: 'view/PARAM_CHANGE',
         VIEW_TOGGLE: 'view/VIEW_TOGGLE',
         VISIBILITY_CHANGE: 'VISIBILITY_CHANGE',
@@ -133,6 +135,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }),
         regionViewportRestored: () => ({ type: actionTypes.REGION_VIEWPORT_RESTORED }),
         regionNoteFocusRequested: () => ({ type: actionTypes.REGION_NOTE_FOCUS_REQUESTED }),
+        /** status: 'idle' | 'unsaved' | 'saved' - drives the note field's label. */
+        regionNoteStatusSet: (status) => ({
+            type: actionTypes.REGION_NOTE_STATUS_SET,
+            payload: { status }
+        }),
+        /** Short, transient message for the user (rendered as a toast). */
+        noticeShown: (message, level = 'info') => ({
+            type: actionTypes.NOTICE_SHOWN,
+            payload: { message, level }
+        }),
 
         setActiveSidePanelTab: (index) => ({
             type: actionTypes.VIEW_ACTIVE_SIDE_PANEL_TAB_SET,

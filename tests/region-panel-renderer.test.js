@@ -25,6 +25,7 @@ function createPanelModels() {
         creationIndicatorDiv: { visible: false, text: '' },
         detail: { visible: false },
         noteInput: { disabled: true, value: '' },
+        noteStatusDiv: { visible: false, text: '' },
         metricsDiv: { visible: false, text: '' },
         spectrumDiv: { visible: false, text: '' },
         mergeSelect: { options: [], value: '', disabled: true, visible: false },
@@ -250,10 +251,32 @@ describe('regionPanelRenderer.renderRegionPanel', () => {
             view: { ...state.view, regionJumpHistory: [{ min: 0, max: 1000 }] }
         }, { panelVisible: true, overlaysVisible: true, positionCount: 2 });
         expect(panelModels.backToPreviousViewButton.disabled).toBe(false);
+        expect(panelModels.backToPreviousViewButton.html_attributes.title).toMatch(/^Return to .+ \(B\)$/);
         expect(panelModels.recalculateRegionButton).toMatchObject({
             label: 'Recalculate (Log)',
             disabled: false,
             visible: true
         });
+    });
+
+    it('shows the note save status only while a region is selected', () => {
+        const panelModels = createPanelModels();
+        const region = { id: 1, positionId: 'P1', start: 0, end: 1000, areas: [{ start: 0, end: 1000 }], note: 'n' };
+        const state = status => ({
+            regions: { byId: { 1: region }, allIds: [1], selectedId: 1, panelVisible: true },
+            interaction: {},
+            view: { availablePositions: ['P1'], regionNoteStatus: status }
+        });
+        const visibility = { panelVisible: true, overlaysVisible: true, positionCount: 1 };
+
+        renderRegionPanel(panelModels, [region], 1, state('unsaved'), visibility);
+        expect(panelModels.noteStatusDiv).toMatchObject({ visible: true });
+        expect(panelModels.noteStatusDiv.text).toContain('Unsaved changes');
+
+        renderRegionPanel(panelModels, [region], 1, state('saved'), visibility);
+        expect(panelModels.noteStatusDiv.text).toContain('Saved');
+
+        renderRegionPanel(panelModels, [region], 1, state('idle'), visibility);
+        expect(panelModels.noteStatusDiv).toMatchObject({ visible: false, text: '' });
     });
 });

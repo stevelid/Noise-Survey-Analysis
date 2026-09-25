@@ -46,6 +46,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             .region-panel-info p { margin: 4px 0; }
             .region-panel-hints { margin: 6px 0 0 18px; padding: 0; color: inherit; }
             .region-panel-hints li { margin-bottom: 4px; }
+            .region-panel-shortcuts summary { cursor: pointer; font-weight: 600; margin: 4px 0; }
+            .region-panel-hints__group { font-weight: 600; margin: 6px 0 2px 0; color: #475569; }
             .region-panel-hints kbd, .region-panel-info kbd { display: inline-block; padding: 1px 4px; border-radius: 3px; border: 1px solid #d7ccc8; background: #fff; font-size: 11px; font-family: 'Segoe UI', sans-serif; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1); color: inherit; }
         </style>
     `;
@@ -53,16 +55,50 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const DEFAULT_REGION_COLOR = '#1e88e5';
     const NOTE_PREVIEW_MAX_LENGTH = 40;
 
-    const REGION_TIPS_HTML = `
-        <ul class="region-panel-hints">
-            <li>Double-click a region in the list to centre it on the charts.</li>
-            <li>Press <kbd>N</kbd> to edit the selected region's note; <kbd>Esc</kbd> returns to chart shortcuts.</li>
-            <li>Click and drag on a chart to draw a new region instantly.</li>
-            <li>Press <kbd>R</kbd> while a tap line is active to toggle make region mode; <kbd>Esc</kbd> cancels it.</li>
-            <li>Hold <kbd>Shift</kbd> and click to span a region between the previous tap and your new click.</li>
-            <li>Use <kbd>Ctrl</kbd> + click inside a region to remove it, or <kbd>Ctrl</kbd>/<kbd>Alt</kbd> + <kbd>←</kbd>/<kbd>→</kbd> to resize the selected region's edges.</li>
-        </ul>
-    `;
+    const SHORTCUT_GROUPS = [
+        {
+            title: 'Create',
+            items: [
+                'Drag on a chart to draw a region.',
+                '<kbd>R</kbd> pins the start at the tap line; <kbd>R</kbd> again sets the end. <kbd>Esc</kbd> cancels.',
+                '<kbd>Shift</kbd> + click spans a region from the previous tap to the click.'
+            ]
+        },
+        {
+            title: 'Navigate',
+            items: [
+                '<kbd>[</kbd> / <kbd>]</kbd> select the previous / next region and bring it into view.',
+                'Double-click a region in the list to centre it.',
+                '<kbd>B</kbd> goes back to the view before you jumped to a region.'
+            ]
+        },
+        {
+            title: 'Edit',
+            items: [
+                '<kbd>N</kbd> edits the selected region\'s note; <kbd>Esc</kbd> or <kbd>Ctrl</kbd> + <kbd>Enter</kbd> saves and returns to the charts.',
+                '<kbd>Ctrl</kbd>/<kbd>Alt</kbd> + <kbd>←</kbd>/<kbd>→</kbd> resize the selected region\'s edges.',
+                '<kbd>Ctrl</kbd> + click inside a region, or <kbd>Delete</kbd>, removes it.'
+            ]
+        }
+    ];
+
+    /**
+     * Keyboard shortcut reference as a collapsible block. It starts open while
+     * there are no regions (when the user is learning) and collapsed afterwards
+     * so it does not crowd the panel.
+     */
+    function buildShortcutsHtml(startOpen) {
+        const groups = SHORTCUT_GROUPS.map(group => `
+                <div class="region-panel-hints__group">${group.title}</div>
+                <ul class="region-panel-hints">
+                    ${group.items.map(item => `<li>${item}</li>`).join('')}
+                </ul>`).join('');
+        return `
+            <details class="region-panel-shortcuts"${startOpen ? ' open' : ''}>
+                <summary>Keyboard shortcuts</summary>
+                ${groups}
+            </details>`;
+    }
 
     const CREATION_MODE_HTML = `${PANEL_STYLE}
         <div class="region-panel-mode">
@@ -493,7 +529,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     <div class="region-panel-info__title">Make Region mode active</div>
                     <p>Region start pinned at <strong>${formattedTimestamp}</strong>${positionLabel}. Press <kbd>R</kbd> again to set the end point or <kbd>Esc</kbd> to cancel.</p>
                     <p>You can nudge the tap line with the arrow keys before finishing the region.</p>
-                    ${REGION_TIPS_HTML}
+                    ${buildShortcutsHtml(false)}
                 </div>`;
             if (messageDiv.text !== pendingText) {
                 messageDiv.text = pendingText;
@@ -506,7 +542,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 <div class="region-panel-info">
                     <div class="region-panel-info__title">No regions yet</div>
                     <p>Click on a chart to place the tap line, then press <kbd>R</kbd> to pin the start time. Press <kbd>R</kbd> again at the end time or drag to draw a region.</p>
-                    ${REGION_TIPS_HTML}
+                    ${buildShortcutsHtml(true)}
                 </div>`;
             if (messageDiv.text !== emptyText) {
                 messageDiv.text = emptyText;
@@ -516,9 +552,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const infoText = `${PANEL_STYLE}
             <div class="region-panel-info">
-                <div class="region-panel-info__title">Region tips</div>
-                <p>Use these shortcuts to refine the selected region.</p>
-                ${REGION_TIPS_HTML}
+                ${buildShortcutsHtml(false)}
             </div>`;
         if (messageDiv.text !== infoText) {
             messageDiv.text = infoText;
@@ -653,8 +687,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             centerRegionButton.visible = panelVisible;
         }
         if (backToPreviousViewButton) {
-            backToPreviousViewButton.disabled = !(state?.view?.regionJumpHistory?.length > 0);
+            const history = Array.isArray(state?.view?.regionJumpHistory) ? state.view.regionJumpHistory : [];
+            const target = history[history.length - 1];
+            backToPreviousViewButton.disabled = !target;
             backToPreviousViewButton.visible = panelVisible;
+            // Native tooltip naming the view Back will return to.
+            const tooltip = target
+                ? `Return to ${formatDateTime(target.min)} – ${formatDateTime(target.max)} (B)`
+                : 'No previous view yet. Centring on a region saves the current view here.';
+            if (backToPreviousViewButton.html_attributes?.title !== tooltip) {
+                backToPreviousViewButton.html_attributes = {
+                    ...(backToPreviousViewButton.html_attributes || {}),
+                    title: tooltip
+                };
+            }
         }
         if (recalculateRegionButton) {
             recalculateRegionButton.disabled = !hasSelection;
@@ -702,6 +748,24 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         return { selectedSourceId: Number(mergeSelect.value) || null };
+    }
+
+    const NOTE_STATUS_HTML = {
+        idle: '',
+        unsaved: '● Unsaved changes. Press Esc or Ctrl+Enter to save.',
+        saved: '✓ Saved'
+    };
+
+    function updateNoteStatus(noteStatusDiv, region, noteStatus) {
+        if (!noteStatusDiv) return;
+        const html = region ? (NOTE_STATUS_HTML[noteStatus] || '') : '';
+        const visible = html !== '';
+        if (noteStatusDiv.visible !== visible) {
+            noteStatusDiv.visible = visible;
+        }
+        if (noteStatusDiv.text !== html) {
+            noteStatusDiv.text = html;
+        }
     }
 
     function updateNoteInput(noteInput, region) {
@@ -775,6 +839,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             creationIndicatorDiv,
             detail,
             noteInput,
+            noteStatusDiv,
             metricsDiv,
             spectrumDiv,
             mergeSelect,
@@ -814,6 +879,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateMessage(messageDiv, detail, hasRegions, panelVisible, pendingRegionStart);
         updateButtons(panelModels, hasSelection, selectedRegion, state, isMergeModeActive, panelVisible);
         updateNoteInput(noteInput, selectedRegion);
+        updateNoteStatus(noteStatusDiv, selectedRegion, state?.view?.regionNoteStatus);
 
         updateColorPicker(colorPicker, selectedRegion);
         const metrics = selectedRegion && app.regions?.getRegionMetrics

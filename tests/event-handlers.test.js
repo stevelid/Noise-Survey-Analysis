@@ -372,6 +372,31 @@ describe('NoiseSurveyApp.eventHandlers', () => {
             expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Function));
         });
 
+        it('leaves the note field with Ctrl+Enter', () => {
+            const textarea = document.createElement('textarea');
+            const host = document.createElement('div');
+            host.classList.add('region-note-input');
+            const blur = vi.spyOn(textarea, 'blur');
+            const ctrlEnter = {
+                key: 'Enter',
+                ctrlKey: true,
+                target: textarea,
+                composedPath: () => [textarea, host],
+                preventDefault: vi.fn()
+            };
+            eventHandlers.handleKeyPress(ctrlEnter);
+            expect(blur).toHaveBeenCalledTimes(1);
+            expect(ctrlEnter.preventDefault).toHaveBeenCalled();
+            expect(handleKeyboardShortcutIntentSpy).not.toHaveBeenCalled();
+        });
+
+        it.each(['[', ']', 'b'])('routes the %s region navigation key to the shortcut intent', (key) => {
+            const event = { key, preventDefault: vi.fn(), target: document.body };
+            eventHandlers.handleKeyPress(event);
+            expect(event.preventDefault).toHaveBeenCalled();
+            expect(handleKeyboardShortcutIntentSpy).toHaveBeenCalledWith(expect.objectContaining({ key }));
+        });
+
         it('requests note focus with N and leaves the note field with Escape', () => {
             const focusNoteIntent = vi.spyOn(window.NoiseSurveyApp.thunks, 'focusSelectedRegionNoteIntent')
                 .mockReturnValue(() => {});

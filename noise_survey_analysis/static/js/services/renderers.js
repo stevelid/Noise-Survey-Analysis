@@ -102,6 +102,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (range.end !== max) range.end = max;
     }
 
+    /** Show the latest transient notice from state as a toast. */
+    function renderNotice(state) {
+        const notice = state?.view?.notice;
+        const showToast = app.session?.showToast;
+        if (!notice?.message || typeof showToast !== 'function') return;
+        showToast(notice.message, notice.level || 'info', 3200);
+    }
+
     function findRegionNoteTextarea() {
         const roots = [document];
         while (roots.length) {
@@ -939,6 +947,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     copyToAllPositionsButton: models?.regionPanelCopyToAllPositionsButton,
                     centerRegionButton: models?.regionPanelCenterButton,
                     backToPreviousViewButton: models?.regionPanelBackButton,
+                    noteStatusDiv: models?.regionPanelNoteStatusDiv,
                     recalculateRegionButton: models?.regionPanelRecalculateButton,
                 };
                 const availablePositions = Array.isArray(state?.view?.availablePositions)
@@ -1230,6 +1239,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.renderers = {
         renderViewport: renderViewport,
         focusRegionNoteInput: focusRegionNoteInput,
+        renderNotice: renderNotice,
         renderPrimaryCharts: renderPrimaryCharts,
         renderOverlays: renderOverlays,
         renderAllVisuals: renderAllVisuals,

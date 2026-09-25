@@ -461,8 +461,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         // Ignore keyboard events from editable elements
         if (app.utils && typeof app.utils.isEditableEvent === 'function') {
             if (app.utils.isEditableEvent(e)) {
+                // Esc or Ctrl+Enter in the region note leaves the field. Blurring
+                // commits the note and hands the keyboard back to chart shortcuts.
                 const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
-                if (e.key === 'Escape' && path.some(node => node?.classList?.contains?.('region-note-input'))) {
+                const isLeaveNoteKey = e.key === 'Escape'
+                    || (e.key === 'Enter' && (e.ctrlKey || e.metaKey));
+                if (isLeaveNoteKey && path.some(node => node?.classList?.contains?.('region-note-input'))) {
                     const textarea = path.find(node => node?.tagName === 'TEXTAREA');
                     textarea?.blur?.();
                     e.preventDefault?.();
@@ -512,6 +516,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const isMarkerKey = normalizedKey === 'm';
         const isRegionKey = normalizedKey === 'r';
         const isNoteKey = normalizedKey === 'n' && !isCtrlOrMeta && !e.altKey;
+        const isBackKey = normalizedKey === 'b' && !isCtrlOrMeta && !e.altKey;
+        const isRegionStepKey = (rawKey === '[' || rawKey === ']') && !isCtrlOrMeta && !e.altKey;
         const isPreviewKey = normalizedKey === 'p';
         const isArrowKey = rawKey === 'ArrowLeft' || rawKey === 'ArrowRight';
         const isDeleteKey = rawKey === 'Delete' || rawKey === 'Backspace';
@@ -525,14 +531,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return;
         }
 
-        if (!(isSpace || isEscape || isMarkerKey || isRegionKey || isNoteKey || isArrowKey || isDeleteKey)) {
+        const isShortcutKey = isSpace || isEscape || isMarkerKey || isRegionKey || isNoteKey
+            || isBackKey || isRegionStepKey || isArrowKey || isDeleteKey;
+        if (!isShortcutKey) {
             return;
         }
-
-        if (isSpace || isEscape || isMarkerKey || isRegionKey || isNoteKey || isArrowKey || isDeleteKey) {
-            if (typeof e.preventDefault === 'function') {
-                e.preventDefault();
-            }
+        if (typeof e.preventDefault === 'function') {
+            e.preventDefault();
         }
 
         dispatch(thunkCreator({

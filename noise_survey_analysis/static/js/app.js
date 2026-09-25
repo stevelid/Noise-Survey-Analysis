@@ -324,6 +324,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didViewportChange = state.view.viewport !== prev.view.viewport;
         const didRegionJumpHistoryChange = state.view.regionJumpHistory !== prev.view.regionJumpHistory;
         const didRegionNoteFocusRequest = state.view.regionNoteFocusRequestId !== prev.view.regionNoteFocusRequestId;
+        const didRegionNoteStatusChange = state.view.regionNoteStatus !== prev.view.regionNoteStatus;
+        const didNoticeChange = state.view.notice !== prev.view.notice;
         const didParamChange = state.view.selectedParameter !== prev.view.selectedParameter;
         const didViewToggleChange = state.view.globalViewType !== prev.view.globalViewType;
         const didVisibilityChange = state.view.chartVisibility !== prev.view.chartVisibility;
@@ -487,7 +489,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }, renderContext);
         }
 
-        if (isInitialLoad || didRegionsChange || didPendingRegionChange || didRegionJumpHistoryChange) {
+        if (isInitialLoad || didRegionsChange || didPendingRegionChange || didRegionJumpHistoryChange
+            || didRegionNoteStatusChange) {
             _guardedRender('renderRegions', () => {
                 app.renderers.renderRegions(state, dataCache);
             }, renderContext);
@@ -508,6 +511,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if ((isInitialLoad || didActiveDragToolChange) && typeof app.renderers.renderActiveTool === 'function') {
             _guardedRender('renderActiveTool', () => {
                 app.renderers.renderActiveTool(state, models);
+            }, renderContext);
+        }
+
+        if (didNoticeChange && state.view.notice && typeof app.renderers?.renderNotice === 'function') {
+            _guardedRender('renderNotice', () => {
+                app.renderers.renderNotice(state);
             }, renderContext);
         }
 

@@ -1231,6 +1231,25 @@ Escape - Clear Selection / Exit Modes
 - Cancels any active selection operation
 - Universal "cancel" or "back" action
 
+[ and ] - Step Through Regions
+- ] selects the next region in the Regions list; [ selects the previous one
+- The selected region is brought into view, zooming in if it is small
+- With no region selected, ] starts at the first region and [ at the last
+- A short message appears when there is no further region
+
+B - Back to Previous View
+- Returns to the view you were in before jumping to a region
+- A run of [ / ] presses counts as one jump, so one B press returns to
+  where you started
+- The "Back (B)" button in the Regions panel does the same; hover over it
+  to see the time range it will return to
+
+N - Edit Region Note
+- Moves the cursor into the selected region's note
+- If nothing is selected, selects the region under the tap line first
+- Esc or Ctrl + Enter saves the note and returns to chart shortcuts
+- "Unsaved changes" / "Saved" appears under the note box
+
 Arrow Keys - Navigation
 
 Left Arrow:

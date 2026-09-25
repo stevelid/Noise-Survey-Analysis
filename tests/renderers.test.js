@@ -31,6 +31,15 @@ describe('NoiseSurveyApp.renderers', () => {
     let mockRegionSetNote;
     let mockRegionSetColor;
 
+    it('shows the latest notice as a toast', () => {
+        const showToast = vi.fn();
+        window.NoiseSurveyApp.session = { ...(window.NoiseSurveyApp.session || {}), showToast };
+        window.NoiseSurveyApp.renderers.renderNotice({
+            view: { notice: { id: 1, message: 'This is the last region.', level: 'info' } }
+        });
+        expect(showToast).toHaveBeenCalledWith('This is the last region.', 'info', 3200);
+    });
+
     it('moves the shared chart range to the viewport in state', () => {
         const range = { start: 0, end: 1000 };
         window.NoiseSurveyApp.registry = { models: { charts: [{ x_range: range }, { x_range: range }] } };
@@ -561,6 +570,7 @@ describe('NoiseSurveyApp.renderers', () => {
             expect(models.regionPanelMessageDiv.visible).toBe(true);
             expect(models.regionPanelMessageDiv.text).toContain('No regions yet');
             expect(models.regionPanelMessageDiv.text).toContain('Press <kbd>R</kbd>');
+            expect(models.regionPanelMessageDiv.text).toContain('<details class="region-panel-shortcuts" open');
             expect(models.regionPanelDetail.visible).toBe(false);
             expect(models.regionPanelTable.disabled).toBe(true);
             expect(models.regionPanelCopyButton.disabled).toBe(true);
@@ -612,7 +622,9 @@ describe('NoiseSurveyApp.renderers', () => {
 
             renderers.renderRegions(populatedState, {});
             expect(models.regionPanelMessageDiv.visible).toBe(true);
-            expect(models.regionPanelMessageDiv.text).toContain('Region tips');
+            // With regions present the shortcut reference is collapsed.
+            expect(models.regionPanelMessageDiv.text).toContain('Keyboard shortcuts');
+            expect(models.regionPanelMessageDiv.text).not.toContain('<details class="region-panel-shortcuts" open');
             expect(models.regionPanelCreationIndicatorDiv.visible).toBe(false);
             expect(models.regionPanelCreationIndicatorDiv.text).toBe('');
             expect(models.regionPanelDetail.visible).toBe(true);
