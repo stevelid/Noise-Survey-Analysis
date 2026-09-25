@@ -207,6 +207,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
+            if (normalizedKey === 'b' && !ctrlKey && !altKey) {
+                const backThunk = thunks.returnToPreviousRegionViewIntent;
+                if (typeof backThunk === 'function') {
+                    dispatch(backThunk());
+                }
+                return;
+            }
+
+            if ((rawKey === '[' || rawKey === ']') && !ctrlKey && !altKey) {
+                const stepThunk = thunks.stepRegionSelectionIntent;
+                if (typeof stepThunk === 'function') {
+                    dispatch(stepThunk(rawKey === '[' ? -1 : 1));
+                }
+                return;
+            }
+
             if (rawKey !== 'ArrowLeft' && rawKey !== 'ArrowRight') {
                 return;
             }

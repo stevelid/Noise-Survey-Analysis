@@ -37,6 +37,13 @@ describe('region metric view controls', () => {
         expect(app.store.getState().view.viewport).toEqual({ min: -500, max: 9500 });
     });
 
+    it('zooms in when the region is small relative to the current view', () => {
+        app.store.dispatch(app.actions.viewportChange(0, 100000));
+        app.store.dispatch(app.thunks.centerViewportOnSelectedRegionIntent());
+        // 1 s region in a 100 s view: zoom to three region spans, centred.
+        expect(app.store.getState().view.viewport).toEqual({ min: 3000, max: 6000 });
+    });
+
     it('selects a double-clicked region before centring the viewport', () => {
         app.store.dispatch(app.actions.regionsAdded([{
             id: 2,
@@ -72,6 +79,124 @@ describe('region metric view controls', () => {
         expect(state.regions.panelVisible).toBe(true);
         expect(state.view.activeSidePanelTab).toBe(0);
         expect(state.view.regionNoteFocusRequestId).toBe(1);
+    });
+
+    it('steps through regions in list order with [ and ]', () => {
+        app.store.dispatch(app.actions.regionsAdded([{
+            id: 2,
+            positionId: 'P1',
+            areas: [{ start: 8000, end: 9000 }]
+        }]));
+        app.store.dispatch(app.actions.regionSelect(1));
+
+        app.store.dispatch(app.thunks.handleKeyboardShortcutIntent({ key: ']' }));
+        expect(app.store.getState().regions.selectedId).toBe(2);
+        expect(app.store.getState().view.viewport).toEqual({ min: 7900, max: 9100 });
+
+        app.store.dispatch(app.thunks.handleKeyboardShortcutIntent({ key: ']' }));
+        let state = app.store.getState();
+        expect(state.regions.selectedId).toBe(2);
+        expect(state.view.notice.message).toBe('This is the last region.');
+
+        app.store.dispatch(app.thunks.handleKeyboardShortcutIntent({ key: '[' }));
+        state = app.store.getState();
+        expect(state.regions.selectedId).toBe(1);
+        expect(state.view.viewport).toEqual({ min: 3900, max: 5100 });
+    });
+
+    it('starts at the first or last region when nothing is selected', () => {
+        app.store.dispatch(app.actions.regionsAdded([{
+            id: 2,
+            positionId: 'P1',
+            areas: [{ start: 8000, end: 9000 }]
+        }]));
+        app.store.dispatch(app.actions.regionClearSelection());
+        app.store.dispatch(app.thunks.stepRegionSelectionIntent(-1));
+        expect(app.store.getState().regions.selectedId).toBe(2);
+
+        app.store.dispatch(app.actions.regionClearSelection());
+        app.store.dispatch(app.thunks.stepRegionSelectionIntent(1));
+        expect(app.store.getState().regions.selectedId).toBe(1);
+    });
+
+    it('returns to the view before a run of region hops with one Back', () => {
+        app.store.dispatch(app.actions.regionsAdded([{
+            id: 2,
+            positionId: 'P1',
+            areas: [{ start: 8000, end: 9000 }]
+        }]));
+        app.store.dispatch(app.actions.regionSelect(1));
+        app.store.dispatch(app.thunks.stepRegionSelectionIntent(1));
+        app.store.dispatch(app.thunks.stepRegionSelectionIntent(-1));
+        expect(app.store.getState().view.viewport).toEqual({ min: 3900, max: 5100 });
+        expect(app.store.getState().view.regionJumpHistory).toEqual([{ min: 0, max: 1000 }]);
+
+        app.store.dispatch(app.thunks.handleKeyboardShortcutIntent({ key: 'b' }));
+        const state = app.store.getState();
+        expect(state.view.viewport).toEqual({ min: 0, max: 1000 });
+        expect(state.view.regionJumpHistory).toEqual([]);
+    });
+
+    it('explains when there is no previous view to return to', () => {
+        app.store.dispatch(app.thunks.returnToPreviousRegionViewIntent());
+        const state = app.store.getState();
+        expect(state.view.viewport).toEqual({ min: 0, max: 1000 });
+        expect(state.view.notice.message).toBe('No previous view to return to.');
+    });
+
+    it('selects the region under the tap line when N is pressed with nothing selected', () => {
+        app.store.dispatch(app.actions.regionClearSelection());
+        app.store.dispatch(app.actions.tap(4500, 'P1', 'figure_P1_timeseries'));
+
+        app.store.dispatch(app.thunks.focusSelectedRegionNoteIntent());
+
+        const state = app.store.getState();
+        expect(state.regions.selectedId).toBe(1);
+        expect(state.view.regionNoteFocusRequestId).toBe(1);
+    });
+
+    it('tells the user to select a region when N has nothing to edit', () => {
+        app.store.dispatch(app.actions.regionClearSelection());
+
+        app.store.dispatch(app.thunks.focusSelectedRegionNoteIntent());
+
+        const state = app.store.getState();
+        expect(state.view.regionNoteFocusRequestId).toBe(0);
+        expect(state.view.notice.message).toMatch(/^Select a region first/);
+    });
+
+    it('tracks unsaved and saved note states', () => {
+        app.store.dispatch(app.thunks.updateRegionNoteDraftIntent(1, 'Dog barking'));
+        expect(app.store.getState().view.regionNoteStatus).toBe('unsaved');
+
+        app.store.dispatch(app.thunks.saveRegionNoteIntent(1, 'Dog barking'));
+        let state = app.store.getState();
+        expect(state.regions.byId[1].note).toBe('Dog barking');
+        expect(state.view.regionNoteStatus).toBe('saved');
+
+        // Loading the same text back into the widget is not a new save.
+        const regionsBefore = state.regions;
+        app.store.dispatch(app.thunks.saveRegionNoteIntent(1, 'Dog barking'));
+        expect(app.store.getState().regions).toBe(regionsBefore);
+
+        app.store.dispatch(app.actions.regionClearSelection());
+        expect(app.store.getState().view.regionNoteStatus).toBe('idle');
+    });
+
+    it('does not replay saved notices or note focus when a workspace is loaded', () => {
+        app.store.dispatch(app.actions.noticeShown('Current session notice'));
+        const current = app.store.getState().view;
+        const saved = JSON.parse(JSON.stringify(app.store.getState()));
+        saved.view.notice = { id: 7, message: 'Old notice', level: 'info' };
+        saved.view.regionNoteFocusRequestId = 5;
+        saved.view.regionNoteStatus = 'unsaved';
+
+        app.store.dispatch(app.actions.rehydrateState(saved));
+
+        const view = app.store.getState().view;
+        expect(view.notice).toEqual(current.notice);
+        expect(view.regionNoteFocusRequestId).toBe(current.regionNoteFocusRequestId);
+        expect(view.regionNoteStatus).toBe('idle');
     });
 
     it('recalculates from the currently displayed overview or log data', () => {

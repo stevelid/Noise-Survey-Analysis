@@ -727,7 +727,29 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return copySelectedRegionToPositionsIntent([targetPositionId]);
     }
 
-    /** Centre the current viewport on the selected region, widening it if needed. */
+    // When a region fills less than this share of the view, centring also zooms
+    // in, so a short event is not left as a sliver on a multi-day overview.
+    const ZOOM_TO_FIT_THRESHOLD = 0.1;
+    // Zoomed-in view width as a multiple of the region span (one span of
+    // context either side of the region).
+    const ZOOM_TO_FIT_SPAN_FACTOR = 3;
+    const MIN_VIEWPORT_WIDTH_MS = 1000;
+
+    /**
+     * Width of the view to use when centring a region.
+     * - Region small relative to the view: zoom in to fit it with context.
+     * - Otherwise: keep the current width, widening only if the region
+     *   (plus 10% padding either side) would not fit.
+     */
+    function computeRegionViewportWidth(regionSpan, currentWidth) {
+        const paddedRegionWidth = Math.max(MIN_VIEWPORT_WIDTH_MS, regionSpan * 1.2);
+        if (currentWidth > 0 && regionSpan < currentWidth * ZOOM_TO_FIT_THRESHOLD) {
+            return Math.max(MIN_VIEWPORT_WIDTH_MS, regionSpan * ZOOM_TO_FIT_SPAN_FACTOR);
+        }
+        return Math.max(currentWidth, paddedRegionWidth);
+    }
+
+    /** Centre the viewport on the selected region, zooming in or widening as needed. */
     function centerViewportOnSelectedRegionIntent() {
         return function (dispatch, getState) {
             if (!actions?.regionViewportCentered || typeof getState !== 'function') return;
@@ -748,8 +770,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const currentWidth = Number.isFinite(viewportMin) && Number.isFinite(viewportMax) && viewportMax > viewportMin
                 ? viewportMax - viewportMin
                 : 0;
-            const paddedRegionWidth = Math.max(1000, (regionEnd - regionStart) * 1.2);
-            const viewportWidth = Math.max(currentWidth, paddedRegionWidth);
+            const viewportWidth = computeRegionViewportWidth(regionEnd - regionStart, currentWidth);
             const centre = (regionStart + regionEnd) / 2;
             dispatch(actions.regionViewportCentered(centre - viewportWidth / 2, centre + viewportWidth / 2));
         };
@@ -772,19 +793,78 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    /**
+     * Select the previous (-1) or next (+1) region in panel list order and
+     * centre it. With nothing selected, ] starts at the first region and
+     * [ at the last.
+     */
+    function stepRegionSelectionIntent(direction) {
+        return function (dispatch, getState) {
+            if (typeof getState !== 'function') return;
+            const step = direction < 0 ? -1 : 1;
+            const state = getState();
+            const regions = regionSelectors.selectAllRegions
+                ? regionSelectors.selectAllRegions(state) : [];
+            if (!regions.length) {
+                dispatch(actions.noticeShown('No regions yet. Drag on a chart to draw one.'));
+                return;
+            }
+
+            const selectedId = state?.regions?.selectedId;
+            const currentIndex = regions.findIndex(region => region.id === selectedId);
+            let nextIndex;
+            if (currentIndex < 0) {
+                nextIndex = step > 0 ? 0 : regions.length - 1;
+            } else {
+                nextIndex = currentIndex + step;
+            }
+            if (nextIndex < 0 || nextIndex >= regions.length) {
+                dispatch(actions.noticeShown(step > 0
+                    ? 'This is the last region.'
+                    : 'This is the first region.'));
+                return;
+            }
+
+            dispatch(selectRegionIntent(regions[nextIndex].id));
+            dispatch(centerViewportOnSelectedRegionIntent());
+        };
+    }
+
     function returnToPreviousRegionViewIntent() {
         return function (dispatch, getState) {
             const history = getState()?.view?.regionJumpHistory;
-            if (Array.isArray(history) && history.length && actions?.regionViewportRestored) {
+            if (!Array.isArray(history) || !history.length) {
+                dispatch(actions.noticeShown('No previous view to return to.'));
+                return;
+            }
+            if (actions?.regionViewportRestored) {
                 dispatch(actions.regionViewportRestored());
             }
         };
     }
 
+    /**
+     * Open the selected region's note for editing. With nothing selected, the
+     * region under the active tap line is selected first; otherwise the user
+     * is told what to do.
+     */
     function focusSelectedRegionNoteIntent() {
         return function (dispatch, getState) {
-            const state = getState();
-            if (!regionSelectors.selectSelectedRegion?.(state)) return;
+            let state = getState();
+            if (!regionSelectors.selectSelectedRegion?.(state)) {
+                const tap = state?.interaction?.tap;
+                const regionUnderTap = tap?.isActive && regionSelectors.selectRegionByTimestamp
+                    ? regionSelectors.selectRegionByTimestamp(state, tap.position, tap.timestamp)
+                    : null;
+                if (!regionUnderTap) {
+                    dispatch(actions.noticeShown(
+                        'Select a region first (click it, or press ] to step through regions), then press N.'
+                    ));
+                    return;
+                }
+                dispatch(selectRegionIntent(regionUnderTap.id));
+                state = getState();
+            }
             if (state.regions.panelVisible === false) {
                 dispatch(actions.regionVisibilitySet({ showPanel: true }));
             }
@@ -792,6 +872,40 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
             }
             dispatch(actions.regionNoteFocusRequested());
+        };
+    }
+
+    /** Track whether the note being typed differs from the stored note. */
+    function updateRegionNoteDraftIntent(regionId, text) {
+        return function (dispatch, getState) {
+            const region = regionSelectors.selectRegionById?.(getState(), Number(regionId));
+            if (!region) return;
+            const stored = typeof region.note === 'string' ? region.note : '';
+            const draft = typeof text === 'string' ? text : '';
+            dispatch(actions.regionNoteStatusSet(draft === stored ? 'idle' : 'unsaved'));
+        };
+    }
+
+    /**
+     * Store a committed note. The note widget also reports a commit when the
+     * panel loads a different region's note, so unchanged text is ignored.
+     */
+    function saveRegionNoteIntent(regionId, note) {
+        return function (dispatch, getState) {
+            const id = Number(regionId);
+            const state = getState();
+            const region = regionSelectors.selectRegionById?.(state, id);
+            if (!region) return;
+            const stored = typeof region.note === 'string' ? region.note : '';
+            const next = typeof note === 'string' ? note : '';
+            if (next === stored) {
+                if (state?.view?.regionNoteStatus === 'unsaved') {
+                    dispatch(actions.regionNoteStatusSet('idle'));
+                }
+                return;
+            }
+            dispatch(actions.regionSetNote(id, next));
+            dispatch(actions.regionNoteStatusSet('saved'));
         };
     }
 
@@ -844,8 +958,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         copyRegionToPositionIntent,
         centerViewportOnSelectedRegionIntent,
         centerViewportOnRegionIntent,
+        stepRegionSelectionIntent,
         returnToPreviousRegionViewIntent,
         focusSelectedRegionNoteIntent,
+        updateRegionNoteDraftIntent,
+        saveRegionNoteIntent,
         recalculateSelectedRegionIntent
     };
     app.features.regions.__test__ = app.features.regions.__test__ || {};

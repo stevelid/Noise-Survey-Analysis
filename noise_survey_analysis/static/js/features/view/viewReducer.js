@@ -31,7 +31,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         chartVisibility: {},
         viewport: { min: null, max: null },
         regionJumpHistory: [],
+        // Viewport produced by the most recent region jump. While the user stays
+        // on it, further jumps do not stack history, so Back returns to the
+        // view they were in before they started hopping between regions.
+        lastRegionJumpViewport: null,
         regionNoteFocusRequestId: 0,
+        regionNoteStatus: 'idle',
+        notice: null,
         globalViewType: 'log',
         selectedParameter: 'LZeq',
         hoverEnabled: true,
@@ -153,7 +159,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     selectedParameter: action.payload?.selectedParameter ?? state.selectedParameter,
                     viewport: action.payload?.viewport ?? state.viewport,
                     regionJumpHistory: [],
+                    lastRegionJumpViewport: null,
                     regionNoteFocusRequestId: 0,
+                    regionNoteStatus: 'idle',
                     logViewThreshold: normalizeLogThreshold(payloadLogThreshold),
                     chartVisibility: action.payload?.chartVisibility ?? state.chartVisibility,
                     positionChartOffsets: initialChartOffsets,
@@ -183,10 +191,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 const history = Array.isArray(state.regionJumpHistory) ? state.regionJumpHistory : [];
                 const canSaveCurrent = Number.isFinite(current?.min)
                     && Number.isFinite(current?.max) && current.min < current.max;
+                const lastJump = state.lastRegionJumpViewport;
+                const isStillOnLastJump = lastJump
+                    && lastJump.min === current?.min && lastJump.max === current?.max;
                 return {
                     ...state,
                     viewport: { min, max },
-                    regionJumpHistory: canSaveCurrent
+                    lastRegionJumpViewport: { min, max },
+                    regionJumpHistory: canSaveCurrent && !isStillOnLastJump
                         ? [...history, { min: current.min, max: current.max }].slice(-20)
                         : history
                 };
@@ -198,7 +210,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return {
                     ...state,
                     viewport: history[history.length - 1],
-                    regionJumpHistory: history.slice(0, -1)
+                    regionJumpHistory: history.slice(0, -1),
+                    lastRegionJumpViewport: null
                 };
             }
 
@@ -207,6 +220,31 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     ...state,
                     regionNoteFocusRequestId: (Number(state.regionNoteFocusRequestId) || 0) + 1
                 };
+
+            case actionTypes.REGION_NOTE_STATUS_SET: {
+                const status = action.payload?.status;
+                if (!['idle', 'unsaved', 'saved'].includes(status) || status === state.regionNoteStatus) {
+                    return state;
+                }
+                return { ...state, regionNoteStatus: status };
+            }
+
+            // A different region's note is shown, so any saved/unsaved label is stale.
+            case actionTypes.REGION_SELECTED:
+            case actionTypes.REGION_SELECTION_CLEARED:
+                return state.regionNoteStatus === 'idle'
+                    ? state
+                    : { ...state, regionNoteStatus: 'idle' };
+
+            case actionTypes.NOTICE_SHOWN: {
+                const message = typeof action.payload?.message === 'string' ? action.payload.message : '';
+                if (!message) return state;
+                const previousId = Number(state.notice?.id) || 0;
+                return {
+                    ...state,
+                    notice: { id: previousId + 1, message, level: action.payload?.level || 'info' }
+                };
+            }
 
             case actionTypes.POSITION_CHART_OFFSET_SET: {
                 const positionId = typeof action.payload?.positionId === 'string'

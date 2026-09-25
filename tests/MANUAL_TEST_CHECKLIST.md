@@ -347,12 +347,27 @@
 ### 4.13 Centre and Recalculate Region 🟢
 - [ ] **Action:** Select an off-screen region and click "Centre on Region"
 - [ ] **Expected:** The viewport centres on the complete region and keeps the current width unless it must widen to fit the region
+- [ ] **Action:** Zoom out to the full survey and centre on a region shorter than a tenth of the view
+- [ ] **Expected:** The view zooms in to roughly three times the region length, centred on it
+- [ ] **Action:** Hover over "Back (B)", then click it (or press <kbd>B</kbd>)
+- [ ] **Expected:** The tooltip names the earlier time range, and the view returns to it
 - [ ] **Action:** Zoom until the selected position displays overview data
 - [ ] **Expected:** The button reads "Recalculate (Overview)"
 - [ ] **Action:** Click it
 - [ ] **Expected:** The region badge and detail source read "Overview" and the exported annotation reports overview
 - [ ] **Action:** Zoom until the selected position displays log data and recalculate again
 - [ ] **Expected:** The badge/detail/export source read "Log"; log spectral data is used when available
+
+### 4.13a Region Review Keyboard Flow 🟢
+- [ ] **Action:** With several regions, press <kbd>]</kbd> repeatedly, then <kbd>[</kbd>
+- [ ] **Expected:** Each press selects the next/previous region in list order and brings it into view; past either end a "first/last region" message appears
+- [ ] **Action:** After several <kbd>]</kbd> presses, press <kbd>B</kbd> once
+- [ ] **Expected:** The view returns to where it was before the first jump
+- [ ] **Action:** Press <kbd>N</kbd>, type a note, then press <kbd>Ctrl</kbd>+<kbd>Enter</kbd>
+- [ ] **Expected:** "Unsaved changes" shows while typing and "Saved" after; chart shortcuts work again
+- [ ] **Action:** Clear the selection, click inside a region to place the tap line, press <kbd>N</kbd>
+- [ ] **Expected:** That region is selected and its note is focused; with the tap line outside any region, a message explains how to select one
+- [ ] **Expected:** The "Keyboard shortcuts" block in the Regions panel is open when there are no regions and collapsed once regions exist
 
 ### 4.14 Copy Spectrum Values Button 🟡 PARTIAL
 - [ ] **Action:** Select a region with spectrum data, click "Copy Spectrum Values"

@@ -42,8 +42,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return merged;
     }
 
-    function normalizeRehydratedViewState(baseView, providedView) {
-        const mergedView = providedView ? { ...baseView, ...providedView } : baseView;
+    function normalizeRehydratedViewState(baseView, providedView, currentView = {}) {
+        const loadedView = providedView ? { ...baseView, ...providedView } : baseView;
+        // One-shot UI signals belong to this session, not the saved file. Keep
+        // the current values so loading a workspace does not replay an old
+        // toast or pull focus into the note box.
+        const mergedView = {
+            ...loadedView,
+            notice: currentView.notice ?? null,
+            regionNoteFocusRequestId: currentView.regionNoteFocusRequestId ?? 0,
+            regionNoteStatus: 'idle'
+        };
         const resolution = app.features?.view?.resolution;
         const normalize = resolution?.normalizeLogThreshold;
         if (typeof normalize !== 'function') {
@@ -102,7 +111,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const baseState = createInitialState();
 
             const mergedState = {
-                view: normalizeRehydratedViewState(baseState.view, providedState.view),
+                view: normalizeRehydratedViewState(baseState.view, providedState.view, previousState?.view),
                 interaction: providedState.interaction ? { ...baseState.interaction, ...providedState.interaction } : baseState.interaction,
                 markers: providedState.markers ? { ...baseState.markers, ...providedState.markers } : baseState.markers,
                 classifications: normalizeRehydratedClassifications(baseState.classifications, providedState.classifications),

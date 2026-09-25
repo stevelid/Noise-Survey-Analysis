@@ -1510,6 +1510,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleImportAnnotations: handleImportCsv,
         ensureSessionStatusListener,
         ensureAutomationBridge,
+        showToast,
         __testHelpers: testHelpers,
     };
 })(window.NoiseSurveyApp);
