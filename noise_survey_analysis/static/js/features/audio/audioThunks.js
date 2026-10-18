@@ -151,8 +151,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             if (Array.isArray(nextStatus.current_time) && nextStatus.current_time.length) {
                 const raw = Number(nextStatus.current_time[0]);
-                if (Number.isFinite(raw)) {
+                if (Number.isFinite(raw) && raw > 0) {
                     nextStatus.current_time[0] = raw + offsetMs;
+                } else {
+                    // The server sends 0 while VLC has no position yet (media still
+                    // opening). Passing it on would move the playback cursor to 1970.
+                    delete nextStatus.current_time;
                 }
             }
 

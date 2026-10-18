@@ -88,6 +88,23 @@ class AudioSeekFastPathTests(unittest.TestCase):
         handler.vlc_instance.media_new.assert_called_once_with("/audio/rec_0000.wav")
         handler.stop_monitor = True
 
+    def test_play_just_before_first_file_snaps_to_its_start(self):
+        handler = _build_handler(self.files)
+        target = self.file_start - datetime.timedelta(seconds=10)
+        filepath, offset, start, _ = handler._find_file_for_timestamp(target)
+        self.assertEqual(filepath, "/audio/rec_0000.wav")
+        self.assertEqual(offset, 0)
+        self.assertEqual(start, self.file_start)
+
+    def test_play_long_before_first_file_finds_no_audio(self):
+        """Snapping days ahead played unrelated audio and moved the cursor off-view."""
+        handler = _build_handler(self.files)
+        target = self.file_start - datetime.timedelta(days=3)
+        filepath, _, _, _ = handler._find_file_for_timestamp(target)
+        self.assertIsNone(filepath)
+        self.assertFalse(handler.play(target))
+        handler.vlc_instance.media_new.assert_not_called()
+
     def test_monitor_thread_restarting_itself_does_not_self_join(self):
         """File rollover runs play() on the monitor thread; joining itself would raise."""
         handler = _build_handler(self.files)

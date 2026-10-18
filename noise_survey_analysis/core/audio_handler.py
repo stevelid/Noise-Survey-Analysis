@@ -48,6 +48,10 @@ class AudioPlaybackHandler:
     Includes a simple time lockout for the play method to prevent rapid successive calls.
     """
 
+    # A play request this close before the first recording starts at that recording;
+    # anything earlier has no audio.
+    SNAP_TO_FIRST_FILE_TOLERANCE_SECONDS = 60.0
+
     def __init__(self, position_data: dict):
         """
         Initialize the audio playback handler. It now reads pre-processed,
@@ -193,8 +197,13 @@ class AudioPlaybackHandler:
                 offset = (timestamp - start_time).total_seconds()
                 return filepath, offset, start_time, duration_sec
             elif timestamp < start_time: # If timestamp is before this file, and thus before all subsequent files
-                # If the timestamp is before the very first file, snap to the start of the first file
+                # Just before the very first file: snap to its start. Further out there is
+                # no audio for that time, and snapping would play an unrelated recording
+                # (possibly days away) and drag the playback cursor out of the view.
                 if filepath == sorted_files[0][0]:
+                    if (start_time - timestamp).total_seconds() > self.SNAP_TO_FIRST_FILE_TOLERANCE_SECONDS:
+                        logger.warning(f"Timestamp {timestamp} is before the first audio file ({start_time}) for position '{target_position}'. No audio at this time.")
+                        return None, 0, None, None
                     logger.info(f"Timestamp {timestamp} is before the first audio file. Snapping to start of {os.path.basename(filepath)}.")
                     return filepath, 0, start_time, duration_sec
                 else:

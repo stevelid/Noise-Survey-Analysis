@@ -653,6 +653,19 @@ describe('NoiseSurveyApp thunks', () => {
             expect(dispatchSpy).not.toHaveBeenCalled();
         });
 
+        it('handleAudioStatusUpdateIntent keeps the playback cursor when the server has no position yet', () => {
+            store.dispatch(actions.tap(1700000000000, 'P1', 'figure_P1_timeseries'));
+            const thunk = thunks.handleAudioStatusUpdateIntent({
+                is_playing: [true],
+                active_position_id: ['P1'],
+                current_time: [0]
+            });
+            thunk(store.dispatch, store.getState);
+            const state = store.getState();
+            expect(state.interaction.tap.isActive).toBe(true);
+            expect(state.interaction.tap.timestamp).toBe(1700000000000);
+        });
+
         it('toggleVolumeBoostIntent dispatches when toggling boost', () => {
             store.dispatch(actions.audioPlayPauseToggle('P1', true));
             const thunk = thunks.toggleVolumeBoostIntent({ positionId: 'P1', isBoostActive: true });
