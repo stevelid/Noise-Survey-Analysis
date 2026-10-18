@@ -1,0 +1,9 @@
+{
+  "meters": 4,
+  "hours": 0.16666666666666666,
+  "sample_interval_seconds": 0.1,
+  "samples_per_meter": 6000,
+  "third_octave_bands": 31,
+  "regions": 300,
+  "seed": 20261018
+}

@@ -1,0 +1,45 @@
+# Page snapshot
+
+```yaml
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - heading "Noise Survey Application Harness" [level=1] [ref=e4]
+    - paragraph [ref=e5]:
+      - text: Hold
+      - strong [ref=e6]: Shift
+      - text: and drag on the chart to create a region. Click inside a region to select it. Use
+      - strong [ref=e7]: Ctrl + Click
+      - text: to remove a region. Press
+      - strong [ref=e8]: M
+      - text: to drop a marker at the active tap and
+      - strong [ref=e9]: R
+      - text: to convert the latest markers into a region.
+  - generic [ref=e10]:
+    - generic [ref=e11]:
+      - text: Select parameter
+      - combobox "Select parameter" [ref=e12]:
+        - option "LZeq" [selected]
+        - option "LCeq"
+        - option "LAmax"
+    - generic [ref=e13]:
+      - generic [ref=e14]: Selected parameter
+      - generic [ref=e15]: LZeq
+    - button "Log View Enabled" [ref=e16] [cursor=pointer]
+    - generic [ref=e17]:
+      - generic [ref=e18]: View mode
+      - generic [ref=e19]: log
+  - generic [ref=e20]:
+    - generic [ref=e21]: Shift + Drag to create a region
+    - generic [ref=e22]:
+      - generic [ref=e23]: No active tap
+      - generic [ref=e24]: "Selected region: none"
+  - navigation [ref=e25]:
+    - button "Regions" [ref=e26] [cursor=pointer]
+    - button "Markers" [ref=e27] [cursor=pointer]
+  - generic [ref=e28]:
+    - heading "Regions (0)" [level=2] [ref=e29]:
+      - text: Regions (
+      - generic [ref=e30]: "0"
+      - text: )
+    - generic [ref=e32]: No regions defined
+```

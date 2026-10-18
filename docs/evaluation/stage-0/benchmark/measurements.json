@@ -1,0 +1,108 @@
+{
+  "local_copy_path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-benchmark-20261018-093212-c7eef2bd\\repo",
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]",
+  "limitations": [
+    "Full-size programmatic-server benchmark was stopped after a bounded investigation: HTTP server was listening, but a direct browser diagnostic found an empty body, no Bokeh documents and no NoiseSurveyApp after 12 seconds, with no page errors. Server startup/render/export timings are unmeasured; static mode succeeded. This does not establish an application regression because this harness bypasses main.create_app lifecycle.",
+    "Initial harness readiness probe used /, which returns 404 for this single-route application; this delayed browser measurement. Generator corrected to TCP readiness and extended unused-session lifetime for future runs."
+  ],
+  "modes": {
+    "static": {
+      "url": "file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-0-benchmark-20261018-093212-c7eef2bd/benchmark-output/benchmark.html",
+      "viewport": [
+        1600,
+        1100
+      ],
+      "startup_definition": "navigation through initialized application and two animation frames; dataset pre-generated",
+      "startup": {
+        "runs": 3,
+        "median_ms": 15061.763899982907,
+        "p95_ms": 16581.50488998508,
+        "values_ms": [
+          15061.763899982907,
+          13313.936299993657,
+          16750.364999985322
+        ],
+        "first_navigation_ms": 15061.763899982907,
+        "repeat_navigation_median_ms": 15032.15064998949
+      },
+      "regions_loaded": 300,
+      "render": {
+        "runs": 20,
+        "median_ms": 57.25,
+        "p95_ms": 60.599999976158145,
+        "values_ms": [
+          64.39999997615814,
+          59.39999997615814,
+          60.39999997615814,
+          58.69999998807907,
+          57.19999998807907,
+          56.90000003576279,
+          57.80000001192093,
+          59.40000003576279,
+          57,
+          47.40000003576279,
+          57.30000001192093,
+          52.799999952316284,
+          57.39999997615814,
+          56.80000001192093,
+          58.10000002384186,
+          57.89999997615814,
+          56.40000003576279,
+          56.80000001192093,
+          54.19999998807907,
+          56
+        ]
+      },
+      "export": {
+        "runs": 20,
+        "median_ms": 7.450000017881393,
+        "p95_ms": 10.155000010132795,
+        "values_ms": [
+          16.899999976158142,
+          9.800000011920929,
+          7.900000035762787,
+          8.099999964237213,
+          7.700000047683716,
+          7.299999952316284,
+          7.5,
+          7.799999952316284,
+          7.600000023841858,
+          7.400000035762787,
+          5.100000023841858,
+          5.699999988079071,
+          3.899999976158142,
+          7.600000023841858,
+          4,
+          3.900000035762787,
+          7.399999976158142,
+          7.899999976158142,
+          7.400000035762787,
+          4.300000011920929
+        ]
+      },
+      "export_bytes": 182282,
+      "console_page_errors": [],
+      "side_panel_bounds": {
+        "x": 1644,
+        "y": 222,
+        "width": 352,
+        "height": 858.234375
+      }
+    }
+  },
+  "bokeh": "3.4.1",
+  "fixture": {
+    "meters": 4,
+    "hours": 72,
+    "sample_interval_seconds": 1,
+    "samples_per_meter": 259200,
+    "third_octave_bands": 31,
+    "regions": 300,
+    "seed": 20261018
+  },
+  "static_build_ms": 4049.1067999973893,
+  "static_serialize_ms": 31840.62079997966,
+  "static_html_bytes": 262639255,
+  "startup_cache_conditions": "Static first navigation uses a fresh Chromium context; two repeat navigations use the same context. Python dataset construction excluded. Static builder and serialization timed separately.",
+  "screenshot_note": "Regions panel captured separately using the actual .bk-Tabs element after visual review found it outside the 1600px viewport; main screenshot retains the timing viewport."
+}

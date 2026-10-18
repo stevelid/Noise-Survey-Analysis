@@ -1,0 +1,120 @@
+{
+  "stage": "stage-0",
+  "run": "stage-0-20261018-093151-d5ef10bd",
+  "startedUtc": "2026-10-18T08:31:54.0244574Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-20261018-093151-d5ef10bd\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-20261018-093151-d5ef10bd\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-0\\stage-0-20261018-093151-d5ef10bd",
+  "head": "66bd8dfa4a624c7dc4f0c7c93a8dcc72325f6dbd",
+  "sourceStatus": [
+    "?? EVALUATION.md",
+    "?? ROLLBACK.md",
+    "?? scripts/annotation_benchmark.py",
+    "?? scripts/run_checkpoint_tests.ps1"
+  ],
+  "sourceFileCount": 221,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.09
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-20261018-093151-d5ef10bd\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.283
+    },
+    "pytest": {
+      "exitCode": 0,
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/",
+        "--junitxml=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-20261018-093151-d5ef10bd\\evidence\\pytest.xml"
+      ],
+      "note": "Runner argument concatenation fixed in original Drive script; rerun against same unchanged baseline copy.",
+      "suiteDurationSeconds": 33.71
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.618
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-20261018-093151-d5ef10bd\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 1,
+      "durationSeconds": 7.931
+    },
+    "pytest-initial-runner-error": {
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "pytest",
+        "tests/",
+        "--junitxml=",
+        "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-20261018-093151-d5ef10bd\\evidence\\pytest.xml"
+      ],
+      "exitCode": 4,
+      "durationSeconds": 1.652
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "skipped": 3,
+      "total": 439,
+      "passed": 436,
+      "pending": 0,
+      "failed": 0
+    },
+    "playwright": {
+      "startTime": "2026-10-18T08:32:15.45Z",
+      "duration": 6624.095,
+      "expected": 3,
+      "skipped": 0,
+      "unexpected": 5,
+      "flaky": 0
+    },
+    "pytest": {
+      "skipped": "0",
+      "failures": "0",
+      "total": "401",
+      "errors": "0"
+    }
+  },
+  "finishedUtc": "2026-10-18T08:33:25.9209418Z",
+  "sourceChangedFiles": []
+}
