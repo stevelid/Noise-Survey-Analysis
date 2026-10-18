@@ -363,7 +363,8 @@ describe('NoiseSurveyApp.classes', () => {
     expect(source.data.line_width).toEqual([3]);
     expect(renderer.visible).toBe(true);
     expect(chartModel.add_glyph).toHaveBeenCalled();
-    expect(source.change.emit).toHaveBeenCalled();
+    // Replacing ColumnDataSource.data emits its own Bokeh change notification.
+    expect(source.data.left).toHaveLength(1);
 
     chart.syncRegions([], null);
     expect(source.data.left).toEqual([]);

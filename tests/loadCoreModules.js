@@ -2,6 +2,8 @@
 
 import '../noise_survey_analysis/static/js/core/actions.js';
 import '../noise_survey_analysis/static/js/features/regions/annotationModel.js';
+import '../noise_survey_analysis/static/js/features/regions/annotationMetrics.js';
+import '../noise_survey_analysis/static/js/services/session/annotationCsv.js';
 import '../noise_survey_analysis/static/js/services/session/workspaceMigration.js';
 import '../noise_survey_analysis/static/js/core/history.js';
 import '../noise_survey_analysis/static/js/features/view/viewResolution.js';

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import '../noise_survey_analysis/static/js/features/regions/annotationMetrics.js';
 import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';
 import '../noise_survey_analysis/static/js/comparison-metrics.js';
 
@@ -8,7 +9,7 @@ const { comparisonMetrics, calcMetrics } = window.NoiseSurveyApp;
 const processComparisonSliceMetrics = comparisonMetrics.processComparisonSliceMetrics;
 
 describe('processComparisonSliceMetrics', () => {
-    it('uses the meter LAF90 column for LA90 when it is present, like the region panel', () => {
+    it('uses the same weighted LA90 method as the authoritative region engine', () => {
         const logData = {
             Datetime: [0, 1000, 2000, 3000],
             LAeq: [40, 50, 60, 50],
@@ -32,9 +33,9 @@ describe('processComparisonSliceMetrics', () => {
         });
 
         const metrics = result.metricsRows[0];
-        const expectedLa90 = calcMetrics.calcLA90([31, 45, 33]);
+        const expectedLa90 = calcMetrics.calcLA90([50, 60]);
         expect(metrics.la90).toBeCloseTo(expectedLa90 ?? 0, 6);
-        expect(metrics.la90).not.toBeCloseTo(calcMetrics.calcLA90([50, 60, 50]) ?? 0, 6);
+        expect(metrics.percentileMethod).toContain('p10 of LAeq');
 
         // Same window through the region path must agree.
         const region = { id: 1, positionId: 'P1', areas: [{ start: 1000, end: 3000 }] };
@@ -89,9 +90,9 @@ describe('processComparisonSliceMetrics', () => {
 
         expect(result.metricsRows).toHaveLength(1);
         const metrics = result.metricsRows[0];
-        const expectedLaeq = calcMetrics.calcLAeq([50, 60, 50]);
-        const expectedLafmax = calcMetrics.calcLAMax([65, 70, 68]);
-        const expectedLa90 = calcMetrics.calcLA90([50, 60, 50]);
+        const expectedLaeq = calcMetrics.calcLAeq([50, 60]);
+        const expectedLafmax = calcMetrics.calcLAMax([65, 70]);
+        const expectedLa90 = calcMetrics.calcLA90([50, 60]);
         expect(metrics.dataset).toBe('log');
         expect(metrics.laeq).toBeCloseTo(expectedLaeq ?? 0, 6);
         expect(metrics.lafmax).toBeCloseTo(expectedLafmax ?? 0, 6);
@@ -102,8 +103,8 @@ describe('processComparisonSliceMetrics', () => {
         expect(result.spectrum.labels).toEqual(['63 Hz', '125 Hz']);
         expect(result.spectrum.series).toHaveLength(1);
         const seriesValues = result.spectrum.series[0].values;
-        const expectedFreq1 = calcMetrics.calcLAeq([20, 30, 40]);
-        const expectedFreq2 = calcMetrics.calcLAeq([25, 35, 45]);
+        const expectedFreq1 = calcMetrics.calcLAeq([20, 30]);
+        const expectedFreq2 = calcMetrics.calcLAeq([25, 35]);
         expect(seriesValues[0]).toBeCloseTo(expectedFreq1 ?? 0, 6);
         expect(seriesValues[1]).toBeCloseTo(expectedFreq2 ?? 0, 6);
     });
@@ -153,11 +154,11 @@ describe('processComparisonSliceMetrics', () => {
 
         expect(result.metricsRows).toHaveLength(1);
         const metrics = result.metricsRows[0];
-        const expectedLaeq = calcMetrics.calcLAeq([45, 47]);
+        const expectedLaeq = calcMetrics.calcLAeq([45]);
         expect(metrics.dataset).toBe('overview');
         expect(metrics.laeq).toBeCloseTo(expectedLaeq ?? 0, 6);
         expect(metrics.la90Available).toBe(false);
-        expect(result.spectrum.series[0].values[0]).toBeCloseTo(calcMetrics.calcLAeq([40, 50]) ?? 0, 6);
+        expect(result.spectrum.series[0].values[0]).toBeCloseTo(calcMetrics.calcLAeq([40]) ?? 0, 6);
     });
 
     it('returns empty results when slice or positions are invalid', () => {
@@ -199,8 +200,9 @@ describe('processComparisonSliceMetrics', () => {
         expect(result.metricsRows).toHaveLength(1);
         const metrics = result.metricsRows[0];
         expect(metrics.broadbandParam).toBe('LAFmax');
-        // broadbandValue should be computed from LAFmax, not LAeq
-        const expectedBroadband = calcMetrics.calcLAeq([65, 70, 68]);
+        // Maximum parameters retain maximum semantics across the half-open
+        // interval; they must never be energy-averaged like equivalent levels.
+        const expectedBroadband = calcMetrics.calcLAMax([65, 70]);
         expect(metrics.broadbandValue).toBeCloseTo(expectedBroadband ?? 0, 6);
     });
 

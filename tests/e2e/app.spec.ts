@@ -163,11 +163,8 @@ test('user can create a region using the R key workflow', async ({ page }) => {
   }
 
   await chart.click({ position: { x: box.width * 0.2, y: box.height / 2 } });
-  await page.keyboard.press('m');
-
+  await page.keyboard.press('r');
   await chart.click({ position: { x: box.width * 0.7, y: box.height / 2 } });
-  await page.keyboard.press('m');
-
   await page.keyboard.press('r');
 
   await expect(regionCount).toHaveText('1');

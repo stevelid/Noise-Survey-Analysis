@@ -48,6 +48,8 @@ async function loadSessionManager() {
     };
 
     await import('../noise_survey_analysis/static/js/features/regions/annotationModel.js');
+    await import('../noise_survey_analysis/static/js/features/regions/annotationMetrics.js');
+    await import('../noise_survey_analysis/static/js/services/session/annotationCsv.js');
     await import('../noise_survey_analysis/static/js/services/session/workspaceMigration.js');
     await import('../noise_survey_analysis/static/js/services/session/sessionManager.js');
     app = window.NoiseSurveyApp;
@@ -193,10 +195,12 @@ describe('NoiseSurveyApp.session extra flows', () => {
         expect(anchors).toHaveLength(2);
         expect(anchors[1].download).toMatch(/^annotations-.*\.csv$/);
         const csvText = await blobs[1].text();
-        expect(csvText).toContain('marker');
-        expect(csvText).toContain('region');
-        expect(csvText).toContain('Marker');
-        expect(csvText).toContain('Region');
+        const exported = session.__testHelpers.parseAnnotationsCsv(csvText);
+        expect(exported.markers).toHaveLength(1);
+        expect(exported.markers[0]).toMatchObject({ id: 1, note: 'Marker', timestamp: Date.UTC(2024, 0, 1) });
+        expect(exported.regions).toHaveLength(1);
+        expect(exported.regions[0]).toMatchObject({ id: 2, note: 'Region', meterStates: { P1: 'present' } });
+        expect(exported.markers[0].metrics).toEqual({});
     });
 
     it('applies workspace state, warns on source mismatch, and only restores initial state once', () => {

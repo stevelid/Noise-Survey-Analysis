@@ -1,0 +1,919 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - button "Menu" [ref=e9] [cursor=pointer]: Menu
+    - button "Plots (8/8)" [ref=e13] [cursor=pointer]: Plots (8/8)
+    - combobox [ref=e17]:
+      - option "LZeq" [selected]
+    - button "Log View Enabled" [ref=e20] [cursor=pointer]
+    - generic [ref=e21]:
+      - generic [ref=e23]: "Log max window (min):"
+      - generic [ref=e26]:
+        - textbox [ref=e27]: "1440"
+        - button [ref=e28] [cursor=pointer]
+        - button [ref=e29] [cursor=pointer]
+    - button "Hover Enabled" [ref=e32] [cursor=pointer]
+    - button "Clear All Markers" [ref=e35] [cursor=pointer]
+    - generic [ref=e36]:
+      - generic [ref=e39]: Log shown
+      - generic [ref=e42]: P1
+  - generic [ref=e51]:
+    - generic [ref=e52]:
+      - generic [ref=e53]:
+        - generic [ref=e55]:
+          - generic [ref=e58]: P1
+          - generic [ref=e61]: "Chart Offset (s):"
+          - generic [ref=e64]:
+            - textbox [ref=e65]: "0.0"
+            - button [ref=e66] [cursor=pointer]
+            - button [ref=e67] [cursor=pointer]
+          - generic [ref=e70]: "Audio Offset (s):"
+          - generic [ref=e73]:
+            - textbox [ref=e74]: "0.0"
+            - button [ref=e75] [cursor=pointer]
+            - button [ref=e76] [cursor=pointer]
+          - generic [ref=e78]: "Effective offset: +0.00 s"
+        - generic [ref=e98]: Hover over spectrogram for details
+      - generic [ref=e99]:
+        - generic [ref=e101]:
+          - generic [ref=e104]: P2
+          - generic [ref=e107]: "Chart Offset (s):"
+          - generic [ref=e110]:
+            - textbox [ref=e111]: "0.0"
+            - button [ref=e112] [cursor=pointer]
+            - button [ref=e113] [cursor=pointer]
+          - generic [ref=e116]: "Audio Offset (s):"
+          - generic [ref=e119]:
+            - textbox [ref=e120]: "0.0"
+            - button [ref=e121] [cursor=pointer]
+            - button [ref=e122] [cursor=pointer]
+          - generic [ref=e124]: "Effective offset: +0.00 s"
+        - generic [ref=e144]: Hover over spectrogram for details
+      - generic [ref=e145]:
+        - generic [ref=e147]:
+          - generic [ref=e150]: P3
+          - generic [ref=e153]: "Chart Offset (s):"
+          - generic [ref=e156]:
+            - textbox [ref=e157]: "0.0"
+            - button [ref=e158] [cursor=pointer]
+            - button [ref=e159] [cursor=pointer]
+          - generic [ref=e162]: "Audio Offset (s):"
+          - generic [ref=e165]:
+            - textbox [ref=e166]: "0.0"
+            - button [ref=e167] [cursor=pointer]
+            - button [ref=e168] [cursor=pointer]
+          - generic [ref=e170]: "Effective offset: +0.00 s"
+        - generic [ref=e190]: Hover over spectrogram for details
+      - generic [ref=e191]:
+        - generic [ref=e193]:
+          - generic [ref=e196]: P4
+          - generic [ref=e199]: "Chart Offset (s):"
+          - generic [ref=e202]:
+            - textbox [ref=e203]: "0.0"
+            - button [ref=e204] [cursor=pointer]
+            - button [ref=e205] [cursor=pointer]
+          - generic [ref=e208]: "Audio Offset (s):"
+          - generic [ref=e211]:
+            - textbox [ref=e212]: "0.0"
+            - button [ref=e213] [cursor=pointer]
+            - button [ref=e214] [cursor=pointer]
+          - generic [ref=e216]: "Effective offset: +0.00 s"
+        - generic [ref=e236]: Hover over spectrogram for details
+    - generic [ref=e240]:
+      - tablist "Annotations" [ref=e241]:
+        - tab "Regions" [selected] [ref=e242] [cursor=pointer]
+        - tab "Markers" [ref=e243] [cursor=pointer]
+        - tab "Classifications" [ref=e244] [cursor=pointer]
+      - tabpanel "Regions" [ref=e246]:
+        - generic [ref=e247]:
+          - heading "Selected region" [level=3] [ref=e248]
+          - generic "Meter states" [ref=e249]:
+            - 'button "P1: present" [disabled] [ref=e250]': P1 ●
+            - 'button "P2: present" [ref=e251] [cursor=pointer]': P2 ●
+            - 'button "P3: unchecked" [ref=e252] [cursor=pointer]': P3 ○
+            - 'button "P4: unchecked" [ref=e253] [cursor=pointer]': P4 ○
+          - paragraph [ref=e254]: ● Present · ✕ Absent · ○ Unchecked
+          - generic [ref=e255]:
+            - text: Category
+            - combobox "Category" [ref=e256]:
+              - option "Dog bark"
+              - option "Traffic" [selected]
+              - option "Plant"
+              - option "Speech"
+              - option "Other"
+          - generic [ref=e257]:
+            - text: Notes
+            - textbox "Notes" [ref=e258]: Event 1
+          - paragraph [ref=e259]: Notes save on leaving the field or Ctrl+Enter; Esc cancels a draft.
+          - generic [ref=e260]:
+            - generic [ref=e261]:
+              - text: Colour override
+              - textbox "Colour override" [ref=e262]
+            - button "Use category" [ref=e263] [cursor=pointer]
+          - generic [ref=e264]:
+            - button "Centre" [ref=e265] [cursor=pointer]
+            - button "Back (B)" [ref=e266] [cursor=pointer]
+            - button "Delete" [ref=e267] [cursor=pointer]
+          - button "Hide metrics" [ref=e268] [cursor=pointer]
+          - table "Levels, dB" [ref=e270]:
+            - caption [ref=e271]: Levels, dB
+            - rowgroup [ref=e272]:
+              - row "Meter LAeq LAFmax LAF90 Resolution" [ref=e273]:
+                - cell "Meter" [ref=e274]
+                - cell "LAeq" [ref=e275]
+                - cell "LAFmax" [ref=e276]
+                - cell "LAF90" [ref=e277]
+                - cell "Resolution" [ref=e278]
+            - rowgroup [ref=e279]:
+              - row "P1 44.7 49.0 42.5 log" [ref=e280]:
+                - rowheader "P1" [ref=e281]
+                - cell "44.7" [ref=e282]
+                - cell "49.0" [ref=e283]
+                - cell "42.5" [ref=e284]
+                - cell "log" [ref=e285]
+              - row "P2 44.0 47.9 42.6 log" [ref=e286]:
+                - rowheader "P2" [ref=e287]
+                - cell "44.0" [ref=e288]
+                - cell "47.9" [ref=e289]
+                - cell "42.6" [ref=e290]
+                - cell "log" [ref=e291]
+              - row "P3 44.4 49.1 43.1 log" [ref=e292]:
+                - rowheader "P3" [ref=e293]
+                - cell "44.4" [ref=e294]
+                - cell "49.1" [ref=e295]
+                - cell "43.1" [ref=e296]
+                - cell "log" [ref=e297]
+              - row "P4 47.0 50.8 45.7 log" [ref=e298]:
+                - rowheader "P4" [ref=e299]
+                - cell "47.0" [ref=e300]
+                - cell "50.8" [ref=e301]
+                - cell "45.7" [ref=e302]
+                - cell "log" [ref=e303]
+          - paragraph [ref=e304]: Overview and 1 s LAF90 estimates are indicative.
+        - generic [ref=e305]:
+          - heading "Regions 80 / 80" [level=3] [ref=e306]:
+            - text: Regions
+            - generic [ref=e307]: 80 / 80
+          - generic [ref=e308]:
+            - generic [ref=e309]:
+              - text: Category
+              - combobox "Category" [ref=e310]:
+                - option "All categories" [selected]
+                - option "Dog bark"
+                - option "Traffic"
+                - option "Plant"
+                - option "Speech"
+                - option "Other"
+            - generic [ref=e311]:
+              - text: Present at
+              - combobox "Present at" [ref=e312]:
+                - option "Any meter" [selected]
+                - option "P1"
+                - option "P2"
+                - option "P3"
+                - option "P4"
+            - generic [ref=e313]:
+              - checkbox "Present at one meter only" [ref=e314]
+              - text: Present at one meter only
+            - generic [ref=e315]:
+              - checkbox "Has unchecked meters" [ref=e316]
+              - text: Has unchecked meters
+          - generic [ref=e317]:
+            - article [ref=e318]:
+              - button "Event 1" [ref=e321] [cursor=pointer]
+              - generic [ref=e322]: 10/01, 01:00:00 · 0m 3s
+              - generic "Meter states" [ref=e323]:
+                - 'button "P1: present" [disabled] [ref=e324]': P1 ●
+                - 'button "P2: present" [ref=e325] [cursor=pointer]': P2 ●
+                - 'button "P3: unchecked" [ref=e326] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e327] [cursor=pointer]': P4 ○
+            - article [ref=e328]:
+              - button "Event 2" [ref=e331] [cursor=pointer]
+              - generic [ref=e332]: 10/01, 01:00:10 · 0m 3s
+              - generic "Meter states" [ref=e333]:
+                - 'button "P1: present" [disabled] [ref=e334]': P1 ●
+                - 'button "P2: unchecked" [ref=e335] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e336] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e337] [cursor=pointer]': P4 ○
+            - article [ref=e338]:
+              - button "Event 3" [ref=e341] [cursor=pointer]
+              - generic [ref=e342]: 10/01, 01:00:20 · 0m 3s
+              - generic "Meter states" [ref=e343]:
+                - 'button "P1: present" [disabled] [ref=e344]': P1 ●
+                - 'button "P2: unchecked" [ref=e345] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e346] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e347] [cursor=pointer]': P4 ○
+            - article [ref=e348]:
+              - button "Event 4" [ref=e351] [cursor=pointer]
+              - generic [ref=e352]: 10/01, 01:00:30 · 0m 3s
+              - generic "Meter states" [ref=e353]:
+                - 'button "P1: present" [disabled] [ref=e354]': P1 ●
+                - 'button "P2: unchecked" [ref=e355] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e356] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e357] [cursor=pointer]': P4 ○
+            - article [ref=e358]:
+              - button "Event 5" [ref=e361] [cursor=pointer]
+              - generic [ref=e362]: 10/01, 01:00:40 · 0m 3s
+              - generic "Meter states" [ref=e363]:
+                - 'button "P1: present" [disabled] [ref=e364]': P1 ●
+                - 'button "P2: unchecked" [ref=e365] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e366] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e367] [cursor=pointer]': P4 ○
+            - article [ref=e368]:
+              - button "Event 6" [ref=e371] [cursor=pointer]
+              - generic [ref=e372]: 10/01, 01:00:50 · 0m 3s
+              - generic "Meter states" [ref=e373]:
+                - 'button "P1: present" [disabled] [ref=e374]': P1 ●
+                - 'button "P2: unchecked" [ref=e375] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e376] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e377] [cursor=pointer]': P4 ○
+            - article [ref=e378]:
+              - button "Event 7" [ref=e381] [cursor=pointer]
+              - generic [ref=e382]: 10/01, 01:01:00 · 0m 3s
+              - generic "Meter states" [ref=e383]:
+                - 'button "P1: present" [disabled] [ref=e384]': P1 ●
+                - 'button "P2: unchecked" [ref=e385] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e386] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e387] [cursor=pointer]': P4 ○
+            - article [ref=e388]:
+              - button "Event 8" [ref=e391] [cursor=pointer]
+              - generic [ref=e392]: 10/01, 01:01:10 · 0m 3s
+              - generic "Meter states" [ref=e393]:
+                - 'button "P1: present" [disabled] [ref=e394]': P1 ●
+                - 'button "P2: unchecked" [ref=e395] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e396] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e397] [cursor=pointer]': P4 ○
+            - article [ref=e398]:
+              - button "Event 9" [ref=e401] [cursor=pointer]
+              - generic [ref=e402]: 10/01, 01:01:20 · 0m 3s
+              - generic "Meter states" [ref=e403]:
+                - 'button "P1: present" [disabled] [ref=e404]': P1 ●
+                - 'button "P2: unchecked" [ref=e405] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e406] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e407] [cursor=pointer]': P4 ○
+            - article [ref=e408]:
+              - button "Event 10" [ref=e411] [cursor=pointer]
+              - generic [ref=e412]: 10/01, 01:01:30 · 0m 3s
+              - generic "Meter states" [ref=e413]:
+                - 'button "P1: present" [disabled] [ref=e414]': P1 ●
+                - 'button "P2: unchecked" [ref=e415] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e416] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e417] [cursor=pointer]': P4 ○
+            - article [ref=e418]:
+              - button "Event 11" [ref=e421] [cursor=pointer]
+              - generic [ref=e422]: 10/01, 01:01:40 · 0m 3s
+              - generic "Meter states" [ref=e423]:
+                - 'button "P1: present" [disabled] [ref=e424]': P1 ●
+                - 'button "P2: unchecked" [ref=e425] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e426] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e427] [cursor=pointer]': P4 ○
+            - article [ref=e428]:
+              - button "Event 12" [ref=e431] [cursor=pointer]
+              - generic [ref=e432]: 10/01, 01:01:50 · 0m 3s
+              - generic "Meter states" [ref=e433]:
+                - 'button "P1: present" [disabled] [ref=e434]': P1 ●
+                - 'button "P2: unchecked" [ref=e435] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e436] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e437] [cursor=pointer]': P4 ○
+            - article [ref=e438]:
+              - button "Event 13" [ref=e441] [cursor=pointer]
+              - generic [ref=e442]: 10/01, 01:02:00 · 0m 3s
+              - generic "Meter states" [ref=e443]:
+                - 'button "P1: present" [disabled] [ref=e444]': P1 ●
+                - 'button "P2: unchecked" [ref=e445] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e446] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e447] [cursor=pointer]': P4 ○
+            - article [ref=e448]:
+              - button "Event 14" [ref=e451] [cursor=pointer]
+              - generic [ref=e452]: 10/01, 01:02:10 · 0m 3s
+              - generic "Meter states" [ref=e453]:
+                - 'button "P1: present" [disabled] [ref=e454]': P1 ●
+                - 'button "P2: unchecked" [ref=e455] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e456] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e457] [cursor=pointer]': P4 ○
+            - article [ref=e458]:
+              - button "Event 15" [ref=e461] [cursor=pointer]
+              - generic [ref=e462]: 10/01, 01:02:20 · 0m 3s
+              - generic "Meter states" [ref=e463]:
+                - 'button "P1: present" [disabled] [ref=e464]': P1 ●
+                - 'button "P2: unchecked" [ref=e465] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e466] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e467] [cursor=pointer]': P4 ○
+            - article [ref=e468]:
+              - button "Event 16" [ref=e471] [cursor=pointer]
+              - generic [ref=e472]: 10/01, 01:02:30 · 0m 3s
+              - generic "Meter states" [ref=e473]:
+                - 'button "P1: present" [disabled] [ref=e474]': P1 ●
+                - 'button "P2: unchecked" [ref=e475] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e476] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e477] [cursor=pointer]': P4 ○
+            - article [ref=e478]:
+              - button "Event 17" [ref=e481] [cursor=pointer]
+              - generic [ref=e482]: 10/01, 01:02:40 · 0m 3s
+              - generic "Meter states" [ref=e483]:
+                - 'button "P1: present" [disabled] [ref=e484]': P1 ●
+                - 'button "P2: unchecked" [ref=e485] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e486] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e487] [cursor=pointer]': P4 ○
+            - article [ref=e488]:
+              - button "Event 18" [ref=e491] [cursor=pointer]
+              - generic [ref=e492]: 10/01, 01:02:50 · 0m 3s
+              - generic "Meter states" [ref=e493]:
+                - 'button "P1: present" [disabled] [ref=e494]': P1 ●
+                - 'button "P2: unchecked" [ref=e495] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e496] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e497] [cursor=pointer]': P4 ○
+            - article [ref=e498]:
+              - button "Event 19" [ref=e501] [cursor=pointer]
+              - generic [ref=e502]: 10/01, 01:03:00 · 0m 3s
+              - generic "Meter states" [ref=e503]:
+                - 'button "P1: present" [disabled] [ref=e504]': P1 ●
+                - 'button "P2: unchecked" [ref=e505] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e506] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e507] [cursor=pointer]': P4 ○
+            - article [ref=e508]:
+              - button "Event 20" [ref=e511] [cursor=pointer]
+              - generic [ref=e512]: 10/01, 01:03:10 · 0m 3s
+              - generic "Meter states" [ref=e513]:
+                - 'button "P1: present" [disabled] [ref=e514]': P1 ●
+                - 'button "P2: unchecked" [ref=e515] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e516] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e517] [cursor=pointer]': P4 ○
+            - article [ref=e518]:
+              - button "Event 21" [ref=e521] [cursor=pointer]
+              - generic [ref=e522]: 10/01, 01:03:20 · 0m 3s
+              - generic "Meter states" [ref=e523]:
+                - 'button "P1: present" [disabled] [ref=e524]': P1 ●
+                - 'button "P2: unchecked" [ref=e525] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e526] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e527] [cursor=pointer]': P4 ○
+            - article [ref=e528]:
+              - button "Event 22" [ref=e531] [cursor=pointer]
+              - generic [ref=e532]: 10/01, 01:03:30 · 0m 3s
+              - generic "Meter states" [ref=e533]:
+                - 'button "P1: present" [disabled] [ref=e534]': P1 ●
+                - 'button "P2: unchecked" [ref=e535] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e536] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e537] [cursor=pointer]': P4 ○
+            - article [ref=e538]:
+              - button "Event 23" [ref=e541] [cursor=pointer]
+              - generic [ref=e542]: 10/01, 01:03:40 · 0m 3s
+              - generic "Meter states" [ref=e543]:
+                - 'button "P1: present" [disabled] [ref=e544]': P1 ●
+                - 'button "P2: unchecked" [ref=e545] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e546] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e547] [cursor=pointer]': P4 ○
+            - article [ref=e548]:
+              - button "Event 24" [ref=e551] [cursor=pointer]
+              - generic [ref=e552]: 10/01, 01:03:50 · 0m 3s
+              - generic "Meter states" [ref=e553]:
+                - 'button "P1: present" [disabled] [ref=e554]': P1 ●
+                - 'button "P2: unchecked" [ref=e555] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e556] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e557] [cursor=pointer]': P4 ○
+            - article [ref=e558]:
+              - button "Event 25" [ref=e561] [cursor=pointer]
+              - generic [ref=e562]: 10/01, 01:04:00 · 0m 3s
+              - generic "Meter states" [ref=e563]:
+                - 'button "P1: present" [disabled] [ref=e564]': P1 ●
+                - 'button "P2: unchecked" [ref=e565] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e566] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e567] [cursor=pointer]': P4 ○
+            - article [ref=e568]:
+              - button "Event 26" [ref=e571] [cursor=pointer]
+              - generic [ref=e572]: 10/01, 01:04:10 · 0m 3s
+              - generic "Meter states" [ref=e573]:
+                - 'button "P1: present" [disabled] [ref=e574]': P1 ●
+                - 'button "P2: unchecked" [ref=e575] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e576] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e577] [cursor=pointer]': P4 ○
+            - article [ref=e578]:
+              - button "Event 27" [ref=e581] [cursor=pointer]
+              - generic [ref=e582]: 10/01, 01:04:20 · 0m 3s
+              - generic "Meter states" [ref=e583]:
+                - 'button "P1: present" [disabled] [ref=e584]': P1 ●
+                - 'button "P2: unchecked" [ref=e585] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e586] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e587] [cursor=pointer]': P4 ○
+            - article [ref=e588]:
+              - button "Event 28" [ref=e591] [cursor=pointer]
+              - generic [ref=e592]: 10/01, 01:04:30 · 0m 3s
+              - generic "Meter states" [ref=e593]:
+                - 'button "P1: present" [disabled] [ref=e594]': P1 ●
+                - 'button "P2: unchecked" [ref=e595] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e596] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e597] [cursor=pointer]': P4 ○
+            - article [ref=e598]:
+              - button "Event 29" [ref=e601] [cursor=pointer]
+              - generic [ref=e602]: 10/01, 01:04:40 · 0m 3s
+              - generic "Meter states" [ref=e603]:
+                - 'button "P1: present" [disabled] [ref=e604]': P1 ●
+                - 'button "P2: unchecked" [ref=e605] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e606] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e607] [cursor=pointer]': P4 ○
+            - article [ref=e608]:
+              - button "Event 30" [ref=e611] [cursor=pointer]
+              - generic [ref=e612]: 10/01, 01:04:50 · 0m 3s
+              - generic "Meter states" [ref=e613]:
+                - 'button "P1: present" [disabled] [ref=e614]': P1 ●
+                - 'button "P2: unchecked" [ref=e615] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e616] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e617] [cursor=pointer]': P4 ○
+            - article [ref=e618]:
+              - button "Event 31" [ref=e621] [cursor=pointer]
+              - generic [ref=e622]: 10/01, 01:05:00 · 0m 3s
+              - generic "Meter states" [ref=e623]:
+                - 'button "P1: present" [disabled] [ref=e624]': P1 ●
+                - 'button "P2: unchecked" [ref=e625] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e626] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e627] [cursor=pointer]': P4 ○
+            - article [ref=e628]:
+              - button "Event 32" [ref=e631] [cursor=pointer]
+              - generic [ref=e632]: 10/01, 01:05:10 · 0m 3s
+              - generic "Meter states" [ref=e633]:
+                - 'button "P1: present" [disabled] [ref=e634]': P1 ●
+                - 'button "P2: unchecked" [ref=e635] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e636] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e637] [cursor=pointer]': P4 ○
+            - article [ref=e638]:
+              - button "Event 33" [ref=e641] [cursor=pointer]
+              - generic [ref=e642]: 10/01, 01:05:20 · 0m 3s
+              - generic "Meter states" [ref=e643]:
+                - 'button "P1: present" [disabled] [ref=e644]': P1 ●
+                - 'button "P2: unchecked" [ref=e645] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e646] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e647] [cursor=pointer]': P4 ○
+            - article [ref=e648]:
+              - button "Event 34" [ref=e651] [cursor=pointer]
+              - generic [ref=e652]: 10/01, 01:05:30 · 0m 3s
+              - generic "Meter states" [ref=e653]:
+                - 'button "P1: present" [disabled] [ref=e654]': P1 ●
+                - 'button "P2: unchecked" [ref=e655] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e656] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e657] [cursor=pointer]': P4 ○
+            - article [ref=e658]:
+              - button "Event 35" [ref=e661] [cursor=pointer]
+              - generic [ref=e662]: 10/01, 01:05:40 · 0m 3s
+              - generic "Meter states" [ref=e663]:
+                - 'button "P1: present" [disabled] [ref=e664]': P1 ●
+                - 'button "P2: unchecked" [ref=e665] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e666] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e667] [cursor=pointer]': P4 ○
+            - article [ref=e668]:
+              - button "Event 36" [ref=e671] [cursor=pointer]
+              - generic [ref=e672]: 10/01, 01:05:50 · 0m 3s
+              - generic "Meter states" [ref=e673]:
+                - 'button "P1: present" [disabled] [ref=e674]': P1 ●
+                - 'button "P2: unchecked" [ref=e675] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e676] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e677] [cursor=pointer]': P4 ○
+            - article [ref=e678]:
+              - button "Event 37" [ref=e681] [cursor=pointer]
+              - generic [ref=e682]: 10/01, 01:06:00 · 0m 3s
+              - generic "Meter states" [ref=e683]:
+                - 'button "P1: present" [disabled] [ref=e684]': P1 ●
+                - 'button "P2: unchecked" [ref=e685] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e686] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e687] [cursor=pointer]': P4 ○
+            - article [ref=e688]:
+              - button "Event 38" [ref=e691] [cursor=pointer]
+              - generic [ref=e692]: 10/01, 01:06:10 · 0m 3s
+              - generic "Meter states" [ref=e693]:
+                - 'button "P1: present" [disabled] [ref=e694]': P1 ●
+                - 'button "P2: unchecked" [ref=e695] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e696] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e697] [cursor=pointer]': P4 ○
+            - article [ref=e698]:
+              - button "Event 39" [ref=e701] [cursor=pointer]
+              - generic [ref=e702]: 10/01, 01:06:20 · 0m 3s
+              - generic "Meter states" [ref=e703]:
+                - 'button "P1: present" [disabled] [ref=e704]': P1 ●
+                - 'button "P2: unchecked" [ref=e705] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e706] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e707] [cursor=pointer]': P4 ○
+            - article [ref=e708]:
+              - button "Event 40" [ref=e711] [cursor=pointer]
+              - generic [ref=e712]: 10/01, 01:06:30 · 0m 3s
+              - generic "Meter states" [ref=e713]:
+                - 'button "P1: present" [disabled] [ref=e714]': P1 ●
+                - 'button "P2: unchecked" [ref=e715] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e716] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e717] [cursor=pointer]': P4 ○
+            - article [ref=e718]:
+              - button "Event 41" [ref=e721] [cursor=pointer]
+              - generic [ref=e722]: 10/01, 01:06:40 · 0m 3s
+              - generic "Meter states" [ref=e723]:
+                - 'button "P1: present" [disabled] [ref=e724]': P1 ●
+                - 'button "P2: unchecked" [ref=e725] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e726] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e727] [cursor=pointer]': P4 ○
+            - article [ref=e728]:
+              - button "Event 42" [ref=e731] [cursor=pointer]
+              - generic [ref=e732]: 10/01, 01:06:50 · 0m 3s
+              - generic "Meter states" [ref=e733]:
+                - 'button "P1: present" [disabled] [ref=e734]': P1 ●
+                - 'button "P2: unchecked" [ref=e735] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e736] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e737] [cursor=pointer]': P4 ○
+            - article [ref=e738]:
+              - button "Event 43" [ref=e741] [cursor=pointer]
+              - generic [ref=e742]: 10/01, 01:07:00 · 0m 3s
+              - generic "Meter states" [ref=e743]:
+                - 'button "P1: present" [disabled] [ref=e744]': P1 ●
+                - 'button "P2: unchecked" [ref=e745] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e746] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e747] [cursor=pointer]': P4 ○
+            - article [ref=e748]:
+              - button "Event 44" [ref=e751] [cursor=pointer]
+              - generic [ref=e752]: 10/01, 01:07:10 · 0m 3s
+              - generic "Meter states" [ref=e753]:
+                - 'button "P1: present" [disabled] [ref=e754]': P1 ●
+                - 'button "P2: unchecked" [ref=e755] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e756] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e757] [cursor=pointer]': P4 ○
+            - article [ref=e758]:
+              - button "Event 45" [ref=e761] [cursor=pointer]
+              - generic [ref=e762]: 10/01, 01:07:20 · 0m 3s
+              - generic "Meter states" [ref=e763]:
+                - 'button "P1: present" [disabled] [ref=e764]': P1 ●
+                - 'button "P2: unchecked" [ref=e765] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e766] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e767] [cursor=pointer]': P4 ○
+            - article [ref=e768]:
+              - button "Event 46" [ref=e771] [cursor=pointer]
+              - generic [ref=e772]: 10/01, 01:07:30 · 0m 3s
+              - generic "Meter states" [ref=e773]:
+                - 'button "P1: present" [disabled] [ref=e774]': P1 ●
+                - 'button "P2: unchecked" [ref=e775] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e776] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e777] [cursor=pointer]': P4 ○
+            - article [ref=e778]:
+              - button "Event 47" [ref=e781] [cursor=pointer]
+              - generic [ref=e782]: 10/01, 01:07:40 · 0m 3s
+              - generic "Meter states" [ref=e783]:
+                - 'button "P1: present" [disabled] [ref=e784]': P1 ●
+                - 'button "P2: unchecked" [ref=e785] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e786] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e787] [cursor=pointer]': P4 ○
+            - article [ref=e788]:
+              - button "Event 48" [ref=e791] [cursor=pointer]
+              - generic [ref=e792]: 10/01, 01:07:50 · 0m 3s
+              - generic "Meter states" [ref=e793]:
+                - 'button "P1: present" [disabled] [ref=e794]': P1 ●
+                - 'button "P2: unchecked" [ref=e795] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e796] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e797] [cursor=pointer]': P4 ○
+            - article [ref=e798]:
+              - button "Event 49" [ref=e801] [cursor=pointer]
+              - generic [ref=e802]: 10/01, 01:08:00 · 0m 3s
+              - generic "Meter states" [ref=e803]:
+                - 'button "P1: present" [disabled] [ref=e804]': P1 ●
+                - 'button "P2: unchecked" [ref=e805] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e806] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e807] [cursor=pointer]': P4 ○
+            - article [ref=e808]:
+              - button "Event 50" [ref=e811] [cursor=pointer]
+              - generic [ref=e812]: 10/01, 01:08:10 · 0m 3s
+              - generic "Meter states" [ref=e813]:
+                - 'button "P1: present" [disabled] [ref=e814]': P1 ●
+                - 'button "P2: unchecked" [ref=e815] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e816] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e817] [cursor=pointer]': P4 ○
+            - article [ref=e818]:
+              - button "Event 51" [ref=e821] [cursor=pointer]
+              - generic [ref=e822]: 10/01, 01:08:20 · 0m 3s
+              - generic "Meter states" [ref=e823]:
+                - 'button "P1: present" [disabled] [ref=e824]': P1 ●
+                - 'button "P2: unchecked" [ref=e825] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e826] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e827] [cursor=pointer]': P4 ○
+            - article [ref=e828]:
+              - button "Event 52" [ref=e831] [cursor=pointer]
+              - generic [ref=e832]: 10/01, 01:08:30 · 0m 3s
+              - generic "Meter states" [ref=e833]:
+                - 'button "P1: present" [disabled] [ref=e834]': P1 ●
+                - 'button "P2: unchecked" [ref=e835] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e836] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e837] [cursor=pointer]': P4 ○
+            - article [ref=e838]:
+              - button "Event 53" [ref=e841] [cursor=pointer]
+              - generic [ref=e842]: 10/01, 01:08:40 · 0m 3s
+              - generic "Meter states" [ref=e843]:
+                - 'button "P1: present" [disabled] [ref=e844]': P1 ●
+                - 'button "P2: unchecked" [ref=e845] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e846] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e847] [cursor=pointer]': P4 ○
+            - article [ref=e848]:
+              - button "Event 54" [ref=e851] [cursor=pointer]
+              - generic [ref=e852]: 10/01, 01:08:50 · 0m 3s
+              - generic "Meter states" [ref=e853]:
+                - 'button "P1: present" [disabled] [ref=e854]': P1 ●
+                - 'button "P2: unchecked" [ref=e855] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e856] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e857] [cursor=pointer]': P4 ○
+            - article [ref=e858]:
+              - button "Event 55" [ref=e861] [cursor=pointer]
+              - generic [ref=e862]: 10/01, 01:09:00 · 0m 3s
+              - generic "Meter states" [ref=e863]:
+                - 'button "P1: present" [disabled] [ref=e864]': P1 ●
+                - 'button "P2: unchecked" [ref=e865] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e866] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e867] [cursor=pointer]': P4 ○
+            - article [ref=e868]:
+              - button "Event 56" [ref=e871] [cursor=pointer]
+              - generic [ref=e872]: 10/01, 01:09:10 · 0m 3s
+              - generic "Meter states" [ref=e873]:
+                - 'button "P1: present" [disabled] [ref=e874]': P1 ●
+                - 'button "P2: unchecked" [ref=e875] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e876] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e877] [cursor=pointer]': P4 ○
+            - article [ref=e878]:
+              - button "Event 57" [ref=e881] [cursor=pointer]
+              - generic [ref=e882]: 10/01, 01:09:20 · 0m 3s
+              - generic "Meter states" [ref=e883]:
+                - 'button "P1: present" [disabled] [ref=e884]': P1 ●
+                - 'button "P2: unchecked" [ref=e885] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e886] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e887] [cursor=pointer]': P4 ○
+            - article [ref=e888]:
+              - button "Event 58" [ref=e891] [cursor=pointer]
+              - generic [ref=e892]: 10/01, 01:09:30 · 0m 3s
+              - generic "Meter states" [ref=e893]:
+                - 'button "P1: present" [disabled] [ref=e894]': P1 ●
+                - 'button "P2: unchecked" [ref=e895] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e896] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e897] [cursor=pointer]': P4 ○
+            - article [ref=e898]:
+              - button "Event 59" [ref=e901] [cursor=pointer]
+              - generic [ref=e902]: 10/01, 01:09:40 · 0m 3s
+              - generic "Meter states" [ref=e903]:
+                - 'button "P1: present" [disabled] [ref=e904]': P1 ●
+                - 'button "P2: unchecked" [ref=e905] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e906] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e907] [cursor=pointer]': P4 ○
+            - article [ref=e908]:
+              - button "Event 60" [ref=e911] [cursor=pointer]
+              - generic [ref=e912]: 10/01, 01:09:50 · 0m 3s
+              - generic "Meter states" [ref=e913]:
+                - 'button "P1: present" [disabled] [ref=e914]': P1 ●
+                - 'button "P2: unchecked" [ref=e915] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e916] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e917] [cursor=pointer]': P4 ○
+            - article [ref=e918]:
+              - button "Event 61" [ref=e921] [cursor=pointer]
+              - generic [ref=e922]: 10/01, 01:10:00 · 0m 3s
+              - generic "Meter states" [ref=e923]:
+                - 'button "P1: present" [disabled] [ref=e924]': P1 ●
+                - 'button "P2: unchecked" [ref=e925] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e926] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e927] [cursor=pointer]': P4 ○
+            - article [ref=e928]:
+              - button "Event 62" [ref=e931] [cursor=pointer]
+              - generic [ref=e932]: 10/01, 01:10:10 · 0m 3s
+              - generic "Meter states" [ref=e933]:
+                - 'button "P1: present" [disabled] [ref=e934]': P1 ●
+                - 'button "P2: unchecked" [ref=e935] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e936] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e937] [cursor=pointer]': P4 ○
+            - article [ref=e938]:
+              - button "Event 63" [ref=e941] [cursor=pointer]
+              - generic [ref=e942]: 10/01, 01:10:20 · 0m 3s
+              - generic "Meter states" [ref=e943]:
+                - 'button "P1: present" [disabled] [ref=e944]': P1 ●
+                - 'button "P2: unchecked" [ref=e945] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e946] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e947] [cursor=pointer]': P4 ○
+            - article [ref=e948]:
+              - button "Event 64" [ref=e951] [cursor=pointer]
+              - generic [ref=e952]: 10/01, 01:10:30 · 0m 3s
+              - generic "Meter states" [ref=e953]:
+                - 'button "P1: present" [disabled] [ref=e954]': P1 ●
+                - 'button "P2: unchecked" [ref=e955] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e956] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e957] [cursor=pointer]': P4 ○
+            - article [ref=e958]:
+              - button "Event 65" [ref=e961] [cursor=pointer]
+              - generic [ref=e962]: 10/01, 01:10:40 · 0m 3s
+              - generic "Meter states" [ref=e963]:
+                - 'button "P1: present" [disabled] [ref=e964]': P1 ●
+                - 'button "P2: unchecked" [ref=e965] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e966] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e967] [cursor=pointer]': P4 ○
+            - article [ref=e968]:
+              - button "Event 66" [ref=e971] [cursor=pointer]
+              - generic [ref=e972]: 10/01, 01:10:50 · 0m 3s
+              - generic "Meter states" [ref=e973]:
+                - 'button "P1: present" [disabled] [ref=e974]': P1 ●
+                - 'button "P2: unchecked" [ref=e975] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e976] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e977] [cursor=pointer]': P4 ○
+            - article [ref=e978]:
+              - button "Event 67" [ref=e981] [cursor=pointer]
+              - generic [ref=e982]: 10/01, 01:11:00 · 0m 3s
+              - generic "Meter states" [ref=e983]:
+                - 'button "P1: present" [disabled] [ref=e984]': P1 ●
+                - 'button "P2: unchecked" [ref=e985] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e986] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e987] [cursor=pointer]': P4 ○
+            - article [ref=e988]:
+              - button "Event 68" [ref=e991] [cursor=pointer]
+              - generic [ref=e992]: 10/01, 01:11:10 · 0m 3s
+              - generic "Meter states" [ref=e993]:
+                - 'button "P1: present" [disabled] [ref=e994]': P1 ●
+                - 'button "P2: unchecked" [ref=e995] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e996] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e997] [cursor=pointer]': P4 ○
+            - article [ref=e998]:
+              - button "Event 69" [ref=e1001] [cursor=pointer]
+              - generic [ref=e1002]: 10/01, 01:11:20 · 0m 3s
+              - generic "Meter states" [ref=e1003]:
+                - 'button "P1: present" [disabled] [ref=e1004]': P1 ●
+                - 'button "P2: unchecked" [ref=e1005] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1006] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1007] [cursor=pointer]': P4 ○
+            - article [ref=e1008]:
+              - button "Event 70" [ref=e1011] [cursor=pointer]
+              - generic [ref=e1012]: 10/01, 01:11:30 · 0m 3s
+              - generic "Meter states" [ref=e1013]:
+                - 'button "P1: present" [disabled] [ref=e1014]': P1 ●
+                - 'button "P2: unchecked" [ref=e1015] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1016] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1017] [cursor=pointer]': P4 ○
+            - article [ref=e1018]:
+              - button "Event 71" [ref=e1021] [cursor=pointer]
+              - generic [ref=e1022]: 10/01, 01:11:40 · 0m 3s
+              - generic "Meter states" [ref=e1023]:
+                - 'button "P1: present" [disabled] [ref=e1024]': P1 ●
+                - 'button "P2: unchecked" [ref=e1025] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1026] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1027] [cursor=pointer]': P4 ○
+            - article [ref=e1028]:
+              - button "Event 72" [ref=e1031] [cursor=pointer]
+              - generic [ref=e1032]: 10/01, 01:11:50 · 0m 3s
+              - generic "Meter states" [ref=e1033]:
+                - 'button "P1: present" [disabled] [ref=e1034]': P1 ●
+                - 'button "P2: unchecked" [ref=e1035] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1036] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1037] [cursor=pointer]': P4 ○
+            - article [ref=e1038]:
+              - button "Event 73" [ref=e1041] [cursor=pointer]
+              - generic [ref=e1042]: 10/01, 01:12:00 · 0m 3s
+              - generic "Meter states" [ref=e1043]:
+                - 'button "P1: present" [disabled] [ref=e1044]': P1 ●
+                - 'button "P2: unchecked" [ref=e1045] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1046] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1047] [cursor=pointer]': P4 ○
+            - article [ref=e1048]:
+              - button "Event 74" [ref=e1051] [cursor=pointer]
+              - generic [ref=e1052]: 10/01, 01:12:10 · 0m 3s
+              - generic "Meter states" [ref=e1053]:
+                - 'button "P1: present" [disabled] [ref=e1054]': P1 ●
+                - 'button "P2: unchecked" [ref=e1055] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1056] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1057] [cursor=pointer]': P4 ○
+            - article [ref=e1058]:
+              - button "Event 75" [ref=e1061] [cursor=pointer]
+              - generic [ref=e1062]: 10/01, 01:12:20 · 0m 3s
+              - generic "Meter states" [ref=e1063]:
+                - 'button "P1: present" [disabled] [ref=e1064]': P1 ●
+                - 'button "P2: unchecked" [ref=e1065] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1066] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1067] [cursor=pointer]': P4 ○
+            - article [ref=e1068]:
+              - button "Event 76" [ref=e1071] [cursor=pointer]
+              - generic [ref=e1072]: 10/01, 01:12:30 · 0m 3s
+              - generic "Meter states" [ref=e1073]:
+                - 'button "P1: present" [disabled] [ref=e1074]': P1 ●
+                - 'button "P2: unchecked" [ref=e1075] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1076] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1077] [cursor=pointer]': P4 ○
+            - article [ref=e1078]:
+              - button "Event 77" [ref=e1081] [cursor=pointer]
+              - generic [ref=e1082]: 10/01, 01:12:40 · 0m 3s
+              - generic "Meter states" [ref=e1083]:
+                - 'button "P1: present" [disabled] [ref=e1084]': P1 ●
+                - 'button "P2: unchecked" [ref=e1085] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1086] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1087] [cursor=pointer]': P4 ○
+            - article [ref=e1088]:
+              - button "Event 78" [ref=e1091] [cursor=pointer]
+              - generic [ref=e1092]: 10/01, 01:12:50 · 0m 3s
+              - generic "Meter states" [ref=e1093]:
+                - 'button "P1: present" [disabled] [ref=e1094]': P1 ●
+                - 'button "P2: unchecked" [ref=e1095] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1096] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1097] [cursor=pointer]': P4 ○
+            - article [ref=e1098]:
+              - button "Event 79" [ref=e1101] [cursor=pointer]
+              - generic [ref=e1102]: 10/01, 01:13:00 · 0m 3s
+              - generic "Meter states" [ref=e1103]:
+                - 'button "P1: present" [disabled] [ref=e1104]': P1 ●
+                - 'button "P2: unchecked" [ref=e1105] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1106] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1107] [cursor=pointer]': P4 ○
+            - article [ref=e1108]:
+              - button "Event 80" [ref=e1111] [cursor=pointer]
+              - generic [ref=e1112]: 10/01, 01:13:10 · 0m 3s
+              - generic "Meter states" [ref=e1113]:
+                - 'button "P1: present" [disabled] [ref=e1114]': P1 ●
+                - 'button "P2: unchecked" [ref=e1115] [cursor=pointer]': P2 ○
+                - 'button "P3: unchecked" [ref=e1116] [cursor=pointer]': P3 ○
+                - 'button "P4: unchecked" [ref=e1117] [cursor=pointer]': P4 ○
+        - group [ref=e1118]:
+          - option "Off"
+          - option "Selected region only" [selected]
+          - option "All regions"
+          - option "Choose another region…" [selected]
+          - option "Event 2"
+          - option "Event 3"
+          - option "Event 4"
+          - option "Event 5"
+          - option "Event 6"
+          - option "Event 7"
+          - option "Event 8"
+          - option "Event 9"
+          - option "Event 10"
+          - option "Event 11"
+          - option "Event 12"
+          - option "Event 13"
+          - option "Event 14"
+          - option "Event 15"
+          - option "Event 16"
+          - option "Event 17"
+          - option "Event 18"
+          - option "Event 19"
+          - option "Event 20"
+          - option "Event 21"
+          - option "Event 22"
+          - option "Event 23"
+          - option "Event 24"
+          - option "Event 25"
+          - option "Event 26"
+          - option "Event 27"
+          - option "Event 28"
+          - option "Event 29"
+          - option "Event 30"
+          - option "Event 31"
+          - option "Event 32"
+          - option "Event 33"
+          - option "Event 34"
+          - option "Event 35"
+          - option "Event 36"
+          - option "Event 37"
+          - option "Event 38"
+          - option "Event 39"
+          - option "Event 40"
+          - option "Event 41"
+          - option "Event 42"
+          - option "Event 43"
+          - option "Event 44"
+          - option "Event 45"
+          - option "Event 46"
+          - option "Event 47"
+          - option "Event 48"
+          - option "Event 49"
+          - option "Event 50"
+          - option "Event 51"
+          - option "Event 52"
+          - option "Event 53"
+          - option "Event 54"
+          - option "Event 55"
+          - option "Event 56"
+          - option "Event 57"
+          - option "Event 58"
+          - option "Event 59"
+          - option "Event 60"
+          - option "Event 61"
+          - option "Event 62"
+          - option "Event 63"
+          - option "Event 64"
+          - option "Event 65"
+          - option "Event 66"
+          - option "Event 67"
+          - option "Event 68"
+          - option "Event 69"
+          - option "Event 70"
+          - option "Event 71"
+          - option "Event 72"
+          - option "Event 73"
+          - option "Event 74"
+          - option "Event 75"
+          - option "Event 76"
+          - option "Event 77"
+          - option "Event 78"
+          - option "Event 79"
+          - option "Event 80"
+  - paragraph [ref=e1131]: Tap on a time series chart to populate this table.
+  - table [ref=e1134]:
+    - rowgroup [ref=e1135]:
+      - row "Position LAeq LAFmax LAF90" [ref=e1136]:
+        - cell "Position" [ref=e1137]
+        - cell "LAeq" [ref=e1138]
+        - cell "LAFmax" [ref=e1139]
+        - cell "LAF90" [ref=e1140]
+    - rowgroup [ref=e1141]:
+      - row "Tap on a time series chart to populate this table." [ref=e1142]:
+        - cell "Tap on a time series chart to populate this table." [ref=e1143]
+```

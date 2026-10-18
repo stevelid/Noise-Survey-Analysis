@@ -8,7 +8,7 @@ from bokeh.document import Document
 from bokeh.embed import file_html
 from bokeh.resources import CDN, INLINE
 
-from noise_survey_analysis.core.app_setup import load_config_and_prepare_sources
+from noise_survey_analysis.core.app_setup import load_config_and_prepare_sources, load_config_extras
 from noise_survey_analysis.core.data_manager import DataManager
 from noise_survey_analysis.core.audio_processor import AudioDataProcessor
 from noise_survey_analysis.core.config import CHART_SETTINGS
@@ -76,6 +76,7 @@ def generate_static_html(config_path: str, resources: str = "INLINE") -> Optiona
             source_configs=source_configs,
             job_number=job_number,
             server_mode=False,
+            ui_settings=load_config_extras(config_path).get('ui'),
         )
 
         # 4. Save the document using file_html (works under bokeh serve and CLI)

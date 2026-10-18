@@ -20,6 +20,7 @@ project_root = current_file.parent.parent  # Go up to "Noise Survey Analysis"
 sys.path.insert(0, str(project_root))
 
 from noise_survey_analysis.ui.theme import apply_theme
+from noise_survey_analysis.ui.component_parts.html_side_panel import HtmlSidePanelComponent
 from noise_survey_analysis.ui.components import (
     TimeSeriesComponent,
     SpectrogramComponent,
@@ -149,7 +150,8 @@ class DashBuilder:
                      saved_workspace_state=None,
                      job_number=None,
                      server_mode: bool = False,
-                     position_offsets=None):
+                     position_offsets=None,
+                     ui_settings: Optional[Dict[str, Any]] = None):
         """
         The main public method that constructs the entire application layout.
         This is the primary entry point for this class.
@@ -166,6 +168,8 @@ class DashBuilder:
 
         # The sequence of operations is clear and logical
         self.server_mode = bool(server_mode)
+        requested_panel = (ui_settings or {}).get('side_panel', 'html')
+        self.side_panel_mode = requested_panel if requested_panel in ('legacy', 'html') else 'html'
         if not self.server_mode:
             self._load_deferred_log_data_for_static(app_data)
         prepared_glyph_data, available_params = self._prepare_glyph_data(app_data)
@@ -358,6 +362,9 @@ class DashBuilder:
         self.shared_components['marker_panel'] = marker_panel_div
         self.shared_components['classification_panel'] = classification_panel_div
         self.shared_components['side_panel'] = side_panel
+        self.shared_components['html_side_panel'] = (
+            HtmlSidePanelComponent() if getattr(self, 'side_panel_mode', 'html') == 'html' else None
+        )
 
         first_position_processed = False
         # Create components for each position found in the data
@@ -538,7 +545,8 @@ class DashBuilder:
     def _assemble_and_add_layout(self, doc):
         """Step 4: Gets the .layout() from each component and assembles the final page."""
         logger.info("DashboardBuilder: Assembling final Bokeh layout...")
-        
+        use_html_panel = self.shared_components.get('html_side_panel') is not None
+
         position_layouts = []
         for position_name, comp_dict in self.components.items():
             # Add position title and offset controls above the timeseries
@@ -548,6 +556,16 @@ class DashBuilder:
                 comp_dict['position_controls']['layout'],
                 ts_layout
             )
+            if use_html_panel:
+                # Fixed 1600 px figures formerly pushed the sidebar off screen.
+                # Stretch the chart column while preserving each plot's height.
+                for chart in (comp_dict['timeseries'].figure, comp_dict['spectrogram'].figure):
+                    chart.width = None
+                    chart.sizing_mode = 'stretch_width'
+                    chart.min_width = 300
+                for layout in (ts_layout, spec_layout, ts_layout_with_controls, comp_dict['position_controls']['layout']):
+                    layout.sizing_mode = 'stretch_width'
+                    layout.styles = {**layout.styles, 'min-width': '0', 'overflow': 'visible'}
 
             pos_layout = column(
                 ts_layout_with_controls,
@@ -562,6 +580,9 @@ class DashBuilder:
                     "box-shadow": "0 1px 3px rgba(15, 23, 42, 0.08)",
                 }
             )
+            if use_html_panel:
+                pos_layout.sizing_mode = 'stretch_width'
+                pos_layout.styles = {**pos_layout.styles, 'min-width': '0', 'overflow': 'visible'}
             position_layouts.append(pos_layout)
         
         # Create the JS initialization trigger Div
@@ -581,6 +602,9 @@ class DashBuilder:
         self.shared_components['comparison_frequency_layout'] = comparison_frequency_layout
 
         charts_stack_layout = column(*position_layouts, name="charts_stack_layout")
+        if use_html_panel:
+            charts_stack_layout.sizing_mode = 'stretch_width'
+            charts_stack_layout.styles = {'min-width': '0', 'overflow': 'visible'}
 
         region_panel_layout = self.shared_components['region_panel'].layout()
         region_panel_layout.name = "region_panel_layout"
@@ -603,29 +627,43 @@ class DashBuilder:
         self.shared_components['comparison_panel_layout'] = comparison_panel_layout
 
         side_panel_tabs = self.shared_components['side_panel'].layout()
-        side_panel_tabs.visible = True
+        side_panel_tabs.visible = not use_html_panel
         self.shared_components['side_panel_tabs'] = side_panel_tabs
 
+        panel_children = [self.shared_components['html_side_panel'].layout()] if use_html_panel else [
+            side_panel_tabs, comparison_panel_layout
+        ]
         side_panel_container = column(
-            side_panel_tabs,
-            comparison_panel_layout,
+            *panel_children,
             name="side_panel_container",
             width=SIDE_PANEL_WIDTH + 32,
             styles={
                 "margin-top": "2px",
+                **({'position': 'sticky', 'top': '12px', 'align-self': 'flex-start', 'overflow': 'visible'} if use_html_panel else {}),
             }
         )
+        if use_html_panel:
+            for component in ('range_selector', 'freq_bar', 'comparison_frequency'):
+                chart = self.shared_components[component].figure
+                chart.width = None
+                chart.sizing_mode = 'stretch_width'
+            for layout in (controls_layout, range_selector_layout, freq_bar_layout, comparison_frequency_layout):
+                layout.sizing_mode = 'stretch_width'
+                layout.styles = {**layout.styles, 'overflow': 'visible', 'min-width': '0'}
         self.shared_components['side_panel_container'] = side_panel_container
 
         chart_content_row = row(
             charts_stack_layout,
             side_panel_container,
             name="chart_content_row",
+            spacing=12,
             styles={
                 "align-items": "flex-start",
-                "gap": "12px",
             }
         )
+        if use_html_panel:
+            chart_content_row.sizing_mode = 'stretch_width'
+            chart_content_row.styles = {**chart_content_row.styles, 'overflow': 'visible', 'min-width': '0'}
 
         main_layout = column(
             controls_layout,
@@ -639,6 +677,9 @@ class DashBuilder:
         )
 
         final_layout = main_layout
+        if use_html_panel:
+            main_layout.sizing_mode = 'stretch_width'
+            main_layout.styles = {'overflow': 'visible', 'min-width': '0'}
 
         apply_theme(final_layout)
         doc.add_root(final_layout)
@@ -667,8 +708,11 @@ class DashBuilder:
                 'features/classifications/classificationThunks.js',
                 'features/regions/regionReducer.js',
                 'features/regions/regionSelectors.js',
+                'features/regions/annotationMetrics.js',
                 'features/regions/regionUtils.js',
                 'features/regions/regionThunks.js',
+                'features/annotations/panelSelectors.js',
+                'features/annotations/panelThunks.js',
                 'features/interaction/interactionThunks.js',
                 'features/audio/audioReducer.js',
                 'features/audio/audioThunks.js',
@@ -694,7 +738,10 @@ class DashBuilder:
                 'services/regions/regionPanelRenderer.js',
                 'services/classifications/classificationPanelRenderer.js',
                 'services/renderers/controlWidgetsRenderer.js',
+                'services/panels/htmlPanelEvents.js',
+                'services/panels/htmlPanelRenderer.js',
                 'services/renderers.js',
+                'services/session/annotationCsv.js',
                 'services/session/sessionManager.js',
                 'services/eventHandlers/viewEventHandlers.js',
                 'services/eventHandlers.js',
@@ -788,11 +835,13 @@ class DashBuilder:
                 'freq_table_freq_range_hz': CHART_SETTINGS.get('freq_table_freq_range_hz'),
                 'log_view_max_viewport_seconds': LOG_VIEW_MAX_VIEWPORT_SECONDS,
                 'server_mode': getattr(self, 'server_mode', False),
+                'ui': {'side_panel': getattr(self, 'side_panel_mode', 'html')},
             },
             'sourceConfigs': getattr(self, 'source_configs', []),
             'jobNumber': getattr(self, 'job_number', None),
             'positionDisplayTitles': getattr(self, 'position_display_titles', {}),
             'savedWorkspaceState': getattr(self, 'saved_workspace_state', None),
+            'htmlSidePanel': self.shared_components['html_side_panel'].div if self.shared_components.get('html_side_panel') else None,
             'uiPositionElements': {},
             'positionHasLogData': {},  # per-position flag: whether log data exists (even if not yet loaded)
             'positionHasLogSpectral': {},  # per-position flag: whether log spectrogram data exists
@@ -903,6 +952,25 @@ class DashBuilder:
             'classificationPanelRoleFilterLayout': self.shared_components['classification_panel'].role_filter_layout,
             'classificationPanelRoleCheckboxGroup': self.shared_components['classification_panel'].role_checkbox_group,
         }
+
+        if self.shared_components.get('html_side_panel') is not None:
+            # JS callback arguments also become document references. Keeping an
+            # unused DataTable here serializes it even though it has no layout
+            # root, while Bokeh's standalone resource scan omits bokeh-tables.
+            # The HTML panel uses store intents and needs none of these widgets.
+            legacy_prefixes = ('regionPanel', 'markerPanel', 'classificationPanel')
+            legacy_names = {
+                'sidePanelTabs', 'regionGhostModeSelect', 'regionVisibilityToggle',
+                'regionAutoDayNightButton', 'markerVisibilityToggle',
+                'classificationVisibilityToggle', 'comparisonPanelLayout',
+                'comparisonPositionSelector', 'comparisonPositionIds',
+                'comparisonFinishButton', 'comparisonMakeRegionsButton',
+                'comparisonSliceInfoDiv', 'comparisonMetricsDiv',
+            }
+            js_models = {
+                key: value for key, value in js_models.items()
+                if not key.startswith(legacy_prefixes) and key not in legacy_names
+            }
 
         # Populate position-specific models
         for pos, comp_dict in self.components.items():

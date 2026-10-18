@@ -132,6 +132,20 @@ class AppSetupTests(unittest.TestCase):
             invalid_path.write_text("{not json", encoding="utf-8")
             self.assertEqual(load_config_and_prepare_sources(str(invalid_path)), (None, None, None))
 
+    def test_preserves_source_timezone_and_does_not_combine_different_clocks(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for filename in ("utc.csv", "local.csv"):
+                (root / filename).write_text("Datetime,LAeq\n2026-06-01 12:00:00,60\n", encoding="utf-8")
+            path = root / "config.json"
+            path.write_text(json.dumps({"sources": [
+                {"position": "P1", "path": "utc.csv", "parser_type": "generic", "timezone": "UTC"},
+                {"position": "P1", "path": "local.csv", "parser_type": "generic", "timezone": "Europe/London"}]}), encoding="utf-8")
+            _, sources, _ = load_config_and_prepare_sources(str(path))
+            self.assertEqual(len(sources), 2)
+            self.assertEqual({source["timezone"] for source in sources}, {"UTC", "Europe/London"})
+            self.assertEqual([source["file_paths"][0] for source in sources], [str(root / "utc.csv"), str(root / "local.csv")])
+
 
 if __name__ == "__main__":
     unittest.main()

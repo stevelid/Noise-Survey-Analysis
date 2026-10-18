@@ -42,6 +42,18 @@ beforeEach(() => {
 });
 
 describe('multi-meter Quad overlays', () => {
+    it('keeps Bokeh sources and canvases quiet for note-only updates', () => {
+        const target = chart('P4');
+        target.syncRegions([annotation()], 1, { ghostMode: 'all' });
+        const sourceData = target.regionGhostOverlay.source.data;
+        target.model.request_render.mockClear();
+        target.syncRegions([annotation({ note: 'A revised description' })], 1, { ghostMode: 'all' });
+        expect(target.regionGhostOverlay.source.data).toBe(sourceData);
+        expect(target.model.request_render).not.toHaveBeenCalled();
+        target.syncRegions([annotation({ meterStates: { P4: 'absent' } })], 1);
+        expect(target.regionOverlay.source.data.state).toEqual(['absent']);
+        expect(target.model.request_render).toHaveBeenCalledOnce();
+    });
     it('uses category colours for present and a neutral checked style for absent', () => {
         const categories = app.annotationModel.normalizeCatalog();
         const present = chart('P2');

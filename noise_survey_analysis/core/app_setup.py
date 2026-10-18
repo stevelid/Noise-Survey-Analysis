@@ -96,7 +96,8 @@ def load_config_and_prepare_sources(config_path='config.json'):
         y_axis_label = source.get("y_axis_label")
         y_range = source.get("y_range")
         y_range_key = tuple(y_range) if isinstance(y_range, list) else y_range
-        group_key = (position, parser_type, selected_columns_key, data_profile, y_axis_label, y_range_key)
+        source_timezone = source.get("timezone")
+        group_key = (position, parser_type, selected_columns_key, data_profile, y_axis_label, y_range_key, source_timezone)
 
         if group_key not in grouped_sources:
             grouped_sources[group_key] = {
@@ -112,6 +113,8 @@ def load_config_and_prepare_sources(config_path='config.json'):
                 grouped_sources[group_key]["y_axis_label"] = y_axis_label
             if y_range is not None:
                 grouped_sources[group_key]["y_range"] = y_range
+            if source_timezone:
+                grouped_sources[group_key]["timezone"] = source_timezone
 
         display_title = source.get("display_title") or source.get("display_name")
         if isinstance(display_title, str):
@@ -207,4 +210,8 @@ def load_config_extras(config_path='config.json'):
             "Loaded config extras: %d position offset(s), default_view keys=%s",
             len(positions), sorted(default_view) or 'none',
         )
-    return {'positions': positions, 'default_view': default_view}
+    extras = {'positions': positions, 'default_view': default_view}
+    raw_ui = config.get('ui')
+    if isinstance(raw_ui, dict) and raw_ui.get('side_panel') in ('legacy', 'html'):
+        extras['ui'] = {'side_panel': raw_ui['side_panel']}
+    return extras

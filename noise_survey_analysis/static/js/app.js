@@ -66,6 +66,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const lineDisplayTypeByPosition = {};
     let lastAppliedControlStateUpdateAt = null;
     let lastDisplayDetailsByPosition = {};
+    let disposeHtmlPanelEvents = null;
+
+    function disposeAnnotationPanel() {
+        disposeHtmlPanelEvents?.();
+        disposeHtmlPanelEvents = null;
+    }
 
     app.dataCache = dataCache;
 
@@ -173,6 +179,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function initialize(bokehModels) {
         try {
             console.info('[App]', 'Initializing...');
+            disposeAnnotationPanel();
 
             // --- 1. INITIALISE THE REGISTRY & STORE ---
             const initialStatePayload = app.registry.initialize(bokehModels);
@@ -207,6 +214,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
             attachControlStateSource(models);
             syncControlModelsToStore(models);
+            disposeHtmlPanelEvents = app.services?.htmlPanelEvents?.attach(models) || null;
+            window.removeEventListener?.('pagehide', disposeAnnotationPanel);
+            window.addEventListener?.('pagehide', disposeAnnotationPanel);
 
             // Listen for server-pushed data updates to log sources (reservoir streaming)
             Object.keys(models.timeSeriesSources || {}).forEach(positionId => {
@@ -286,6 +296,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return true;
         }
         catch (error) {
+            disposeAnnotationPanel();
             console.error('[App]', 'Error initializing app:', error);
             return false;
         }
@@ -354,6 +365,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const didAudioPositionChange = state.audio.activePositionId !== prev.audio.activePositionId;
         const didDataRefresh = lastActionType === actionTypes.DATA_REFRESHED;
         const didClassificationsChange = state.classifications !== prev.classifications;
+        const didAnnotationPanelChange = state.annotationPanel !== prev.annotationPanel;
+        const didComparisonChange = state.view.mode !== prev.view.mode
+            || state.view.comparison !== prev.view.comparison;
         if (didDataRefresh && app.regions?.invalidatePositionMetrics) {
             app.regions.invalidatePositionMetrics(state.system?.lastAction?.payload?.positionId, state);
         }
@@ -498,7 +512,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         // render the side panel
-        if (didMarkersChange || didRegionsChange || didClassificationsChange || didActiveSidePanelTabChange || didPendingRegionChange || didDataRefresh) {
+        if (isInitialLoad || didMarkersChange || didRegionsChange || didClassificationsChange
+            || didActiveSidePanelTabChange || didPendingRegionChange || didDataRefresh
+            || didAnnotationPanelChange || didComparisonChange
+            || (models?.htmlSidePanel && (isHeavyUpdate || didDisplayTitlesChange || didRegionNoteStatusChange))) {
             _guardedRender('renderSidePanel', () => {
                 app.renderers.renderSidePanel(state);
             }, renderContext);
@@ -685,6 +702,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.handleAudioSideEffects = handleAudioSideEffects;
     app.setPositionDisplayTitles = setPositionDisplayTitles;
     app.setPositionDisplayTitle = setPositionDisplayTitle;
+    app.disposeAnnotationPanel = disposeAnnotationPanel;
 
 
     // Attach the public initialization function (legacy path)

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import '../noise_survey_analysis/static/js/features/regions/annotationMetrics.js';
 import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';
 
 const { calcMetrics } = window.NoiseSurveyApp;
@@ -27,9 +28,9 @@ describe('calcMetrics module', () => {
         expect(calcMetrics.calcLAMax([40, 55, 51])).toBe(55);
     });
 
-    it('calculates LA90 percentile', () => {
+    it('calculates LA90 using the authoritative inverse-CDF p10', () => {
         const result = calcMetrics.calcLA90([80, 40, 60, 70, 50]);
-        expect(result).toBeCloseTo(44, 1);
+        expect(result).toBe(40);
     });
 
     it('slices time series within range', () => {

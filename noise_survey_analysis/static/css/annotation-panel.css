@@ -1,0 +1,49 @@
+/* Attached to the Div shadow root. Shared --nsa-* theme tokens inherit here. */
+:host { position: sticky; top: 12px; align-self: start; overflow: visible; }
+.nsa-annotation-panel { width: 100%; color: var(--nsa-text, #0f172a); background: var(--nsa-surface, white); border: 1px solid var(--nsa-border, #e2e8f0); border-radius: var(--nsa-radius, 6px); font: 12px/1.45 var(--nsa-font, 'Segoe UI', sans-serif); box-sizing: border-box; }
+.nsa-annotation-panel * { box-sizing: border-box; }
+.nsa-annotation-panel nav { display: flex; border-bottom: 1px solid var(--nsa-border, #e2e8f0); padding: 5px; gap: 3px; }
+.nsa-annotation-panel nav button { flex: 1; padding: 7px 3px; border-color: transparent; font-size: 11px; }
+.nsa-annotation-panel nav button[aria-selected="true"] { color: var(--nsa-accent, #2563eb); background: var(--nsa-accent-soft, #eff6ff); font-weight: 600; }
+.nsa-panel-scroll { overflow-y: auto; overflow-x: hidden; max-height: calc(100vh - 74px); scrollbar-gutter: stable; padding: 10px; overscroll-behavior: contain; }
+.nsa-annotation-panel h3 { margin: 8px 0; font-size: 13px; color: var(--nsa-text-secondary, #334155); }
+.nsa-annotation-panel h3 small { font-weight: 400; font-size: 11px; }
+.nsa-annotation-panel section { border-bottom: 1px solid var(--nsa-border, #e2e8f0); padding-bottom: 10px; margin-bottom: 10px; }
+.nsa-annotation-panel label { display: block; margin: 7px 0; color: var(--nsa-text-secondary, #334155); }
+.nsa-annotation-panel input:not([type="checkbox"]):not([type="range"]):not([type="color"]), .nsa-annotation-panel select, .nsa-annotation-panel textarea { display: block; width: 100%; padding: 6px; border: 1px solid var(--nsa-border-strong, #cbd5e1); border-radius: 4px; font: inherit; color: var(--nsa-text, #0f172a); background: var(--nsa-surface, white); }
+.nsa-annotation-panel textarea { resize: vertical; min-height: 62px; }
+.nsa-annotation-panel input[type="range"] { width: 100%; }
+.nsa-annotation-panel input[type="color"] { width: 38px; height: 30px; padding: 2px; border: 1px solid var(--nsa-border, #e2e8f0); }
+.nsa-annotation-panel button { background: var(--nsa-surface, white); color: var(--nsa-text-secondary, #334155); border: 1px solid var(--nsa-border-strong, #cbd5e1); border-radius: 4px; padding: 5px 7px; font: inherit; cursor: pointer; }
+.nsa-annotation-panel button:hover:enabled { background: var(--nsa-accent-soft, #eff6ff); border-color: var(--nsa-accent, #2563eb); }
+.nsa-annotation-panel button:disabled { opacity: .55; cursor: default; }
+.nsa-annotation-panel button:focus-visible, .nsa-annotation-panel input:focus-visible, .nsa-annotation-panel select:focus-visible, .nsa-annotation-panel textarea:focus-visible { outline: 2px solid var(--nsa-accent, #2563eb); outline-offset: 1px; }
+.nsa-annotation-panel .nsa-danger { color: #b91c1c; border-color: #fecaca; }
+.nsa-annotation-panel .nsa-help { color: var(--nsa-text-muted, #64748b); font-size: 11px; margin: 4px 0; overflow-wrap: anywhere; }
+.nsa-buttons, .nsa-inline { display: flex; flex-wrap: wrap; align-items: end; gap: 5px; margin: 7px 0; }
+.nsa-inline > label { flex: 1; min-width: 90px; margin: 0; }
+.nsa-meter-strip { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.nsa-meter-strip .nsa-meter { font-size: 10px; padding: 3px 5px; max-width: 100%; overflow-wrap: anywhere; }
+.nsa-meter--present { background: var(--nsa-accent-soft, #eff6ff) !important; }
+.nsa-meter--absent { background: #f1f5f9 !important; }
+.nsa-meter--unchecked { border-style: dashed !important; color: var(--nsa-text-muted, #64748b) !important; }
+.nsa-check { display: flex !important; align-items: center; gap: 5px; }
+.nsa-check input { margin: 0; }
+.nsa-swatch { display: inline-block; width: 8px; height: 18px; border-radius: 3px; flex: 0 0 auto; }
+.nsa-annotation-list { max-height: 360px; overflow: auto; overscroll-behavior: contain; margin: 7px 0; }
+.nsa-region-row, .nsa-marker-row, .nsa-classification-row { border-bottom: 1px solid var(--nsa-border, #e2e8f0); padding: 6px 4px; }
+.nsa-marker-row, .nsa-classification-row, .nsa-region-heading { display: flex; align-items: center; gap: 6px; }
+.nsa-annotation-panel .nsa-row-button { border: 0; background: transparent; text-align: left; padding: 2px 0; overflow-wrap: anywhere; flex: 1; min-width: 0; }
+.nsa-annotation-panel .is-selected { background: var(--nsa-accent-soft, #eff6ff); border-left: 2px solid var(--nsa-accent, #2563eb); }
+.nsa-annotation-panel details { margin-top: 8px; border-top: 1px solid var(--nsa-border, #e2e8f0); padding-top: 7px; }
+.nsa-annotation-panel summary { cursor: pointer; color: var(--nsa-text-secondary, #334155); font-weight: 600; }
+.nsa-table-wrap { overflow-x: auto; }
+.nsa-annotation-panel table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 10px; }
+.nsa-annotation-panel td, .nsa-annotation-panel th { text-align: right; padding: 4px 3px; border-bottom: 1px solid var(--nsa-border, #e2e8f0); }
+.nsa-annotation-panel th:first-child { text-align: left; overflow-wrap: anywhere; }
+.nsa-annotation-panel caption { text-align: left; color: var(--nsa-text-muted, #64748b); }
+.nsa-category-editor { display: flex; align-items: center; gap: 4px; margin: 6px 0; }
+.nsa-category-editor input:first-child { flex: 1; min-width: 0; }
+.nsa-category-editor button { font-size: 10px; }
+.nsa-confirm { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 4px; padding: 8px; margin: 8px 0; }
+@media (max-width: 700px) { :host { position: static; } .nsa-panel-scroll { max-height: 75vh; } }

@@ -10,12 +10,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     // Module-level cache for computed metrics (outside Redux state)
     const _metricsCache = new Map();
+    const METRICS_CACHE_LIMIT = 2048;
+    const exclusionSignatures = new WeakMap();
     const sourceIdentities = new WeakMap();
     let nextSourceIdentity = 1;
     function sourceIdentity(value) {
         if (!value || typeof value !== 'object') return 0;
         if (!sourceIdentities.has(value)) sourceIdentities.set(value, nextSourceIdentity++);
         return sourceIdentities.get(value);
+    }
+
+    function backgroundGeometrySignature(state, meter) {
+        const byId = state?.regions?.byId;
+        if (!byId) return '[]';
+        let signatures = exclusionSignatures.get(byId);
+        if (!signatures) { signatures = new Map(); exclusionSignatures.set(byId, signatures); }
+        if (!signatures.has(meter)) {
+            const areas = (state.regions.allIds || Object.keys(byId)).map(id => byId[id]).filter(region =>
+                region && (region.positionId === meter || region.meterStates?.[meter] === 'present'))
+                .flatMap(getRegionAreas);
+            signatures.set(meter, JSON.stringify(app.annotationMetrics.union(areas)));
+        }
+        return signatures.get(meter);
     }
 
     function getChartOffsetMs(region, state) {
@@ -44,8 +60,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (Array.isArray(values) || ArrayBuffer.isView(values)) {
             const result = [];
             for (let i = 0; i < values.length; i++) {
-                const value = Number(values[i]);
-                if (Number.isFinite(value)) {
+                const raw = values[i];
+                const value = Number(raw);
+                if (raw !== null && raw !== undefined && raw !== '' && Number.isFinite(value)) {
                     result.push(value);
                 }
             }
@@ -95,51 +112,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         });
         return aggregated;
     }
-function calcLAeq(values) {
+    function calcLAeq(values) {
         const finiteValues = toFiniteArray(values);
-        if (!finiteValues.length) return null;
-
-        let energySum = 0;
-        for (let i = 0; i < finiteValues.length; i++) {
-            energySum += Math.pow(10, finiteValues[i] / 10);
-        }
-
-        if (energySum <= EPSILON) return null;
-        const meanEnergy = energySum / finiteValues.length;
-        return 10 * Math.log10(meanEnergy);
+        return app.annotationMetrics.energy(finiteValues, finiteValues.map(() => 1));
     }
 
     function calcLAMax(values) {
         const finiteValues = toFiniteArray(values);
-        if (!finiteValues.length) return null;
-        let maxValue = -Infinity;
-        for (let i = 0; i < finiteValues.length; i++) {
-            if (finiteValues[i] > maxValue) {
-                maxValue = finiteValues[i];
-            }
-        }
-        return Number.isFinite(maxValue) ? maxValue : null;
+        return app.annotationMetrics.maximum(finiteValues, finiteValues.map(() => 1));
     }
 
     function calcLA90(values) {
         const finiteValues = toFiniteArray(values);
-        if (!finiteValues.length) return null;
-
-        const sorted = finiteValues.slice().sort((a, b) => a - b);
-        if (!sorted.length) return null;
-
-        const position = 0.1 * (sorted.length - 1);
-        const lowerIndex = Math.floor(position);
-        const upperIndex = Math.ceil(position);
-
-        if (lowerIndex === upperIndex) {
-            return sorted[lowerIndex];
-        }
-
-        const lower = sorted[lowerIndex];
-        const upper = sorted[upperIndex];
-        const weight = position - lowerIndex;
-        return lower + weight * (upper - lower);
+        return app.annotationMetrics.percentile(finiteValues, finiteValues.map(() => 1));
     }
 
     function sliceTimeSeries(timestamps, values, startMs, endMs) {
@@ -153,8 +138,9 @@ function calcLAeq(values) {
             const time = Number(timestamps[i]);
             if (!Number.isFinite(time)) continue;
             if (time >= min && time <= max) {
-                const value = Number(values[i]);
-                if (Number.isFinite(value)) {
+                const raw = values[i];
+                const value = Number(raw);
+                if (raw !== null && raw !== undefined && raw !== '' && Number.isFinite(value)) {
                     result.push(value);
                 }
             }
@@ -172,206 +158,10 @@ function calcLAeq(values) {
         return result;
     }
 
-    function clampRangeIndices(times, min, max) {
-        if (!Array.isArray(times) && !ArrayBuffer.isView(times)) return null;
-        const length = times.length;
-        if (!length) return null;
-        let startIdx = 0;
-        while (startIdx < length && Number(times[startIdx]) < min) {
-            startIdx++;
-        }
-        if (startIdx >= length) return null;
-        let endIdx = length - 1;
-        while (endIdx >= 0 && Number(times[endIdx]) > max) {
-            endIdx--;
-        }
-        if (endIdx < startIdx) return null;
-        return { startIdx, endIdx };
-    }
-
-    function computeSpectrumAverage(preparedData, areas) {
-        if (!preparedData || !preparedData.levels_flat_transposed) {
-            return { labels: [], values: [] };
-        }
-        const validAreas = Array.isArray(areas) && areas.length ? areas : [];
-        if (!validAreas.length) {
-            return { labels: preparedData.frequency_labels || [], values: [] };
-        }
-        const times = preparedData.times_ms;
-        const levels = preparedData.levels_flat_transposed;
-        const nFreqs = preparedData.n_freqs;
-        const nTimes = preparedData.n_times;
-        if (!Array.isArray(times) || !levels || !Number.isFinite(nFreqs) || !Number.isFinite(nTimes)) {
-            return { labels: preparedData.frequency_labels || [], values: [] };
-        }
-
-        const energySums = new Array(nFreqs).fill(0);
-        const counts = new Array(nFreqs).fill(0);
-
-        validAreas.forEach(area => {
-            const start = Number(area?.start);
-            const end = Number(area?.end);
-            if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
-                return;
-            }
-            const range = clampRangeIndices(times, start, end);
-            if (!range) {
-                return;
-            }
-            for (let freqIndex = 0; freqIndex < nFreqs; freqIndex++) {
-                for (let timeIndex = range.startIdx; range && timeIndex <= range.endIdx; timeIndex++) {
-                    const value = levels[freqIndex * nTimes + timeIndex];
-                    if (!Number.isFinite(value)) continue;
-                    energySums[freqIndex] += Math.pow(10, value / 10);
-                    counts[freqIndex] += 1;
-                }
-            }
-        });
-
-        const values = energySums.map((sum, idx) => {
-            if (!counts[idx] || sum <= EPSILON) {
-                return null;
-            }
-            return 10 * Math.log10(sum / counts[idx]);
-        });
-
-        return {
-            labels: preparedData.frequency_labels || [],
-            values
-        };
-    }
-
-    function chooseDataset(region, sources, state, resolution = 'auto') {
-        if (!sources) return null;
-        const displayAreas = getRegionAreas(region);
-        if (!displayAreas.length) return null;
-        const offsetMs = getChartOffsetMs(region, state);
-        const areas = getSourceQueryAreas(displayAreas, offsetMs);
-
-        const tryDataset = dataset => {
-            const data = sources?.[dataset]?.data;
-            if (!data?.Datetime || !data.LAeq) return null;
-            const laeqValues = sliceTimeSeriesForAreas(data.Datetime, data.LAeq, areas);
-            if (!laeqValues.length) return null;
-            let la90Values = null;
-            if (data.LAF90) {
-                const slicedLA90 = sliceTimeSeriesForAreas(data.Datetime, data.LAF90, areas);
-                if (slicedLA90.length) {
-                    la90Values = slicedLA90;
-                }
-            }
-            return { dataset, data, laeqValues, la90Values };
-        };
-
-        const normalizedResolution = resolution === 'log' || resolution === 'overview'
-            ? resolution
-            : 'auto';
-        if (normalizedResolution !== 'auto') {
-            return tryDataset(normalizedResolution);
-        }
-
-        const logSelection = tryDataset('log');
-        if (logSelection) return logSelection;
-        const overviewSelection = tryDataset('overview');
-        if (overviewSelection) return overviewSelection;
-
-        return null;
-    }
-
     function computeRegionMetrics(region, state, dataCache, models, options = {}) {
-        const targetMeter = options.positionId || options.meterId || region.positionId;
-        if (targetMeter !== region.positionId) region = { ...region, positionId: targetMeter };
-        const displayAreas = getRegionAreas(region);
-        const durationMs = sumAreaDurations(displayAreas);
-        const offsetMs = getChartOffsetMs(region, state);
-        const sourceAreas = getSourceQueryAreas(displayAreas, offsetMs);
-        const sources = models?.timeSeriesSources?.[region.positionId];
-        const requestedResolution = options?.resolution === 'log' || options?.resolution === 'overview'
-            ? options.resolution
-            : 'auto';
-        const selection = chooseDataset(region, sources, state, requestedResolution);
-
-        if (!selection) {
-            return {
-                laeq: null,
-                lafmax: null,
-                la90: null,
-                la90Available: false,
-                dataResolution: 'none',
-                spectrum: { labels: [], values: [] },
-                parameter: state?.view?.selectedParameter || null,
-                durationMs,
-                chartOffsetMs: offsetMs,
-                sourceAreas: getSourceQueryAreas(displayAreas, offsetMs)
-            };
-        }
-
-        const laeq = calcLAeq(selection.laeqValues);
-        let lafmaxValues = selection.laeqValues;
-        let lafmaxAvailable = false;
-        const lafmaxField = selection.data?.LAFmax;
-        if (lafmaxField) {
-            const extracted = sliceTimeSeriesForAreas(selection.data.Datetime, lafmaxField, sourceAreas);
-            if (extracted.length) {
-                lafmaxValues = extracted;
-                lafmaxAvailable = true;
-            }
-        }
-        const lafmax = lafmaxAvailable ? calcLAMax(lafmaxValues) : null;
-
-        let la90 = null;
-        if (selection.dataset === 'log') {
-            if (Array.isArray(selection.la90Values) && selection.la90Values.length > 0) {
-                la90 = calcLA90(selection.la90Values);
-            } else {
-                la90 = calcLA90(selection.laeqValues);
-            }
-        } else if (selection.dataset === 'overview') {
-            if (Array.isArray(selection.la90Values) && selection.la90Values.length > 0) {
-                la90 = calcLA90(selection.la90Values);
-            } else {
-                la90 = calcLA90(selection.laeqValues);
-            }
-        }
-
-        const selectedParam = state?.view?.selectedParameter;
-        const prepared = models?.preparedGlyphData?.[region.positionId];
-
-        // Keep broadband and spectral calculations on the same resolution.
-        const selectedPrepared = prepared?.[selection.dataset]?.prepared_params;
-        const spectralParam = selectedParam && selectedPrepared?.[selectedParam]
-            ? selectedParam
-            : 'LZeq';
-        const logSpectral = prepared?.log?.prepared_params?.[spectralParam];
-        const overviewSpectral = prepared?.overview?.prepared_params?.[spectralParam];
-
-        let spectrumSource = null;
-        let spectrum = { labels: [], values: [] };
-        if (selection.dataset === 'log' && logSpectral) {
-            spectrumSource = 'log';
-            spectrum = computeSpectrumAverage(logSpectral, sourceAreas);
-        } else if (selection.dataset === 'overview' && overviewSpectral) {
-            spectrumSource = 'overview';
-            spectrum = computeSpectrumAverage(overviewSpectral, sourceAreas);
-        }
-        if (spectrum && typeof spectrum === 'object') {
-            spectrum.source = spectrumSource;
-        }
-
-        return {
-            laeq,
-            lafmax,
-            lafmaxAvailable,
-            la90,
-            la90Available: selection.dataset === 'log' && la90 !== null,
-            dataResolution: selection.dataset,
-            spectrum,
-            parameter: selectedParam || null,
-            spectrumParameter: spectralParam,
-            durationMs,
-            chartOffsetMs: offsetMs,
-            sourceAreas
-        };
+        if (!region) return null;
+        if (!app.annotationMetrics) throw new Error('Annotation metrics engine is not loaded.');
+        return app.annotationMetrics.computeRegion(region, state, models, options);
     }
 
     /**
@@ -383,7 +173,7 @@ function calcLAeq(values) {
             return null;
         }
         const regionId = region.id ?? 'unknown';
-        const parameter = state?.view?.selectedParameter ?? '';
+        const parameter = options.parameter || state?.view?.selectedParameter || '';
         const meter = options.positionId || options.meterId || region.positionId;
         // A manual recalculation follows the displayed series. Explicit export
         // requests can still ask for auto/best data independently of the view.
@@ -391,8 +181,15 @@ function calcLAeq(values) {
             || dataCache?.activeLineData?.[meter]?.dataViewType || 'auto';
         const offsetMs = getChartOffsetMs({ ...region, positionId: meter }, state);
         const sources = models?.timeSeriesSources?.[meter];
-        const revision = `${sourceIdentity(sources?.log?.data)}:${sourceIdentity(sources?.overview?.data)}`;
-        const cacheKey = `${regionId}_${JSON.stringify([meter, parameter, offsetMs, resolution, getRegionAreas(region), revision])}`;
+        const spectral = models?.preparedGlyphData?.[meter];
+        const streamed = models?.spectrogramSources?.[meter]?.log?.data;
+        const revision = [sourceIdentity(sources?.log?.data), sourceIdentity(sources?.overview?.data),
+            sourceIdentity(spectral?.log?.prepared_params), sourceIdentity(spectral?.overview?.prepared_params),
+            sourceIdentity(streamed), sourceIdentity(streamed?.levels_flat_transposed), sourceIdentity(streamed?.times_ms),
+            backgroundGeometrySignature(state, meter), state?.regions?.metricsRevision || 0];
+        const background = [options.backgroundWindowS ?? state?.annotationPanel?.backgroundWindowS ?? 300,
+            options.minContextS ?? state?.annotationPanel?.minContextS ?? 60];
+        const cacheKey = `${regionId}_${JSON.stringify([meter, parameter, offsetMs, resolution, getRegionAreas(region), revision, background])}`;
 
         if (!options?.force && _metricsCache.has(cacheKey)) {
             return _metricsCache.get(cacheKey);
@@ -400,6 +197,9 @@ function calcLAeq(values) {
 
         const metrics = computeRegionMetrics(region, state, dataCache, models, { ...options, resolution });
         _metricsCache.set(cacheKey, metrics);
+        // FIFO bounds long sessions without making ordinary cache reads mutate
+        // ordering. Text/colour/category edits reuse the same geometry key.
+        while (_metricsCache.size > METRICS_CACHE_LIMIT) _metricsCache.delete(_metricsCache.keys().next().value);
         return metrics;
     }
 

@@ -26,6 +26,12 @@
     chartVisibility: { figure_P1_timeseries: true },
   }));
 
+  store.dispatch(actions.viewToggle('overview'));
+  // Real intents inspect the registry for source extent and marker snapshots.
+  const data = { Datetime: [0, 1000, 599000, 600000], LAeq: [60, 70, 65, 64] };
+  app.registry = { models: { timeSeriesSources: { P1: { log: { data }, overview: { data } } } },
+    controllers: { chartsByName: new Map() } };
+
   const parameterSelect = document.querySelector('[data-testid="parameter-select"]');
   const selectedParameterLabel = document.querySelector('[data-testid="selected-parameter"]');
   const viewToggleButton = document.querySelector('[data-testid="view-toggle"]');

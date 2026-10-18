@@ -129,7 +129,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function focusRegionNoteInput() {
         let attempts = 0;
         const focus = () => {
-            const textarea = findRegionNoteTextarea();
+            if (app.registry?.models?.htmlSidePanel && app.services.htmlPanelEvents?.focusNote(app.registry.models)) return;
+            const textarea = app.registry?.models?.htmlSidePanel ? null : findRegionNoteTextarea();
             if (textarea && !textarea.disabled && textarea.getClientRects().length) {
                 textarea.focus();
                 textarea.setSelectionRange(textarea.value.length, textarea.value.length);
@@ -767,7 +768,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         positionIds: includedPositions,
                         timeSeriesSources: models.timeSeriesSources,
                         preparedGlyphData: models.preparedGlyphData,
-                        selectedParameter: viewState.selectedParameter
+                        selectedParameter: viewState.selectedParameter,
+                        spectrogramSources: models.spectrogramSources,
+                        state,
                     }) || {};
                     const metricsRows = Array.isArray(metricsResult.metricsRows) ? metricsResult.metricsRows : [];
                     if (metricsRows.length) {
@@ -878,6 +881,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 });
             }
+            if (models?.htmlSidePanel) return;
     
             const markerPanelRenderer = app.services?.markerPanelRenderer;
             if (markerPanelRenderer && typeof markerPanelRenderer.renderMarkerPanel === 'function') {
@@ -926,6 +930,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 });
             }
+
+            if (models?.htmlSidePanel) return;
     
             const regionPanelRenderer = app.services?.regionPanelRenderer;
             if (regionPanelRenderer && typeof regionPanelRenderer.renderRegionPanel === 'function') {
@@ -1006,6 +1012,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 });
             }
 
+            if (models?.htmlSidePanel) return;
+
             const classificationPanelRenderer = app.services?.classificationPanelRenderer;
             if (classificationPanelRenderer && typeof classificationPanelRenderer.renderClassificationPanel === 'function') {
                 classificationPanelRenderer.renderClassificationPanel(
@@ -1040,6 +1048,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         
         const { models, controllers } = app.registry;
         if (!models) return;
+        if (models.htmlSidePanel) {
+            app.services.htmlPanelRenderer?.render(state, models, app.dataCache);
+            return;
+        }
 
         const viewState = state?.view || {};
         const sidePanelTabsModel = models.sidePanelTabs;
@@ -1085,7 +1097,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (models.comparisonPanelLayout) {
             models.comparisonPanelLayout.visible = isComparisonActive;
         }
-        if (models.sidePanelTabs) {
+        if (models.sidePanelTabs && !models.htmlSidePanel) {
             models.sidePanelTabs.visible = !isComparisonActive;
             if (isComparisonActive && models.sidePanelTabs.active !== SIDE_PANEL_TAB_REGIONS) {
                 models.sidePanelTabs.active = SIDE_PANEL_TAB_REGIONS;
@@ -1167,7 +1179,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         updateComparisonSliceLines(controllersByPosition, isComparisonActive && hasSlice, comparisonState.start, comparisonState.end);
 
         if (!isComparisonActive || !hasSlice || !includedPositions.length) {
-            if (models.comparisonMetricsDiv) {
+            if (models.comparisonMetricsDiv && !models.htmlSidePanel) {
                 models.comparisonMetricsDiv.text = COMPARISON_METRICS_EMPTY_HTML;
             }
             updateComparisonFrequencyVisualization(models, null);
@@ -1185,10 +1197,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             positionIds: includedPositions,
             timeSeriesSources: models.timeSeriesSources,
             preparedGlyphData: models.preparedGlyphData,
-            selectedParameter: viewState.selectedParameter
+            selectedParameter: viewState.selectedParameter,
+            spectrogramSources: models.spectrogramSources,
+            state,
         }) || {};
 
-        if (models.comparisonMetricsDiv) {
+        if (models.comparisonMetricsDiv && !models.htmlSidePanel) {
             models.comparisonMetricsDiv.text = buildComparisonMetricsTable(metricsResult.metricsRows || []);
         }
 

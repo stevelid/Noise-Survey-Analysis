@@ -26,6 +26,17 @@ class DashBuilderJsLoadOrderTests(unittest.TestCase):
         ]
         indices = [loaded.index(name) for name in processing_order]
         self.assertEqual(indices, sorted(indices))
+        for dependency, consumer in [
+            ("features/regions/annotationMetrics.js", "features/regions/regionUtils.js"),
+            ("services/session/annotationCsv.js", "services/session/sessionManager.js"),
+            ("features/annotations/panelSelectors.js", "core/rootReducer.js"),
+            ("features/annotations/panelSelectors.js", "features/annotations/panelThunks.js"),
+            ("features/annotations/panelThunks.js", "services/panels/htmlPanelEvents.js"),
+            ("services/panels/htmlPanelEvents.js", "services/panels/htmlPanelRenderer.js"),
+            ("services/panels/htmlPanelRenderer.js", "services/renderers.js"),
+            ("services/panels/htmlPanelEvents.js", "app.js"),
+        ]:
+            self.assertLess(loaded.index(dependency), loaded.index(consumer))
 
 
 if __name__ == "__main__":

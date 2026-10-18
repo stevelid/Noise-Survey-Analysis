@@ -173,7 +173,7 @@ def browser_measure(url: str, regions: list, folder: Path, samples: int, iterati
         page.screenshot(path=str(folder / "main-layout.png"))
         # Bokeh layouts can place the sidebar beyond the viewport horizontally.
         # Capture its element, rather than incorrectly cropping the chart edge.
-        panel = page.locator(".bk-Tabs, .nsa-side-panel").first
+        panel = page.locator(".nsa-annotation-panel, .bk-Tabs, .nsa-side-panel").first
         if panel.count():
             result["side_panel_bounds"] = panel.bounding_box()
             panel.screenshot(path=str(folder / "regions-panel.png"))

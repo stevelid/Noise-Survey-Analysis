@@ -314,17 +314,33 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         syncRegions(regionList, selectedId, options = {}) {
             if (!Array.isArray(regionList)) return;
+            let changed = false;
             // Separate sources keep the ghost dash a scalar Bokeh property.
             // Every row retains annotation/meter/area identity for inspection.
             [false, true].forEach(ghostOnly => {
                 const overlay = this._ensureRegionOverlay(ghostOnly);
                 if (!overlay) return;
                 const nextData = this._buildRegionOverlayData(regionList, selectedId, { ...options, ghostOnly });
-                overlay.source.data = nextData;
-                if (typeof overlay.source.change?.emit === 'function') overlay.source.change.emit();
-                overlay.renderer.visible = nextData.left.length > 0;
+                // Notes and panel filters do not alter glyphs. Avoid waking every
+                // Bokeh canvas when the rendered rows remain identical.
+                const previous = overlay.source.data;
+                const equal = Object.keys(nextData).every(key => {
+                    const before = previous?.[key];
+                    const after = nextData[key];
+                    return before?.length === after.length && after.every((value, index) => value === before[index]);
+                });
+                const visible = nextData.left.length > 0;
+                if (!equal) {
+                    overlay.source.data = nextData;
+                    changed = true;
+                }
+                if (overlay.renderer.visible !== visible) {
+                    overlay.renderer.visible = visible;
+                    changed = true;
+                }
             });
 
+            if (!changed) return;
             if (typeof this.model?.request_render === 'function') {
                 this.model.request_render();
             } else if (this.model?.change?.emit) {

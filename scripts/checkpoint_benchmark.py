@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--startup-runs", type=int, default=3)
     parser.add_argument("--iterations", type=int, default=20)
     args = parser.parse_args()
+    args.output = args.output.resolve()
     source = args.source_root.resolve()
     if source.drive.upper() == "G:":
         parser.error("The source must be a frozen local verification copy")

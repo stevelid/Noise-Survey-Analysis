@@ -1,0 +1,168 @@
+{
+  "stage": "stage-4-fixed",
+  "run": "stage-4-fixed-20261018-212316-d6c38cee",
+  "startedUtc": "2026-10-18T20:23:20.2868415Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-4-fixed-20261018-212316-d6c38cee\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-4-fixed-20261018-212316-d6c38cee\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-4-fixed\\stage-4-fixed-20261018-212316-d6c38cee",
+  "head": "634344d99facd896ee47b4351a5d36629cac0028",
+  "sourceStatus": [
+    " M README.md",
+    " M USER_GUIDE.txt",
+    " M noise_survey_analysis/control/commands.py",
+    " M noise_survey_analysis/control/control_server.py",
+    " M noise_survey_analysis/control/session_bridge.py",
+    " M noise_survey_analysis/control/validation.py",
+    " M noise_survey_analysis/control_cli.py",
+    " M noise_survey_analysis/core/app_callbacks.py",
+    " M noise_survey_analysis/core/app_setup.py",
+    " M noise_survey_analysis/export/static_export.py",
+    " M noise_survey_analysis/main.py",
+    " M noise_survey_analysis/static/js/app.js",
+    " M noise_survey_analysis/static/js/chart-classes.js",
+    " M noise_survey_analysis/static/js/comparison-metrics.js",
+    " M noise_survey_analysis/static/js/core/rootReducer.js",
+    " M noise_survey_analysis/static/js/features/regions/regionUtils.js",
+    " M noise_survey_analysis/static/js/services/renderers.js",
+    " M noise_survey_analysis/static/js/services/session/sessionManager.js",
+    " M noise_survey_analysis/visualization/dashBuilder.py",
+    " M scripts/annotation_benchmark.py",
+    " M scripts/checkpoint_benchmark.py",
+    " M scripts/run_checkpoint_tests.ps1",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    " M tests/calcMetrics.test.js",
+    " M tests/chart-classes.test.js",
+    " M tests/comparison-metrics.test.js",
+    " M tests/e2e/app-harness.html",
+    " M tests/e2e/app-harness.js",
+    " M tests/e2e/app.spec.ts",
+    " M tests/e2e/global-setup.ts",
+    " M tests/e2e/static-dashboard.spec.ts",
+    " M tests/loadCoreModules.js",
+    " M tests/region-states-drawing.test.js",
+    " M tests/region-utils-extra.test.js",
+    " M tests/renderers.test.js",
+    " M tests/sessionManager-extra.test.js",
+    " M tests/sessionManager.test.js",
+    " M tests/test_app_setup.py",
+    " M tests/test_dash_builder_js_load_order.py",
+    "?? deploy/share/export_annotations.bat",
+    "?? deploy/share/export_annotations.ps1",
+    "?? docs/evaluation/stage-0-benchmark/",
+    "?? docs/evaluation/stage-4-integration/",
+    "?? docs/evaluation/stage-4/",
+    "?? docs/evaluation/stage-5-engine-check/",
+    "?? export_annotations.bat",
+    "?? noise_survey_analysis/core/annotation_export_service.py",
+    "?? noise_survey_analysis/core/annotation_metrics.py",
+    "?? noise_survey_analysis/core/annotation_windows.py",
+    "?? noise_survey_analysis/export/annotations.py",
+    "?? noise_survey_analysis/static/css/annotation-panel.css",
+    "?? noise_survey_analysis/static/js/features/annotations/",
+    "?? noise_survey_analysis/static/js/features/regions/annotationMetrics.js",
+    "?? noise_survey_analysis/static/js/services/panels/",
+    "?? noise_survey_analysis/static/js/services/session/annotationCsv.js",
+    "?? noise_survey_analysis/ui/component_parts/html_side_panel.py",
+    "?? scripts/server_annotation_smoke.py",
+    "?? tests/annotation-metrics-export.test.js",
+    "?? tests/e2e/build_dashboard.py",
+    "?? tests/html-panel.test.js",
+    "?? tests/test_annotation_export.py",
+    "?? tests/test_annotation_export_integration.py"
+  ],
+  "sourceFileCount": 268,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 3.757
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-4-fixed-20261018-212316-d6c38cee\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.61
+    },
+    "pytest": {
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "pytest",
+        "tests/",
+        "--junitxml=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-4-fixed-20261018-212316-d6c38cee\\evidence\\pytest.xml"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 28.43
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.078
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-4-fixed-20261018-212316-d6c38cee\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 1,
+      "durationSeconds": 6.214
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "skipped": 3,
+      "total": 490,
+      "failed": 0,
+      "passed": 487,
+      "pending": 0
+    },
+    "pytest": {
+      "failures": "0",
+      "skipped": "0",
+      "total": "460",
+      "errors": "0"
+    },
+    "playwright": {
+      "startTime": "2026-10-18T20:24:08.282Z",
+      "duration": 5025.007,
+      "expected": 7,
+      "skipped": 0,
+      "unexpected": 1,
+      "flaky": 0
+    }
+  },
+  "finishedUtc": "2026-10-18T20:24:13.5748482Z",
+  "failedSteps": [
+    "playwright"
+  ],
+  "suitesPassed": false
+}

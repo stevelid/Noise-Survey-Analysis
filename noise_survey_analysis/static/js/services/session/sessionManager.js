@@ -412,135 +412,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function buildAnnotationsCsv(markersInput, regionsInput, state, options = {}) {
-        const markers = Array.isArray(markersInput) ? markersInput : [];
-        const regions = Array.isArray(regionsInput) ? regionsInput : [];
-        const resolvedState = state || null;
-        const dataCache = options?.dataCache ?? app.dataCache;
-        const models = options?.models ?? app.registry?.models;
-        const bandColumns = collectBandColumns(markers, regions, resolvedState, dataCache, models);
-        const bandLookup = new Map(bandColumns.map(entry => [entry.key, entry.column]));
-        const header = CSV_HEADER.concat(PROVENANCE_COLUMNS, METRIC_COLUMNS, bandColumns.map(entry => entry.column));
-
-        const rows = [header.join(',')];
-
-        function createBaseRow() {
-            const rowData = {};
-            header.forEach(column => {
-                rowData[column] = '';
-            });
-            return rowData;
-        }
-
-        markers.forEach(marker => {
-            const formattedStart = formatTimestampForCsv(marker?.timestamp);
-            if (!formattedStart) {
-                return;
-            }
-
-            const rowData = createBaseRow();
-            rowData.type = 'marker';
-            rowData.id = Number.isFinite(Number(marker?.id)) ? Number(marker.id) : '';
-            rowData.positionId = marker?.positionId ?? '';
-            rowData.start_utc = formattedStart;
-            rowData.timestamp_utc = formattedStart;
-            rowData.note = typeof marker?.note === 'string' ? marker.note : '';
-            rowData.color = typeof marker?.color === 'string' ? marker.color : '';
-
-            const metrics = marker?.metrics || null;
-            if (metrics) {
-                rowData.metrics_parameter = metrics.parameter ?? '';
-                rowData.metrics_timestamp_utc = formatTimestampForCsv(metrics.timestamp);
-                const broadband = extractMarkerBroadband(marker);
-                if (broadband && Number.isFinite(broadband.value)) {
-                    rowData.metrics_broadband_value = formatNumberValue(broadband.value);
-                    rowData.metrics_broadband_position = broadband.positionId || '';
-                }
-                const spectrum = extractMarkerSpectrum(marker);
-                assignSpectrumValues(rowData, spectrum, bandLookup);
-            }
-
-            const row = header.map(column => escapeCsvValue(rowData[column]));
-            rows.push(row.join(','));
-        });
-
-        regions.forEach(region => {
-            const formattedStart = formatTimestampForCsv(region?.start);
-            const formattedEnd = formatTimestampForCsv(region?.end);
-            if (!formattedStart || !formattedEnd) {
-                return;
-            }
-
-            const rowData = createBaseRow();
-            rowData.type = 'region';
-            rowData.id = Number.isFinite(Number(region?.id)) ? Number(region.id) : '';
-            rowData.positionId = typeof region?.positionId === 'string' ? region.positionId : '';
-            rowData.start_utc = formattedStart;
-            rowData.end_utc = formattedEnd;
-            rowData.note = typeof region?.note === 'string' ? region.note : '';
-            rowData.color = typeof region?.color === 'string' ? region.color : '';
-
-            const regionAreas = Array.isArray(region?.areas) ? region.areas : [];
-            const serializedAreas = regionAreas
-                .map(area => {
-                    const areaStart = formatTimestampForCsv(area?.start);
-                    const areaEnd = formatTimestampForCsv(area?.end);
-                    if (!areaStart || !areaEnd) {
-                        return null;
-                    }
-                    return { startUtc: areaStart, endUtc: areaEnd };
-                })
-                .filter(Boolean);
-            const areasValue = serializedAreas.length
-                ? JSON.stringify(serializedAreas)
-                : JSON.stringify([{ startUtc: formattedStart, endUtc: formattedEnd }]);
-            rowData.areas = areasValue;
-
-            const offsetMs = getCsvExportOffsetMs(region, resolvedState);
-            rowData.chart_offset_ms = String(offsetMs);
-            rowData.source_start_utc = formatTimestampForCsv(Number(region.start) - offsetMs);
-            rowData.source_end_utc = formatTimestampForCsv(Number(region.end) - offsetMs);
-            const sourceSerializedAreas = regionAreas
-                .map(area => {
-                    const srcStart = formatTimestampForCsv(Number(area?.start) - offsetMs);
-                    const srcEnd = formatTimestampForCsv(Number(area?.end) - offsetMs);
-                    if (!srcStart || !srcEnd) return null;
-                    return { startUtc: srcStart, endUtc: srcEnd };
-                })
-                .filter(Boolean);
-            rowData.source_areas = sourceSerializedAreas.length
-                ? JSON.stringify(sourceSerializedAreas)
-                : JSON.stringify([{ startUtc: rowData.source_start_utc, endUtc: rowData.source_end_utc }]);
-
-            const metrics = resolveRegionMetrics(region, resolvedState, dataCache, models);
-            if (metrics) {
-                rowData.metrics_parameter = metrics.parameter ?? '';
-                rowData.metrics_data_resolution = metrics.dataResolution ?? '';
-                rowData.metrics_duration_ms = formatNumberValue(metrics.durationMs, 0);
-                rowData.duration_ms = formatNumberValue(metrics.durationMs, 0);
-                rowData.metrics_laeq = formatNumberValue(metrics.laeq);
-                rowData.metrics_lafmax = formatNumberValue(metrics.lafmax);
-                // Only export LA90 when the metrics say it is meaningful. Overview data
-                // yields a percentile of 15-minute aggregates, which the panel hides for
-                // that reason - exporting the number anyway puts it into reports.
-                rowData.metrics_la90 = metrics.la90Available ? formatNumberValue(metrics.la90) : '';
-                rowData.metrics_la90_available = metrics.la90Available ? 'true' : '';
-                const spectrum = extractRegionSpectrum(region, resolvedState, dataCache, models);
-                assignSpectrumValues(rowData, spectrum, bandLookup);
-                if (metrics.spectrum && typeof metrics.spectrum.source === 'string') {
-                    rowData.metrics_spectrum_source = metrics.spectrum.source;
-                }
-            }
-
-            if (!rowData.duration_ms && Number.isFinite(Number(region?.end)) && Number.isFinite(Number(region?.start))) {
-                const duration = Number(region.end) - Number(region.start);
-                rowData.duration_ms = formatNumberValue(duration, 0);
-            }
-
-            const row = header.map(column => escapeCsvValue(rowData[column]));
-            rows.push(row.join(','));
-        });
-
-        return rows.join('\n');
+        if (!app.annotationCsv) throw new Error('Sectioned annotation CSV module is not loaded.');
+        return app.annotationCsv.buildAnnotationsCsv(markersInput, regionsInput, state, options);
     }
 
     function parseCsvRows(text) {
@@ -594,7 +467,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return rows.filter(row => row.some(cell => String(cell ?? '').trim() !== ''));
     }
 
-    function parseAnnotationsCsv(csvText) {
+    function parseLegacyAnnotationsCsv(csvText) {
         const rows = parseCsvRows(csvText);
         if (!rows.length) {
             return { markers: [], regions: [] };
@@ -751,6 +624,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return consolidation
             ? { markers, regions: consolidation.regions, mergedCount: consolidation.mergedCount }
             : { markers, regions, mergedCount: 0 };
+    }
+
+    function parseAnnotationsCsv(csvText) {
+        const rows = app.annotationCsv?.parseCsvRows(csvText);
+        if (rows?.some(row => row[0]?.trim() === '[REGIONS]')) return app.annotationCsv.parseAnnotationsCsv(csvText);
+        return parseLegacyAnnotationsCsv(csvText);
     }
 
     function normaliseMarkerFromJson(entry) {
@@ -1178,6 +1057,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return { message: `View mode updated to ${value}.` };
         }
 
+        if (command === 'export_annotations') {
+            if (!handleExportFullResolution(payload || {})) throw new Error('Full-resolution export could not be started.');
+            return { message: 'Full-resolution annotation export started.' };
+        }
+
         if (command === 'apply_workspace') {
             const workspacePayload = payload?.payload;
             if (!workspacePayload || typeof workspacePayload !== 'object') {
@@ -1281,6 +1165,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         console.info('[Session] Static HTML export requested.');
     }
 
+    function handleExportFullResolution(options = {}) {
+        if (window.location?.protocol === 'file:') {
+            showToast('Full-resolution export is only available in live server mode.', 'warning');
+            return false;
+        }
+        const state = app.store?.getState?.();
+        if (!state) return false;
+        ensureSessionStatusListener();
+        const sent = triggerServerSessionAction('export_annotations', {
+            workspace: buildWorkspacePayload(state),
+            output_path: options.output_path,
+            include_all_resolutions: Boolean(options.include_all_resolutions ?? options.includeAllResolutions ?? state.annotationPanel?.includeAllResolutions),
+            background_window_s: options.background_window_s ?? state.annotationPanel?.backgroundWindowS ?? 300,
+            min_context_s: options.min_context_s ?? state.annotationPanel?.minContextS ?? 60
+        });
+        if (sent) showToast('Full-resolution annotation export started. You can keep using the dashboard.');
+        else showToast('Full-resolution export is unavailable in this session.', 'error');
+        return sent;
+    }
+
     function handleSaveSetupToConfig() {
         if (window.location?.protocol === 'file:') {
             showToast('Saving to config is only available in live server mode.', 'warning', 4500);
@@ -1307,6 +1211,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 break;
             case 'load':
                 loadWorkspace();
+                break;
+            case 'export_annotations_full_resolution':
+                handleExportFullResolution();
                 break;
             case 'export_annotations_csv':
             case 'export_regions':
@@ -1454,7 +1361,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         return;
                     }
 
-                    const { markers, regions, mergedCount } = parseAnnotationsCsv(fileText);
+                    const { markers, regions, mergedCount, categories, metadata } = parseAnnotationsCsv(fileText);
+                    if (categories && app.actions?.regionCategoryCatalogSet) app.store.dispatch(app.actions.regionCategoryCatalogSet(categories));
+                    if (metadata?.meters && app.actions?.positionDisplayTitlesSet) {
+                        app.store.dispatch(app.actions.positionDisplayTitlesSet(Object.fromEntries(metadata.meters.map(meter => [meter.id, meter.title]))));
+                    }
+                    Object.entries(metadata?.chart_offsets_ms || {}).forEach(([meter, offset]) => {
+                        if (app.store.getState()?.view?.availablePositions?.includes(meter) && Number.isFinite(Number(offset))) {
+                            app.store.dispatch(app.actions.positionChartOffsetSet(meter, Number(offset)));
+                        }
+                    });
                     if (mergedCount) showToast(`Merged ${mergedCount} legacy region copies across meters.`);
                     if (Array.isArray(markers)) {
                         if (typeof app.actions?.markersReplace === 'function') {
@@ -1526,6 +1442,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         applyWorkspaceState,
         applyInitialWorkspaceState,
         handleExportCsv,
+        handleExportFullResolution,
         handleImportCsv,
         handleExportClassifications,
         handleImportClassifications,

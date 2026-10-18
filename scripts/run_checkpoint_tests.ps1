@@ -6,6 +6,7 @@ param(
     [string]$Python = 'python',
     [string]$LocalRoot = (Join-Path $env:TEMP 'nsa-annotation-tests'),
     [ValidateSet('vitest', 'python', 'playwright')][string[]]$Suites = @('vitest', 'python', 'playwright'),
+    [string[]]$PythonTests = @('tests/'),
     [switch]$CopyOnly
 )
 
@@ -93,7 +94,8 @@ try {
             $null = Invoke-Logged 'vitest' 'npm.cmd' @('test', '--', '--run', '--reporter=default', '--reporter=json', ('--outputFile=' + (Join-Path $evidenceRoot 'vitest.json')))
         }
         if ($Suites -contains 'python') {
-            $null = Invoke-Logged 'pytest' $pythonExecutable @('-m', 'pytest', 'tests/', ('--junitxml=' + (Join-Path $evidenceRoot 'pytest.xml')))
+            $pytestArguments = @('-m', 'pytest') + $PythonTests + @(('--junitxml=' + (Join-Path $evidenceRoot 'pytest.xml')))
+            $null = Invoke-Logged 'pytest' $pythonExecutable $pytestArguments
         }
         if ($Suites -contains 'playwright') {
             $null = Invoke-Logged 'playwright-install' 'npx.cmd' @('--no-install', 'playwright', 'install', 'chromium')

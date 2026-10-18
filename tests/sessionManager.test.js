@@ -1,348 +1,74 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-
 import './loadCoreModules.js';
+import '../noise_survey_analysis/static/js/features/regions/annotationMetrics.js';
+import '../noise_survey_analysis/static/js/services/session/annotationCsv.js';
 import '../noise_survey_analysis/static/js/services/session/sessionManager.js';
 
 let helpers;
-
-beforeAll(() => {
-    helpers = window.NoiseSurveyApp?.session?.__testHelpers;
-    if (!helpers) {
-        throw new Error('Session CSV helpers are not available.');
-    }
-});
-
-// Quote-aware split: region rows carry JSON columns that contain commas.
-function splitCsvLine(line) {
-    const cells = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (inQuotes) {
-            if (char === '"') {
-                if (line[i + 1] === '"') {
-                    current += '"';
-                    i += 1;
-                } else {
-                    inQuotes = false;
-                }
-            } else {
-                current += char;
-            }
-        } else if (char === '"') {
-            inQuotes = true;
-        } else if (char === ',') {
-            cells.push(current);
-            current = '';
-        } else {
-            current += char;
-        }
-    }
-    cells.push(current);
-    return cells;
-}
+beforeAll(() => { helpers = window.NoiseSurveyApp.session.__testHelpers; });
+const app = window.NoiseSurveyApp;
+const section = (text, name) => app.annotationCsv.readSection(app.annotationCsv.parseCsvRows(text), name);
 
 describe('Annotation CSV helpers', () => {
-    it('formats timestamps in Excel-friendly UTC format', () => {
-        const timestamp = Date.UTC(2023, 0, 15, 13, 45, 12, 34);
-        expect(helpers.formatTimestampForCsv(timestamp)).toBe('2023-01-15 13:45:12.034');
+    it('formats and parses Excel-compatible UTC timestamps', () => {
+        const value = Date.UTC(2023, 0, 15, 13, 45, 12, 34);
+        expect(helpers.formatTimestampForCsv(value)).toBe('2023-01-15 13:45:12.034');
+        expect(helpers.parseTimestampFromCsv('2023-01-15 13:45:12.034')).toBe(value);
+        expect(helpers.parseTimestampFromCsv('2023-01-15 13:45:12')).toBe(value - 34);
     });
 
-    it('builds and parses CSV containing markers and regions', () => {
-        const markerTimestamp = Date.UTC(2024, 2, 10, 9, 8, 7, 123);
-        const regionStart = Date.UTC(2024, 2, 10, 9, 0, 0, 0);
-        const regionEnd = Date.UTC(2024, 2, 10, 9, 30, 0, 456);
-
-        const csv = helpers.buildAnnotationsCsv(
-            [{
-                id: 2,
-                timestamp: markerTimestamp,
-                note: 'Marker, "note"',
-                color: '#ff00ff',
-                positionId: 'P1',
-                metrics: {
-                    parameter: 'LZeq',
-                    timestamp: markerTimestamp,
-                    broadband: [{ positionId: 'P1', value: 48.23 }],
-                    spectral: [{ positionId: 'P1', labels: ['63', '125'], values: [40.5, 41.25] }]
-                }
-            }],
-            [{
-                id: 5,
-                positionId: 'P1',
-                start: regionStart,
-                end: regionEnd,
-                areas: [{ start: regionStart, end: regionEnd }],
-                note: 'Region note',
-                color: '#123456',
-                metrics: {
-                    laeq: 55.1234,
-                    lafmax: 71.6,
-                    la90: 42.987,
-                    la90Available: true,
-                    dataResolution: 'log',
-                    durationMs: 30 * 60 * 1000,
-                    parameter: 'LAeq',
-                    spectrum: { labels: ['63', '125'], values: [32.1, 28.9], source: 'log' }
-                }
-            }],
-            null
-        );
-
-        const lines = csv.split('\n');
-        const headerCells = lines[0].split(',');
-        expect(headerCells.slice(0, helpers.CSV_HEADER.length)).toEqual(helpers.CSV_HEADER);
-        expect(headerCells).toEqual(expect.arrayContaining(helpers.METRIC_COLUMNS));
-        expect(headerCells).toEqual(expect.arrayContaining([
-            'metrics_data_resolution',
-            'metrics_spectrum_source'
-        ]));
-        expect(headerCells).toEqual(expect.arrayContaining(['band_63', 'band_125']));
-        expect(lines).toHaveLength(3);
-        expect(lines[1]).toContain('marker');
-        expect(lines[2]).toContain('region');
-        expect(lines[1]).toContain('2024-03-10 09:08:07.123');
-        expect(lines[2]).toContain('2024-03-10 09:30:00.456');
-        expect(lines[1]).toContain('48.23');
-        expect(lines[1]).toContain('40.5');
-        expect(lines[2]).toContain('55.123');
-        expect(lines[2]).toContain('71.6');
-        expect(lines[2]).toContain('true');
-        expect(lines[2]).toMatch(/,log,/);
-
-        const { markers, regions } = helpers.parseAnnotationsCsv(csv);
-        expect(markers).toHaveLength(1);
-        expect(regions).toHaveLength(1);
-
-        const [marker] = markers;
-        expect(marker.timestamp).toBe(markerTimestamp);
-        expect(marker.note).toBe('Marker, "note"');
-        expect(marker.color).toBe('#ff00ff');
-
-        const [region] = regions;
-        expect(region.positionId).toBe('P1');
-        expect(region.start).toBe(regionStart);
-        expect(region.end).toBe(regionEnd);
-        expect(region.areas).toEqual([{ start: regionStart, end: regionEnd }]);
-        expect(region.note).toBe('Region note');
-        expect(region.color).toBe('#123456');
+    it('exports annotation fields before separate overall/spectral sections', () => {
+        const region = { id: 5, positionId: 'P1', areas: [{ start: 1000, end: 3000 }], note: 'Region, "night"', color: '#123456' };
+        const csv = helpers.buildAnnotationsCsv([{ id: 2, timestamp: 1500, note: 'Marker', color: '#ff00ff', metrics: { test: 1 } }], [region]);
+        expect(csv.startsWith('NSA annotations export,format=2')).toBe(true);
+        expect(section(csv, 'REGIONS')[0]).toMatchObject({ id: '5', note: 'Region, "night"', origin_meter: 'P1', colour: '#123456' });
+        expect(section(csv, 'OVERALL')).toHaveLength(1);
+        expect(section(csv, 'NOTES').some(row => row.key === 'caveats' && row.value.includes('indicative'))).toBe(true);
+        const result = helpers.parseAnnotationsCsv(csv);
+        expect(result.regions[0]).toMatchObject({ id: 5, positionId: 'P1', note: region.note, areas: region.areas });
+        expect(result.markers[0].metrics).toEqual({ test: 1 });
     });
 
-    it('preserves multi-area regions through CSV round-trip', () => {
-        const firstStart = Date.UTC(2024, 4, 1, 12, 0, 0, 0);
-        const firstEnd = Date.UTC(2024, 4, 1, 12, 5, 0, 0);
-        const secondStart = Date.UTC(2024, 4, 1, 12, 10, 0, 0);
-        const secondEnd = Date.UTC(2024, 4, 1, 12, 15, 0, 0);
-
-        const csv = helpers.buildAnnotationsCsv([], [{
-            id: 7,
-            positionId: 'P2',
-            start: firstStart,
-            end: secondEnd,
-            areas: [
-                { start: firstStart, end: firstEnd },
-                { start: secondStart, end: secondEnd }
-            ],
-            note: 'Multi area',
-            color: '#abcdef'
-        }], null);
-
-        const { regions } = helpers.parseAnnotationsCsv(csv);
-        expect(regions).toHaveLength(1);
-
-        const [region] = regions;
-        expect(region.positionId).toBe('P2');
-        expect(region.start).toBe(firstStart);
-        expect(region.end).toBe(secondEnd);
-        expect(region.areas).toEqual([
-            { start: firstStart, end: firstEnd },
-            { start: secondStart, end: secondEnd }
-        ]);
-        expect(region.note).toBe('Multi area');
-        expect(region.color).toBe('#abcdef');
+    it('preserves multi-area geometry and category/meter states across round trips', () => {
+        const region = app.annotationModel.normalizeRegion({ id: 7, positionId: 'P2',
+            areas: [{ start: 1000, end: 2000 }, { start: 3000, end: 4000 }], categoryId: 'plant', note: 'Two events', color: null,
+            meterStates: { P1: 'absent', P3: 'unchecked' } }, ['P1', 'P2', 'P3']);
+        const state = { view: { availablePositions: ['P1', 'P2', 'P3'] }, regions: { categories: app.annotationModel.normalizeCatalog() } };
+        const csv = helpers.buildAnnotationsCsv([], [region], state);
+        expect(helpers.parseAnnotationsCsv(csv).regions).toEqual([region]);
     });
 
-    it('parses timestamps without fractional seconds', () => {
-        const csv = [
-            helpers.CSV_HEADER.join(','),
-            'marker,1,,2024-03-10 09:08:07,,Quick note,#abcdef'
-        ].join('\n');
-
-        const { markers } = helpers.parseAnnotationsCsv(csv);
-        expect(markers).toHaveLength(1);
-        expect(markers[0].timestamp).toBe(Date.UTC(2024, 2, 10, 9, 8, 7));
+    it('retains old unsectioned CSV imports with no provenance or metric columns', () => {
+        const old = [helpers.CSV_HEADER.join(','), 'region,5,P1,2024-01-01 10:00:00,2024-01-01 11:00:00,note,#abc,'].join('\n');
+        const result = helpers.parseAnnotationsCsv(old);
+        expect(result.regions).toHaveLength(1);
+        expect(result.regions[0]).toMatchObject({ positionId: 'P1', start: Date.UTC(2024, 0, 1, 10), end: Date.UTC(2024, 0, 1, 11) });
     });
 });
 
-describe('Annotation CSV region offset provenance', () => {
-    it('includes provenance columns in the header', () => {
-        const csv = helpers.buildAnnotationsCsv([], [{
-            id: 1, positionId: 'P1',
-            start: Date.UTC(2024, 0, 1, 10, 0, 0),
-            end: Date.UTC(2024, 0, 1, 11, 0, 0),
-            areas: [{ start: Date.UTC(2024, 0, 1, 10, 0, 0), end: Date.UTC(2024, 0, 1, 11, 0, 0) }],
-            note: ''
-        }], null);
-
-        const headerCells = csv.split('\n')[0].split(',');
-        expect(headerCells).toContain('chart_offset_ms');
-        expect(headerCells).toContain('source_start_utc');
-        expect(headerCells).toContain('source_end_utc');
-        expect(headerCells).toContain('source_areas');
-        // CSV_HEADER columns remain at the front
-        expect(headerCells.slice(0, helpers.CSV_HEADER.length)).toEqual(helpers.CSV_HEADER);
+describe('Annotation CSV source provenance', () => {
+    it('exports source times with the target offset and displays untouched annotation times', () => {
+        const state = { view: { availablePositions: ['P1'], positionChartOffsets: { P1: 1000 } } };
+        const region = { id: 7, positionId: 'P1', areas: [{ start: 2000, end: 4000 }], note: '' };
+        const models = { timeSeriesSources: { P1: { log: { data: { Datetime: [1000, 2000], LAeq: [60, 70] } } } } };
+        const csv = helpers.buildAnnotationsCsv([], [region], state, { models });
+        const row = section(csv, 'REGIONS')[0];
+        expect(row.chart_offset_ms).toBe('1000');
+        expect(row.start).toBe('1970-01-01 00:00:02.000');
+        expect(row.source_start).toBe('1970-01-01 00:00:01.000');
+        expect(Number(row.LAeq_dB)).toBeCloseTo(67.4036, 4);
+        expect(helpers.parseAnnotationsCsv(csv).regions[0].start).toBe(2000);
     });
 
-    it('emits source times offset-shifted from display times for a region with non-zero offset', () => {
-        const displayStart = Date.UTC(2024, 0, 1, 10, 0, 0, 0);
-        const displayEnd   = Date.UTC(2024, 0, 1, 11, 0, 0, 0);
-        const offsetMs = 5 * 60 * 1000; // 300 000 ms
-
-        const region = {
-            id: 99, positionId: 'P1',
-            start: displayStart, end: displayEnd,
-            areas: [{ start: displayStart, end: displayEnd }],
-            note: 'offset test', color: '#aabbcc'
-        };
-        const state = { view: { selectedParameter: 'LAeq', positionChartOffsets: { P1: offsetMs } } };
-
-        const csv = helpers.buildAnnotationsCsv([], [region], state);
-        const lines = csv.split('\n');
-        const regionRow = lines[1];
-
-        // Display times stay unchanged
-        expect(regionRow).toContain('2024-01-01 10:00:00.000');
-        expect(regionRow).toContain('2024-01-01 11:00:00.000');
-
-        // Provenance: offset value and source-shifted timestamps
-        const sourceStart = helpers.formatTimestampForCsv(displayStart - offsetMs);
-        const sourceEnd   = helpers.formatTimestampForCsv(displayEnd - offsetMs);
-        expect(regionRow).toContain(String(offsetMs));   // chart_offset_ms
-        expect(regionRow).toContain(sourceStart);         // source_start_utc
-        expect(regionRow).toContain(sourceEnd);           // source_end_utc
-        // source_areas JSON contains both source timestamps
-        expect(regionRow).toContain(sourceStart.replace(/ /g, ' '));
-        expect(regionRow).toContain(sourceEnd.replace(/ /g, ' '));
-    });
-
-    it('source times equal display times and offset is 0 when no offset is set', () => {
-        const displayStart = Date.UTC(2024, 0, 2, 12, 0, 0, 0);
-        const displayEnd   = Date.UTC(2024, 0, 2, 12, 30, 0, 0);
-
-        const region = {
-            id: 100, positionId: 'P2',
-            start: displayStart, end: displayEnd,
-            areas: [{ start: displayStart, end: displayEnd }],
-            note: ''
-        };
-        const state = { view: { selectedParameter: 'LAeq' } }; // no positionChartOffsets
-
-        const csv = helpers.buildAnnotationsCsv([], [region], state);
-        const lines = csv.split('\n');
-        const regionRow = lines[1];
-
-        const displayStartStr = helpers.formatTimestampForCsv(displayStart);
-        const displayEndStr   = helpers.formatTimestampForCsv(displayEnd);
-
-        // Source timestamps equal display timestamps (both appear in the row)
-        expect(regionRow).toContain(displayStartStr);
-        expect(regionRow).toContain(displayEndStr);
-        // The row must not contain any timestamp earlier than displayStart
-        // (which would indicate a spurious non-zero offset was applied)
-        expect(regionRow).not.toContain(helpers.formatTimestampForCsv(displayStart - 1));
-
-        // chart_offset_ms = 0: use a regex anchored between commas to avoid
-        // false positives from quoted JSON fields containing commas
-        expect(regionRow).toMatch(/,0,/);
-    });
-
-    it('leaves provenance columns blank for marker rows', () => {
-        const markerTime = Date.UTC(2024, 0, 3, 8, 0, 0, 0);
-        const marker = { id: 1, timestamp: markerTime, note: 'test', positionId: 'P1' };
-        const state = { view: { positionChartOffsets: { P1: 9999 } } };
-
-        const csv = helpers.buildAnnotationsCsv([marker], [], state);
-        const lines = csv.split('\n');
-        const headerCells = lines[0].split(',');
-        const markerRow = lines[1];
-        const rawCells = markerRow.split(',');
-
-        expect(rawCells[headerCells.indexOf('chart_offset_ms')]).toBe('');
-        expect(rawCells[headerCells.indexOf('source_start_utc')]).toBe('');
-        expect(rawCells[headerCells.indexOf('source_end_utc')]).toBe('');
-    });
-
-    it('leaves metrics_la90 blank when the metrics say LA90 is not available', () => {
-        window.NoiseSurveyApp.regions.invalidateMetricsCache();
-        const start = Date.UTC(2024, 0, 5, 9, 0, 0, 0);
-        const end = Date.UTC(2024, 0, 5, 9, 30, 0, 0);
-        const region = {
-            id: 11, positionId: 'P1', start, end,
-            areas: [{ start, end }], note: ''
-        };
-        const state = { view: { selectedParameter: 'LAeq' } };
-        // Overview-only source: LA90 there is a percentile of 15-minute aggregates,
-        // which the region panel hides.
-        const models = {
-            timeSeriesSources: {
-                P1: {
-                    overview: {
-                        data: {
-                            Datetime: [start, start + 900000, end],
-                            LAeq: [55, 60, 58]
-                        }
-                    }
-                }
-            }
-        };
-
-        const metrics = window.NoiseSurveyApp.regions.getRegionMetrics(region, state, {}, models);
-        expect(metrics.dataResolution).toBe('overview');
-        expect(metrics.la90Available).toBe(false);
-        expect(metrics.la90).not.toBeNull();
-
-        const csv = helpers.buildAnnotationsCsv([], [region], state, { dataCache: {}, models });
-        const headerCells = splitCsvLine(csv.split('\n')[0]);
-        const cells = splitCsvLine(csv.split('\n')[1]);
-        expect(cells[headerCells.indexOf('metrics_la90')]).toBe('');
-        expect(cells[headerCells.indexOf('metrics_la90_available')]).toBe('');
-        // The available metrics are still exported.
-        expect(cells[headerCells.indexOf('metrics_laeq')]).not.toBe('');
-        window.NoiseSurveyApp.regions.invalidateMetricsCache();
-    });
-
-    it('CSV import without provenance columns remains backward-compatible', () => {
-        // Older CSV with only the base CSV_HEADER columns
-        const oldCsv = [
-            helpers.CSV_HEADER.join(','),
-            'region,5,P1,2024-01-01 10:00:00.000,2024-01-01 11:00:00.000,note,#abc,'
-        ].join('\n');
-
-        const { regions } = helpers.parseAnnotationsCsv(oldCsv);
-        expect(regions).toHaveLength(1);
-        expect(regions[0].positionId).toBe('P1');
-        expect(regions[0].start).toBe(Date.UTC(2024, 0, 1, 10, 0, 0, 0));
-        expect(regions[0].end).toBe(Date.UTC(2024, 0, 1, 11, 0, 0, 0));
-    });
-
-    it('CSV import ignores unknown provenance columns without error', () => {
-        // New-format CSV that includes provenance columns — import should still work
-        const state = { view: { selectedParameter: 'LAeq', positionChartOffsets: { P1: 60000 } } };
-        const region = {
-            id: 7, positionId: 'P1',
-            start: Date.UTC(2024, 0, 4, 9, 0, 0, 0),
-            end:   Date.UTC(2024, 0, 4, 10, 0, 0, 0),
-            areas: [{ start: Date.UTC(2024, 0, 4, 9, 0, 0, 0), end: Date.UTC(2024, 0, 4, 10, 0, 0, 0) }],
-            note: ''
-        };
-        const csv = helpers.buildAnnotationsCsv([], [region], state);
-
-        const { regions } = helpers.parseAnnotationsCsv(csv);
-        expect(regions).toHaveLength(1);
-        // display start/end are preserved (not offset-shifted)
-        expect(regions[0].start).toBe(region.start);
-        expect(regions[0].end).toBe(region.end);
+    it('retains indicative overview LAF90 in OVERALL and labels its method', () => {
+        const region = { id: 1, positionId: 'P1', areas: [{ start: 0, end: 1000 }] };
+        const models = { timeSeriesSources: { P1: { overview: { data: { Datetime: [0, 1000], LAeq: [50, 60] } } } } };
+        const csv = helpers.buildAnnotationsCsv([], [region], {}, { models });
+        const row = section(csv, 'OVERALL')[0];
+        expect(row.data_resolution).toBe('overview');
+        expect(Number(row.LAF90_dB)).toBe(50);
+        expect(row.percentile_method).toContain('indicative');
+        expect(row.LAFmax_dB).toBe('');
     });
 });
 

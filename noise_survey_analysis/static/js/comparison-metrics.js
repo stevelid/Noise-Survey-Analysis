@@ -1,289 +1,57 @@
-// noise_survey_analysis/static/js/comparison-metrics.js
-
-/**
- * @fileoverview Provides helper utilities for calculating comparison-mode metrics.
- * The exported function is pure and does not mutate incoming state or models.
- */
-
+/** Comparison adapter: all acoustic calculations use annotationMetrics. */
 window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
-    const calcMetrics = app.calcMetrics || {};
-
-    function normalizeBounds(start, end) {
-        const rawStart = Number(start);
-        const rawEnd = Number(end);
-        if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawStart === rawEnd) {
-            return null;
+    function processComparisonSliceMetrics(options = {}) {
+        const start = Number(options.start), end = Number(options.end);
+        const positions = Array.isArray(options.positionIds) ? options.positionIds : [];
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start === end || !positions.length) {
+            return { start: null, end: null, metricsRows: [], spectrum: { labels: [], series: [] }, hasData: false };
         }
-        return {
-            start: Math.min(rawStart, rawEnd),
-            end: Math.max(rawStart, rawEnd)
-        };
-    }
-
-    function chooseDatasetForSlice(bounds, sources, broadbandParam) {
-        if (!sources || !bounds) return null;
-        const { start, end } = bounds;
-        const effectiveParam = typeof broadbandParam === 'string' && broadbandParam.length
-            ? broadbandParam
-            : 'LAeq';
-
-        // Regions read LA90 from the meter's own LAF90 column when it exists and only
-        // fall back to a percentile of the LAeq samples otherwise (see
-        // features/regions/regionUtils.js). Comparison mode has to resolve it the same
-        // way, or the same time slice reports two different LA90 values.
-        function sliceLa90(dataObj) {
-            if (!dataObj?.LAF90) return null;
-            const values = calcMetrics.sliceTimeSeries(dataObj.Datetime, dataObj.LAF90, start, end);
-            return values.length ? values : null;
-        }
-
-        function tryDataset(datasetName, dataObj) {
-            if (!dataObj?.Datetime) return null;
-            const paramValues = calcMetrics.sliceTimeSeries(dataObj.Datetime, dataObj[effectiveParam], start, end);
-            if (paramValues.length) {
-                const laeqValues = calcMetrics.sliceTimeSeries(dataObj.Datetime, dataObj.LAeq, start, end);
-                return {
-                    dataset: datasetName,
-                    data: dataObj,
-                    broadbandValues: paramValues,
-                    broadbandParam: effectiveParam,
-                    laeqValues: laeqValues.length ? laeqValues : paramValues,
-                    la90Values: sliceLa90(dataObj)
-                };
-            }
-            // Fallback to LAeq if selected parameter not available
-            const laeqValues = calcMetrics.sliceTimeSeries(dataObj.Datetime, dataObj.LAeq, start, end);
-            if (laeqValues.length) {
-                return {
-                    dataset: datasetName,
-                    data: dataObj,
-                    broadbandValues: laeqValues,
-                    broadbandParam: 'LAeq',
-                    laeqValues,
-                    la90Values: sliceLa90(dataObj)
-                };
-            }
-            return null;
-        }
-
-        const logResult = tryDataset('log', sources.log?.data);
-        if (logResult) return logResult;
-
-        const overviewResult = tryDataset('overview', sources.overview?.data);
-        if (overviewResult) return overviewResult;
-
-        return null;
-    }
-
-    function clampRangeIndices(times, min, max) {
-        if (!times || (typeof times.length !== 'number')) return null;
-        const length = times.length;
-        if (!length) return null;
-        let startIdx = 0;
-        while (startIdx < length && Number(times[startIdx]) < min) {
-            startIdx++;
-        }
-        if (startIdx >= length) return null;
-        let endIdx = length - 1;
-        while (endIdx >= 0 && Number(times[endIdx]) > max) {
-            endIdx--;
-        }
-        if (endIdx < startIdx) return null;
-        return { startIdx, endIdx };
-    }
-
-    function computeSpectrumAverage(preparedData, bounds) {
-        if (!preparedData || !bounds) {
-            return { labels: [], values: [] };
-        }
-        const labels = Array.isArray(preparedData.frequency_labels)
-            ? preparedData.frequency_labels.slice()
-            : [];
-        const times = preparedData.times_ms;
-        const nFreqs = Number(preparedData.n_freqs);
-        const nTimes = Number(preparedData.n_times);
-        const levels = preparedData.levels_flat_transposed;
-
-        if (!labels.length || !Array.isArray(times) || !levels || !Number.isFinite(nFreqs) || !Number.isFinite(nTimes)) {
-            return { labels, values: [] };
-        }
-
-        const boundsIdx = clampRangeIndices(times, bounds.start, bounds.end);
-        if (!boundsIdx) {
-            return { labels, values: [] };
-        }
-
-        const values = new Array(nFreqs);
-        for (let freqIdx = 0; freqIdx < nFreqs; freqIdx++) {
-            const bandValues = [];
-            for (let timeIdx = boundsIdx.startIdx; timeIdx <= boundsIdx.endIdx; timeIdx++) {
-                const value = Number(levels[freqIdx * nTimes + timeIdx]);
-                if (Number.isFinite(value)) {
-                    bandValues.push(value);
-                }
-            }
-            values[freqIdx] = bandValues.length ? calcMetrics.calcLAeq(bandValues) : null;
-        }
-
-        return { labels, values };
-    }
-
-    function alignSpectra(series, baseLabels) {
-        if (!Array.isArray(series)) return [];
-        if (!Array.isArray(baseLabels) || !baseLabels.length) {
-            return series.map(item => ({
-                positionId: item.positionId,
-                dataset: item.dataset,
-                values: Array.isArray(item.values) ? item.values.slice() : []
-            }));
-        }
-        return series.map(item => {
-            const aligned = baseLabels.map(label => {
-                const idx = Array.isArray(item.labels) ? item.labels.indexOf(label) : -1;
-                if (idx === -1) {
-                    return null;
-                }
-                const value = item.values?.[idx];
-                return Number.isFinite(value) ? value : (value === null ? null : Number(value));
-            });
-            return {
-                positionId: item.positionId,
-                dataset: item.dataset,
-                values: aligned
-            };
-        });
-    }
-
-    function processComparisonSliceMetrics(options) {
-        const bounds = normalizeBounds(options?.start, options?.end);
-        const positionIds = Array.isArray(options?.positionIds) ? options.positionIds : [];
-        const timeSeriesSources = options?.timeSeriesSources || {};
-        const preparedGlyphData = options?.preparedGlyphData || {};
-        const selectedParameter = typeof options?.selectedParameter === 'string'
-            ? options.selectedParameter
-            : null;
-
-        if (!bounds || !positionIds.length) {
-            return {
-                start: bounds ? bounds.start : null,
-                end: bounds ? bounds.end : null,
-                metricsRows: [],
-                spectrum: { labels: [], series: [] },
-                hasData: false
-            };
-        }
-
-        const durationMs = Math.max(0, bounds.end - bounds.start);
-        const rawSpectra = [];
-        const metricsRows = [];
+        const bounds = { start: Math.min(start, end), end: Math.max(start, end) };
+        const engine = app.annotationMetrics;
+        if (!engine) throw new Error('Annotation metrics engine is not loaded.');
+        const state = options.state || { view: { selectedParameter: options.selectedParameter,
+            positionChartOffsets: options.positionChartOffsets || {} } };
+        const models = options.models || { timeSeriesSources: options.timeSeriesSources || {},
+            preparedGlyphData: options.preparedGlyphData || {}, spectrogramSources: options.spectrogramSources || {} };
+        const selectedParameter = options.selectedParameter || state.view?.selectedParameter || 'LAeq';
+        const metricsRows = [], spectra = [];
         let hasData = false;
-
-        positionIds.forEach(positionId => {
-            const sources = timeSeriesSources[positionId];
-            const broadbandParam = selectedParameter || 'LAeq';
-            const selection = chooseDatasetForSlice(bounds, sources, broadbandParam);
-
-            if (!selection) {
-                metricsRows.push({
-                    positionId,
-                    dataset: 'none',
-                    laeq: null,
-                    broadbandValue: null,
-                    broadbandParam: broadbandParam,
-                    lafmax: null,
-                    lafmaxAvailable: false,
-                    la90: null,
-                    la90Available: false,
-                    durationMs
-                });
-                return;
+        positions.forEach(positionId => {
+            const region = { positionId, areas: [bounds] };
+            const metrics = engine.computeRegion(region, state, models, { parameter: selectedParameter, resolution: 'auto' });
+            let dataset = metrics.dataResolution;
+            let data = models.timeSeriesSources?.[positionId]?.[dataset]?.data;
+            // Generic line-only sources still have a meaningful selected value,
+            // even when standard acoustic LAeq/LAFmax metrics are unavailable.
+            if (!data) {
+                dataset = ['log', 'overview'].find(name => {
+                    const source = models.timeSeriesSources?.[positionId]?.[name]?.data;
+                    const geom = engine.columnSeries(source, selectedParameter, 0);
+                    const durations = engine.weights(geom, metrics.sourceAreas);
+                    const coverage = durations.reduce((sum, value) => sum + value, 0) * 1000 / metrics.durationMs;
+                    return geom.rows.length && (name !== 'log' || coverage >= 1 - 1e-6);
+                }) || 'none';
+                data = models.timeSeriesSources?.[positionId]?.[dataset]?.data;
             }
-
-            const broadbandValue = calcMetrics.calcLAeq(selection.broadbandValues);
-            const laeq = calcMetrics.calcLAeq(selection.laeqValues);
-            let lafmaxValues = null;
-            let lafmaxAvailable = false;
-            const lafmaxField = selection.data?.LAFmax;
-            if (lafmaxField) {
-                const extracted = calcMetrics.sliceTimeSeries(selection.data.Datetime, lafmaxField, bounds.start, bounds.end);
-                if (extracted.length) {
-                    lafmaxValues = extracted;
-                    lafmaxAvailable = true;
-                }
-            }
-            const lafmax = lafmaxAvailable ? calcMetrics.calcLAMax(lafmaxValues) : null;
-            const la90 = selection.dataset === 'log'
-                ? calcMetrics.calcLA90(
-                    Array.isArray(selection.la90Values) && selection.la90Values.length
-                        ? selection.la90Values
-                        : selection.laeqValues
-                )
-                : null;
-
-            const glyphData = preparedGlyphData[positionId] || {};
-            const parameter = selectedParameter
-                || Object.keys(glyphData?.log?.prepared_params || {})[0]
-                || Object.keys(glyphData?.overview?.prepared_params || {})[0]
-                || 'LZeq';
-
-            let spectralSource = selection.dataset === 'log'
-                ? glyphData?.log?.prepared_params?.[parameter]
-                : null;
-            if (!spectralSource) {
-                spectralSource = glyphData?.overview?.prepared_params?.[parameter];
-            }
-
-            const spectrum = computeSpectrumAverage(spectralSource, bounds);
-            rawSpectra.push({
-                positionId,
-                dataset: selection.dataset,
-                labels: spectrum.labels,
-                values: spectrum.values
-            });
-
-            metricsRows.push({
-                positionId,
-                dataset: selection.dataset,
-                laeq,
-                broadbandValue,
-                broadbandParam: selection.broadbandParam,
-                lafmax,
-                lafmaxAvailable,
-                la90,
-                la90Available: selection.dataset === 'log' && la90 !== null,
-                durationMs
-            });
-
-            if (laeq !== null || broadbandValue !== null || lafmax !== null || (Array.isArray(spectrum.values) && spectrum.values.some(value => Number.isFinite(value)))) {
-                hasData = true;
-            }
+            const broadbandParam = data?.[selectedParameter] ? selectedParameter : 'LAeq';
+            const geom = engine.sliceGeometry(engine.columnSeries(data, broadbandParam, 0), metrics.sourceAreas);
+            const durations = engine.weights(geom, metrics.sourceAreas);
+            const values = geom.rows.map(row => data[broadbandParam][row.index]);
+            const aggregate = /max/i.test(broadbandParam) ? engine.maximum : /90$/.test(broadbandParam) ? engine.percentile : engine.energy;
+            const broadbandValue = aggregate(values, durations);
+            const spectrum = metrics.spectrum;
+            spectra.push({ positionId, dataset: spectrum.source || dataset, labels: spectrum.labels, values: spectrum.values });
+            metricsRows.push({ ...metrics, positionId, dataset, broadbandValue, broadbandParam });
+            hasData ||= metrics.laeq !== null || metrics.lafmax !== null || broadbandValue !== null || spectrum.values.some(Number.isFinite);
         });
-
-        let baseLabels = [];
-        rawSpectra.forEach(entry => {
-            if (Array.isArray(entry.labels) && entry.labels.length > baseLabels.length) {
-                baseLabels = entry.labels.slice();
-            }
-        });
-
-        const alignedSeries = alignSpectra(rawSpectra, baseLabels);
-
-        return {
-            start: bounds.start,
-            end: bounds.end,
-            metricsRows,
-            spectrum: {
-                labels: baseLabels,
-                series: alignedSeries
-            },
-            hasData: hasData
-        };
+        const labels = [...new Set(spectra.flatMap(item => item.labels))];
+        const series = spectra.map(item => ({ positionId: item.positionId, dataset: item.dataset,
+            values: labels.map(label => item.labels.includes(label) ? item.values[item.labels.indexOf(label)] : null) }));
+        return { ...bounds, metricsRows, spectrum: { labels, series }, hasData };
     }
 
-    app.comparisonMetrics = {
-        processComparisonSliceMetrics
-    };
+    app.comparisonMetrics = { processComparisonSliceMetrics };
 })(window.NoiseSurveyApp);

@@ -1046,3 +1046,20 @@ _____________________________________________
 - [ ] With a nonzero chart offset, bands stay on the shared displayed times and metrics query each meter's own source times once.
 - [ ] Undoing an annotation edit preserves the current ghost visibility preference.
 
+### HTML annotation sidebar (server and standalone HTML)
+
+- [ ] Default HTML sidebar fits inside the viewport alongside charts; page and chart ancestors have no clipping overflow that prevents sticky positioning.
+- [ ] Scroll charts several meters down: the sidebar stays visible and its content scrolls independently. Repeat after resizing the browser.
+- [ ] Regions/Markers/Classifications tabs retain their selection and work offline. Comparison shows its meter selector, metrics, Make Region and Finish controls.
+- [ ] Meter strips use display titles and cycle unchecked/present/absent without seeking audio; the origin remains present.
+- [ ] Edit notes, move the caret, expand a section and scroll the panel. Another annotation update preserves the draft, caret, open section and scroll position.
+- [ ] Ctrl+Enter saves a note; Esc cancels a draft; N focuses the selected region note. Existing chart shortcuts do nothing while editing.
+- [ ] Category, present-at-meter, single-meter and unchecked filters narrow the list without altering annotations. Category edits and colour overrides support undo.
+- [ ] Only the selected region calculates per-meter metrics; hide metrics to defer those calculations. Each row shows resolution and unavailable values remain blank.
+- [ ] Marker notes, colours and saved snapshots survive tab switches. Clear all markers requires its second confirmation action.
+- [ ] Classification selection is passive; Preview/P explicitly seeks and plays. Verify score/source/role filters, numeric score sorting, hidden selection message and elevation.
+- [ ] Notes, meter titles and category labels containing HTML-like text display literally and never create elements.
+- [ ] Export settings retain context window, minimum usable context and optional both-resolution rows across workspace save/load; default remains best available resolution.
+- [ ] Server menu offers full-resolution annotation export; static menu offers browser export only.
+- [ ] Set config `ui.side_panel` to `legacy`, restart and export static HTML: the previous Tabs panel remains available for comparison.
+

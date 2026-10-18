@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Import source files for side effects to enable coverage tracking.
 import '../noise_survey_analysis/static/js/chart-classes.js';
+import '../noise_survey_analysis/static/js/features/regions/annotationMetrics.js';
 import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';
 import '../noise_survey_analysis/static/js/comparison-metrics.js';
 import '../noise_survey_analysis/static/js/services/regions/regionPanelRenderer.js';

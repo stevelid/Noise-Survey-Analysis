@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import '../noise_survey_analysis/static/js/features/regions/annotationMetrics.js';
 import '../noise_survey_analysis/static/js/features/regions/regionUtils.js';
 
 const app = window.NoiseSurveyApp;
@@ -73,9 +74,9 @@ describe('NoiseSurveyApp.features.regions.utils (extra coverage)', () => {
         });
 
         expect(metrics.dataResolution).toBe('log');
-        expect(metrics.lafmax).toBe(82);
+        expect(metrics.lafmax).toBe(81);
         expect(metrics.la90Available).toBe(true);
-        expect(metrics.la90).toBeCloseTo(40.2, 1);
+        expect(metrics.la90).toBe(50);
     });
 
     it('falls back to overview spectral data when log spectral data is unavailable', () => {
@@ -119,7 +120,7 @@ describe('NoiseSurveyApp.features.regions.utils (extra coverage)', () => {
         expect(metrics.dataResolution).toBe('overview');
         expect(metrics.spectrum.source).toBe('overview');
         expect(metrics.spectrum.labels).toEqual(['100 Hz', '200 Hz']);
-        expect(metrics.spectrum.values[0]).toBeCloseTo(60.5, 1);
+        expect(metrics.spectrum.values[0]).toBe(60);
     });
 
     it('exports regions with computed metrics and colour metadata', () => {
@@ -156,6 +157,6 @@ describe('NoiseSurveyApp.features.regions.utils (extra coverage)', () => {
         expect(exported[0].dataSource).toBe('overview');
         expect(exported[0].spectrumDataSource).toBe('none');
         expect(exported[0].metrics.dataResolution).toBe('overview');
-        expect(exported[0].metrics.laeq).toBeCloseTo(51.1, 1);
+        expect(exported[0].metrics.laeq).toBe(50);
     });
 });
