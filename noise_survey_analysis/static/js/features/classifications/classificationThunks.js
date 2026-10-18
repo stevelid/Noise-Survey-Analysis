@@ -71,7 +71,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
             const state = getState();
-            const classification = Number.isFinite(Number(classificationId))
+            const classification = classificationId !== null && Number.isFinite(Number(classificationId))
                 ? classificationSelectors.selectClassificationById?.(state, Number(classificationId))
                 : classificationSelectors.selectSelectedClassification?.(state);
             if (!classification) {
@@ -81,13 +81,24 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
             const nextRegionId = Number.isFinite(state?.regions?.counter) ? state.regions.counter : null;
+            const label = classification.sourceLabel || classification.sourceId || 'Classification';
+            const catalog = state?.regions?.categories;
+            let categoryId = catalog?.allIds?.find(id => catalog.byId[id]?.label?.toLowerCase() === label.toLowerCase());
+            if (!categoryId && app.features?.regions?.thunks?.createCategoryIntent) {
+                categoryId = dispatch(app.features.regions.thunks.createCategoryIntent({ label, color: classification.color }));
+            }
+            const meterStates = app.annotationModel?.normalizeMeterStates(
+                { positionId: classification.positionId }, state?.view?.availablePositions || []
+            ) || { [classification.positionId]: 'present' };
             const region = {
                 positionId: classification.positionId,
                 start: classification.start,
                 end: classification.end,
                 areas: [{ start: classification.start, end: classification.end }],
                 note: buildRegionNoteFromClassification(classification),
-                color: classification.color
+                categoryId: categoryId || 'other',
+                color: categoryId ? null : classification.color,
+                meterStates
             };
             dispatch(actions.regionsAdded([region]));
             if (Number.isFinite(nextRegionId)) {

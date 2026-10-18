@@ -10,7 +10,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
-    const SESSION_FILE_VERSION = 1;
+    const SESSION_FILE_VERSION = 2;
     let initialStateApplied = false;
     let sessionStatusListenerAttached = false;
     let automationListenerAttached = false;
@@ -746,7 +746,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
 
-        return { markers, regions };
+        const positions = app.store?.getState?.()?.view?.availablePositions || [];
+        const consolidation = app.annotationModel?.consolidateLegacyRegions?.(regions, positions);
+        return consolidation
+            ? { markers, regions: consolidation.regions, mergedCount: consolidation.mergedCount }
+            : { markers, regions, mergedCount: 0 };
     }
 
     function normaliseMarkerFromJson(entry) {
@@ -823,7 +827,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (!Array.isArray(payload) || !payload.length) {
                 return false;
             }
-            app.store.dispatch(app.actions.regionsAdded(payload));
+            const positions = app.store.getState()?.view?.availablePositions || [];
+            const consolidated = app.annotationModel?.consolidateLegacyRegions?.(payload, positions)
+                || { regions: payload, mergedCount: 0 };
+            app.store.dispatch(app.actions.regionsAdded(consolidated.regions));
+            if (consolidated.mergedCount) showToast(`Merged ${consolidated.mergedCount} legacy region copies across meters.`);
             const utils = app.features?.regions?.utils;
             if (utils?.invalidateMetricsCache) {
                 utils.invalidateMetricsCache();
@@ -973,7 +981,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return false;
         }
 
-        const nextState = payload.appState;
+        let migrated;
+        try {
+            migrated = app.workspaceMigration.migrateWorkspace(payload);
+        } catch (error) {
+            showToast(error.message || 'Unable to load workspace.', 'error');
+            return false;
+        }
+        const nextState = migrated.payload.appState;
         if (!nextState || typeof nextState !== 'object') {
             console.error('[Session] Workspace payload missing appState.');
             return false;
@@ -981,6 +996,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         warnOnSourceMismatch(payload.sourceConfigs);
         app.store.dispatch(app.actions.rehydrateState(nextState));
+        if (migrated.mergedCount) {
+            showToast(`Merged ${migrated.mergedCount} legacy region copies across meters.`);
+        }
         if (app.regions?.invalidateMetricsCache) {
             app.regions.invalidateMetricsCache();
         }
@@ -1436,7 +1454,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         return;
                     }
 
-                    const { markers, regions } = parseAnnotationsCsv(fileText);
+                    const { markers, regions, mergedCount } = parseAnnotationsCsv(fileText);
+                    if (mergedCount) showToast(`Merged ${mergedCount} legacy region copies across meters.`);
                     if (Array.isArray(markers)) {
                         if (typeof app.actions?.markersReplace === 'function') {
                             app.store.dispatch(app.actions.markersReplace(markers));
@@ -1478,6 +1497,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return false;
         }
         const applied = applyWorkspaceState({
+            version: SESSION_FILE_VERSION,
             appState: savedState,
             sourceConfigs: getCurrentSourceConfigs(),
         });

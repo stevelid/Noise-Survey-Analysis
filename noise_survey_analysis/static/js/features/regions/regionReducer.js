@@ -8,6 +8,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
+    const METER_PRESENT = 'present';
+    const METER_ABSENT = 'absent';
+    const METER_UNCHECKED = 'unchecked';
+
     const { actionTypes } = app;
 
     const DEFAULT_REGION_COLOR = '#1e88e5';
@@ -21,10 +25,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         isMergeModeActive: false,
         panelVisible: true,
         overlaysVisible: true,
-        metricsRevision: 0
+        metricsRevision: 0,
+        categories: app.annotationModel?.normalizeCatalog() || {
+            byId: { other: { id: 'other', label: 'Other', color: DEFAULT_REGION_COLOR } },
+            allIds: ['other']
+        }
     };
 
-    function normalizeColor(color, fallback = DEFAULT_REGION_COLOR) {
+    function normalizeColor(color, fallback = null) {
+        if (app.annotationModel?.normalizeColor) return app.annotationModel.normalizeColor(color, fallback);
         if (typeof color === 'string') {
             const trimmed = color.trim();
             if (trimmed) {
@@ -32,6 +41,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
         return fallback;
+    }
+
+    function normalizeRegionEntity(region) {
+        if (app.annotationModel?.normalizeRegion) return app.annotationModel.normalizeRegion(region);
+        return {
+            ...region,
+            categoryId: region.categoryId || 'other',
+            color: normalizeColor(region.color),
+            meterStates: { ...(region.meterStates || {}), [region.positionId]: METER_PRESENT }
+        };
     }
 
     function normalizeRegionBounds(start, end) {
@@ -130,15 +149,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const id = state.counter;
         const areas = [area];
         const summary = summarizeAreas(areas);
-        const newRegion = {
+        const newRegion = normalizeRegionEntity({
+            ...payload,
             id,
             positionId,
             areas,
             start: summary.start,
             end: summary.end,
-            note: '',
-            color: DEFAULT_REGION_COLOR
-        };
+            note: typeof payload.note === 'string' ? payload.note : '',
+            color: normalizeColor(payload.color)
+        });
         return {
             ...state,
             byId: { ...state.byId, [id]: newRegion },
@@ -197,7 +217,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         if (Object.prototype.hasOwnProperty.call(changes, 'color')) {
-            sanitizedChanges.color = normalizeColor(changes.color, existing.color || DEFAULT_REGION_COLOR);
+            sanitizedChanges.color = normalizeColor(changes.color);
         }
 
         const summary = summarizeAreas(nextAreas);
@@ -213,13 +233,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             updated.note = typeof sanitizedChanges.note === 'string' ? sanitizedChanges.note : '';
         }
 
-        if (!updated.color) {
-            updated.color = DEFAULT_REGION_COLOR;
-        }
-
+        const normalized = normalizeRegionEntity({ ...updated, positionId: existing.positionId });
+        if (JSON.stringify(normalized) === JSON.stringify(existing)) return state;
         return {
             ...state,
-            byId: { ...state.byId, [id]: updated }
+            byId: { ...state.byId, [id]: normalized }
         };
     }
 
@@ -272,7 +290,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             nextCounter = Math.max(nextCounter, candidateId + 1);
 
             const summary = summarizeAreas(areas);
-            newById[candidateId] = {
+            newById[candidateId] = normalizeRegionEntity({
+                ...region,
                 id: candidateId,
                 positionId,
                 areas,
@@ -280,7 +299,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 end: summary.end,
                 note: typeof region.note === 'string' ? region.note : '',
                 color: normalizeColor(region.color)
-            };
+            });
             newAllIds.push(candidateId);
             selectedId = candidateId;
         });
@@ -297,6 +316,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function replaceRegions(state, incoming) {
         if (!Array.isArray(incoming)) {
             return {
+                ...state,
                 byId: {},
                 allIds: [],
                 selectedId: null,
@@ -328,7 +348,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
             maxId = Math.max(maxId, candidateId);
             const summary = summarizeAreas(areas);
-            byId[candidateId] = {
+            byId[candidateId] = normalizeRegionEntity({
+                ...region,
                 id: candidateId,
                 positionId,
                 areas,
@@ -336,13 +357,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 end: summary.end,
                 note: typeof region.note === 'string' ? region.note : '',
                 color: normalizeColor(region.color)
-            };
+            });
             allIds.push(candidateId);
         });
 
         const selectedId = byId[state.selectedId] ? state.selectedId : (allIds[0] ?? null);
 
         return {
+            ...state,
             byId,
             allIds,
             selectedId,
@@ -414,6 +436,52 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     return state;
                 }
                 return updateRegion(state, id, { color });
+            }
+
+            case actionTypes.REGION_METER_STATES_SET: {
+                const { id, meterStates } = action.payload || {};
+                return state.byId[id] && meterStates && typeof meterStates === 'object'
+                    ? updateRegion(state, id, { meterStates }) : state;
+            }
+
+            case actionTypes.REGION_CATEGORY_SET: {
+                const { id, categoryId } = action.payload || {};
+                return state.byId[id] && state.categories?.byId?.[categoryId]
+                    ? updateRegion(state, id, { categoryId }) : state;
+            }
+
+            case actionTypes.REGION_CATEGORY_CATALOG_SET: {
+                const { categories, reassignedById = {} } = action.payload || {};
+                if (!categories?.byId || !Array.isArray(categories.allIds)) return state;
+                const byId = { ...state.byId };
+                Object.entries(reassignedById).forEach(([id, categoryId]) => {
+                    if (byId[id] && categories.byId[categoryId]) byId[id] = { ...byId[id], categoryId };
+                });
+                if (JSON.stringify(categories) === JSON.stringify(state.categories)
+                    && JSON.stringify(byId) === JSON.stringify(state.byId)) return state;
+                return { ...state, categories, byId };
+            }
+
+            case actionTypes.REGION_MERGED: {
+                const { targetId, sourceId, region } = action.payload || {};
+                const target = state.byId[targetId];
+                const source = state.byId[sourceId];
+                if (!target || !source || targetId === sourceId || target.positionId !== source.positionId || !region) return state;
+                const areas = ensureRegionAreas(region);
+                if (!areas.length) return state;
+                const next = removeRegion(state, sourceId);
+                return {
+                    ...next,
+                    byId: { ...next.byId, [targetId]: normalizeRegionEntity({ ...region, areas, ...summarizeAreas(areas), id: targetId, positionId: target.positionId }) },
+                    selectedId: targetId
+                };
+            }
+
+            case actionTypes.REGION_SPLIT: {
+                const { id, regions } = action.payload || {};
+                if (!state.byId[id] || !Array.isArray(regions) || regions.length < 2) return state;
+                if (!regions.every(region => region?.positionId === state.byId[id].positionId && ensureRegionAreas(region).length)) return state;
+                return addMultipleRegions(removeRegion(state, id), regions);
             }
 
             case actionTypes.REGION_VISIBILITY_SET: {

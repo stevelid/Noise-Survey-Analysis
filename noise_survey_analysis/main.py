@@ -17,6 +17,7 @@ project_root = current_file.parent.parent
 sys.path.insert(0, str(project_root))
 
 from noise_survey_analysis.core.config import AUDIO_ANCHORING_SETTINGS, CHART_SETTINGS, STREAMING_ENABLED
+from noise_survey_analysis.core.annotation_workspace import migrate_workspace
 from noise_survey_analysis.core.audio_alignment_cache import (
     AudioAlignmentCache,
     build_audio_alignment_cache_key,
@@ -366,6 +367,10 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
 
             if not isinstance(workspace_payload, dict):
                 raise ValueError("Workspace file must contain a JSON object")
+
+            workspace_payload, merged_count = migrate_workspace(workspace_payload)
+            if merged_count:
+                logger.info("Merged %d legacy region copies across meters", merged_count)
 
             state_payload = workspace_payload.get('appState')
             if isinstance(state_payload, dict):
@@ -770,6 +775,7 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
 
                 # If it has both sourceConfigs and appState, treat it as a workspace file
                 if isinstance(file_content, dict) and 'sourceConfigs' in file_content and 'appState' in file_content:
+                    file_content, merged_count = migrate_workspace(file_content)
                     logger.info("Detected workspace file format. Extracting sourceConfigs and appState.")
                     source_configs_from_state = file_content.get('sourceConfigs')
                     state_payload = file_content.get('appState')

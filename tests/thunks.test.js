@@ -65,8 +65,9 @@ describe('NoiseSurveyApp thunks', () => {
             start: 1000,
             end: 2500,
             note: 'Extract fan | confidence: 80% | fan running',
-            color: '#123456'
+            color: null
         });
+        expect(state.regions.categories.byId[state.regions.byId[1].categoryId].color).toBe('#123456');
         expect(state.classifications.byId[1].elevatedRegionId).toBe(1);
         expect(state.regions.selectedId).toBe(1);
         expect(state.view.activeSidePanelTab).toBe(constants.sidePanelTabs.regions);
@@ -414,9 +415,9 @@ describe('NoiseSurveyApp thunks', () => {
         store.dispatch(thunks.createRegionsFromComparisonIntent());
         const state = store.getState();
         expect(state.view.mode).toBe('normal');
-        expect(state.regions.allIds).toEqual([1, 2]);
+        expect(state.regions.allIds).toEqual([1]);
         expect(state.regions.byId[1].positionId).toBe('P1');
-        expect(state.regions.byId[2].positionId).toBe('P2');
+        expect(state.regions.byId[1].meterStates).toEqual({ P1: 'present', P2: 'present' });
     });
 
     it('createAutoRegionsIntent builds daytime and nighttime regions with colours', () => {
@@ -453,34 +454,17 @@ describe('NoiseSurveyApp thunks', () => {
         thunk(store.dispatch, store.getState);
 
         const state = store.getState();
-        // When both daytime and nighttime modes are requested, they are aggregated into 2 regions
-        expect(state.regions.allIds.length).toBe(2);
+        // One shared region per actual period, including the first partial night.
+        expect(state.regions.allIds.length).toBe(5);
         const regions = state.regions.allIds.map(id => state.regions.byId[id]);
-        const daytimeRegions = regions.filter(region => region.color === '#4caf50');
-        const nighttimeRegions = regions.filter(region => region.color === '#7e57c2');
-        expect(daytimeRegions.length).toBe(1);
-        expect(nighttimeRegions.length).toBe(1);
-
-        // Each aggregated region should contain multiple areas (one per day)
-        const daytimeRegion = daytimeRegions[0];
-        const nighttimeRegion = nighttimeRegions[0];
-        expect(daytimeRegion.areas.length).toBeGreaterThanOrEqual(2);
-        expect(nighttimeRegion.areas.length).toBeGreaterThanOrEqual(2);
-
-        // Verify times of areas in each aggregated region
-        // Times may be clamped to actual data points, so check they're in reasonable ranges
-        daytimeRegion.areas.forEach(area => {
-            const startHour = new Date(area.start).getUTCHours();
-            // Daytime regions should start between 6-8 (clamped to data availability)
-            expect(startHour).toBeGreaterThanOrEqual(6);
-            expect(startHour).toBeLessThanOrEqual(8);
+        expect(regions.filter(region => region.color === '#4caf50')).toHaveLength(2);
+        expect(regions.filter(region => region.color === '#7e57c2')).toHaveLength(3);
+        regions.forEach(region => {
+            expect(region.areas).toHaveLength(1);
+            expect(region.meterStates).toEqual({ P1: 'present' });
         });
-        nighttimeRegion.areas.forEach(area => {
-            const startHour = new Date(area.start).getUTCHours();
-            // Nighttime regions should start between 22-23 (clamped to data availability)
-            expect(startHour).toBeGreaterThanOrEqual(22);
-            expect(startHour).toBeLessThanOrEqual(23);
-        });
+        expect(regions[0].start).toBe(times[0]);
+        expect(regions.at(-1).end).toBe(times.at(-1));
 
         window.NoiseSurveyApp.registry.models.timeSeriesSources = originalSources;
     });

@@ -8,6 +8,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
+    const METER_PRESENT = 'present';
+    const METER_ABSENT = 'absent';
+    const METER_UNCHECKED = 'unchecked';
+
     const { actions } = app;
 
     const MIN_REGION_WIDTH_MS = 1;
@@ -40,6 +44,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const SIDE_PANEL_TAB_REGIONS = Number.isFinite(sidePanelTabs.regions)
         ? sidePanelTabs.regions
         : 0;
+
+    function getAvailablePositions(state) {
+        const positions = state?.view?.availablePositions;
+        return Array.isArray(positions) && positions.length
+            ? positions : Object.keys(app.registry?.models?.timeSeriesSources || {});
+    }
+
+    function getMeterStates(region, positions) {
+        if (app.annotationModel?.normalizeMeterStates) return app.annotationModel.normalizeMeterStates(region, positions);
+        const states = { ...(region.meterStates || {}) };
+        positions.forEach(id => { if (!states[id]) states[id] = METER_UNCHECKED; });
+        states[region.positionId] = METER_PRESENT;
+        return states;
+    }
 
 
     function collectTimestampsFromSource(source) {
@@ -142,7 +160,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return { start: clampedStart, end: clampedEnd };
     }
 
-    function buildDailyIntervals(timestampStats, mode) {
+    function buildDailyIntervals(timestampStats, mode, timezone = 'Europe/London') {
         if (!timestampStats || !timestampStats.count) {
             return [];
         }
@@ -154,23 +172,43 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return [];
         }
 
-        const startDate = new Date(minTimestamp);
-        startDate.setHours(0, 0, 0, 0);
-        const endDate = new Date(maxTimestamp);
-        endDate.setHours(0, 0, 0, 0);
-
+        const formatter = new Intl.DateTimeFormat('en-GB', {
+            timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+        });
+        function parts(timestamp) {
+            return Object.fromEntries(formatter.formatToParts(timestamp)
+                .filter(part => part.type !== 'literal').map(part => [part.type, Number(part.value)]));
+        }
+        function civilToUtc(day, hour) {
+            const date = new Date(day);
+            const desired = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), hour);
+            let guess = desired;
+            for (let iteration = 0; iteration < 3; iteration++) {
+                const local = parts(guess);
+                const represented = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second);
+                guess += desired - represented;
+            }
+            return guess;
+        }
+        const first = parts(minTimestamp);
+        const last = parts(maxTimestamp);
+        // Iterate civil dates, not 24-hour epoch jumps: night periods crossing
+        // the spring/autumn clock change then retain their correct duration.
+        const firstDay = Date.UTC(first.year, first.month - 1, first.day) - DAY_MS;
+        const lastDay = Date.UTC(last.year, last.month - 1, last.day);
         const intervals = [];
-        for (let day = startDate.getTime(); day <= endDate.getTime(); day += DAY_MS) {
+        for (let day = firstDay; day <= lastDay; day += DAY_MS) {
             if (mode === 'nighttime') {
-                const rawStart = day + DAYTIME_END_HOUR * HOUR_MS;
-                const rawEnd = day + DAY_MS + DAYTIME_START_HOUR * HOUR_MS;
+                const rawStart = civilToUtc(day, DAYTIME_END_HOUR);
+                const rawEnd = civilToUtc(day + DAY_MS, DAYTIME_START_HOUR);
                 const interval = clampInterval(rawStart, rawEnd, minTimestamp, maxTimestamp);
                 if (interval) {
                     intervals.push(interval);
                 }
             } else {
-                const rawStart = day + DAYTIME_START_HOUR * HOUR_MS;
-                const rawEnd = day + DAYTIME_END_HOUR * HOUR_MS;
+                const rawStart = civilToUtc(day, DAYTIME_START_HOUR);
+                const rawEnd = civilToUtc(day, DAYTIME_END_HOUR);
                 const interval = clampInterval(rawStart, rawEnd, minTimestamp, maxTimestamp);
                 if (interval) {
                     intervals.push(interval);
@@ -262,9 +300,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return;
             }
 
-            const regions = includedPositions
-                .filter(positionId => typeof positionId === 'string' && positionId)
-                .map(positionId => ({ positionId, start, end }));
+            const available = getAvailablePositions(state);
+            const included = (available.length ? available : includedPositions)
+                .filter(positionId => typeof positionId === 'string' && includedPositions.includes(positionId));
+            const positionId = included[0];
+            const meterStates = positionId ? getMeterStates({ positionId }, available) : {};
+            included.forEach(id => { meterStates[id] = METER_PRESENT; });
+            const regions = positionId ? [{ positionId, start, end, meterStates }] : [];
 
             if (!regions.length) {
                 return;
@@ -344,7 +386,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ? regionsState.counter
                 : null;
 
-            dispatch(actions.regionAdd(positionId, start, end));
+            dispatch(actions.regionAdd(positionId, start, end, {
+                categoryId: payload.categoryId || 'other',
+                color: payload.color ?? null,
+                note: payload.note || '',
+                meterStates: getMeterStates({ positionId, meterStates: payload.meterStates }, getAvailablePositions(state))
+            }));
 
             // Invalidate metrics cache for the newly created region
             app.regions?.invalidateMetricsCache?.();
@@ -360,94 +407,43 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function createAutoRegionsIntent(payload) {
-        return function (dispatch) {
-            if (!actions || typeof dispatch !== 'function') {
-                console.error('[AutoRegions] actions or dispatch not available');
-                return;
-            }
-            const state = app.store?.getState?.();
-            const availablePositions = Array.isArray(state?.view?.availablePositions)
-                ? state.view.availablePositions
-                : [];
-            const registryModels = app.registry?.models || {};
-            const fallbackPositions = registryModels.timeSeriesSources
-                ? Object.keys(registryModels.timeSeriesSources)
-                : [];
-            const positions = availablePositions.length ? availablePositions : fallbackPositions;
-
-            if (!positions.length) {
-                console.warn('[AutoRegions] No positions found');
-                return;
-            }
-
-            const requestedModes = (() => {
-                const primary = typeof payload?.mode === 'string' ? payload.mode : null;
-                const modeList = Array.isArray(payload?.modes) ? payload.modes : null;
-                const raw = modeList && modeList.length ? modeList : (primary ? [primary] : null);
-                const result = [];
-                const candidates = raw && raw.length ? raw : Object.keys(AUTO_REGION_MODES);
-                candidates.forEach(candidate => {
-                    const normalized = candidate === 'nighttime' ? 'nighttime' : candidate === 'daytime' ? 'daytime' : null;
-                    if (normalized && !result.includes(normalized)) {
-                        result.push(normalized);
-                    }
-                });
-                return result.length ? result : Object.keys(AUTO_REGION_MODES);
-            })();
-            const shouldAggregate = requestedModes.length >= 2;
-
-            const generated = [];
+        return function (dispatch, getState) {
+            if (!actions || typeof dispatch !== 'function') return;
+            const state = typeof getState === 'function' ? getState() : app.store?.getState?.();
+            const positions = getAvailablePositions(state);
+            if (!positions.length) return;
+            let min = Infinity;
+            let max = -Infinity;
             positions.forEach(positionId => {
-                if (!positionId) {
-                    return;
-                }
-                const timestampStats = collectPositionTimestampStats(positionId);
-                if (!timestampStats) {
-                    return;
-                }
-
-                requestedModes.forEach(modeName => {
-                    const config = AUTO_REGION_MODES[modeName];
-                    if (!config) {
-                        return;
-                    }
-                    const intervals = buildDailyIntervals(timestampStats, modeName);
-
-                    if (intervals.length > 0) {
-                        const baseTitle = `${modeName.charAt(0).toUpperCase() + modeName.slice(1)} - ${positionId}`;
-                        if (shouldAggregate) {
-                            const region = {
-                                positionId,
-                                start: intervals[0].start,
-                                end: intervals[intervals.length - 1].end,
-                                areas: intervals,
-                                color: config.color,
-                                note: baseTitle
-                            };
-                            generated.push(region);
-                        } else {
-                            intervals.forEach((interval, index) => {
-                                const titleSuffix = intervals.length > 1 ? ` (${index + 1})` : '';
-                                const region = {
-                                    positionId,
-                                    start: interval.start,
-                                    end: interval.end,
-                                    areas: [interval],
-                                    color: config.color,
-                                    note: `${baseTitle}${titleSuffix}`
-                                };
-                                generated.push(region);
-                            });
-                        }
-                    }
+                const stats = collectPositionTimestampStats(positionId);
+                if (!stats) return;
+                const offset = Number(state?.view?.positionChartOffsets?.[positionId]) || 0;
+                min = Math.min(min, stats.min + offset);
+                max = Math.max(max, stats.max + offset);
+            });
+            if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) return;
+            const requested = Array.isArray(payload?.modes) ? payload.modes
+                : (payload?.mode ? [payload.mode] : Object.keys(AUTO_REGION_MODES));
+            const modes = [...new Set(requested)].filter(mode => Object.hasOwn(AUTO_REGION_MODES, mode));
+            const timezone = app.registry?.models?.config?.timezone || 'Europe/London';
+            const generated = [];
+            modes.forEach(mode => {
+                buildDailyIntervals({ min, max, count: 1 }, mode, timezone).forEach(interval => {
+                    generated.push({
+                        positionId: positions[0],
+                        ...interval,
+                        areas: [interval],
+                        meterStates: Object.fromEntries(positions.map(id => [id, METER_PRESENT])),
+                        categoryId: 'other',
+                        color: AUTO_REGION_MODES[mode].color,
+                        note: mode === 'daytime' ? 'Daytime' : 'Nighttime'
+                    });
                 });
             });
-
-            if (!generated.length) {
-                return;
-            }
-
+            if (!generated.length) return;
+            generated.sort((left, right) => left.start - right.start);
             dispatch(actions.regionsAdded(generated));
+            dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
             app.regions?.invalidateMetricsCache?.();
         };
     }
@@ -510,29 +506,45 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return function (dispatch, getState) {
             if (!actions || typeof getState !== 'function') return;
             const state = getState();
-            const regionsState = state?.regions;
+            const regionsState = regionSelectors.selectRegionsState?.(state) || state?.regions;
             const targetId = regionsState?.selectedId;
             const sourceNumericId = Number(sourceId);
-            if (!Number.isFinite(targetId) || !Number.isFinite(sourceNumericId) || targetId === sourceNumericId) {
-                return;
+            if (!Number.isFinite(targetId) || !Number.isFinite(sourceNumericId) || targetId === sourceNumericId) return;
+            const target = regionsState.byId[targetId];
+            const source = regionsState.byId[sourceNumericId];
+            if (!target || !source || target.positionId !== source.positionId) return;
+            const positions = getAvailablePositions(state);
+            const left = getMeterStates(target, positions);
+            const right = getMeterStates(source, positions);
+            let merged;
+            if (app.annotationModel?.mergeMeterStates) merged = app.annotationModel.mergeMeterStates(left, right, positions);
+            else {
+                const states = {};
+                const conflicts = [];
+                [...new Set([...positions, ...Object.keys(left), ...Object.keys(right)])].forEach(id => {
+                    const a = left[id] || METER_UNCHECKED;
+                    const b = right[id] || METER_UNCHECKED;
+                    states[id] = a === METER_UNCHECKED ? b : (b === METER_UNCHECKED || a === b ? a : METER_UNCHECKED);
+                    if (a !== METER_UNCHECKED && b !== METER_UNCHECKED && a !== b) conflicts.push(id);
+                });
+                merged = { states, conflicts };
             }
-            const targetRegion = regionsState?.byId?.[targetId];
-            const sourceRegion = regionsState?.byId?.[sourceNumericId];
-            if (!targetRegion || !sourceRegion) {
-                return;
-            }
-            if (targetRegion.positionId !== sourceRegion.positionId) {
-                console.warn('[Regions] Cannot merge regions from different positions.');
-                return;
-            }
-            const combinedAreas = [...getRegionAreas(targetRegion), ...getRegionAreas(sourceRegion)];
+            const note = [...new Set([target.note, source.note].filter(Boolean))].join('\n');
+            const region = {
+                ...target,
+                areas: [...getRegionAreas(target), ...getRegionAreas(source)],
+                meterStates: merged.states,
+                note
+            };
             app.regions?.invalidateRegionMetrics?.(targetId);
-            dispatch(actions.regionUpdate(targetId, { areas: combinedAreas }));
             app.regions?.invalidateRegionMetrics?.(sourceNumericId);
-            dispatch(actions.regionRemove(sourceNumericId));
-            if (regionsState?.addAreaTargetId === sourceNumericId) {
-                dispatch(actions.regionSetAddAreaMode(null));
-            }
+            // One semantic action makes replacing the target and removing the
+            // source a single undoable transition, with no half-merged state.
+            dispatch(actions.regionMerged(targetId, sourceNumericId, region));
+            const names = merged.conflicts.map(id => state?.view?.positionDisplayTitles?.[id] || id);
+            dispatch(actions.noticeShown(names.length
+                ? `Regions merged. Re-check required: ${names.join(', ')}.` : 'Regions merged.',
+            names.length ? 'warning' : 'info'));
         };
     }
 
@@ -656,18 +668,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             const newRegions = areas.map(area => ({
-                positionId: region.positionId,
+                ...region,
+                id: undefined,
+                start: area.start,
+                end: area.end,
                 areas: [{ start: area.start, end: area.end }],
-                note: region.note,
-                color: region.color
+                meterStates: { ...getMeterStates(region, getAvailablePositions(state)) }
             }));
 
             app.regions?.invalidateRegionMetrics?.(region.id);
-            dispatch(actions.regionRemove(region.id));
-            if (regionsState?.addAreaTargetId === region.id && actions.regionSetAddAreaMode) {
-                dispatch(actions.regionSetAddAreaMode(null));
-            }
-            dispatch(actions.regionsAdded(newRegions));
+            dispatch(actions.regionSplit(region.id, newRegions));
             app.regions?.invalidateMetricsCache?.();
         };
     }
@@ -700,23 +710,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             });
             if (!targets.length) return;
 
-            const regions = targets.map(positionId => ({
-                positionId,
-                areas: sourceAreas.map(a => ({ start: a.start, end: a.end })),
-                note: sourceRegion.note || '',
-                color: sourceRegion.color || ''
-            }));
-
-            dispatch(actions.regionsAdded(regions));
+            const meterStates = getMeterStates(sourceRegion, availablePositions);
+            targets.forEach(positionId => { meterStates[positionId] = METER_PRESENT; });
+            dispatch(actions.regionMeterStatesSet(sourceRegion.id, meterStates));
             app.regions?.invalidateMetricsCache?.();
             dispatch(actions.setActiveSidePanelTab(SIDE_PANEL_TAB_REGIONS));
         };
     }
 
     /**
-     * Copies the currently selected region to all other positions.
-     * Each new region spans the same time areas and computes metrics
-     * from its own position's data.
+     * Marks the selected sound present at all other meters. The legacy
+     * command name remains available until its old controls are retired.
      */
     function copyRegionToAllPositionsIntent() {
         return copySelectedRegionToPositionsIntent(null);
@@ -725,6 +729,101 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     /** Copy the currently selected region to one validated target position. */
     function copyRegionToPositionIntent(targetPositionId) {
         return copySelectedRegionToPositionsIntent([targetPositionId]);
+    }
+
+    function setRegionMeterStateIntent(regionId, positionId, meterState) {
+        return function (dispatch, getState) {
+            const payload = typeof regionId === 'object' ? regionId : { id: regionId, positionId, state: meterState };
+            const state = getState();
+            const id = Number(payload.id ?? payload.regionId ?? state?.regions?.selectedId);
+            const region = state?.regions?.byId?.[id];
+            const meter = payload.positionId || payload.meterId;
+            const requested = payload.state ?? payload.meterState;
+            if (!region || !getAvailablePositions(state).includes(meter)
+                || ![METER_PRESENT, METER_ABSENT, METER_UNCHECKED].includes(requested)) return;
+            const meterStates = getMeterStates(region, getAvailablePositions(state));
+            if (meter === region.positionId || meterStates[meter] === requested) return;
+            meterStates[meter] = requested;
+            dispatch(actions.regionMeterStatesSet(id, meterStates));
+        };
+    }
+
+    function cycleRegionMeterStateIntent(regionId, positionId) {
+        return function (dispatch, getState) {
+            const payload = typeof regionId === 'object' ? regionId : { id: regionId, positionId };
+            const state = getState();
+            const id = Number(payload.id ?? payload.regionId ?? state?.regions?.selectedId);
+            const region = state?.regions?.byId?.[id];
+            const meter = payload.positionId || payload.meterId;
+            if (!region || meter === region.positionId) return;
+            const current = getMeterStates(region, getAvailablePositions(state))[meter];
+            const next = current === METER_PRESENT ? METER_ABSENT : current === METER_ABSENT ? METER_UNCHECKED : METER_PRESENT;
+            dispatch(setRegionMeterStateIntent(id, meter, next));
+        };
+    }
+
+    function setRegionCategoryIntent(regionId, categoryId) {
+        return function (dispatch, getState) {
+            const payload = typeof regionId === 'object' ? regionId : { id: regionId, categoryId };
+            const state = getState();
+            const id = Number(payload.id ?? payload.regionId ?? state?.regions?.selectedId);
+            if (!state?.regions?.byId?.[id] || !state.regions.categories?.byId?.[payload.categoryId]) return;
+            dispatch(actions.regionCategorySet(id, payload.categoryId));
+        };
+    }
+
+    function createCategoryIntent(payload) {
+        return function (dispatch, getState) {
+            const model = app.annotationModel;
+            if (!model) return null;
+            const label = typeof payload?.label === 'string' ? payload.label.trim() : '';
+            if (!label) return null;
+            const catalog = model.normalizeCatalog(getState()?.regions?.categories);
+            const existing = catalog.allIds.find(id => catalog.byId[id].label.toLowerCase() === label.toLowerCase());
+            if (existing) return existing;
+            const stem = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'category';
+            let id = stem;
+            let suffix = 2;
+            while (Object.hasOwn(catalog.byId, id) || ['__proto__', 'constructor', 'prototype'].includes(id)) id = `${stem}-${suffix++}`;
+            const category = { id, label, color: model.normalizeColor(payload?.color, model.DEFAULT_REGION_COLOR) };
+            dispatch(actions.regionCategoryCatalogSet({
+                byId: { ...catalog.byId, [id]: category }, allIds: [...catalog.allIds, id]
+            }));
+            return id;
+        };
+    }
+
+    function updateCategoryIntent(payload) {
+        return function (dispatch, getState) {
+            const model = app.annotationModel;
+            if (!model) return;
+            const catalog = model.normalizeCatalog(getState()?.regions?.categories);
+            const existing = catalog.byId[payload?.id];
+            if (!existing) return;
+            const label = typeof payload.label === 'string' && payload.label.trim() ? payload.label.trim() : existing.label;
+            const color = Object.hasOwn(payload, 'color') ? model.normalizeColor(payload.color, existing.color) : existing.color;
+            dispatch(actions.regionCategoryCatalogSet({
+                ...catalog, byId: { ...catalog.byId, [existing.id]: { ...existing, label, color } }
+            }));
+        };
+    }
+
+    function deleteCategoryIntent(categoryId) {
+        return function (dispatch, getState) {
+            const model = app.annotationModel;
+            if (!model || categoryId === model.DEFAULT_CATEGORY_ID) return;
+            const state = getState();
+            const catalog = model.normalizeCatalog(state?.regions?.categories);
+            if (!catalog.byId[categoryId]) return;
+            const byId = { ...catalog.byId };
+            delete byId[categoryId];
+            const reassignedById = {};
+            Object.values(state.regions.byId).forEach(region => {
+                if (region.categoryId === categoryId) reassignedById[region.id] = model.DEFAULT_CATEGORY_ID;
+            });
+            // Catalog removal and reassignment share one history checkpoint.
+            dispatch(actions.regionCategoryCatalogSet({ byId, allIds: catalog.allIds.filter(id => id !== categoryId) }, reassignedById));
+        };
     }
 
     // When a region fills less than this share of the view, centring also zooms
@@ -956,6 +1055,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         toggleRegionCreationIntent,
         copyRegionToAllPositionsIntent,
         copyRegionToPositionIntent,
+        setRegionMeterStateIntent,
+        cycleRegionMeterStateIntent,
+        setRegionCategoryIntent,
+        createCategoryIntent,
+        updateCategoryIntent,
+        deleteCategoryIntent,
         centerViewportOnSelectedRegionIntent,
         centerViewportOnRegionIntent,
         stepRegionSelectionIntent,
@@ -968,6 +1073,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.features.regions.__test__ = app.features.regions.__test__ || {};
     app.features.regions.__test__.collectPositionTimestampStats = collectPositionTimestampStats;
     app.features.regions.__test__._resetTimestampStatsCache = _resetTimestampStatsCache;
+    app.features.regions.__test__.buildDailyIntervals = buildDailyIntervals;
 })(window.NoiseSurveyApp);
 
 

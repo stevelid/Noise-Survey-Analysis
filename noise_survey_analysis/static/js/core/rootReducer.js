@@ -115,7 +115,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 interaction: providedState.interaction ? { ...baseState.interaction, ...providedState.interaction } : baseState.interaction,
                 markers: providedState.markers ? { ...baseState.markers, ...providedState.markers } : baseState.markers,
                 classifications: normalizeRehydratedClassifications(baseState.classifications, providedState.classifications),
-                regions: providedState.regions ? { ...baseState.regions, ...providedState.regions } : baseState.regions,
+                regions: providedState.regions && app.workspaceMigration
+                    ? { ...baseState.regions, ...app.workspaceMigration.normalizeRegions(
+                        providedState.regions,
+                        providedState.view?.availablePositions || previousState.view?.availablePositions || []
+                    ).regions }
+                    : baseState.regions,
                 audio: providedState.audio ? { ...baseState.audio, ...providedState.audio } : baseState.audio,
                 system: { ...baseState.system, ...(providedState.system || {}), initialized: true },
             };

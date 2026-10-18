@@ -8,6 +8,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
 
+    const METER_PRESENT = 'present';
+    const METER_ABSENT = 'absent';
+    const METER_UNCHECKED = 'unchecked';
+
     const EMPTY_STATE = {
         byId: {},
         allIds: [],
@@ -40,7 +44,33 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!positionId) {
             return [];
         }
-        return selectAllRegions(state).filter(region => region.positionId === positionId);
+        return selectAllRegions(state).filter(region => selectRegionMeterState(state, region, positionId) === METER_PRESENT);
+    }
+
+    function selectRegionMeterState(state, regionOrId, positionId) {
+        const region = typeof regionOrId === 'object' ? regionOrId : selectRegionById(state, regionOrId);
+        if (!region) return METER_UNCHECKED;
+        if (region.positionId === positionId) return METER_PRESENT;
+        return region.meterStates?.[positionId] === METER_PRESENT || region.meterStates?.[positionId] === METER_ABSENT
+            ? region.meterStates[positionId] : METER_UNCHECKED;
+    }
+
+    function selectCategoryCatalog(state) {
+        return selectRegionsState(state).categories || app.annotationModel?.normalizeCatalog() || { byId: {}, allIds: [] };
+    }
+
+    function selectRegionColor(state, region) {
+        return app.annotationModel?.effectiveColor(region, selectCategoryCatalog(state)) || region?.color || '#1e88e5';
+    }
+
+    function selectFilteredRegions(state, filters = selectRegionsState(state).filters || {}) {
+        const positions = state?.view?.availablePositions || [];
+        return selectAllRegions(state).filter(region => {
+            if (filters.categoryId && region.categoryId !== filters.categoryId) return false;
+            if (filters.presentAt && selectRegionMeterState(state, region, filters.presentAt) !== METER_PRESENT) return false;
+            if (filters.onlyOneMeter && positions.filter(id => selectRegionMeterState(state, region, id) === METER_PRESENT).length !== 1) return false;
+            return !filters.hasUnchecked || positions.some(id => selectRegionMeterState(state, region, id) === METER_UNCHECKED);
+        });
     }
 
     function getRegionAreas(region) {
@@ -64,7 +94,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const { byId, allIds } = regionsState;
         for (let i = allIds.length - 1; i >= 0; i--) {
             const region = byId[allIds[i]];
-            if (!region || region.positionId !== positionId) continue;
+            if (!region || selectRegionMeterState(state, region, positionId) !== METER_PRESENT) continue;
             const areas = getRegionAreas(region);
             for (let j = 0; j < areas.length; j++) {
                 const area = areas[j];
@@ -88,6 +118,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         selectAllRegions,
         selectSelectedRegion,
         selectRegionsByPosition,
+        selectRegionMeterState,
+        selectCategoryCatalog,
+        selectRegionColor,
+        selectFilteredRegions,
         selectRegionByTimestamp,
         selectAddAreaTargetId
     };

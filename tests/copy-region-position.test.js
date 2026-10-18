@@ -29,14 +29,15 @@ describe('region copy position intents', () => {
         }]));
     });
 
-    it('copies the selected region to only the requested available position', () => {
+    it('marks the selected sound present only at the requested available meter', () => {
         store.dispatch(thunks.copyRegionToPositionIntent('P6'));
 
         const state = store.getState();
-        expect(state.regions.allIds).toHaveLength(2);
+        expect(state.regions.allIds).toHaveLength(1);
         expect(state.regions.byId[1].positionId).toBe('P1');
-        expect(state.regions.byId[2]).toMatchObject({
-            positionId: 'P6',
+        expect(state.regions.byId[1]).toMatchObject({
+            positionId: 'P1',
+            meterStates: { P1: 'present', P2: 'unchecked', P6: 'present' },
             areas: [
                 { start: 1000, end: 2000 },
                 { start: 3000, end: 4500 }
@@ -53,13 +54,11 @@ describe('region copy position intents', () => {
         expect(store.getState().regions.allIds).toEqual([1]);
     });
 
-    it('retains the existing copy-to-all behaviour', () => {
+    it('marks the same region present at all meters without creating copies', () => {
         store.dispatch(thunks.copyRegionToAllPositionsIntent());
 
         const state = store.getState();
-        const copiedPositions = state.regions.allIds
-            .map(id => state.regions.byId[id].positionId)
-            .filter(positionId => positionId !== 'P1');
-        expect(copiedPositions).toEqual(['P2', 'P6']);
+        expect(state.regions.allIds).toEqual([1]);
+        expect(state.regions.byId[1].meterStates).toEqual({ P1: 'present', P2: 'present', P6: 'present' });
     });
 });

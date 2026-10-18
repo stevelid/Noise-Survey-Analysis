@@ -47,6 +47,8 @@ async function loadSessionManager() {
         }
     };
 
+    await import('../noise_survey_analysis/static/js/features/regions/annotationModel.js');
+    await import('../noise_survey_analysis/static/js/services/session/workspaceMigration.js');
     await import('../noise_survey_analysis/static/js/services/session/sessionManager.js');
     app = window.NoiseSurveyApp;
     session = app.session;
@@ -173,7 +175,7 @@ describe('NoiseSurveyApp.session extra flows', () => {
         expect(anchors[0].download).toMatch(/^workspace-.*\.json$/);
         const workspacePayload = JSON.parse(await blobs[0].text());
         expect(workspacePayload).toMatchObject({
-            version: 1,
+            version: 2,
             sourceConfigs: [{ position_name: 'P1', file_path: 'a.csv' }],
             appState: { view: { selectedParameter: 'LAeq' } }
         });
@@ -220,10 +222,12 @@ describe('NoiseSurveyApp.session extra flows', () => {
         expect(console.warn).toHaveBeenCalledWith(
             '[Session] Saved workspace references different source files than the ones currently loaded. Reload the matching data sources to ensure results are accurate before continuing.'
         );
-        expect(app.actions.rehydrateState).toHaveBeenCalledWith(restoredState);
+        const migratedState = app.actions.rehydrateState.mock.calls[0][0];
+        expect(migratedState.regions.byId[4].meterStates).toEqual({ P1: 'present' });
+        expect(migratedState.regions.byId[4].categoryId).toBe('other');
         expect(app.store.dispatch).toHaveBeenCalledWith({
             type: 'rehydrate',
-            payload: restoredState
+            payload: migratedState
         });
         expect(app.regions.invalidateMetricsCache).toHaveBeenCalledTimes(1);
         expect(app.features.regions.utils.getRegionMetrics).toHaveBeenCalledWith(
@@ -309,10 +313,12 @@ describe('NoiseSurveyApp.session extra flows', () => {
             }
         });
 
-        expect(app.actions.rehydrateState).toHaveBeenCalledWith(restoredState);
+        const migratedState = app.actions.rehydrateState.mock.calls[0][0];
+        expect(migratedState.markers).toEqual(restoredState.markers);
+        expect(migratedState.regions.allIds).toEqual([]);
         expect(app.store.dispatch).toHaveBeenCalledWith({
             type: 'rehydrate',
-            payload: restoredState
+            payload: migratedState
         });
         expect(console.info).toHaveBeenCalledWith('[Session] Workspace restored successfully.');
     });
@@ -352,14 +358,15 @@ describe('NoiseSurveyApp.session extra flows', () => {
         expect(app.actions.markersReplace).toHaveBeenCalledWith([
             { id: 1, timestamp: 5000, note: 'JSON marker', color: '#123456', positionId: 'P1' }
         ]);
-        expect(app.actions.regionsAdded).toHaveBeenCalledWith([importedRegion]);
+        const normalizedImported = app.annotationModel.normalizeRegion(importedRegion, []);
+        expect(app.actions.regionsAdded).toHaveBeenCalledWith([normalizedImported]);
         expect(app.store.dispatch).toHaveBeenCalledWith({
             type: 'markers/replace',
             payload: [{ id: 1, timestamp: 5000, note: 'JSON marker', color: '#123456', positionId: 'P1' }]
         });
         expect(app.store.dispatch).toHaveBeenCalledWith({
             type: 'regions/added',
-            payload: [importedRegion]
+            payload: [normalizedImported]
         });
         expect(app.features.regions.utils.invalidateMetricsCache).toHaveBeenCalledTimes(1);
         expect(app.features.regions.utils.getRegionMetrics).toHaveBeenCalledWith(
@@ -398,7 +405,9 @@ describe('NoiseSurveyApp.session extra flows', () => {
                 end: Date.UTC(2024, 2, 10, 9, 30, 0),
                 areas: [{ start: Date.UTC(2024, 2, 10, 9, 0, 0), end: Date.UTC(2024, 2, 10, 9, 30, 0) }],
                 note: 'CSV region',
-                color: '#fedcba'
+                color: '#fedcba',
+                categoryId: 'other',
+                meterStates: { P2: 'present' }
             }
         ]);
         expect(app.regions.invalidateMetricsCache).toHaveBeenCalledTimes(1);

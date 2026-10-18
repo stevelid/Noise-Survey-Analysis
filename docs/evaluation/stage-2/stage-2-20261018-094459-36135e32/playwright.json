@@ -1,0 +1,526 @@
+{
+  "config": {
+    "configFile": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\playwright.config.ts",
+    "rootDir": "C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\global-setup.ts",
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 8
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/evidence/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 8
+        },
+        "id": "",
+        "name": "",
+        "testDir": "C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.0",
+    "workers": 10,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "app.spec.ts",
+      "file": "app.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "parameter selection updates the application state",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 5322,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('selected-parameter')\nExpected string: \u001b[32m\"L\u001b[7mC\u001b[27meq\"\u001b[39m\nReceived string: \u001b[31m\"L\u001b[7mZ\u001b[27meq\"\u001b[39m\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('selected-parameter')\u001b[22m\n\u001b[2m    9 × locator resolved to <span data-testid=\"selected-parameter\">LZeq</span>\u001b[22m\n\u001b[2m      - unexpected value \"LZeq\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('selected-parameter')\nExpected string: \u001b[32m\"L\u001b[7mC\u001b[27meq\"\u001b[39m\nReceived string: \u001b[31m\"L\u001b[7mZ\u001b[27meq\"\u001b[39m\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('selected-parameter')\u001b[22m\n\u001b[2m    9 × locator resolved to <span data-testid=\"selected-parameter\">LZeq</span>\u001b[22m\n\u001b[2m      - unexpected value \"LZeq\"\u001b[22m\n\n    at C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts:66:35",
+                    "location": {
+                      "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                      "column": 35,
+                      "line": 66
+                    },
+                    "snippet": "  64 |   await select.selectOption('LCeq');\n  65 |\n> 66 |   await expect(selectedParameter).toHaveText('LCeq');\n     |                                   ^\n  67 |   await expect(page.getByTestId('view-mode')).toHaveText('overview');\n  68 | });\n  69 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                        "column": 35,
+                        "line": 66
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('selected-parameter')\nExpected string: \u001b[32m\"L\u001b[7mC\u001b[27meq\"\u001b[39m\nReceived string: \u001b[31m\"L\u001b[7mZ\u001b[27meq\"\u001b[39m\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('selected-parameter')\u001b[22m\n\u001b[2m    9 × locator resolved to <span data-testid=\"selected-parameter\">LZeq</span>\u001b[22m\n\u001b[2m      - unexpected value \"LZeq\"\u001b[22m\n\n\n  64 |   await select.selectOption('LCeq');\n  65 |\n> 66 |   await expect(selectedParameter).toHaveText('LCeq');\n     |                                   ^\n  67 |   await expect(page.getByTestId('view-mode')).toHaveText('overview');\n  68 | });\n  69 |\n    at C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts:66:35"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-18T08:45:47.518Z] [worker:0] [project:] [test:app.spec.ts > parameter selection updates the application state] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-18T08:45:47.158Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\evidence\\playwright-artifacts\\app-parameter-selection-updates-the-application-state\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                    "column": 35,
+                    "line": 66
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-6a58597128d948c607de",
+          "file": "app.spec.ts",
+          "line": 59,
+          "column": 5
+        },
+        {
+          "title": "view toggle switches between log and overview modes",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 5282,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('view-toggle')\nExpected string: \u001b[32m\"Log View \u001b[7mDis\u001b[27mabled\"\u001b[39m\nReceived string: \u001b[31m\"Log View \u001b[7mEn\u001b[27mabled\"\u001b[39m\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('view-toggle')\u001b[22m\n\u001b[2m    9 × locator resolved to <button type=\"button\" data-current-view=\"log\" data-testid=\"view-toggle\">Log View Enabled</button>\u001b[22m\n\u001b[2m      - unexpected value \"Log View Enabled\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('view-toggle')\nExpected string: \u001b[32m\"Log View \u001b[7mDis\u001b[27mabled\"\u001b[39m\nReceived string: \u001b[31m\"Log View \u001b[7mEn\u001b[27mabled\"\u001b[39m\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('view-toggle')\u001b[22m\n\u001b[2m    9 × locator resolved to <button type=\"button\" data-current-view=\"log\" data-testid=\"view-toggle\">Log View Enabled</button>\u001b[22m\n\u001b[2m      - unexpected value \"Log View Enabled\"\u001b[22m\n\n    at C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts:74:24",
+                    "location": {
+                      "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                      "column": 24,
+                      "line": 74
+                    },
+                    "snippet": "  72 |   const viewMode = page.getByTestId('view-mode');\n  73 |\n> 74 |   await expect(toggle).toHaveText('Log View Disabled');\n     |                        ^\n  75 |   await expect(viewMode).toHaveText('overview');\n  76 |\n  77 |   await toggle.click();"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                        "column": 24,
+                        "line": 74
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('view-toggle')\nExpected string: \u001b[32m\"Log View \u001b[7mDis\u001b[27mabled\"\u001b[39m\nReceived string: \u001b[31m\"Log View \u001b[7mEn\u001b[27mabled\"\u001b[39m\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('view-toggle')\u001b[22m\n\u001b[2m    9 × locator resolved to <button type=\"button\" data-current-view=\"log\" data-testid=\"view-toggle\">Log View Enabled</button>\u001b[22m\n\u001b[2m      - unexpected value \"Log View Enabled\"\u001b[22m\n\n\n  72 |   const viewMode = page.getByTestId('view-mode');\n  73 |\n> 74 |   await expect(toggle).toHaveText('Log View Disabled');\n     |                        ^\n  75 |   await expect(viewMode).toHaveText('overview');\n  76 |\n  77 |   await toggle.click();\n    at C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts:74:24"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-18T08:45:47.538Z] [worker:1] [project:] [test:app.spec.ts > view toggle switches between log and overview modes] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-18T08:45:47.165Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\evidence\\playwright-artifacts\\app-view-toggle-switches-between-log-and-overview-modes\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                    "column": 24,
+                    "line": 74
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-7d7eb793fd289ec81d6d",
+          "file": "app.spec.ts",
+          "line": 70,
+          "column": 5
+        },
+        {
+          "title": "users can create, select, and remove regions from the chart",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 438,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-18T08:45:47.594Z] [worker:2] [project:] [test:app.spec.ts > users can create, select, and remove regions from the chart] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-18T08:45:47.176Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-49938201ca18018abea1",
+          "file": "app.spec.ts",
+          "line": 86,
+          "column": 5
+        },
+        {
+          "title": "users can switch between regions and markers tabs",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 3,
+                  "status": "passed",
+                  "duration": 371,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-18T08:45:47.588Z] [worker:3] [project:] [test:app.spec.ts > users can switch between regions and markers tabs] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-18T08:45:47.173Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-18e938a987da75e715eb",
+          "file": "app.spec.ts",
+          "line": 121,
+          "column": 5
+        },
+        {
+          "title": "user can create a marker with the keyboard and view details",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 4,
+                  "status": "passed",
+                  "duration": 515,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-18T08:45:47.661Z] [worker:4] [project:] [test:app.spec.ts > user can create a marker with the keyboard and view details] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-18T08:45:47.167Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-8943b4f2d3c3a2763978",
+          "file": "app.spec.ts",
+          "line": 132,
+          "column": 5
+        },
+        {
+          "title": "user can create a region using the R key workflow",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 5,
+                  "status": "failed",
+                  "duration": 5385,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('region-count')\nExpected string: \u001b[32m\"1\"\u001b[39m\nReceived string: \u001b[31m\"0\"\u001b[39m\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('region-count')\u001b[22m\n\u001b[2m    9 × locator resolved to <span data-testid=\"region-count\">0</span>\u001b[22m\n\u001b[2m      - unexpected value \"0\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('region-count')\nExpected string: \u001b[32m\"1\"\u001b[39m\nReceived string: \u001b[31m\"0\"\u001b[39m\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('region-count')\u001b[22m\n\u001b[2m    9 × locator resolved to <span data-testid=\"region-count\">0</span>\u001b[22m\n\u001b[2m      - unexpected value \"0\"\u001b[22m\n\n    at C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts:173:29",
+                    "location": {
+                      "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                      "column": 29,
+                      "line": 173
+                    },
+                    "snippet": "  171 |   await page.keyboard.press('r');\n  172 |\n> 173 |   await expect(regionCount).toHaveText('1');\n      |                             ^\n  174 | });\n  175 |\n  176 | test('auto day & night regions button creates regions', async ({ page }) => {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                        "column": 29,
+                        "line": 173
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('region-count')\nExpected string: \u001b[32m\"1\"\u001b[39m\nReceived string: \u001b[31m\"0\"\u001b[39m\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('region-count')\u001b[22m\n\u001b[2m    9 × locator resolved to <span data-testid=\"region-count\">0</span>\u001b[22m\n\u001b[2m      - unexpected value \"0\"\u001b[22m\n\n\n  171 |   await page.keyboard.press('r');\n  172 |\n> 173 |   await expect(regionCount).toHaveText('1');\n      |                             ^\n  174 | });\n  175 |\n  176 | test('auto day & night regions button creates regions', async ({ page }) => {\n    at C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts:173:29"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-18T08:45:47.552Z] [worker:5] [project:] [test:app.spec.ts > user can create a region using the R key workflow] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-18T08:45:47.196Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\evidence\\playwright-artifacts\\app-user-can-create-a-region-using-the-R-key-workflow\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                    "column": 29,
+                    "line": 173
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-ceccfde07f033e9dd0b2",
+          "file": "app.spec.ts",
+          "line": 156,
+          "column": 5
+        },
+        {
+          "title": "auto day & night regions button creates regions",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 6,
+                  "status": "failed",
+                  "duration": 850,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m\n    at C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts:202:34",
+                    "location": {
+                      "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                      "column": 34,
+                      "line": 202
+                    },
+                    "snippet": "  200 |   // Check if regions were created (should be at least 2: one daytime, one nighttime for P1)\n  201 |   const count = await regionCount.textContent();\n> 202 |   expect(parseInt(count || '0')).toBeGreaterThan(0);\n      |                                  ^\n  203 | });\n  204 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                        "column": 34,
+                        "line": 202
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m\n\n  200 |   // Check if regions were created (should be at least 2: one daytime, one nighttime for P1)\n  201 |   const count = await regionCount.textContent();\n> 202 |   expect(parseInt(count || '0')).toBeGreaterThan(0);\n      |                                  ^\n  203 | });\n  204 |\n    at C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts:202:34"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-18T08:45:47.583Z] [worker:6] [project:] [test:app.spec.ts > auto day & night regions button creates regions] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-18T08:45:47.193Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\evidence\\playwright-artifacts\\app-auto-day-night-regions-button-creates-regions\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\app.spec.ts",
+                    "column": 34,
+                    "line": 202
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-d73f7486f20dad43a68f",
+          "file": "app.spec.ts",
+          "line": 176,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "static-dashboard.spec.ts",
+      "file": "static-dashboard.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "static dashboard region panel logs",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 7,
+                  "status": "failed",
+                  "duration": 1272,
+                  "error": {
+                    "message": "Error: page.goto: net::ERR_FILE_NOT_FOUND at file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/6030_survey_dashboard.html\nCall log:\n\u001b[2m  - navigating to \"file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/6030_survey_dashboard.html\", waiting until \"load\"\u001b[22m\n",
+                    "stack": "Error: page.goto: net::ERR_FILE_NOT_FOUND at file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/6030_survey_dashboard.html\nCall log:\n\u001b[2m  - navigating to \"file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/6030_survey_dashboard.html\", waiting until \"load\"\u001b[22m\n\n    at C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\static-dashboard.spec.ts:17:14",
+                    "location": {
+                      "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\static-dashboard.spec.ts",
+                      "column": 14,
+                      "line": 17
+                    },
+                    "snippet": "  15 |   });\n  16 |\n> 17 |   await page.goto(dashboardUrl);\n     |              ^\n  18 |   await page.waitForLoadState('load');\n  19 |   await page.waitForTimeout(2000);\n  20 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\static-dashboard.spec.ts",
+                        "column": 14,
+                        "line": 17
+                      },
+                      "message": "Error: page.goto: net::ERR_FILE_NOT_FOUND at file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/6030_survey_dashboard.html\nCall log:\n\u001b[2m  - navigating to \"file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-2-20261018-094459-36135e32/repo/6030_survey_dashboard.html\", waiting until \"load\"\u001b[22m\n\n\n  15 |   });\n  16 |\n> 17 |   await page.goto(dashboardUrl);\n     |              ^\n  18 |   await page.waitForLoadState('load');\n  19 |   await page.waitForTimeout(2000);\n  20 |\n    at C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\static-dashboard.spec.ts:17:14"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-18T08:45:47.182Z",
+                  "annotations": [],
+                  "attachments": [],
+                  "errorLocation": {
+                    "file": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-2-20261018-094459-36135e32\\repo\\tests\\e2e\\static-dashboard.spec.ts",
+                    "column": 14,
+                    "line": 17
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c65d92ac3cc15de89198-38850ec8e7245dcbfd36",
+          "file": "static-dashboard.spec.ts",
+          "line": 7,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-18T08:45:46.502Z",
+    "duration": 6310.031,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 5,
+    "flaky": 0
+  }
+}

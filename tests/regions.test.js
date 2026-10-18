@@ -40,7 +40,9 @@ describe('Region Management (Multi-Area)', () => {
             expect(region.areas).toEqual([{ start: 100, end: 200 }]);
             expect(region.start).toBe(100);
             expect(region.end).toBe(200);
-            expect(region.color).toBe('#1e88e5');
+            expect(region.color).toBeNull();
+            expect(region.categoryId).toBe('other');
+            expect(region.meterStates).toEqual({ P1: 'present' });
         });
 
         it('should handle REGION_UPDATED with new areas', () => {
@@ -135,9 +137,14 @@ describe('Region Management (Multi-Area)', () => {
             thunk(dispatch, getState);
 
             expect(dispatch).toHaveBeenCalledWith(
-                actions.regionUpdate(1, { areas: [{ start: 100, end: 200 }, { start: 300, end: 400 }] })
+                actions.regionMerged(1, 2, {
+                    ...getState().regions.byId[1],
+                    areas: [{ start: 100, end: 200 }, { start: 300, end: 400 }],
+                    meterStates: { P1: 'present' },
+                    note: ''
+                })
             );
-            expect(dispatch).toHaveBeenCalledWith(actions.regionRemove(2));
+            expect(dispatch).not.toHaveBeenCalledWith(actions.regionRemove(2));
         });
     });
 

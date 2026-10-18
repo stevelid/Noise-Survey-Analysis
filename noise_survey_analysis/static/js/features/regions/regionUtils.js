@@ -9,7 +9,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
 
     // Module-level cache for computed metrics (outside Redux state)
-    const _metricsCache = new Map(); // key: `${regionId}_${parameter}_${offsetMs}`, value: metrics object
+    const _metricsCache = new Map();
+    const sourceIdentities = new WeakMap();
+    let nextSourceIdentity = 1;
+    function sourceIdentity(value) {
+        if (!value || typeof value !== 'object') return 0;
+        if (!sourceIdentities.has(value)) sourceIdentities.set(value, nextSourceIdentity++);
+        return sourceIdentities.get(value);
+    }
 
     function getChartOffsetMs(region, state) {
         if (!region || !state?.view?.positionChartOffsets) {
@@ -272,6 +279,8 @@ function calcLAeq(values) {
     }
 
     function computeRegionMetrics(region, state, dataCache, models, options = {}) {
+        const targetMeter = options.positionId || options.meterId || region.positionId;
+        if (targetMeter !== region.positionId) region = { ...region, positionId: targetMeter };
         const displayAreas = getRegionAreas(region);
         const durationMs = sumAreaDurations(displayAreas);
         const offsetMs = getChartOffsetMs(region, state);
@@ -375,14 +384,21 @@ function calcLAeq(values) {
         }
         const regionId = region.id ?? 'unknown';
         const parameter = state?.view?.selectedParameter ?? '';
-        const offsetMs = getChartOffsetMs(region, state);
-        const cacheKey = `${regionId}_${parameter}_${offsetMs}`;
+        const meter = options.positionId || options.meterId || region.positionId;
+        // A manual recalculation follows the displayed series. Explicit export
+        // requests can still ask for auto/best data independently of the view.
+        const resolution = options.resolution
+            || dataCache?.activeLineData?.[meter]?.dataViewType || 'auto';
+        const offsetMs = getChartOffsetMs({ ...region, positionId: meter }, state);
+        const sources = models?.timeSeriesSources?.[meter];
+        const revision = `${sourceIdentity(sources?.log?.data)}:${sourceIdentity(sources?.overview?.data)}`;
+        const cacheKey = `${regionId}_${JSON.stringify([meter, parameter, offsetMs, resolution, getRegionAreas(region), revision])}`;
 
         if (!options?.force && _metricsCache.has(cacheKey)) {
             return _metricsCache.get(cacheKey);
         }
 
-        const metrics = computeRegionMetrics(region, state, dataCache, models, options);
+        const metrics = computeRegionMetrics(region, state, dataCache, models, { ...options, resolution });
         _metricsCache.set(cacheKey, metrics);
         return metrics;
     }
@@ -421,7 +437,7 @@ function calcLAeq(values) {
         const positionKey = String(positionId);
         regionsState.allIds.forEach(regionId => {
             const region = regionsState.byId[regionId];
-            if (region && String(region.positionId) === positionKey) {
+            if (region && (String(region.positionId) === positionKey || Object.hasOwn(region.meterStates || {}, positionKey))) {
                 invalidateRegionMetrics(regionId);
             }
         });
@@ -478,7 +494,9 @@ function calcLAeq(values) {
                     positionId,
                     areas,
                     note: typeof item?.note === 'string' ? item.note : '',
-                    color: typeof item?.color === 'string' ? item.color : undefined
+                    color: typeof item?.color === 'string' ? item.color : undefined,
+                    ...(item?.categoryId ? { categoryId: item.categoryId } : {}),
+                    ...(item?.meterStates ? { meterStates: item.meterStates } : {})
                 };
             }).filter(Boolean);
         } catch (error) {

@@ -1031,3 +1031,13 @@ _____________________________________________
 - `AGENTS.md` - Contains instructions for LLMs to maintain this checklist
 - `tests/e2e/` - Automated E2E tests (limited coverage)
 - `tests/*.test.js` - Unit and integration tests for JS logic
+# Annotation model v2 checkpoints
+
+- [ ] Create a region: origin is present, every other meter is unchecked.
+- [ ] Comparison Make Region creates one object with all included meters present.
+- [ ] Copy-to-meter temporarily marks presence without creating another list row.
+- [ ] Merge same-origin regions: unchecked defers; present/absent conflicts become unchecked and are named for re-check. One undo restores both originals.
+- [ ] Split multi-area regions: each output preserves meter states and category; one undo restores the original.
+- [ ] Import a v1 workspace/legacy CSV containing matching cross-meter copies: consolidation count appears and originals on disk remain unchanged.
+- [ ] Save/reload v2: category catalog, overrides and states survive. An unsupported future version leaves current annotations intact.
+

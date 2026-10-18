@@ -87,6 +87,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REGIONS_REPLACED: 'regions/regionsReplaced',
         REGION_VISIBILITY_SET: 'regions/visibilitySet',
         REGION_METRICS_RECALCULATED: 'regions/metricsRecalculated',
+        REGION_METER_STATES_SET: 'regions/meterStatesSet',
+        REGION_CATEGORY_SET: 'regions/categorySet',
+        REGION_CATEGORY_CATALOG_SET: 'regions/categoryCatalogSet',
+        REGION_MERGED: 'regions/regionMerged',
+        REGION_SPLIT: 'regions/regionSplit',
 
         REGION_CREATION_STARTED: 'interaction/regionCreationStarted',
         REGION_CREATION_CANCELLED: 'interaction/regionCreationCancelled',
@@ -304,9 +309,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             payload: { expanded: Boolean(expanded) }
         }),
 
-        regionAdd: (positionId, start, end) => ({
+        regionAdd: (positionId, start, end, annotation = {}) => ({
             type: actionTypes.REGION_ADDED,
-            payload: { positionId, start, end }
+            payload: { ...annotation, positionId, start, end }
         }),
 
         regionsAdded: (regions) => ({
@@ -330,6 +335,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         regionSetColor: (id, color) => ({ type: actionTypes.REGION_COLOR_SET, payload: { id, color } }),
 
         regionReplaceAll: (regions) => ({ type: actionTypes.REGIONS_REPLACED, payload: { regions } }),
+
+        regionMeterStatesSet: (id, meterStates) => ({
+            type: actionTypes.REGION_METER_STATES_SET, payload: { id, meterStates }
+        }),
+
+        regionCategorySet: (id, categoryId) => ({
+            type: actionTypes.REGION_CATEGORY_SET, payload: { id, categoryId }
+        }),
+
+        regionCategoryCatalogSet: (categories, reassignedById = {}) => ({
+            type: actionTypes.REGION_CATEGORY_CATALOG_SET, payload: { categories, reassignedById }
+        }),
+
+        regionMerged: (targetId, sourceId, region) => ({
+            type: actionTypes.REGION_MERGED, payload: { targetId, sourceId, region }
+        }),
+
+        regionSplit: (id, regions) => ({
+            type: actionTypes.REGION_SPLIT, payload: { id, regions }
+        }),
 
         regionVisibilitySet: (config) => ({
             type: actionTypes.REGION_VISIBILITY_SET,

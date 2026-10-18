@@ -651,6 +651,8 @@ class DashBuilder:
         js_files_order = [
                 # 1. State Management Core (in dependency order)
                 'core/actions.js',
+                'features/regions/annotationModel.js',
+                'services/session/workspaceMigration.js',
                 'features/view/viewResolution.js',
                 'features/view/viewReducer.js',
                 'features/view/viewSelectors.js',

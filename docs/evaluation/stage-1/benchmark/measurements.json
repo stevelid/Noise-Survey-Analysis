@@ -1,0 +1,127 @@
+{
+  "local_copy_path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-1-fixed-20261018-093612-074bde02\\repo",
+  "source_manifest": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-1-fixed-20261018-093612-074bde02\\evidence\\source-manifest.json",
+  "fixture_path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-benchmark-20261018-093212-c7eef2bd\\benchmark-output\\survey",
+  "fixture": {
+    "meters": 4,
+    "hours": 72,
+    "sample_interval_seconds": 1,
+    "samples_per_meter": 259200,
+    "third_octave_bands": 31,
+    "regions": 300,
+    "seed": 20261018
+  },
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]",
+  "limitations": [
+    "Server timing remains unmeasured; comparison uses the same static-only baseline harness."
+  ],
+  "modes": {
+    "static": {
+      "url": "file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-1-fixed-20261018-093612-074bde02/benchmark-comparison/benchmark.html",
+      "viewport": [
+        1600,
+        1100
+      ],
+      "startup_definition": "navigation through initialized application and two animation frames; dataset pre-generated",
+      "startup": {
+        "runs": 3,
+        "median_ms": 15000.05869998131,
+        "p95_ms": 15791.3516599976,
+        "values_ms": [
+          15879.27309999941,
+          14514.00799996918,
+          15000.05869998131
+        ],
+        "first_navigation_ms": 15879.27309999941,
+        "repeat_navigation_median_ms": 14757.033349975245
+      },
+      "regions_loaded": 300,
+      "render": {
+        "runs": 20,
+        "median_ms": 60.599999994039536,
+        "p95_ms": 64.55,
+        "values_ms": [
+          65.5,
+          62.69999998807907,
+          61.90000003576279,
+          63,
+          64.5,
+          59.69999998807907,
+          60.90000003576279,
+          61.10000002384186,
+          63,
+          60.5,
+          61.10000002384186,
+          59,
+          60.69999998807907,
+          59.200000047683716,
+          58.80000001192093,
+          58,
+          58.39999997615814,
+          58.39999997615814,
+          58.299999952316284,
+          57.89999997615814
+        ]
+      },
+      "export": {
+        "runs": 20,
+        "median_ms": 7.9000000059604645,
+        "p95_ms": 9.06499997675419,
+        "values_ms": [
+          12.199999988079071,
+          8.899999976158142,
+          8.100000023841858,
+          7.799999952316284,
+          7.800000011920929,
+          8.099999964237213,
+          8.199999988079071,
+          8,
+          7.700000047683716,
+          7.800000011920929,
+          8.300000011920929,
+          7.900000035762787,
+          7.699999988079071,
+          7.899999976158142,
+          7.799999952316284,
+          7.799999952316284,
+          7.900000035762787,
+          8.099999964237213,
+          7.600000023841858,
+          7.599999964237213
+        ]
+      },
+      "export_bytes": 182282,
+      "side_panel_bounds": {
+        "x": 1644,
+        "y": 222,
+        "width": 352,
+        "height": 2082.703125
+      },
+      "console_page_errors": []
+    }
+  },
+  "static_build_ms": 3079.170300043188,
+  "static_serialize_ms": 25996.463799965568,
+  "static_html_bytes": 262641013,
+  "startup_cache_conditions": "Same as baseline: first navigation fresh Chromium context; two repeats same context. Python dataset loading excluded; builder/serialization separate.",
+  "bokeh": "3.4.1",
+  "baseline_comparison": {
+    "render": {
+      "baseline_median_ms": 57.25,
+      "change_percent": 5.851528373868176,
+      "stage1_median_ms": 60.599999994039536
+    },
+    "export": {
+      "baseline_median_ms": 7.450000017881393,
+      "change_percent": 6.040268281865591,
+      "stage1_median_ms": 7.9000000059604645
+    },
+    "startup": {
+      "baseline_median_ms": 15061.763899982907,
+      "change_percent": -0.40968109984560463,
+      "stage1_median_ms": 15000.05869998131
+    }
+  },
+  "screenshot_note": "Timed screenshot shows selected first region; baseline panel screenshot was recaptured with no selection. Additional regions-panel-unselected.png clears selection explicitly and matches baseline panel bounds exactly: x1644 y222 width352 height858.234375. Timings were not changed by screenshot-only captures.",
+  "copied_source_unchanged": true
+}
