@@ -1040,4 +1040,9 @@ _____________________________________________
 - [ ] Split multi-area regions: each output preserves meter states and category; one undo restores the original.
 - [ ] Import a v1 workspace/legacy CSV containing matching cross-meter copies: consolidation count appears and originals on disk remain unchanged.
 - [ ] Save/reload v2: category catalog, overrides and states survive. An unsupported future version leaves current annotations intact.
+- [ ] Unchecked bands default to selected-only; Off hides them and All shows every ghost. Present/absent bands remain visible.
+- [ ] Plain click on the selected region at another meter cycles unchecked/present/absent without moving the seek cursor or audio.
+- [ ] Keys 1–9 address meter display order; typing in notes/categories, modified keys and key-repeat never change meter states.
+- [ ] With a nonzero chart offset, bands stay on the shared displayed times and metrics query each meter's own source times once.
+- [ ] Undoing an annotation edit preserves the current ghost visibility preference.
 

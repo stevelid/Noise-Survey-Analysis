@@ -1,0 +1,131 @@
+{
+  "stage": "stage-3",
+  "run": "stage-3-20261018-145234-6969225c",
+  "startedUtc": "2026-10-18T13:52:37.1954218Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-3-20261018-145234-6969225c\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-3-20261018-145234-6969225c\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-3\\stage-3-20261018-145234-6969225c",
+  "head": "73d80ab408eea70864668b9d30953a97e8bed464",
+  "sourceStatus": [
+    " M EVALUATION.md",
+    " M ROLLBACK.md",
+    " M noise_survey_analysis/static/js/chart-classes.js",
+    " M noise_survey_analysis/static/js/core/actions.js",
+    " M noise_survey_analysis/static/js/core/history.js",
+    " M noise_survey_analysis/static/js/features/interaction/interactionThunks.js",
+    " M noise_survey_analysis/static/js/features/regions/regionReducer.js",
+    " M noise_survey_analysis/static/js/features/regions/regionThunks.js",
+    " M noise_survey_analysis/static/js/services/eventHandlers.js",
+    " M noise_survey_analysis/static/js/services/renderers.js",
+    " M noise_survey_analysis/ui/component_parts/regions_panel.py",
+    " M noise_survey_analysis/visualization/dashBuilder.py",
+    " M scripts/run_checkpoint_tests.ps1",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    "?? docs/evaluation/stage-0-benchmark/",
+    "?? docs/evaluation/stage-5-engine-check/",
+    "?? noise_survey_analysis/core/annotation_metrics.py",
+    "?? noise_survey_analysis/core/annotation_windows.py",
+    "?? noise_survey_analysis/export/annotations.py",
+    "?? noise_survey_analysis/static/js/features/annotations/",
+    "?? noise_survey_analysis/static/js/features/regions/annotationMetrics.js",
+    "?? noise_survey_analysis/static/js/services/panels/",
+    "?? tests/region-states-drawing.test.js",
+    "?? tests/test_annotation_export.py"
+  ],
+  "sourceFileCount": 254,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 4.284
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-3-20261018-145234-6969225c\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 5.179
+    },
+    "pytest": {
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "pytest",
+        "tests/",
+        "--junitxml=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-3-20261018-145234-6969225c\\evidence\\pytest.xml"
+      ],
+      "exitCode": 1,
+      "durationSeconds": 25.725
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.1
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-3-20261018-145234-6969225c\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 1,
+      "durationSeconds": 7.431
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "pending": 0,
+      "skipped": 3,
+      "passed": 470,
+      "total": 473,
+      "failed": 0
+    },
+    "pytest": {
+      "skipped": "0",
+      "total": "431",
+      "failures": "2",
+      "errors": "0"
+    },
+    "playwright": {
+      "startTime": "2026-10-18T13:53:19.239Z",
+      "duration": 6225.325,
+      "expected": 3,
+      "skipped": 0,
+      "unexpected": 5,
+      "flaky": 0
+    }
+  },
+  "finishedUtc": "2026-10-18T13:53:25.7256173Z",
+  "failedSteps": [
+    "pytest",
+    "playwright"
+  ],
+  "suitesPassed": false
+}

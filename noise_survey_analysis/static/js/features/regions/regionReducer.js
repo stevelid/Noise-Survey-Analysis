@@ -26,6 +26,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         panelVisible: true,
         overlaysVisible: true,
         metricsRevision: 0,
+        ghostMode: 'selected',
         categories: app.annotationModel?.normalizeCatalog() || {
             byId: { other: { id: 'other', label: 'Other', color: DEFAULT_REGION_COLOR } },
             allIds: ['other']
@@ -501,6 +502,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     panelVisible: nextPanelVisible,
                     overlaysVisible: nextOverlaysVisible
                 };
+            }
+
+            case actionTypes.REGION_GHOST_MODE_SET: {
+                const mode = action.payload?.mode;
+                return ['off', 'selected', 'all'].includes(mode) && mode !== state.ghostMode
+                    ? { ...state, ghostMode: mode } : state;
             }
 
             case actionTypes.REGIONS_REPLACED:

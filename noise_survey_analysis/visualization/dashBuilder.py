@@ -831,6 +831,7 @@ class DashBuilder:
             'classificationPanelLayout': self.shared_components.get('classification_panel_layout'),
             'comparisonPanelLayout': self.shared_components.get('comparison_panel_layout'),
             'sidePanelTabs': self.shared_components.get('side_panel_tabs'),
+            'regionGhostModeSelect': self.shared_components['region_panel'].ghost_mode_select,
             'sidePanelContainer': self.shared_components.get('side_panel_container'),
             'comparisonPositionSelector': self.shared_components['comparison_panel'].position_selector,
             'comparisonPositionIds': self.shared_components['comparison_panel'].position_ids,

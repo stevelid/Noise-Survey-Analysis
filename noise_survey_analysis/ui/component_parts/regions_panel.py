@@ -38,6 +38,19 @@ class RegionPanelComponent:
             button_type="primary",
         )
 
+        self.ghost_mode_select = Select(
+            title="Unchecked regions", value="selected",
+            options=[("off", "Off"), ("selected", "Selected region only"), ("all", "All")],
+            width=panel_width, name="region_ghost_mode_select",
+        )
+        self.ghost_mode_select.js_on_change("value", CustomJS(code="""
+            const app = window.NoiseSurveyApp;
+            const intent = app?.features?.regions?.thunks?.setRegionGhostModeIntent;
+            if (app?.store?.dispatch && typeof intent === 'function') {
+                app.store.dispatch(intent(cb_obj.value));
+            }
+        """))
+
         self.auto_daynight_button = Button(
             label="Auto Day & Night",
             width=panel_width,
@@ -468,6 +481,7 @@ class RegionPanelComponent:
 
         self.container = column(
             self.visibility_toggle,
+            self.ghost_mode_select,
             self.auto_buttons,
             self.creation_indicator_div,
             self.detail_layout,

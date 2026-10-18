@@ -7,8 +7,8 @@ All checkpoints are on the existing branch. Never force-push or move these tags.
 | `baseline-pre-annotation-refactor` | Preserves Steve's pre-existing audio changes (`66bd8df`). |
 | `stage-0-baseline` | Baseline suites, full-size static benchmark and evidence; server timing unavailable. |
 | `stage-1-split-modules` | Feature module extraction with unchanged public imports and processing facade. |
-| `stage-2-annotation-model` | Categories, per-meter states, explicit migration (pending). |
-| `stage-3-drawing` | Present/absent/ghost overlays and shortcuts (pending). |
+| `stage-2-annotation-model` | Categories, per-meter states, atomic merge/split and explicit v1-to-v2 migration. |
+| `stage-3-drawing` | Present/absent/ghost overlays, ghost setting, click cycle and number shortcuts. |
 | `stage-4-html-side-panel` | HTML panel and independent scrolling (pending). |
 | `stage-5-sectioned-export` | Sectioned CSV and shared metrics (pending). |
 | `stage-6-clean-up` | Retire redundant controls and update guides (pending). |

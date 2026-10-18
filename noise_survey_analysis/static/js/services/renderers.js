@@ -911,12 +911,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const panelVisible = regionsState.panelVisible !== false;
             const overlaysVisible = regionsState.overlaysVisible !== false;
             const regionsForCharts = overlaysVisible ? regionList : [];
+            if (models?.regionGhostModeSelect && models.regionGhostModeSelect.value !== regionsState.ghostMode) {
+                models.regionGhostModeSelect.value = regionsState.ghostMode || 'selected';
+            }
     
             if (controllers?.chartsByName) {
                 controllers.chartsByName.forEach(chart => {
                     if (typeof chart.syncRegions === 'function') {
                         const selectedId = overlaysVisible ? regionsState.selectedId : null;
-                        chart.syncRegions(regionsForCharts, selectedId);
+                        chart.syncRegions(regionsForCharts, selectedId, {
+                            ghostMode: regionsState.ghostMode || 'selected',
+                            categories: regionsState.categories,
+                        });
                     }
                 });
             }

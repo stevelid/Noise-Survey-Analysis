@@ -92,6 +92,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REGION_CATEGORY_CATALOG_SET: 'regions/categoryCatalogSet',
         REGION_MERGED: 'regions/regionMerged',
         REGION_SPLIT: 'regions/regionSplit',
+        REGION_GHOST_MODE_SET: 'regions/ghostModeSet',
 
         REGION_CREATION_STARTED: 'interaction/regionCreationStarted',
         REGION_CREATION_CANCELLED: 'interaction/regionCreationCancelled',
@@ -354,6 +355,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         regionSplit: (id, regions) => ({
             type: actionTypes.REGION_SPLIT, payload: { id, regions }
+        }),
+
+        regionGhostModeSet: (mode) => ({
+            type: actionTypes.REGION_GHOST_MODE_SET, payload: { mode }
         }),
 
         regionVisibilitySet: (config) => ({

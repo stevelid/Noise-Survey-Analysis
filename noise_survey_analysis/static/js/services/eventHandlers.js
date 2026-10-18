@@ -130,6 +130,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (cb_obj?.modifiers?.shift) {
             modifiers.shift = true;
         }
+        if (cb_obj?.modifiers?.alt) modifiers.alt = true;
+        if (cb_obj?.modifiers?.meta) modifiers.meta = true;
 
         dispatch(thunkCreator({
             timestamp,
@@ -521,6 +523,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const isPreviewKey = normalizedKey === 'p';
         const isArrowKey = rawKey === 'ArrowLeft' || rawKey === 'ArrowRight';
         const isDeleteKey = rawKey === 'Delete' || rawKey === 'Backspace';
+        const isMeterKey = /^[1-9]$/.test(rawKey) && !isCtrlOrMeta && !e.altKey && !e.shiftKey && !e.repeat;
 
         if (isPreviewKey && !isCtrlOrMeta) {
             if (typeof e.preventDefault === 'function') e.preventDefault();
@@ -532,7 +535,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         const isShortcutKey = isSpace || isEscape || isMarkerKey || isRegionKey || isNoteKey
-            || isBackKey || isRegionStepKey || isArrowKey || isDeleteKey;
+            || isBackKey || isRegionStepKey || isArrowKey || isDeleteKey || isMeterKey;
         if (!isShortcutKey) {
             return;
         }
@@ -544,7 +547,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             key: rawKey,
             code,
             ctrlKey: Boolean(e.ctrlKey),
-            altKey: Boolean(e.altKey)
+            altKey: Boolean(e.altKey),
+            ...(isMeterKey ? { metaKey: Boolean(e.metaKey), shiftKey: Boolean(e.shiftKey), repeat: Boolean(e.repeat) } : {})
         }));
     }
 

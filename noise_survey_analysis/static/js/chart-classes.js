@@ -24,6 +24,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const DEFAULT_REGION_LINE_ALPHA = 0.6;
     const DEFAULT_REGION_LINE_WIDTH = 1;
     const SELECTED_REGION_LINE_WIDTH = 3;
+    const UNCHECKED_REGION_FILL_ALPHA = 0.025;
+    const UNCHECKED_REGION_LINE_ALPHA = 0.35;
+    const UNCHECKED_REGION_LINE_DASH = [6, 4];
+    const ABSENT_REGION_COLOR = '#94a3b8';
+    const ABSENT_REGION_FILL_ALPHA = 0.07;
+    const SELECTED_ABSENT_REGION_FILL_ALPHA = 0.12;
+    const METER_PRESENT = 'present';
+    const METER_ABSENT = 'absent';
+    const METER_UNCHECKED = 'unchecked';
     const DEFAULT_MARKER_COLOR = '#fdd835';
     const SELECTED_MARKER_LINE_WIDTH = 3;
     const UNSELECTED_MARKER_LINE_WIDTH = 2;
@@ -83,6 +92,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             this.name = chartModel.name;
             this.positionId = positionId; // Store the position ID
             this.regionOverlay = null;
+            this.regionGhostOverlay = null;
             this.markerOverlay = null; // Glyph-based marker overlay
             this.classificationOverlay = null;
         }
@@ -302,22 +312,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return data;
         }
 
-        syncRegions(regionList, selectedId) {
+        syncRegions(regionList, selectedId, options = {}) {
             if (!Array.isArray(regionList)) return;
-            const overlay = this._ensureRegionOverlay();
-            if (!overlay) {
-                return;
-            }
-
-            const { source, renderer } = overlay;
-            const nextData = this._buildRegionOverlayData(regionList, selectedId);
-
-            source.data = nextData;
-            if (source.change && typeof source.change.emit === 'function') {
-                source.change.emit();
-            }
-
-            renderer.visible = nextData.left.length > 0;
+            // Separate sources keep the ghost dash a scalar Bokeh property.
+            // Every row retains annotation/meter/area identity for inspection.
+            [false, true].forEach(ghostOnly => {
+                const overlay = this._ensureRegionOverlay(ghostOnly);
+                if (!overlay) return;
+                const nextData = this._buildRegionOverlayData(regionList, selectedId, { ...options, ghostOnly });
+                overlay.source.data = nextData;
+                if (typeof overlay.source.change?.emit === 'function') overlay.source.change.emit();
+                overlay.renderer.visible = nextData.left.length > 0;
+            });
 
             if (typeof this.model?.request_render === 'function') {
                 this.model.request_render();
@@ -326,9 +332,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         }
 
-        _ensureRegionOverlay() {
-            if (this.regionOverlay?.source && this.regionOverlay?.renderer) {
-                return this.regionOverlay;
+        _ensureRegionOverlay(isGhost = false) {
+            const overlayKey = isGhost ? 'regionGhostOverlay' : 'regionOverlay';
+            const overlayName = isGhost ? 'region_ghost_overlay' : 'region_overlay';
+            if (this[overlayKey]?.source && this[overlayKey]?.renderer) {
+                return this[overlayKey];
             }
 
             if (!window.Bokeh || !window.Bokeh.Models) {
@@ -351,10 +359,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (doc && typeof doc.create_model === 'function' && typeof doc.add_model === 'function') {
                 source = doc.add_model(doc.create_model('ColumnDataSource', {
                     data: initialData,
-                    name: `region_overlay_source_${this.name}`
+                    name: `${overlayName}_source_${this.name}`
                 }));
             } else {
-                source = new ColumnDataSource({ data: initialData, name: `region_overlay_source_${this.name}` });
+                source = new ColumnDataSource({ data: initialData, name: `${overlayName}_source_${this.name}` });
             }
 
             if (!source.change || typeof source.change.emit !== 'function') {
@@ -371,7 +379,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 fill_alpha: { field: 'fill_alpha' },
                 line_color: { field: 'line_color' },
                 line_alpha: { field: 'line_alpha' },
-                line_width: { field: 'line_width' }
+                line_width: { field: 'line_width' },
+                line_dash: isGhost ? UNCHECKED_REGION_LINE_DASH : []
             };
             const glyph = doc && typeof doc.create_model === 'function'
                 ? doc.create_model('Quad', glyphProps)
@@ -382,7 +391,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 glyph,
                 level: 'underlay',
                 visible: false,
-                name: `region_overlay_renderer_${this.name}`
+                name: `${overlayName}_renderer_${this.name}`
             };
             const renderer = doc && typeof doc.create_model === 'function' && typeof doc.add_model === 'function'
                 ? doc.add_model(doc.create_model('GlyphRenderer', rendererProps))
@@ -393,8 +402,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 try {
                     const addedRenderer = this.model.add_glyph(glyph, source);
                     if (addedRenderer) {
-                        this.regionOverlay = { source, renderer: addedRenderer };
-                        return this.regionOverlay;
+                        this[overlayKey] = { source, renderer: addedRenderer };
+                        return this[overlayKey];
                     }
                     rendererAdded = true;
                 } catch (error) {
@@ -411,8 +420,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
             }
 
-            this.regionOverlay = { source, renderer };
-            return this.regionOverlay;
+            this[overlayKey] = { source, renderer };
+            return this[overlayKey];
         }
 
         _emptyRegionOverlayData() {
@@ -427,11 +436,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 line_alpha: [],
                 line_width: [],
                 region_id: [],
-                area_index: []
+                area_index: [],
+                meter_id: [],
+                state: []
             };
         }
 
-        _buildRegionOverlayData(regionList, selectedId) {
+        _buildRegionOverlayData(regionList, selectedId, options = {}) {
             const data = this._emptyRegionOverlayData();
             const yRange = this.model?.y_range;
             const yStart = Number(yRange?.start);
@@ -441,7 +452,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const top = hasValidRange ? Math.max(yStart, yEnd) : 1;
 
             regionList.forEach(region => {
-                if (!region || region.positionId !== this.positionId) return;
+                if (!region) return;
+                const meterState = region.positionId === this.positionId ? METER_PRESENT
+                    : ([METER_PRESENT, METER_ABSENT].includes(region.meterStates?.[this.positionId])
+                        ? region.meterStates[this.positionId] : METER_UNCHECKED);
+                const ghostOnly = options.ghostOnly === true;
+                const ghostMode = options.ghostMode || 'selected';
+                if (ghostOnly !== (meterState === METER_UNCHECKED)) return;
+                if (ghostOnly && (ghostMode === 'off' || (ghostMode !== 'all' && region.id !== selectedId))) return;
                 const areas = Array.isArray(region.areas) && region.areas.length
                     ? region.areas
                     : (Number.isFinite(region.start) && Number.isFinite(region.end)
@@ -449,9 +467,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         : []);
                 if (!areas.length) return;
 
-                const regionColor = typeof region.color === 'string' && region.color.trim()
-                    ? region.color.trim()
-                    : DEFAULT_REGION_COLOR;
+                const regionColor = app.annotationModel?.effectiveColor(region, options.categories)
+                    || (typeof region.color === 'string' && region.color.trim() ? region.color.trim() : DEFAULT_REGION_COLOR);
+                const bandColor = meterState === METER_ABSENT ? ABSENT_REGION_COLOR : regionColor;
                 const isSelected = region.id === selectedId;
 
                 areas.forEach((area, index) => {
@@ -465,13 +483,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     data.right.push(end);
                     data.bottom.push(bottom);
                     data.top.push(top);
-                    data.fill_color.push(regionColor);
-                    data.fill_alpha.push(isSelected ? SELECTED_REGION_FILL_ALPHA : DEFAULT_REGION_FILL_ALPHA);
-                    data.line_color.push(regionColor);
-                    data.line_alpha.push(DEFAULT_REGION_LINE_ALPHA);
+                    data.fill_color.push(bandColor);
+                    data.fill_alpha.push(ghostOnly ? UNCHECKED_REGION_FILL_ALPHA
+                        : meterState === METER_ABSENT ? (isSelected ? SELECTED_ABSENT_REGION_FILL_ALPHA : ABSENT_REGION_FILL_ALPHA)
+                            : (isSelected ? SELECTED_REGION_FILL_ALPHA : DEFAULT_REGION_FILL_ALPHA));
+                    data.line_color.push(bandColor);
+                    data.line_alpha.push(ghostOnly ? UNCHECKED_REGION_LINE_ALPHA : DEFAULT_REGION_LINE_ALPHA);
                     data.line_width.push(isSelected ? SELECTED_REGION_LINE_WIDTH : DEFAULT_REGION_LINE_WIDTH);
                     data.region_id.push(region.id);
                     data.area_index.push(index);
+                    data.meter_id.push(this.positionId);
+                    data.state.push(meterState);
                 });
             });
 

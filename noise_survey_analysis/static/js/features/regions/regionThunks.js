@@ -748,6 +748,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    function setRegionGhostModeIntent(mode) {
+        return function (dispatch) {
+            if (['off', 'selected', 'all'].includes(mode)) dispatch(actions.regionGhostModeSet(mode));
+        };
+    }
+
     function cycleRegionMeterStateIntent(regionId, positionId) {
         return function (dispatch, getState) {
             const payload = typeof regionId === 'object' ? regionId : { id: regionId, positionId };
@@ -1056,6 +1062,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         copyRegionToAllPositionsIntent,
         copyRegionToPositionIntent,
         setRegionMeterStateIntent,
+        setRegionGhostModeIntent,
         cycleRegionMeterStateIntent,
         setRegionCategoryIntent,
         createCategoryIntent,

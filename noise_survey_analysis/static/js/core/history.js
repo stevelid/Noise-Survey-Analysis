@@ -107,7 +107,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         let nextState = state;
         const replace = (key) => {
             if (slices[key] !== undefined && !isEquivalent(nextState[key], slices[key])) {
-                nextState = { ...nextState, [key]: snapshot(slices[key]) };
+                const restored = snapshot(slices[key]);
+                // Ghost visibility is a view preference, even though it lives
+                // beside annotations; undo must not rewind this setting.
+                if (key === 'regions' && nextState.regions?.ghostMode !== undefined) {
+                    restored.ghostMode = nextState.regions.ghostMode;
+                }
+                nextState = { ...nextState, [key]: restored };
             }
         };
         replace('regions');

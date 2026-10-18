@@ -26,6 +26,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const isCtrl = Boolean(modifiers.ctrl);
             const isShift = Boolean(modifiers.shift);
 
+            const selectedRegion = regionSelectors.selectSelectedRegion?.(state);
+            if (!isCtrl && !isShift && !modifiers.alt && !modifiers.meta
+                && state?.view?.mode !== 'comparison'
+                && state?.regions?.overlaysVisible !== false
+                && selectedRegion && selectedRegion.positionId !== positionId) {
+                const meterState = regionSelectors.selectRegionMeterState?.(state, selectedRegion, positionId)
+                    || selectedRegion.meterStates?.[positionId] || 'unchecked';
+                const ghostVisible = (state?.regions?.ghostMode || 'selected') !== 'off';
+                const areas = selectedRegion.areas?.length ? selectedRegion.areas : [selectedRegion];
+                const hit = areas.some(area => Number.isFinite(area?.start) && Number.isFinite(area?.end)
+                    && timestamp >= area.start && timestamp <= area.end);
+                const cycle = app.features?.regions?.thunks?.cycleRegionMeterStateIntent;
+                if (hit && (meterState !== 'unchecked' || ghostVisible) && typeof cycle === 'function') {
+                    // Classification lanes are handled before this intent. A
+                    // selected band review must not also select/seek audio.
+                    dispatch(cycle(selectedRegion.id, positionId));
+                    return;
+                }
+            }
+
             const viewport = typeof viewSelectors.selectViewport === 'function'
                 ? viewSelectors.selectViewport(state)
                 : state?.view?.viewport || {};
@@ -141,6 +161,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const altKey = Boolean(payload?.altKey);
 
             const thunks = app.thunks || {};
+
+            if (/^[1-9]$/.test(rawKey)) {
+                if (ctrlKey || altKey || payload?.metaKey || payload?.shiftKey || payload?.repeat || payload?.isEditable) return;
+                const state = typeof getState === 'function' ? getState() : null;
+                const id = state?.regions?.selectedId;
+                const positionId = state?.view?.availablePositions?.[Number(rawKey) - 1];
+                const cycle = app.features?.regions?.thunks?.cycleRegionMeterStateIntent;
+                if (Number.isFinite(id) && positionId && typeof cycle === 'function') dispatch(cycle(id, positionId));
+                return;
+            }
 
             if (code === 'Space' || rawKey === ' ' || rawKey === 'Spacebar') {
                 const toggleThunk = thunks.togglePlaybackFromKeyboardIntent;
