@@ -58,3 +58,13 @@
 Every stage records changed behaviour, decisions, test counts/failures, source-copy path, baseline comparison, screenshots and regressions. Empty runner output is inconclusive. Pre-existing failures remain identified separately from new failures. Unavailable measurements are labelled unavailable, never estimated.
 
 The HTML shell is retained only if the required suites and both run modes pass, the layout is simpler and repeatable startup/render regressions stay within 10%; otherwise the prototype is committed and reverted.
+
+## Stage 1 — feature module extraction
+
+- Python: 14 classes/functions extracted to 11 feature modules plus shared helpers. `ui.components` preserves imports and the standalone demo. Implementation ASTs and callback strings match baseline.
+- JavaScript: common policy, line processing, spectral processing and frequency processing extracted; original file retains orchestration/public API. Test imports and production load order updated.
+- Decision: preserve compatibility facades and public model names; do not combine correctness changes with extraction. Callback guard tests scan extracted Python modules.
+- First verification caught a missing TimeSeriesComponent import in navigation annotations; corrected in Drive, then verified from a fresh snapshot.
+- Final local copy: `C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-1-fixed-20261018-093612-074bde02\repo`.
+- Final suites: Python **401 passed**, 8 warnings (24.24 s); Vitest **436 passed, 3 skipped** (3.98 s); Playwright **3 passed, same 5 baseline failures** (6.3 s). Copied source unchanged. Initial failed and corrected receipts retained in `docs/evaluation/stage-1*/`.
+- Appearance and interactions intentionally unchanged. Comparative full-size benchmark is running against the frozen Stage 1 snapshot; numerical measurements/screenshots will be appended when available. No performance equivalence is claimed before measurement.

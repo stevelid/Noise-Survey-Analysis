@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="4" failures="0" skipped="0" tests="4" time="2.002" timestamp="2026-10-18T09:34:32.213293" hostname="Steve_Home"><testcase classname="" name="tests.test_dash_builder_js_load_order" time="0.000"><error message="collection failure">..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\runner.py:341: in from_call
+    result: Optional[TResult] = func()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\runner.py:372: in &lt;lambda&gt;
+    call = CallInfo.from_call(lambda: list(collector.collect()), "collect")
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:531: in collect
+    self._inject_setup_module_fixture()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:545: in _inject_setup_module_fixture
+    self.obj, ("setUpModule", "setup_module")
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:310: in obj
+    self._obj = obj = self._getobj()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:528: in _getobj
+    return self._importtestmodule()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:617: in _importtestmodule
+    mod = import_path(self.path, mode=importmode, root=self.config.rootpath)
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\pathlib.py:565: in import_path
+    importlib.import_module(module_name)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\importlib\__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+&lt;frozen importlib._bootstrap&gt;:1395: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+&lt;frozen importlib._bootstrap&gt;:1331: in _find_and_load_unlocked
+    ???
+&lt;frozen importlib._bootstrap&gt;:935: in _load_unlocked
+    ???
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\assertion\rewrite.py:178: in exec_module
+    exec(co, module.__dict__)
+tests\test_dash_builder_js_load_order.py:4: in &lt;module&gt;
+    from noise_survey_analysis.visualization.dashBuilder import DashBuilder
+noise_survey_analysis\visualization\dashBuilder.py:23: in &lt;module&gt;
+    from noise_survey_analysis.ui.components import (
+noise_survey_analysis\ui\components.py:81: in &lt;module&gt;
+    from noise_survey_analysis.ui.component_parts.navigation import RangeSelectorComponent
+noise_survey_analysis\ui\component_parts\navigation.py:21: in &lt;module&gt;
+    class RangeSelectorComponent:
+noise_survey_analysis\ui\component_parts\navigation.py:27: in RangeSelectorComponent
+    attached_timeseries_component: TimeSeriesComponent,
+E   NameError: name 'TimeSeriesComponent' is not defined</error></testcase><testcase classname="" name="tests.test_region_panel_component" time="0.000"><error message="collection failure">..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\runner.py:341: in from_call
+    result: Optional[TResult] = func()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\runner.py:372: in &lt;lambda&gt;
+    call = CallInfo.from_call(lambda: list(collector.collect()), "collect")
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:531: in collect
+    self._inject_setup_module_fixture()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:545: in _inject_setup_module_fixture
+    self.obj, ("setUpModule", "setup_module")
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:310: in obj
+    self._obj = obj = self._getobj()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:528: in _getobj
+    return self._importtestmodule()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:617: in _importtestmodule
+    mod = import_path(self.path, mode=importmode, root=self.config.rootpath)
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\pathlib.py:565: in import_path
+    importlib.import_module(module_name)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\importlib\__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+&lt;frozen importlib._bootstrap&gt;:1395: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+&lt;frozen importlib._bootstrap&gt;:1331: in _find_and_load_unlocked
+    ???
+&lt;frozen importlib._bootstrap&gt;:935: in _load_unlocked
+    ???
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\assertion\rewrite.py:178: in exec_module
+    exec(co, module.__dict__)
+tests\test_region_panel_component.py:5: in &lt;module&gt;
+    from noise_survey_analysis.ui.components import RegionPanelComponent
+noise_survey_analysis\ui\components.py:81: in &lt;module&gt;
+    from noise_survey_analysis.ui.component_parts.navigation import RangeSelectorComponent
+noise_survey_analysis\ui\component_parts\navigation.py:21: in &lt;module&gt;
+    class RangeSelectorComponent:
+noise_survey_analysis\ui\component_parts\navigation.py:27: in RangeSelectorComponent
+    attached_timeseries_component: TimeSeriesComponent,
+E   NameError: name 'TimeSeriesComponent' is not defined</error></testcase><testcase classname="" name="tests.test_static_export" time="0.000"><error message="collection failure">..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\runner.py:341: in from_call
+    result: Optional[TResult] = func()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\runner.py:372: in &lt;lambda&gt;
+    call = CallInfo.from_call(lambda: list(collector.collect()), "collect")
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:531: in collect
+    self._inject_setup_module_fixture()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:545: in _inject_setup_module_fixture
+    self.obj, ("setUpModule", "setup_module")
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:310: in obj
+    self._obj = obj = self._getobj()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:528: in _getobj
+    return self._importtestmodule()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:617: in _importtestmodule
+    mod = import_path(self.path, mode=importmode, root=self.config.rootpath)
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\pathlib.py:565: in import_path
+    importlib.import_module(module_name)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\importlib\__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+&lt;frozen importlib._bootstrap&gt;:1395: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+&lt;frozen importlib._bootstrap&gt;:1331: in _find_and_load_unlocked
+    ???
+&lt;frozen importlib._bootstrap&gt;:935: in _load_unlocked
+    ???
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\assertion\rewrite.py:178: in exec_module
+    exec(co, module.__dict__)
+tests\test_static_export.py:6: in &lt;module&gt;
+    from noise_survey_analysis.export.static_export import generate_static_html
+noise_survey_analysis\export\static_export.py:15: in &lt;module&gt;
+    from noise_survey_analysis.visualization.dashBuilder import DashBuilder
+noise_survey_analysis\visualization\dashBuilder.py:23: in &lt;module&gt;
+    from noise_survey_analysis.ui.components import (
+noise_survey_analysis\ui\components.py:81: in &lt;module&gt;
+    from noise_survey_analysis.ui.component_parts.navigation import RangeSelectorComponent
+noise_survey_analysis\ui\component_parts\navigation.py:21: in &lt;module&gt;
+    class RangeSelectorComponent:
+noise_survey_analysis\ui\component_parts\navigation.py:27: in RangeSelectorComponent
+    attached_timeseries_component: TimeSeriesComponent,
+E   NameError: name 'TimeSeriesComponent' is not defined</error></testcase><testcase classname="" name="tests.test_streaming_backend" time="0.000"><error message="collection failure">..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\runner.py:341: in from_call
+    result: Optional[TResult] = func()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\runner.py:372: in &lt;lambda&gt;
+    call = CallInfo.from_call(lambda: list(collector.collect()), "collect")
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:531: in collect
+    self._inject_setup_module_fixture()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:545: in _inject_setup_module_fixture
+    self.obj, ("setUpModule", "setup_module")
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:310: in obj
+    self._obj = obj = self._getobj()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:528: in _getobj
+    return self._importtestmodule()
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\python.py:617: in _importtestmodule
+    mod = import_path(self.path, mode=importmode, root=self.config.rootpath)
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\pathlib.py:565: in import_path
+    importlib.import_module(module_name)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\importlib\__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+&lt;frozen importlib._bootstrap&gt;:1395: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+&lt;frozen importlib._bootstrap&gt;:1331: in _find_and_load_unlocked
+    ???
+&lt;frozen importlib._bootstrap&gt;:935: in _load_unlocked
+    ???
+..\..\..\..\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\_pytest\assertion\rewrite.py:178: in exec_module
+    exec(co, module.__dict__)
+tests\test_streaming_backend.py:22: in &lt;module&gt;
+    from noise_survey_analysis.visualization.dashBuilder import DashBuilder
+noise_survey_analysis\visualization\dashBuilder.py:23: in &lt;module&gt;
+    from noise_survey_analysis.ui.components import (
+noise_survey_analysis\ui\components.py:81: in &lt;module&gt;
+    from noise_survey_analysis.ui.component_parts.navigation import RangeSelectorComponent
+noise_survey_analysis\ui\component_parts\navigation.py:21: in &lt;module&gt;
+    class RangeSelectorComponent:
+noise_survey_analysis\ui\component_parts\navigation.py:27: in RangeSelectorComponent
+    attached_timeseries_component: TimeSeriesComponent,
+E   NameError: name 'TimeSeriesComponent' is not defined</error></testcase></testsuite></testsuites>

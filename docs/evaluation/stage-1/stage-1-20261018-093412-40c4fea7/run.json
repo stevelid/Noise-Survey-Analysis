@@ -1,0 +1,124 @@
+{
+  "stage": "stage-1",
+  "run": "stage-1-20261018-093412-40c4fea7",
+  "startedUtc": "2026-10-18T08:34:15.7316413Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-1-20261018-093412-40c4fea7\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-1-20261018-093412-40c4fea7\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-1\\stage-1-20261018-093412-40c4fea7",
+  "head": "66bd8dfa4a624c7dc4f0c7c93a8dcc72325f6dbd",
+  "sourceStatus": [
+    " M noise_survey_analysis/static/js/data-processors.js",
+    " M noise_survey_analysis/ui/components.py",
+    " M noise_survey_analysis/visualization/dashBuilder.py",
+    " M tests/app-integration.test.js",
+    " M tests/data-processors-python-chain.test.js",
+    " M tests/data-processors-spectrogram.test.js",
+    " M tests/data-processors.test.js",
+    " M tests/test_dash_builder_js_load_order.py",
+    " M tests/test_js_callback_guards.py",
+    "?? EVALUATION.md",
+    "?? ROLLBACK.md",
+    "?? docs/",
+    "?? noise_survey_analysis/static/js/processors/",
+    "?? noise_survey_analysis/ui/component_parts/",
+    "?? scripts/annotation_benchmark.py",
+    "?? scripts/run_checkpoint_tests.ps1",
+    "?? tests/helpers/loadDataProcessors.js"
+  ],
+  "sourceFileCount": 239,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 5.532
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-1-20261018-093412-40c4fea7\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 5.646
+    },
+    "pytest": {
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "pytest",
+        "tests/",
+        "--junitxml=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-1-20261018-093412-40c4fea7\\evidence\\pytest.xml"
+      ],
+      "exitCode": 2,
+      "durationSeconds": 2.65
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.117
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-1-20261018-093412-40c4fea7\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 1,
+      "durationSeconds": 7.568
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "total": 439,
+      "failed": 0,
+      "skipped": 3,
+      "pending": 0,
+      "passed": 436
+    },
+    "pytest": {
+      "total": "4",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "4"
+    },
+    "playwright": {
+      "startTime": "2026-10-18T08:34:36.844Z",
+      "duration": 6303.351,
+      "expected": 3,
+      "skipped": 0,
+      "unexpected": 5,
+      "flaky": 0
+    }
+  },
+  "finishedUtc": "2026-10-18T08:34:43.3815028Z",
+  "failedSteps": [
+    "pytest",
+    "playwright"
+  ],
+  "suitesPassed": false
+}

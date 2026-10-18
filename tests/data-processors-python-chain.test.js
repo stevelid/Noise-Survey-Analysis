@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import '../noise_survey_analysis/static/js/utils.js';
 import '../noise_survey_analysis/static/js/features/view/viewResolution.js';
-import '../noise_survey_analysis/static/js/data-processors.js';
+import './helpers/loadDataProcessors.js';
 
 describe('Python -> JS spectrogram streaming contract', () => {
   let fixture;

@@ -17,6 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCES = [
     REPO_ROOT / 'noise_survey_analysis' / 'ui' / 'components.py',
     REPO_ROOT / 'noise_survey_analysis' / 'visualization' / 'dashBuilder.py',
+    # Callback bodies live beside their feature after the component split.
+    *sorted((REPO_ROOT / 'noise_survey_analysis' / 'ui' / 'component_parts').glob('*.py')),
 ]
 
 # `window.NoiseSurveyApp && window.NoiseSurveyApp.<namespace>.<member>` — the

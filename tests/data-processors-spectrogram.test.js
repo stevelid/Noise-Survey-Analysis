@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 // Import module for side-effects
 import '../noise_survey_analysis/static/js/utils.js';
 import '../noise_survey_analysis/static/js/features/view/viewResolution.js';
-import '../noise_survey_analysis/static/js/data-processors.js';
+import './helpers/loadDataProcessors.js';
 
 describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram paths)', () => {
   let dataProcessors;

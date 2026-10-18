@@ -20,6 +20,12 @@ class DashBuilderJsLoadOrderTests(unittest.TestCase):
 
         self.assertIn("core/history.js", loaded)
         self.assertLess(loaded.index("core/history.js"), loaded.index("store.js"))
+        processing_order = [
+            "processors/common.js", "processors/line.js", "processors/spectral.js",
+            "processors/frequency.js", "data-processors.js",
+        ]
+        indices = [loaded.index(name) for name in processing_order]
+        self.assertEqual(indices, sorted(indices))
 
 
 if __name__ == "__main__":
