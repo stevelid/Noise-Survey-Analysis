@@ -13,9 +13,13 @@ All checkpoints are on the existing branch. Never force-push or move these tags.
 | `stage-5-sectioned-export` | Bounded full-source exporter, section reader, server/CLI/Windows entry points and metric fallbacks. |
 | `stage-5-export-evaluation` | Stage-5 evaluation documentation follow-up; same application code as the preceding tag. |
 | `stage-6-clean-up` | Retire legacy panel/flag and duplicate controls; retain confirmed marker clearing; finish focus/scroll checks and guides. |
-| `stage-7-html-shell` / `stage-7-html-shell-reverted` | Evaluated page-shell outcome (pending). |
+| `stage-6-interaction-fixes` | Late follow-up (`15883c4`, after the shell revert): preserve native category/colour editing and the next click while notes save; add regressions and clarify guides. |
+| `stage-7-html-shell-prototype` | Recoverable HTML grid attempt (`1a745f4`): static checks pass; production asynchronous startup cannot mount its template. |
+| `stage-7-html-shell-reverted` | Final retained Bokeh page layout after `git revert 1a745f4` (`23f7ec4`), final focus fixes and verification/evaluation. |
 
 Compare stages with `git diff <earlier-tag> <later-tag>`, for example `git diff stage-2-annotation-model stage-3-drawing`.
+
+Inspect the rejected shell with `git diff stage-6-clean-up stage-7-html-shell-prototype`. On a separate future branch, `git revert 23f7ec4` reapplies the prototype for further work; its server startup problem remains to be resolved. The final tag retains the Stage-6 page structure and the HTML annotation sidebar.
 
 Use `git checkout <tag>` to inspect a checkpoint in detached HEAD. Return with `git checkout main`.
 

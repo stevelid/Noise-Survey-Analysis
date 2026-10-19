@@ -1,0 +1,27 @@
+{
+  "source_copy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\final-annotations-20261019-082339-a99b14b9\\repo",
+  "checks": [
+    {
+      "selectedId": 1,
+      "note": "Saved in unchanged-category-to-region",
+      "colour": null,
+      "actionsOpen": false,
+      "scenario": "unchanged-category-to-region"
+    },
+    {
+      "selectedId": 1,
+      "note": "Saved in unchanged-category-to-summary",
+      "colour": null,
+      "actionsOpen": false,
+      "scenario": "unchanged-category-to-summary"
+    },
+    {
+      "selectedId": 1,
+      "note": "Saved in edited-colour-to-region",
+      "colour": "#123456",
+      "actionsOpen": false,
+      "scenario": "edited-colour-to-region"
+    }
+  ],
+  "page_errors": []
+}

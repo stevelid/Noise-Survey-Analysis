@@ -1,0 +1,105 @@
+{
+  "local_copy_path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-7-prototype-20261019-081706-9d267826\\repo",
+  "harness_path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-7-prototype-20261019-081706-9d267826\\repo\\scripts\\checkpoint_benchmark.py",
+  "fixture": {
+    "meters": 4,
+    "hours": 72,
+    "sample_interval_seconds": 1,
+    "samples_per_meter": 259200,
+    "third_octave_bands": 31,
+    "regions": 300,
+    "seed": 20261018
+  },
+  "ghosts_all": true,
+  "limitations": [
+    "Server timing is not measured by this static comparison."
+  ],
+  "static_build_ms": 3512.331500009168,
+  "static_serialize_ms": 29654.274800035637,
+  "static_html_bytes": 262383585,
+  "modes": {
+    "static": {
+      "url": "file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-7-prototype-20261019-081706-9d267826/benchmark-output/benchmark.html",
+      "viewport": [
+        1600,
+        1100
+      ],
+      "startup_definition": "navigation through initialized application and two animation frames; dataset pre-generated",
+      "startup": {
+        "runs": 3,
+        "median_ms": 13066.0892999731,
+        "p95_ms": 14260.39677002118,
+        "values_ms": [
+          14393.097600026522,
+          12582.389699993655,
+          13066.0892999731
+        ],
+        "first_navigation_ms": 14393.097600026522,
+        "repeat_navigation_median_ms": 12824.239499983378
+      },
+      "regions_loaded": 300,
+      "render": {
+        "runs": 20,
+        "median_ms": 63.69999998807907,
+        "p95_ms": 67.22500003278257,
+        "values_ms": [
+          60.5,
+          64.19999998807907,
+          63.80000001192093,
+          65.90000003576279,
+          63.5,
+          63.69999998807907,
+          60,
+          62.799999952316284,
+          63.69999998807907,
+          63.69999998807907,
+          62.5,
+          64.5,
+          64.89999997615814,
+          65.19999998807907,
+          92.39999997615814,
+          58.30000001192093,
+          63.5,
+          64.09999996423721,
+          48.19999998807907,
+          63.09999996423721
+        ]
+      },
+      "export": {
+        "runs": 20,
+        "median_ms": 2344.3499999940395,
+        "p95_ms": 2495.1050000131145,
+        "values_ms": [
+          4201.400000035763,
+          2405.300000011921,
+          2328,
+          2344.699999988079,
+          2360.5,
+          2324.199999988079,
+          2346.900000035763,
+          2340.599999964237,
+          2337.5,
+          2346.699999988079,
+          2344,
+          2335.899999976158,
+          2329.800000011921,
+          2368.600000023842,
+          2295.899999976158,
+          2356.7000000476837,
+          2350,
+          2340.800000011921,
+          2336.099999964237,
+          2348.2999999523163
+        ]
+      },
+      "export_bytes": 1103241,
+      "side_panel_bounds": {
+        "x": 1236,
+        "y": 258,
+        "width": 348.015625,
+        "height": 830.9375
+      },
+      "console_page_errors": []
+    }
+  }
+}

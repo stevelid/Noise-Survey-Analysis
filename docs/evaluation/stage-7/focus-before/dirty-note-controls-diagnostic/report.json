@@ -1,0 +1,21 @@
+{
+  "source_copy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-release-20261019-080641-0af569c3\\repo",
+  "checks": [
+    {
+      "target": "region-category",
+      "focused_after_first_click": false,
+      "saved_note": "Saved before mouse category click",
+      "before_category": "other",
+      "after_keyboard_category": "other",
+      "expected_category": "traffic"
+    },
+    {
+      "target": "region-color",
+      "focused_after_first_click": false,
+      "saved_note": "Saved before mouse colour click",
+      "value_after_typing": "",
+      "expected_value": "#123456"
+    }
+  ],
+  "page_errors": []
+}

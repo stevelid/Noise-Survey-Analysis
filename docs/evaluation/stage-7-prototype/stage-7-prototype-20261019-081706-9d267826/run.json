@@ -1,0 +1,103 @@
+{
+  "stage": "stage-7-prototype",
+  "run": "stage-7-prototype-20261019-081706-9d267826",
+  "startedUtc": "2026-10-19T07:17:10.1206646Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-7-prototype-20261019-081706-9d267826\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-7-prototype-20261019-081706-9d267826\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-7-prototype\\stage-7-prototype-20261019-081706-9d267826",
+  "head": "1a745f4cd80d6e07328734f0fa023344d17d29cd",
+  "sourceStatus": [],
+  "sourceFileCount": 272,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 3.943
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-7-prototype-20261019-081706-9d267826\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.237
+    },
+    "pytest": {
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "pytest",
+        "tests/",
+        "--junitxml=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-7-prototype-20261019-081706-9d267826\\evidence\\pytest.xml"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 28.132
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.113
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-7-prototype-20261019-081706-9d267826\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.89
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "failed": 0,
+      "passed": 497,
+      "total": 500,
+      "pending": 0,
+      "skipped": 3
+    },
+    "pytest": {
+      "skipped": "0",
+      "total": "465",
+      "failures": "0",
+      "errors": "0"
+    },
+    "playwright": {
+      "startTime": "2026-10-19T07:17:57.34Z",
+      "duration": 5680.099999999999,
+      "expected": 8,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    }
+  },
+  "finishedUtc": "2026-10-19T07:18:03.2911533Z",
+  "failedSteps": [],
+  "suitesPassed": true
+}
