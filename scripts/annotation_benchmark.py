@@ -134,11 +134,11 @@ RENDER = """async i => {
  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
  return performance.now()-before;
 }"""
-EXPORT = """() => {
+EXPORT = """mode => {
  const app=window.NoiseSurveyApp,state=app.store.getState();
  const regions=state.regions.allIds.map(id=>state.regions.byId[id]);
  const before=performance.now();
- const csv=app.session.__testHelpers.buildAnnotationsCsv([],regions,state);
+ const csv=app.session.__testHelpers.buildAnnotationsCsv([],regions,state,{mode});
  const blob=new Blob([csv],{type:'text/csv'}),url=URL.createObjectURL(blob);
  URL.revokeObjectURL(url);
  return {ms:performance.now()-before,bytes:blob.size};
@@ -167,9 +167,15 @@ def browser_measure(url: str, regions: list, folder: Path, samples: int, iterati
         result["regions_loaded"] = page.evaluate(LOAD_REGIONS, regions)
         page.wait_for_timeout(500)
         result["render"] = summarize([page.evaluate(RENDER, i) for i in range(iterations)])
-        exports = [page.evaluate(EXPORT) for _ in range(iterations)]
+        # Keep the historical full-analysis measurement explicit when the menu
+        # default changes, and time the inexpensive annotation transfer too.
+        quick = [page.evaluate(EXPORT, 'annotations') for _ in range(iterations)]
+        result["annotations_only_export"] = summarize([value["ms"] for value in quick])
+        result["annotations_only_export_bytes"] = quick[-1]["bytes"]
+        exports = [page.evaluate(EXPORT, 'full') for _ in range(iterations)]
         result["export"] = summarize([value["ms"] for value in exports])
         result["export_bytes"] = exports[-1]["bytes"]
+        result["export_mode"] = "full analysis (OVERALL and SPECTRAL); annotations-only timed separately"
         page.screenshot(path=str(folder / "main-layout.png"))
         # Bokeh layouts can place the sidebar beyond the viewport horizontally.
         # Capture its element, rather than incorrectly cropping the chart edge.

@@ -165,7 +165,7 @@ Limitations:
 
 ## Working with annotations
 
-The Regions / Markers / Classifications sidebar stays beside the charts and scrolls independently. It uses compact rows, with selected-item details above the list. Less-used operations sit under **Actions and settings**.
+The Regions / Markers / Classifications sidebar stays beside the charts and scrolls independently. The region list fills the remaining height below selected-item details, with review filters collapsed initially. Less-used operations sit under **Actions and settings**.
 
 ### Regions across meters
 
@@ -174,9 +174,10 @@ A region is one sound event, with one or more time areas, an origin meter, a cat
 - **Create:** Shift+drag on a chart, Shift+click from the current cursor, or press `R`, move the cursor, then press `R` again on the same meter.
 - **Review other meters:** select the region, then click its meter buttons or its visible band on another chart. States cycle unchecked → present → absent → unchecked. Keys `1`–`9` address meters in display order. These keys ignore text fields, modifiers and held-key repeats.
 - **Read the bands:** present uses the category colour; absent uses grey; unchecked uses a faint dashed ghost. Under Actions and settings, show ghosts for no regions, the selected region (default), or all regions.
-- **Categorise:** choose a category, edit its name/colour, or add one. A region colour override remains optional; **Use category** clears it. Deleting a category reassigns its regions to Other.
+- **Categorise:** choose a category, edit its name/colour, or add one. Click the native colour swatch to choose an opaque override; **Use category** clears it. Existing named/transparent colours remain unchanged until you choose a new colour or reset. Deleting a category reassigns its regions to Other.
 - **Find events:** filter by category, present at a meter, present at one meter only, or remaining unchecked meters.
-- **Inspect levels:** Show metrics calculates the selected region at each meter. Resolution and missing values are explicit. The list itself does not calculate every region's levels.
+- **Inspect levels:** metrics start collapsed. Show metrics calculates the selected region at each meter; the show/hide choice is saved in the workspace. Resolution and missing values are explicit. The list itself does not calculate every region's levels.
+- **Inspect a spectrum:** open Average spectrum under Actions and settings; it calculates the origin meter independently of the per-meter metrics table.
 - **Refine:** use Add area, Merge or Split areas under Actions and settings. Merges require the same origin. Unchecked defers to a known state; present versus absent becomes unchecked and the message lists meters to re-check. Splits preserve category and states.
 - **Take notes:** save on leaving the field or Ctrl+Enter; Esc cancels an HTML-panel draft. `N` focuses the selected region's note. `[` / `]` browse regions and `B` returns to the earlier view.
 - **Undo:** Ctrl+Z / Ctrl+Y undo/redo annotation edits, meter states and category changes. Deleting a region removes that annotation across meters.
@@ -195,7 +196,9 @@ Classifications remain a separate candidate layer. Selection leaves the cursor, 
 
 ### Annotation CSV files
 
-**Menu → Export Annotations (CSV)** writes one sectioned file:
+**Menu → Export Annotations — Quick (CSV)** is the default annotation transfer: REGIONS, MARKERS and NOTES only. It preserves categories, notes, areas, meter states, offsets/source times and saved marker snapshots without calculating region levels. Headline metric fields are blank, and NOTES identifies the annotations-only mode.
+
+**Menu → Export Annotations + Analysis (Browser CSV)** adds the browser's calculated levels and spectra in the full sectioned layout:
 
 | Section | Purpose |
 | --- | --- |
@@ -207,7 +210,7 @@ Classifications remain a separate candidate layer. Selection leaves the cursor, 
 
 Select a section's header and rows in Excel to format that section as a table. Times are Excel-compatible UTC date-times. Metadata preserves the category catalog and meter identities/titles. Import reads REGIONS and MARKERS; analysis rows never become annotations. Old unsectioned CSV and annotation JSON still import.
 
-The browser export uses the best available data for each region and meter: complete log coverage, then overview, then explicitly labelled partial log data if nothing better is available. Coverage and missing-data reasons prevent a streamed fragment from appearing complete. Under Actions and settings, configure the background window/minimum context and optionally include separate log/overview analysis rows; this option is off by default. These settings are saved in the workspace.
+The browser analysis export uses the best available data for each region and meter: complete log coverage, then overview, then explicitly labelled partial log data if nothing better is available. Coverage and missing-data reasons prevent a streamed fragment from appearing complete. Under Actions and settings, configure the background window/minimum context and optionally include separate log/overview analysis rows; this option is off by default and does not add metric calculations to Quick export. These settings are saved in the workspace.
 
 To calculate from the source files independently of the browser's streamed buffer, use **Menu → Export Annotations — Full Resolution** in server mode, or:
 

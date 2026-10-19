@@ -2,6 +2,8 @@
 window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
+    const EXPORT_MODE_ANNOTATIONS = 'annotations';
+    const EXPORT_MODE_FULL = 'full';
     const REGION_FIELDS = ['id', 'category', 'category_label', 'note', 'colour', 'start', 'end', 'duration_s', 'origin_meter', 'areas'];
     const PROVENANCE_FIELDS = ['chart_offset_ms', 'source_start', 'source_end', 'source_areas', 'data_resolution', 'sample_interval_s', 'coverage', 'LAeq_dB', 'LAFmax_dB'];
     const OVERALL_FIELDS = ['region_id', 'category', 'meter', 'state', 'data_resolution', 'sample_interval_s', 'coverage',
@@ -56,9 +58,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     function buildAnnotationsCsv(markers = [], regions = [], state = {}, options = {}) {
         state = state || {};
+        // Quick exports carry annotations without touching survey arrays or metrics.
+        const mode = options.mode ?? EXPORT_MODE_ANNOTATIONS;
+        if (![EXPORT_MODE_ANNOTATIONS, EXPORT_MODE_FULL].includes(mode)) throw new Error(`Unknown annotation export mode: ${mode}`);
+        const includeAnalysis = mode === EXPORT_MODE_FULL;
         const models = options.models || app.registry?.models || {};
         const engine = app.annotationMetrics;
-        if (!engine) throw new Error('The annotation metrics engine is not loaded.');
+        if (includeAnalysis && !engine) throw new Error('The annotation metrics engine is not loaded.');
         const positions = [...new Set([...(state.view?.availablePositions || []), ...Object.keys(models.timeSeriesSources || {}),
             ...regions.flatMap(region => [region.positionId, ...Object.keys(region.meterStates || {})])])].filter(Boolean);
         const categories = app.annotationModel.normalizeCatalog(state.regions?.categories);
@@ -74,7 +80,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             sourceConfigs: options.sourceConfigs || models.sourceConfigs || [],
             chart_offsets_ms: state.view?.positionChartOffsets || {}
         };
-        const lines = [[`NSA annotations export`, 'format=2', `exported=${exported}`, 'resolution=best-available'].map(escape).join(','),
+        const lines = [[`NSA annotations export`, 'format=2', `exported=${exported}`, `resolution=${includeAnalysis ? 'best-available' : 'not-calculated'}`].map(escape).join(','),
             ['metadata', JSON.stringify(metadata)].map(escape).join(','), ''];
         const section = (name, fields, records) => {
             lines.push(`[${name}]`, fields.map(escape).join(','));
@@ -84,16 +90,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const annotationRows = [], overallRows = [], spectralRows = [];
         const bands = new Set();
         const parameters = new Set();
-        positions.forEach(meter => {
+        if (includeAnalysis) positions.forEach(meter => {
             ['log', 'overview'].forEach(resolution => Object.keys(models.preparedGlyphData?.[meter]?.[resolution]?.prepared_params || {}).forEach(name => parameters.add(name)));
             const streamed = models.spectrogramSources?.[meter]?.log?.data;
             const param = streamed?.parameter?.[0] || streamed?.param?.[0];
             if (param) parameters.add(param);
         });
         regions.forEach(region => {
-            const origin = engine.computeRegion(region, state, models, { ...metricsOptions, resolution: 'auto' });
             const normalized = app.annotationModel.normalizeRegion(region, positions);
             if (!normalized) return;
+            const chartOffsetMs = Number(state.view?.positionChartOffsets?.[normalized.positionId]) || 0;
+            const sourceAreas = normalized.areas.map(area => ({ start: area.start - chartOffsetMs, end: area.end - chartOffsetMs }));
+            const origin = includeAnalysis
+                ? engine.computeRegion(normalized, state, models, { ...metricsOptions, resolution: 'auto' })
+                : { durationMs: normalized.areas.reduce((total, area) => total + area.end - area.start, 0), chartOffsetMs, sourceAreas };
             const category = categories.byId[normalized.categoryId];
             annotationRows.push({
                 id: normalized.id, category: normalized.categoryId, category_label: category?.label || normalized.categoryId,
@@ -104,6 +114,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 source_areas: JSON.stringify(origin.sourceAreas), data_resolution: origin.dataResolution,
                 sample_interval_s: origin.sampleIntervalS, coverage: origin.coverage, LAeq_dB: origin.laeq, LAFmax_dB: origin.lafmax
             });
+            if (!includeAnalysis) return;
             positions.forEach(meter => {
                 const resolutions = allResolutions ? ['log', 'overview'].filter(resolution =>
                     models.timeSeriesSources?.[meter]?.[resolution]?.data?.Datetime?.length
@@ -133,15 +144,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             });
         });
         section('REGIONS', [...REGION_FIELDS, ...positions, ...PROVENANCE_FIELDS], annotationRows);
-        section('OVERALL', OVERALL_FIELDS, overallRows);
-        section('SPECTRAL', [...SPECTRAL_FIELDS, ...[...bands].sort((a, b) => frequency(a) - frequency(b))], spectralRows);
+        if (includeAnalysis) {
+            section('OVERALL', OVERALL_FIELDS, overallRows);
+            section('SPECTRAL', [...SPECTRAL_FIELDS, ...[...bands].sort((a, b) => frequency(a) - frequency(b))], spectralRows);
+        }
         section('MARKERS', MARKER_FIELDS, markers.map(marker => ({ id: marker.id, timestamp: timestamp(marker.timestamp), note: marker.note,
             colour: marker.color, metrics: JSON.stringify(marker.metrics || marker.metricsSnapshot || {}) })));
         section('NOTES', ['key', 'value'], Object.entries({
-            exported, time_zone: 'UTC', source_files: JSON.stringify(metadata.sourceConfigs), chart_offsets_ms: JSON.stringify(metadata.chart_offsets_ms),
-            resolution_policy: allResolutions ? 'Separate log and overview rows where available' : 'Best available resolution per region and meter; log requires complete area coverage, otherwise overview',
-            background_method: `LA90 (duration-weighted inverse-CDF p10) of pooled context before/after each area; LAeq of the same samples also reported; exclude all present regions; window=${metricsOptions.backgroundWindowS ?? 300}s; minimum=${metricsOptions.minContextS ?? 60}s`,
-            caveats: 'LAF90 derived from overview or 1 s data is indicative. Missing genuine LAFmax remains blank. Browser export can only use available embedded/streamed data.'
+            exported, export_mode: mode, time_zone: 'UTC', source_files: JSON.stringify(metadata.sourceConfigs), chart_offsets_ms: JSON.stringify(metadata.chart_offsets_ms),
+            resolution_policy: includeAnalysis
+                ? (allResolutions ? 'Separate log and overview rows where available' : 'Best available resolution per region and meter; complete log preferred, otherwise overview, otherwise partial log with coverage recorded')
+                : 'Annotations only; survey metrics are not calculated and headline metric columns are blank. Marker snapshots are preserved unchanged.',
+            background_method: includeAnalysis
+                ? `LA90 (duration-weighted inverse-CDF p10) of pooled context before/after each area; LAeq of the same samples also reported; exclude all present regions; window=${metricsOptions.backgroundWindowS ?? 300}s; minimum=${metricsOptions.minContextS ?? 60}s`
+                : 'Not calculated in annotations-only export',
+            caveats: includeAnalysis
+                ? 'LAF90 derived from overview or 1 s data is indicative. Missing genuine LAFmax remains blank. Browser export can only use available embedded/streamed data.'
+                : 'This file carries annotation geometry, states, categories and existing marker snapshots; use the browser analysis export or server full-resolution export for calculated region metrics.'
         }).map(([key, value]) => ({ key, value })));
         return lines.join('\r\n');
     }
@@ -178,5 +197,5 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     app.annotationCsv = { buildAnnotationsCsv, parseAnnotationsCsv, parseCsvRows, readSection,
-        REGION_FIELDS, PROVENANCE_FIELDS, OVERALL_FIELDS, SPECTRAL_FIELDS, MARKER_FIELDS };
+        EXPORT_MODE_ANNOTATIONS, EXPORT_MODE_FULL, REGION_FIELDS, PROVENANCE_FIELDS, OVERALL_FIELDS, SPECTRAL_FIELDS, MARKER_FIELDS };
 })(window.NoiseSurveyApp);

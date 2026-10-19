@@ -59,6 +59,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     else if (payload.field === 'classifications') dispatch(actions.classificationVisibilitySet({ showOverlays: Boolean(payload.value) }));
                     break;
                 case 'metrics-visible': setPanel({ metricsVisible: !selectors.selectPanelState(state).metricsVisible }); break;
+                case 'spectrum-visible': setPanel({ spectrumVisible: Boolean(payload.value) }); break;
                 case 'export-setting':
                     if (payload.field === 'includeAllResolutions') setPanel({ includeAllResolutions: Boolean(payload.value) });
                     else if (['backgroundWindowS', 'minContextS'].includes(payload.field)) {

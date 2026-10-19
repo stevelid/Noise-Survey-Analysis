@@ -1,0 +1,110 @@
+{
+  "stage": "stage-8-ui-final",
+  "run": "stage-8-ui-final-20261019-130645-57e1299b",
+  "startedUtc": "2026-10-19T12:06:48.7331248Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-ui-final-20261019-130645-57e1299b\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-ui-final-20261019-130645-57e1299b\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-8-ui-final\\stage-8-ui-final-20261019-130645-57e1299b",
+  "head": "c6c807efe5f2a107bc934e0f7bd8e98250d3b25b",
+  "sourceStatus": [
+    " M README.md",
+    " M USER_GUIDE.txt",
+    " M noise_survey_analysis/static/css/annotation-panel.css",
+    " M noise_survey_analysis/static/js/features/annotations/panelSelectors.js",
+    " M noise_survey_analysis/static/js/features/annotations/panelThunks.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelEvents.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelRenderer.js",
+    " M noise_survey_analysis/static/js/services/session/annotationCsv.js",
+    " M noise_survey_analysis/static/js/services/session/sessionManager.js",
+    " M noise_survey_analysis/ui/component_parts/controls.py",
+    " M scripts/annotation_benchmark.py",
+    " M scripts/checkpoint_benchmark.py",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    " M tests/annotation-metrics-export.test.js",
+    " M tests/e2e/static-dashboard.spec.ts",
+    " M tests/html-panel.test.js",
+    " M tests/sessionManager-extra.test.js",
+    " M tests/sessionManager.test.js",
+    "?? docs/evaluation/stage-8-browser-panel/",
+    "?? docs/evaluation/stage-8-integration22/",
+    "?? docs/evaluation/stage-8-integration30/",
+    "?? docs/evaluation/stage-8/browser-benchmark/",
+    "?? docs/evaluation/stage-8/server-pandas30/"
+  ],
+  "sourceFileCount": 271,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 4.359
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-ui-final-20261019-130645-57e1299b\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.082
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.056
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-ui-final-20261019-130645-57e1299b\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 7.137
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "failed": 0,
+      "total": 513,
+      "skipped": 3,
+      "passed": 510,
+      "pending": 0
+    },
+    "playwright": {
+      "startTime": "2026-10-19T12:07:08.567Z",
+      "duration": 5938.916,
+      "expected": 9,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    }
+  },
+  "finishedUtc": "2026-10-19T12:07:14.7388569Z",
+  "failedSteps": [],
+  "suitesPassed": true
+}

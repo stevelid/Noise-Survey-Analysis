@@ -19,7 +19,7 @@ describe('Annotation CSV helpers', () => {
 
     it('exports annotation fields before separate overall/spectral sections', () => {
         const region = { id: 5, positionId: 'P1', areas: [{ start: 1000, end: 3000 }], note: 'Region, "night"', color: '#123456' };
-        const csv = helpers.buildAnnotationsCsv([{ id: 2, timestamp: 1500, note: 'Marker', color: '#ff00ff', metrics: { test: 1 } }], [region]);
+        const csv = helpers.buildAnnotationsCsv([{ id: 2, timestamp: 1500, note: 'Marker', color: '#ff00ff', metrics: { test: 1 } }], [region], {}, { mode: 'full' });
         expect(csv.startsWith('NSA annotations export,format=2')).toBe(true);
         expect(section(csv, 'REGIONS')[0]).toMatchObject({ id: '5', note: 'Region, "night"', origin_meter: 'P1', colour: '#123456' });
         expect(section(csv, 'OVERALL')).toHaveLength(1);
@@ -51,7 +51,7 @@ describe('Annotation CSV source provenance', () => {
         const state = { view: { availablePositions: ['P1'], positionChartOffsets: { P1: 1000 } } };
         const region = { id: 7, positionId: 'P1', areas: [{ start: 2000, end: 4000 }], note: '' };
         const models = { timeSeriesSources: { P1: { log: { data: { Datetime: [1000, 2000], LAeq: [60, 70] } } } } };
-        const csv = helpers.buildAnnotationsCsv([], [region], state, { models });
+        const csv = helpers.buildAnnotationsCsv([], [region], state, { models, mode: 'full' });
         const row = section(csv, 'REGIONS')[0];
         expect(row.chart_offset_ms).toBe('1000');
         expect(row.start).toBe('1970-01-01 00:00:02.000');
@@ -63,7 +63,7 @@ describe('Annotation CSV source provenance', () => {
     it('retains indicative overview LAF90 in OVERALL and labels its method', () => {
         const region = { id: 1, positionId: 'P1', areas: [{ start: 0, end: 1000 }] };
         const models = { timeSeriesSources: { P1: { overview: { data: { Datetime: [0, 1000], LAeq: [50, 60] } } } } };
-        const csv = helpers.buildAnnotationsCsv([], [region], {}, { models });
+        const csv = helpers.buildAnnotationsCsv([], [region], {}, { models, mode: 'full' });
         const row = section(csv, 'OVERALL')[0];
         expect(row.data_resolution).toBe('overview');
         expect(Number(row.LAF90_dB)).toBe(50);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import '../noise_survey_analysis/static/js/features/regions/annotationModel.js';
 import '../noise_survey_analysis/static/js/features/regions/annotationMetrics.js';
@@ -126,13 +126,47 @@ describe('shared authoritative metric contract', () => {
 });
 
 describe('sectioned analysis CSV', () => {
+    it('defaults to annotation-only without invoking metrics, retaining geometry, provenance and snapshots', () => {
+        const region = app.annotationModel.normalizeRegion({ id: 9, positionId: 'P1',
+            areas: [{ start: 2000, end: 4000 }, { start: 5000, end: 6000 }], note: 'Quick, "copy"',
+            categoryId: 'plant', meterStates: { P2: 'absent' } }, ['P1', 'P2']);
+        const markers = [{ id: 1, timestamp: 2500, note: 'Peak', color: '#abcdef', metrics: { P1: 70 } }];
+        const state = { view: { availablePositions: ['P1', 'P2'], positionChartOffsets: { P1: 1000 } } };
+        const compute = vi.spyOn(engine, 'computeRegion').mockImplementation(() => { throw new Error('Quick export must not compute metrics'); });
+        try {
+            // Even the both-resolutions preference must not turn a quick export into analysis.
+            const csv = app.annotationCsv.buildAnnotationsCsv(markers, [region], state, { include_all_resolutions: true });
+            const rows = app.annotationCsv.parseCsvRows(csv);
+            expect(rows.filter(row => /^\[[A-Z_]+\]$/.test(row[0])).map(row => row[0])).toEqual(['[REGIONS]', '[MARKERS]', '[NOTES]']);
+            const exported = app.annotationCsv.readSection(rows, 'REGIONS')[0];
+            expect(exported).toMatchObject({ duration_s: '3', chart_offset_ms: '1000', source_start: '1970-01-01 00:00:01.000',
+                source_areas: JSON.stringify([{ start: 1000, end: 3000 }, { start: 4000, end: 5000 }]),
+                LAeq_dB: '', LAFmax_dB: '', data_resolution: '', sample_interval_s: '', coverage: '' });
+            expect(app.annotationCsv.readSection(rows, 'NOTES')).toContainEqual({ key: 'export_mode', value: 'annotations' });
+            const restored = app.annotationCsv.parseAnnotationsCsv(csv);
+            expect(restored.regions).toEqual([region]);
+            expect(restored.markers).toEqual(markers);
+            expect(compute).not.toHaveBeenCalled();
+        } finally { compute.mockRestore(); }
+    });
+
+    it('quick export works without a loaded metrics engine', () => {
+        const saved = app.annotationMetrics;
+        try {
+            delete app.annotationMetrics;
+            const csv = app.annotationCsv.buildAnnotationsCsv([], [{ id: 1, positionId: 'P1', start: 0, end: 1000 }]);
+            expect(app.annotationCsv.readSection(app.annotationCsv.parseCsvRows(csv), 'REGIONS')).toHaveLength(1);
+            expect(() => app.annotationCsv.buildAnnotationsCsv([], [], {}, { mode: 'full' })).toThrow('metrics engine');
+        } finally { app.annotationMetrics = saved; }
+    });
+
     it('round-trips region identity, all meter states, categories, marker snapshots and multiline text', () => {
         const categories = app.annotationModel.normalizeCatalog();
         const regions = [app.annotationModel.normalizeRegion({ id: 4, positionId: 'P1', areas: [{ start: 0, end: 2000 }],
             categoryId: 'plant', color: null, note: 'Fan, "night"\n[OVERALL]\nUnicode: café', meterStates: { P2: 'absent', P3: 'unchecked' } }, ['P1', 'P2', 'P3'])];
         const state = { regions: { byId: { 4: regions[0] }, allIds: [4], categories }, view: { availablePositions: ['P1', 'P2', 'P3'], positionChartOffsets: { P2: 1000 } } };
         const markers = [{ id: 8, timestamp: 1000, note: 'Peak', color: '#abcdef', metrics: { broadband: [{ positionId: 'P1', value: 70 }] } }];
-        const csv = app.annotationCsv.buildAnnotationsCsv(markers, regions, state, { models: {} });
+        const csv = app.annotationCsv.buildAnnotationsCsv(markers, regions, state, { models: {}, mode: 'full' });
         const result = app.annotationCsv.parseAnnotationsCsv(csv);
         expect(result.regions).toEqual(regions);
         expect(result.categories).toEqual(categories);
@@ -151,8 +185,8 @@ describe('sectioned analysis CSV', () => {
         const models = { timeSeriesSources: { P1: { log: { data }, overview: { data } } },
             preparedGlyphData: { P1: { log: { prepared_params: { LZeq: prepared } }, overview: { prepared_params: { LZeq: prepared } } } } };
         const state = { view: { availablePositions: ['P1'] } };
-        const best = app.annotationCsv.parseCsvRows(app.annotationCsv.buildAnnotationsCsv([], [region], state, { models }));
-        const both = app.annotationCsv.parseCsvRows(app.annotationCsv.buildAnnotationsCsv([], [region], state, { models, include_all_resolutions: true }));
+        const best = app.annotationCsv.parseCsvRows(app.annotationCsv.buildAnnotationsCsv([], [region], state, { models, mode: 'full' }));
+        const both = app.annotationCsv.parseCsvRows(app.annotationCsv.buildAnnotationsCsv([], [region], state, { models, mode: 'full', include_all_resolutions: true }));
         expect(app.annotationCsv.readSection(best, 'OVERALL')).toHaveLength(1);
         expect(app.annotationCsv.readSection(both, 'OVERALL')).toHaveLength(2);
         const header = best[best.findIndex(row => row[0] === '[SPECTRAL]') + 1];
@@ -165,7 +199,7 @@ describe('sectioned analysis CSV', () => {
             frequency_labels: ['63 Hz'], levels_flat_transposed: [60, 70] };
         const models = { timeSeriesSources: { P1: { overview: { data: { Datetime: [0, 1000], LAeq: [40, 40] } } } },
             preparedGlyphData: { P1: { log: { prepared_params: { LZeq: prepared } }, overview: { prepared_params: { LZeq: prepared } } } } };
-        const csv = app.annotationCsv.buildAnnotationsCsv([], [region], {}, { models, include_all_resolutions: true });
+        const csv = app.annotationCsv.buildAnnotationsCsv([], [region], {}, { models, mode: 'full', include_all_resolutions: true });
         const spectral = app.annotationCsv.readSection(app.annotationCsv.parseCsvRows(csv), 'SPECTRAL');
         expect(spectral.map(row => row.data_resolution)).toEqual(['log', 'overview']);
         expect(Number(spectral[0]['63Hz'])).toBeCloseTo(67.4036268949, 6);
@@ -177,7 +211,7 @@ describe('sectioned analysis CSV', () => {
             frequency_labels: ['63 Hz'], levels_flat_transposed: [60, 70] };
         const models = { preparedGlyphData: { P1: { log: { prepared_params: { LZeq: prepared } },
             overview: { prepared_params: { LZeq: prepared } } } } };
-        const csv = app.annotationCsv.buildAnnotationsCsv([], [entity], {}, { models, include_all_resolutions: true });
+        const csv = app.annotationCsv.buildAnnotationsCsv([], [entity], {}, { models, mode: 'full', include_all_resolutions: true });
         const rows = app.annotationCsv.readSection(app.annotationCsv.parseCsvRows(csv), 'OVERALL');
         expect(rows.map(row => row.data_resolution)).toEqual(['log', 'overview']);
         rows.forEach(row => {

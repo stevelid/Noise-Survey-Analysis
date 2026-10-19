@@ -72,7 +72,7 @@ def main():
         shutil.copy2(args.output / "measurements.json", args.evidence)
         shutil.copytree(images, args.evidence / "static", dirs_exist_ok=True)
     print(json.dumps({name: report["modes"]["static"][name]["median_ms"]
-                      for name in ("startup", "render", "export")}))
+                      for name in ("startup", "render", "annotations_only_export", "export")}))
 
 
 if __name__ == "__main__":

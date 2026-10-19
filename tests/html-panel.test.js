@@ -57,6 +57,7 @@ describe('HTML annotation panel', () => {
     });
 
     it('calculates metrics only for the selected region, one request per meter', () => {
+        app.store.dispatch(feature.actions.panelSettingsChanged({ metricsVisible: true }));
         app.store.dispatch(app.actions.regionsAdded([{ id: 2, positionId: 'P2', start: 3000, end: 4000 }]));
         app.store.dispatch(app.actions.regionSelect(1));
         renderer.buildHtml(app.store.getState(), {}, {});
@@ -68,12 +69,65 @@ describe('HTML annotation panel', () => {
         expect(app.regions.getRegionMetrics).not.toHaveBeenCalled();
     });
 
+    it('starts with metrics collapsed and preserves the explicit choice through workspace state rehydration', () => {
+        setupDom();
+        expect(root.querySelector('[data-action="metrics-visible"]').getAttribute('aria-expanded')).toBe('false');
+        expect(app.regions.getRegionMetrics).not.toHaveBeenCalled();
+        for (const expected of [true, false]) {
+            app.store.dispatch(feature.thunks.panelCommandIntent('metrics-visible'));
+            const restored = app.rootReducer(undefined, app.actions.rehydrateState(JSON.parse(JSON.stringify(app.store.getState()))));
+            expect(feature.selectors.selectPanelState(restored).metricsVisible).toBe(expected);
+        }
+    });
+
+    it('uses a native picker without converting inherited category colour into an override', async () => {
+        setupDom(); await tick();
+        let picker = root.querySelector('[data-key="region-color:1"]');
+        const inherited = app.annotationModel.effectiveColor(app.store.getState().regions.byId[1], app.store.getState().regions.categories);
+        expect(picker.type).toBe('color');
+        expect(picker.value).toBe(inherited);
+        expect(app.store.getState().regions.byId[1].color).toBeFalsy();
+        picker.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+        picker.focus(); picker.value = '#123456';
+        picker.dispatchEvent(new Event('input', { bubbles: true }));
+        picker.dispatchEvent(new Event('change', { bubbles: true }));
+        expect(picker.isConnected).toBe(true);
+        picker.blur(); await tick();
+        expect(app.store.getState().regions.byId[1].color).toBe('#123456');
+        root.querySelector('[data-action="region-color"][data-value=""]').click(); await tick();
+        expect(app.store.getState().regions.byId[1].color).toBeNull();
+        expect(root.querySelector('[data-key="region-color:1"]').value).toBe(inherited);
+        app.store.dispatch(app.actions.regionSetColor(1, 'red')); await tick();
+        picker = root.querySelector('[data-key="region-color:1"]');
+        expect(picker.value).toBe('#ff0000');
+        expect(app.store.getState().regions.byId[1].color).toBe('red');
+    });
+
     it('does not calculate region metrics on hidden tabs', () => {
         app.store.dispatch(app.actions.setActiveSidePanelTab(1));
         renderer.buildHtml(app.store.getState(), {}, {});
         app.store.dispatch(app.actions.setActiveSidePanelTab(2));
         renderer.buildHtml(app.store.getState(), {}, {});
         expect(app.regions.getRegionMetrics).not.toHaveBeenCalled();
+    });
+
+    it('loads the origin spectrum on demand while the per-meter metrics table stays collapsed', async () => {
+        setupDom(); await tick();
+        expect(app.regions.getRegionMetrics).not.toHaveBeenCalled();
+        const spectrum = root.querySelector('details[data-key="region-spectrum"]');
+        spectrum.open = true;
+        spectrum.dispatchEvent(new Event('toggle'));
+        await tick();
+        expect(app.store.getState().annotationPanel.metricsVisible).toBe(false);
+        expect(app.store.getState().annotationPanel.spectrumVisible).toBe(true);
+        expect(app.regions.getRegionMetrics).toHaveBeenCalledTimes(1);
+        expect(app.regions.getRegionMetrics.mock.calls[0][4].positionId).toBe('P1');
+        const rendered = root.querySelector('details[data-key="region-spectrum"]');
+        expect(rendered.open).toBe(true);
+        expect(rendered.querySelector('table').textContent).toContain('63 Hz');
+        expect(root.querySelector('[data-action="metrics-visible"]').getAttribute('aria-expanded')).toBe('false');
+        rendered.open = false; rendered.dispatchEvent(new Event('toggle')); await tick();
+        expect(app.regions.getRegionMetrics).toHaveBeenCalledTimes(1);
     });
 
     it('filters without changing annotation entities', () => {
@@ -108,6 +162,17 @@ describe('HTML annotation panel', () => {
         expect(root.querySelector('[data-scroll-key="panel"]').scrollTop).toBe(120);
         expect(root.querySelector('details[data-key="region-secondary"]').open).toBe(true);
         expect(app.store.getState().regions.byId[1].note).toBe('Dog bark');
+    });
+
+    it('preserves details scroll for the same region and starts a different region at the top', async () => {
+        app.store.dispatch(app.actions.regionsAdded([{ id: 2, positionId: 'P1', start: 3000, end: 4000 }]));
+        app.store.dispatch(app.actions.regionSelect(1));
+        setupDom(); await tick();
+        root.querySelector('[data-scroll-key="selected-region:1"]').scrollTop = 80;
+        app.store.dispatch(app.actions.regionSetColor(1, '#123456')); await tick();
+        expect(root.querySelector('[data-scroll-key="selected-region:1"]').scrollTop).toBe(80);
+        app.store.dispatch(app.actions.regionSelect(2)); await tick();
+        expect(root.querySelector('[data-scroll-key="selected-region:2"]').scrollTop).toBe(0);
     });
 
     it('commits notes with Ctrl+Enter and cancels drafts with Escape', async () => {

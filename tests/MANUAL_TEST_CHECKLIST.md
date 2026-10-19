@@ -238,9 +238,11 @@
 - [ ] **Expected:** A version-2 workspace JSON file downloads
 - [ ] **Action:** Change annotations, then choose Menu → Load Workspace and select the saved file
 - [ ] **Expected:** Regions, meter states, categories, markers and saved review settings restore
-- [ ] **Action:** Choose Menu → Export Annotations (CSV)
-- [ ] **Expected:** One sectioned CSV downloads with REGIONS, OVERALL, SPECTRAL and NOTES, plus MARKERS when present
-- [ ] **Expected:** REGIONS contains readable notes, times, categories, meter states and origin headline levels; analysis rows identify their data resolution
+- [ ] **Action:** Choose Menu → Export Annotations — Quick (CSV)
+- [ ] **Expected:** REGIONS, MARKERS and NOTES download quickly, with readable notes/times/categories/states/provenance, blank region metric fields and an annotations-only mode note; no per-meter metrics are calculated
+- [ ] **Action:** Choose Menu → Export Annotations + Analysis (Browser CSV)
+- [ ] **Expected:** OVERALL and SPECTRAL are added, REGIONS headline levels populate where data exists, and every analysis row identifies its data resolution
+- [ ] **Test:** Import both exports into fresh annotation state; each restores the same regions, states, categories and marker snapshots
 - [ ] **Action:** Choose Menu → Import Annotations (CSV) and select the export
 - [ ] **Expected:** Annotations, states, categories and marker snapshots restore; analysis sections do not create annotations
 - [ ] **Test:** Import an old unsectioned annotation CSV; matching cross-meter copies consolidate and the merge count appears
@@ -258,7 +260,7 @@
 - [ ] **Expected:** Marker selection clears and the Regions tab is active
 - [ ] **Action:** Select another row
 - [ ] **Expected:** Selection and details switch to that region
-- [ ] **Test:** Filter by category, Present at meter, Present at one meter only and Has unchecked meters
+- [ ] **Test:** Expand Filters, then filter by category, Present at meter, Present at one meter only and Has unchecked meters
 - [ ] **Expected:** The list count and rows match each filter; annotations are retained when hidden by a filter
 - [ ] **Test:** Reset the filters and confirm all rows return
 
@@ -278,8 +280,9 @@
 ### 4.4 Categories and Colour Overrides 🟢
 - [ ] **Action:** Select a region and change Category
 - [ ] **Expected:** Category colour becomes its default band and list-swatch colour
-- [ ] **Action:** Enter a valid Colour override, then leave the field
+- [ ] **Action:** Open the native Colour override picker, choose a colour, then leave the control
 - [ ] **Expected:** The override applies to that region without changing the category colour
+- [ ] **Test:** Open and cancel the picker with no override: the category colour remains inherited, with no new override
 - [ ] **Action:** Choose Use category
 - [ ] **Expected:** The override clears and category colouring returns
 - [ ] **Test:** Under Actions and settings → Categories, create, rename and recolour a category
@@ -289,9 +292,9 @@
 ### 4.5 Region Notes 🟢
 - [ ] **Action:** Edit the selected region's Notes, then leave the field or press Ctrl+Enter
 - [ ] **Expected:** The note saves and persists after selecting another region and returning
-- [ ] **Test:** With a dirty note, click Category and choose with the keyboard, then repeat with Colour override and type a colour: each control works on the first click and the note saves
+- [ ] **Test:** With a dirty note, click Category and choose with the keyboard, then repeat with Colour override and choose in its native dialog: each control works on the first click and the note saves
 - [ ] **Test:** Click Category after editing a note, dismiss it without changing the category, then click outside: the saved note appears in the list without leaving rendering paused
-- [ ] **Test:** Repeat that unchanged-category flow but click another region or Actions and settings: the first click selects/opens it; repeat after typing a colour override and verify both the colour save and selection complete
+- [ ] **Test:** Repeat that unchanged-category flow but click another region or Actions and settings: the first click selects/opens it; repeat after choosing a colour override and verify both the colour save and selection complete
 - [ ] **Action:** Edit a draft, then press Esc
 - [ ] **Expected:** The draft cancels and the saved note returns
 - [ ] **Test:** While a draft has focus, change an unrelated annotation field
@@ -339,11 +342,12 @@
 - [ ] **Expected:** There is no Copy Region To selector or copy-to-all control; undo restores state edits
 
 ### 4.12 Per-Meter Metrics and Resolution 🟢
-- [ ] **Action:** Select a region and show its metrics
+- [ ] **Expected:** Per-meter metrics start collapsed in a new workspace; selecting regions does not calculate hidden metrics
+- [ ] **Action:** Select a region and choose Show per-meter metrics
 - [ ] **Expected:** One row per meter shows LAeq, LAFmax, LAF90 and the actual data resolution, including absent/unchecked meters
 - [ ] **Expected:** Missing values remain unavailable; overview and 1 s LAF90 are identified as indicative
-- [ ] **Test:** Hide metrics, change selection, then choose Show metrics
-- [ ] **Expected:** The region list does not calculate metrics for every row
+- [ ] **Test:** Hide per-meter metrics, change selection, then choose Show per-meter metrics; save/reload a workspace with each choice and verify it is remembered
+- [ ] **Expected:** The region list does not calculate metrics for every row; it fills the remaining panel space with several review rows visible alongside selected details
 - [ ] **Test:** Zoom or stream log data, then recalculate; resolution and levels update without recreating annotations
 
 ### 4.13 Centre, Back and Recalculate 🟢
@@ -368,7 +372,8 @@
 - [ ] **Expected:** That region is selected and its note is focused; a tap outside regions produces a useful selection message
 
 ### 4.14 Average Spectrum and Clipboard 🟡 PARTIAL
-- [ ] **Action:** Show selected-region metrics; expand Actions and settings → Average spectrum
+- [ ] **Action:** Keep per-meter metrics collapsed; expand Actions and settings → Average spectrum
+- [ ] **Expected:** The origin meter spectrum loads independently; the all-meter metrics table stays collapsed
 - [ ] **Expected:** The table identifies its parameter/resolution and lists frequency bands in order
 - [ ] **Action:** Choose Copy spectrum and paste into a spreadsheet
 - [ ] **Expected:** Frequency bands and levels occupy separate columns
@@ -1038,6 +1043,7 @@ _____________________________________________
 - [ ] Scroll charts several meters down: the sidebar stays visible and its content scrolls independently. Repeat after resizing the browser.
 - [ ] Regions/Markers/Classifications tabs retain their selection and work offline. Comparison shows its meter selector, metrics, Make Region and Finish controls.
 - [ ] Meter strips use display titles and cycle unchecked/present/absent without seeking audio; the origin remains present.
+- [ ] Meter-state chips have legible labels and distinct high-contrast solid/dashed states, including the disabled origin; native colour picker cancellation never changes inherited category colour.
 - [ ] Edit notes, move the caret, expand a section and scroll the panel. Another annotation update preserves the draft, caret, open section and scroll position.
 - [ ] Ctrl+Enter saves a note; Esc cancels a draft; N focuses the selected region note. Existing chart shortcuts do nothing while editing.
 - [ ] Category, present-at-meter, single-meter and unchecked filters narrow the list without altering annotations. Category edits and colour overrides support undo.

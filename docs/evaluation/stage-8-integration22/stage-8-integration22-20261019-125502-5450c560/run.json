@@ -1,0 +1,124 @@
+{
+  "stage": "stage-8-integration22",
+  "run": "stage-8-integration22-20261019-125502-5450c560",
+  "startedUtc": "2026-10-19T11:55:06.9297326Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-integration22-20261019-125502-5450c560\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-integration22-20261019-125502-5450c560\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-8-integration22\\stage-8-integration22-20261019-125502-5450c560",
+  "head": "f8f1dece85164bb55fa2a6ff914e3fd4e409af9f",
+  "sourceStatus": [
+    " M noise_survey_analysis/core/annotation_metrics.py",
+    " M noise_survey_analysis/export/annotations.py",
+    " M noise_survey_analysis/static/css/annotation-panel.css",
+    " M noise_survey_analysis/static/js/features/annotations/panelSelectors.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelEvents.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelRenderer.js",
+    " M noise_survey_analysis/static/js/services/session/annotationCsv.js",
+    " M noise_survey_analysis/static/js/services/session/sessionManager.js",
+    " M noise_survey_analysis/ui/component_parts/controls.py",
+    " M scripts/annotation_benchmark.py",
+    " M scripts/checkpoint_benchmark.py",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    " M tests/annotation-metrics-export.test.js",
+    " M tests/e2e/static-dashboard.spec.ts",
+    " M tests/html-panel.test.js",
+    " M tests/sessionManager-extra.test.js",
+    " M tests/sessionManager.test.js",
+    " M tests/test_annotation_export.py",
+    "?? docs/evaluation/stage-8-browser-panel/",
+    "?? scripts/profile_export_benchmark.py"
+  ],
+  "sourceFileCount": 271,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.347
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-integration22-20261019-125502-5450c560\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.765
+    },
+    "pytest": {
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "pytest",
+        "tests/",
+        "--junitxml=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-integration22-20261019-125502-5450c560\\evidence\\pytest.xml"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 34.234
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.104
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-integration22-20261019-125502-5450c560\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.92
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "failed": 0,
+      "pending": 0,
+      "total": 512,
+      "skipped": 3,
+      "passed": 509
+    },
+    "pytest": {
+      "failures": "0",
+      "total": "472",
+      "errors": "0",
+      "skipped": "0"
+    },
+    "playwright": {
+      "startTime": "2026-10-19T11:56:03.724Z",
+      "duration": 5681.674,
+      "expected": 9,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    }
+  },
+  "finishedUtc": "2026-10-19T11:56:09.6653902Z",
+  "failedSteps": [],
+  "suitesPassed": true
+}

@@ -201,6 +201,29 @@ describe('NoiseSurveyApp.session extra flows', () => {
         expect(exported.regions).toHaveLength(1);
         expect(exported.regions[0]).toMatchObject({ id: 2, note: 'Region', meterStates: { P1: 'present' } });
         expect(exported.markers[0].metrics).toEqual({});
+        expect(csvText).not.toContain('\r\n[OVERALL]\r\n');
+        expect(csvText).not.toContain('\r\n[SPECTRAL]\r\n');
+        expect(exported.regions[0].areas).toEqual([{ start: Date.UTC(2024, 0, 1, 1), end: Date.UTC(2024, 0, 1, 1, 5) }]);
+    });
+
+    it('routes the default menu to quick export and the separate browser analysis menu to metrics export', async () => {
+        const { anchors, blobs } = interceptDownloads();
+        app.features.regions.selectors.selectAllRegions.mockReturnValue([
+            { id: 1, positionId: 'P1', areas: [{ start: 0, end: 2000 }] }
+        ]);
+        app.registry.models.timeSeriesSources = { P1: { log: { data: { Datetime: [0, 1000], LAeq: [60, 70] } } } };
+        const compute = vi.spyOn(app.annotationMetrics, 'computeRegion');
+
+        session.handleMenuAction('export_annotations_csv');
+        expect(compute).not.toHaveBeenCalled();
+        expect(await blobs[0].text()).not.toContain('\r\n[OVERALL]\r\n');
+
+        session.handleMenuAction('export_annotations_analysis_csv');
+        expect(compute).toHaveBeenCalled();
+        expect(anchors[1].download).toMatch(/^annotations-analysis-.*\.csv$/);
+        const rows = app.annotationCsv.parseCsvRows(await blobs[1].text());
+        expect(Number(app.annotationCsv.readSection(rows, 'OVERALL')[0].LAeq_dB)).toBeCloseTo(67.4036, 4);
+        expect(rows.some(row => row[0] === '[SPECTRAL]')).toBe(true);
     });
 
     it('applies workspace state, warns on source mismatch, and only restores initial state once', () => {

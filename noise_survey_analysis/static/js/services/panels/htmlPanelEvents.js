@@ -73,6 +73,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const height = Math.max(180, window.innerHeight - Math.max(top, scroll.getBoundingClientRect().top) - 12);
         const value = `${Math.floor(height)}px`;
         if (scroll.style.maxHeight !== value) scroll.style.maxHeight = value;
+        if (scroll.style.height !== value) scroll.style.height = value;
     }
     function restore(session) {
         const root = session.root;
@@ -80,8 +81,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         fitPanel(session);
         for (const element of root.querySelectorAll('[data-key]')) {
             const key = element.dataset.key;
+            if (element.matches('input[type="color"][data-picker-colour]') && !session.drafts.has(key)) {
+                // Native pickers require opaque hex. CSS resolves legacy names
+                // without changing the stored colour until a user chooses one.
+                const rgb = getComputedStyle(element).color.match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
+                if (rgb) element.value = '#' + rgb.slice(1, 4).map(value => Number(value).toString(16).padStart(2, '0')).join('');
+            }
             if (session.drafts.has(key)) element.value = session.drafts.get(key);
-            if (element.tagName === 'DETAILS' && session.details.has(key)) element.open = session.details.get(key);
+            // Store-backed disclosures carry their canonical open state in
+            // markup; restoring an older DOM snapshot would undo that choice.
+            if (element.tagName === 'DETAILS' && !element.hasAttribute('data-open-state') && session.details.has(key)) element.open = session.details.get(key);
         }
         const focus = session.focus;
         const target = focus?.detailsKey
@@ -132,7 +141,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const active = root.activeElement;
             const hasNoteDraft = active?.matches?.('textarea[data-action]') && session.drafts.has(active.dataset.key);
             const formControl = event.target?.closest?.('input[data-action],select[data-action]');
-            if ((hasNoteDraft || session.protectedControl) && formControl && !formControl.disabled && event.button === 0) {
+            if ((hasNoteDraft || session.protectedControl || formControl?.type === 'color') && formControl && !formControl.disabled && event.button === 0) {
                 // Keep the native target alive through the note's blur save.
                 // Replacing a focused select also closes its native popup.
                 session.protectedControl = formControl;
@@ -156,7 +165,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 // disclosure state, rather than the pre-click closed state.
                 summary.parentElement.open = !summary.parentElement.open;
                 const focus = focusDescriptor(summary);
-                if (draft) app.store.dispatch(app.features.annotationPanel.thunks.panelCommandIntent('commit-note-draft', { draft }));
+                if (summary.parentElement.dataset.action) dispatchControl(session, summary.parentElement, summary.parentElement.open, draft);
+                else if (draft) app.store.dispatch(app.features.annotationPanel.thunks.panelCommandIntent('commit-note-draft', { draft }));
                 flushDeferredPanel(session);
                 session.focus = focus;
                 queueMicrotask(() => { if (!session.disposed) restore(session); });
@@ -207,6 +217,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
         const keydown = event => {
             const target = event.target;
+            if (target?.matches?.('input[type="color"][data-action]') && ['Enter', ' '].includes(event.key)) {
+                session.protectedControl = target;
+            }
             if (!target?.matches?.('textarea[data-action]')) return;
             if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey && session.drafts.has(target.dataset.key)) {
                 const focus = focusDescriptor(nextTabTarget(root, target, event.shiftKey));
@@ -225,7 +238,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         };
         const toggle = event => {
-            if (event.target?.matches?.('details[data-key]')) session.details.set(event.target.dataset.key, event.target.open);
+            const details = event.target;
+            if (!details?.matches?.('details[data-key]')) return;
+            session.details.set(details.dataset.key, details.open);
+            // Rendered/restored toggles already match this marker. Only a new
+            // user choice routes an intent, avoiding a render/toggle loop.
+            if (details.dataset.action && details.dataset.openState !== String(details.open)) {
+                dispatchControl(session, details, details.open);
+            }
         };
         // mousedown covers browsers without Pointer Events. Keyboard buttons
         // retain native activation; only dirty-note Tab needs focus restoration.

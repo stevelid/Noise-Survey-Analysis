@@ -9,6 +9,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const disabled = value => value ? ' disabled' : '';
     const selected = (a, b) => a === b ? ' selected' : '';
     const color = value => app.annotationModel.normalizeColor(value, '#1e88e5');
+    function pickerColor(value) {
+        const normalized = color(value);
+        if (/^#[\da-f]{3,4}$/i.test(normalized)) return '#' + [...normalized.slice(1, 4)].map(part => part + part).join('');
+        return /^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(normalized) ? normalized.slice(0, 7) : '#1e88e5';
+    }
     const level = value => Number.isFinite(value) ? value.toFixed(1) : '—';
     const timestamp = value => Number.isFinite(value) ? new Date(value).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '—';
 
@@ -27,7 +32,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return `<div class="nsa-meter-strip" aria-label="Meter states">${data.positions.map(meter => {
             const status = selectors.selectRegionMeterState(state, region, meter);
             const title = app.features.annotationPanel.selectors.selectMeterTitle(state, meter);
-            return button('cycle-meter', `${title} ${STATE_SYMBOLS[status]}`, `class="nsa-meter nsa-meter--${status}" data-id="${e(region.id)}" data-meter="${e(meter)}" title="${e(title)}: ${status}${meter === region.positionId ? ' (origin)' : '; click to change'}" aria-label="${e(title)}: ${status}"${disabled(meter === region.positionId)}`);
+            return `<button type="button" data-action="cycle-meter" class="nsa-meter nsa-meter--${status}" data-id="${e(region.id)}" data-meter="${e(meter)}" title="${e(title)}: ${status}${meter === region.positionId ? ' (origin)' : '; click to change'}" aria-label="${e(title)}: ${status}"${disabled(meter === region.positionId)}><span>${e(title)}</span><span class="nsa-meter-symbol" aria-hidden="true">${STATE_SYMBOLS[status]}</span></button>`;
         }).join('')}</div>`;
     }
     // Calculate only the selected annotation; list rows never request metrics.
@@ -130,20 +135,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const categoryOptions = data.categories.allIds.map(id => option(id, data.categories.byId[id].label, region.categoryId)).join('');
             const metrics = data.ui.metricsVisible ? metricsTable(region, data, state, models, cache) : null;
             originMetrics = metrics?.byMeter?.[region.positionId];
-            details = `<section class="nsa-selected">
+            if (data.ui.spectrumVisible && !originMetrics) {
+                // Opening spectrum does not expand/calculate the all-meter table.
+                try { originMetrics = app.regions.getRegionMetrics(region, state, cache, models, { positionId: region.positionId }); }
+                catch (_) { originMetrics = null; }
+            }
+            details = `<section class="nsa-selected" data-scroll-key="selected-region:${e(region.id)}">
             <h3>Selected region</h3>${meterStrip(region, data, state)}<p class="nsa-help">● Present · ✕ Absent · ○ Unchecked</p>
             <label>Category<select data-key="region-category:${e(region.id)}" data-action="region-category" data-id="${e(region.id)}">${categoryOptions}</select>
             </label>
-            <label>Notes<textarea rows="3" data-key="region-note:${e(region.id)}" data-action="region-note" data-id="${e(region.id)}">${e(region.note)}</textarea>
+            <label>Notes<textarea rows="2" data-key="region-note:${e(region.id)}" data-action="region-note" data-id="${e(region.id)}">${e(region.note)}</textarea>
             </label>
             <p class="nsa-help">Notes save on leaving the field or Ctrl+Enter; Esc cancels a draft.</p>
-            <div class="nsa-inline">
-            <label>Colour override<input data-key="region-color:${e(region.id)}" data-action="region-color" data-id="${e(region.id)}" value="${e(region.color || '')}" placeholder="Category colour" maxlength="30">
-            </label>${button('region-color', 'Use category', `data-id="${e(region.id)}" data-value=""`)}</div>
+            <div class="nsa-colour-status"><label>Colour override<input type="color" data-key="region-color:${e(region.id)}" data-action="region-color" data-id="${e(region.id)}" value="${e(pickerColor(app.annotationModel.effectiveColor(region, data.categories)))}" data-picker-colour="true" style="color:${e(color(app.annotationModel.effectiveColor(region, data.categories)))}" aria-label="Region colour override"></label><small>${region.color ? 'Override set' : 'Using category colour'}</small>${button('region-color', 'Use category', `data-id="${e(region.id)}" data-value=""`)}</div>
             <div class="nsa-buttons">${button('centre-region', 'Centre')}
                 ${button('back', 'Back (B)')}
-                ${button('delete-region', 'Delete', 'class="nsa-danger"')}</div>${button('metrics-visible', data.ui.metricsVisible ? 'Hide metrics' : 'Show metrics')}
-            ${metrics?.html || ''}</section>`;
+                ${button('delete-region', 'Delete', 'class="nsa-danger"')}</div>${button('metrics-visible', data.ui.metricsVisible ? 'Hide per-meter metrics' : 'Show per-meter metrics', `aria-expanded="${Boolean(data.ui.metricsVisible)}" aria-controls="nsa-region-metrics"`)}
+            <div id="nsa-region-metrics"${data.ui.metricsVisible ? '' : ' hidden'}>${metrics?.html || ''}</div></section>`;
         }
         const filters = data.ui.filters;
         const list = data.regions.map(item => `<article class="nsa-region-row${region?.id === item.id ? ' is-selected' : ''}">
@@ -153,10 +161,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const mergeOptions = data.allRegions.filter(item => region && item.id !== region.id && item.positionId === region.positionId).map(item => option(String(item.id), item.note || `Region ${item.id}`, '')).join('');
         return `${creationStatus(state)}
             ${details}
-            <section>
+            <section class="nsa-region-list-section">
             <h3>Regions <small>${data.regions.length} / ${data.allRegions.length}</small>
             </h3>
-            <div class="nsa-filters">
+            <details class="nsa-region-filters" data-key="region-filters"><summary>Filters${Object.values(filters).some(Boolean) ? ' · active' : ''}</summary><div class="nsa-filters">
             <label>Category<select data-key="filter-category" data-action="filter" data-field="categoryId">${option('', 'All categories', filters.categoryId)}${data.categories.allIds.map(id => option(id, data.categories.byId[id].label, filters.categoryId)).join('')}</select>
             </label>
             <label>Present at<select data-key="filter-meter" data-action="filter" data-field="presentAt">${option('', 'Any meter', filters.presentAt)}${data.positions.map(id => option(id, app.features.annotationPanel.selectors.selectMeterTitle(state, id), filters.presentAt)).join('')}</select>
@@ -165,7 +173,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             <input type="checkbox" data-action="filter" data-field="onlyOneMeter"${checked(filters.onlyOneMeter)}>Present at one meter only</label>
             <label class="nsa-check">
             <input type="checkbox" data-action="filter" data-field="hasUnchecked"${checked(filters.hasUnchecked)}>Has unchecked meters</label>
-            </div>
+            </div></details>
             <div class="nsa-annotation-list" data-scroll-key="region-list">${list || '<p class="nsa-help">No regions match these filters.</p>'}</div>
             </section>
             <details data-key="region-secondary">
@@ -179,8 +187,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ${button('copy-summary', 'Copy summary', disabled(!region))}</div>
             <label>Merge into selected region<select data-key="merge-region" data-action="merge-region"${disabled(!region || !mergeOptions)}>${option('', 'Choose another region…', '')}${mergeOptions}</select>
             </label>
-            <details data-key="region-spectrum">
-            <summary>Average spectrum</summary>${spectrumTable(originMetrics)}
+            <details data-key="region-spectrum" data-action="spectrum-visible" data-open-state="${Boolean(data.ui.spectrumVisible)}"${data.ui.spectrumVisible ? ' open' : ''}>
+            <summary>Average spectrum</summary>${data.ui.spectrumVisible ? spectrumTable(originMetrics) : '<p class="nsa-help">Open to calculate the origin meter spectrum.</p>'}
                 ${button('copy-spectrum', 'Copy spectrum', disabled(!region))}</details>${exportSettings(data)}
             ${categoryEditor(data)}</details>`;
     }
@@ -290,7 +298,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return `<div class="nsa-annotation-panel" data-nsa-panel="annotations" data-nsa-model="${e(models?.htmlSidePanel?.id || '')}">
             <nav role="tablist" aria-label="Annotations">${TAB_LABELS.map((label, index) => button('tab', label, `role="tab" data-value="${index}" data-key="tab:${index}" aria-selected="${!comparison && tab === index}"${disabled(comparison)}`)).join('')}</nav>
             <div class="nsa-panel-scroll" data-scroll-key="panel">
-            <div role="tabpanel" aria-label="${comparison ? 'Comparison' : TAB_LABELS[tab]}">${content}
+            <div role="tabpanel" class="${!comparison && tab === 0 ? 'nsa-region-view' : 'nsa-other-view'}" aria-label="${comparison ? 'Comparison' : TAB_LABELS[tab]}">${content}
             ${displaySettings(state)}</div>
             </div>
             </div>`;

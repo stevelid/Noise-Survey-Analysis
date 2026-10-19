@@ -399,7 +399,8 @@ class ControlsComponent:
                 ("Save Setup to Config", "save_setup_to_config"),
                 ("Save Workspace", "save"),
                 ("Load Workspace", "load"),
-                ("Export Annotations (CSV)", "export_annotations_csv"),
+                ("Export Annotations — Quick (CSV)", "export_annotations_csv"),
+                ("Export Annotations + Analysis (Browser CSV)", "export_annotations_analysis_csv"),
                 ("Import Annotations (CSV)", "import_annotations_csv"),
                 ("Export Classifications (CSV)", "export_classifications_csv"),
                 ("Import Classifications (CSV/JSON)", "import_classifications"),
@@ -409,7 +410,7 @@ class ControlsComponent:
 
         if self.server_mode:
             menu = list(dropdown.menu)
-            menu.insert(4, ("Export Annotations — Full Resolution", "export_annotations_full_resolution"))
+            menu.insert(5, ("Export Annotations — Full Resolution", "export_annotations_full_resolution"))
             dropdown.menu = menu
 
         dropdown.js_on_event("menu_item_click", CustomJS(code="""

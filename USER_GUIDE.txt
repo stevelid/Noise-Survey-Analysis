@@ -2,7 +2,7 @@
                     NOISE SURVEY ANALYSIS - USER GUIDE
 ================================================================================
 
-Version: 1.3
+Version: 1.4
 Last Updated: 2026-10-19
 
 ================================================================================
@@ -272,7 +272,8 @@ Main Components:
    Regions Tab:
    - Compact region rows with state strips and category/meter/review filters
    - Selected region details, category, per-meter states, metrics and notes
-   - Colour field for selected region (blank uses the category colour)
+   - Native colour swatch for selected region; Use category clears the override
+   - Metrics initially hidden; Show/Hide metrics is remembered in the workspace
    - Notes text area
    - Action buttons: Auto Day & Night, Add Area, Merge Regions,
      Split Areas, Copy Summary, Copy Spectrum, Delete Region
@@ -489,7 +490,8 @@ Categories and notes:
 Review and filtering:
 - Filter by category, present at a chosen meter, present at only one meter,
   or remaining unchecked meters.
-- Show metrics calculates LAeq, genuine LAFmax and LAF90 for each meter, with
+- Metrics start hidden, leaving room for the region list. Show/Hide metrics is
+  remembered in the workspace. Show metrics calculates LAeq, genuine LAFmax and LAF90 for each meter, with
   actual resolution. A dash means unavailable, not zero.
 - Overview and 1-second LAF90 estimates are indicative; inspect export NOTES.
 - Centre brings the selection into view; [ and ] browse regions; B returns
@@ -808,7 +810,13 @@ Tips for Effective Comparison:
 ================================================================================
 
 Quick browser export:
-Choose Menu -> Export Annotations (CSV). It works in server mode and static HTML.
+Choose Menu -> Export Annotations — Quick (CSV), in server mode or static HTML.
+The default transfer includes REGIONS, MARKERS and NOTES only. It preserves
+categories, times, notes, meter states, offsets and saved marker snapshots.
+No region/per-meter metrics are calculated; headline level fields are blank.
+
+Browser analysis export:
+Choose Menu -> Export Annotations + Analysis (Browser CSV) for calculated levels.
 One CSV contains these separately headed sections, separated by blank records:
 
   REGIONS  Importable annotation fields, category, notes, colour override,
@@ -824,14 +832,15 @@ REGIONS comes first for quick inspection. Select a section's header and rows
 in Excel, then Format as Table to filter it. Date-times are UTC and compatible
 with Excel. Do not include the next section marker in the table selection.
 
-The browser uses the best available resolution, independently of the current
+The browser analysis export uses the best available resolution, independently of the current
 chart view. Auto selection prefers complete log coverage, then overview, then
 partial log if nothing better is available. Resolution, coverage and missing
 data are explicit. Rows for both log and overview are an optional export
 setting, off by default. A live streamed buffer
 may cover only part of the survey: use Python to calculate from source files.
 The collapsed Actions and settings area contains background-window, minimum
-context and both-resolution controls. Their values are saved in the workspace.
+context and both-resolution controls. Their values are saved in the workspace;
+they apply to analysis exports, while Quick export remains annotations-only.
 
 Importing annotations:
 Choose Menu -> Import Annotations (CSV). Import reads REGIONS and MARKERS only;

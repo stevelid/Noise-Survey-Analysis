@@ -1,0 +1,426 @@
+{
+  "config": {
+    "configFile": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-browser-panel-20261019-125321-17abddb2\\repo\\playwright.config.ts",
+    "rootDir": "C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-browser-panel-20261019-125321-17abddb2/repo/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-browser-panel-20261019-125321-17abddb2\\repo\\tests\\e2e\\global-setup.ts",
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 9
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-browser-panel-20261019-125321-17abddb2/evidence/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 9
+        },
+        "id": "",
+        "name": "",
+        "testDir": "C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-browser-panel-20261019-125321-17abddb2/repo/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.0",
+    "workers": 10,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "app.spec.ts",
+      "file": "app.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "parameter selection updates the application state",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 493,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-19T11:54:30.708Z] [worker:0] [project:] [test:app.spec.ts > parameter selection updates the application state] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-browser-panel-20261019-125321-17abddb2/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-19T11:54:30.000Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-6a58597128d948c607de",
+          "file": "app.spec.ts",
+          "line": 59,
+          "column": 5
+        },
+        {
+          "title": "view toggle switches between log and overview modes",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 574,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-19T11:54:30.704Z] [worker:1] [project:] [test:app.spec.ts > view toggle switches between log and overview modes] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-browser-panel-20261019-125321-17abddb2/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-19T11:54:30.026Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-7d7eb793fd289ec81d6d",
+          "file": "app.spec.ts",
+          "line": 70,
+          "column": 5
+        },
+        {
+          "title": "users can create, select, and remove regions from the chart",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 725,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-19T11:54:30.708Z] [worker:2] [project:] [test:app.spec.ts > users can create, select, and remove regions from the chart] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-browser-panel-20261019-125321-17abddb2/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-19T11:54:30.017Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-49938201ca18018abea1",
+          "file": "app.spec.ts",
+          "line": 86,
+          "column": 5
+        },
+        {
+          "title": "users can switch between regions and markers tabs",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 3,
+                  "status": "passed",
+                  "duration": 407,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-19T11:54:30.707Z] [worker:3] [project:] [test:app.spec.ts > users can switch between regions and markers tabs] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-browser-panel-20261019-125321-17abddb2/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-19T11:54:30.021Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-18e938a987da75e715eb",
+          "file": "app.spec.ts",
+          "line": 121,
+          "column": 5
+        },
+        {
+          "title": "user can create a marker with the keyboard and view details",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 4,
+                  "status": "passed",
+                  "duration": 479,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-19T11:54:30.702Z] [worker:4] [project:] [test:app.spec.ts > user can create a marker with the keyboard and view details] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-browser-panel-20261019-125321-17abddb2/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-19T11:54:29.986Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-8943b4f2d3c3a2763978",
+          "file": "app.spec.ts",
+          "line": 132,
+          "column": 5
+        },
+        {
+          "title": "user can create a region using the R key workflow",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 5,
+                  "status": "passed",
+                  "duration": 581,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-19T11:54:30.706Z] [worker:5] [project:] [test:app.spec.ts > user can create a region using the R key workflow] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-browser-panel-20261019-125321-17abddb2/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-19T11:54:30.000Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-ceccfde07f033e9dd0b2",
+          "file": "app.spec.ts",
+          "line": 156,
+          "column": 5
+        },
+        {
+          "title": "auto day & night regions button creates regions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 6,
+                  "status": "passed",
+                  "duration": 1032,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "[2026-10-19T11:54:30.707Z] [worker:6] [project:] [test:app.spec.ts > auto day & night regions button creates regions] [info] [Init] Store created. @ file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-browser-panel-20261019-125321-17abddb2/repo/noise_survey_analysis/static/js/init.js:16:16\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-19T11:54:30.022Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c31ff144dc4fee3acd0a-d73f7486f20dad43a68f",
+          "file": "app.spec.ts",
+          "line": 173,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "static-dashboard.spec.ts",
+      "file": "static-dashboard.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "real static dashboard reviews meters, saves escaped notes and scrolls independently",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 7,
+                  "status": "passed",
+                  "duration": 2581,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "steps": [
+                    {
+                      "title": "Expect \"poll toBeGreaterThanOrEqual\"",
+                      "duration": 22
+                    },
+                    {
+                      "title": "Expect \"poll toBeLessThanOrEqual\"",
+                      "duration": 20
+                    }
+                  ],
+                  "startTime": "2026-10-19T11:54:30.040Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c65d92ac3cc15de89198-97516280925da0a00045",
+          "file": "static-dashboard.spec.ts",
+          "line": 20,
+          "column": 5
+        },
+        {
+          "title": "dirty notes save without stealing native category and colour mouse interactions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 8,
+                  "status": "passed",
+                  "duration": 2666,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-19T11:54:30.012Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c65d92ac3cc15de89198-ea48d534b12c7d973ca7",
+          "file": "static-dashboard.spec.ts",
+          "line": 84,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-19T11:54:24.607Z",
+    "duration": 8464.684000000001,
+    "expected": 9,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

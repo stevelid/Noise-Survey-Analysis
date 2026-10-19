@@ -1217,7 +1217,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 break;
             case 'export_annotations_csv':
             case 'export_regions':
-                handleExportCsv();
+                handleExportCsv({ mode: 'annotations' });
+                break;
+            case 'export_annotations_analysis_csv':
+                handleExportCsv({ mode: 'full' });
                 break;
             case 'import_annotations_csv':
             case 'import_regions':
@@ -1238,7 +1241,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
-    function handleExportCsv() {
+    function handleExportCsv(options = {}) {
         if (!app.store || typeof app.store.getState !== 'function') {
             console.error('[Session] Store not available; cannot export annotations.');
             return;
@@ -1255,9 +1258,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const regions = selectAllRegions(state) || [];
         const markers = selectAllMarkers(state) || [];
-        const csvText = buildAnnotationsCsv(markers, regions, state);
+        const csvText = buildAnnotationsCsv(markers, regions, state, options);
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `annotations-${timestamp}.csv`;
+        const prefix = options.mode === 'full' ? 'annotations-analysis' : 'annotations';
+        const filename = `${prefix}-${timestamp}.csv`;
         triggerCsvDownload(filename, csvText);
     }
 

@@ -5,9 +5,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const PANEL_CHANGED = 'annotationPanel/settingsChanged';
     const DEFAULT_BACKGROUND_WINDOW_SECONDS = 300;
     const DEFAULT_MIN_CONTEXT_SECONDS = 60;
+    const DEFAULT_METRICS_VISIBLE = false;
+    const DEFAULT_SPECTRUM_VISIBLE = false;
     const initialState = {
         filters: { categoryId: '', presentAt: '', onlyOneMeter: false, hasUnchecked: false },
-        classificationSort: 'start', metricsVisible: true, clearMarkersPending: false,
+        classificationSort: 'start', metricsVisible: DEFAULT_METRICS_VISIBLE,
+        spectrumVisible: DEFAULT_SPECTRUM_VISIBLE, clearMarkersPending: false,
         backgroundWindowS: DEFAULT_BACKGROUND_WINDOW_SECONDS,
         minContextS: DEFAULT_MIN_CONTEXT_SECONDS,
         includeAllResolutions: false,

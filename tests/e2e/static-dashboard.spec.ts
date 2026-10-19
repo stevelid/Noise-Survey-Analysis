@@ -1,8 +1,21 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 
 const dashboardUrl = pathToFileURL(path.resolve('test-results/real-dashboard/dashboard.html')).href;
+
+async function chooseColour(page: Page, picker: Locator, value: string) {
+  await picker.click();
+  await page.keyboard.press('Escape');
+  // Headless automation cannot choose in the operating system's colour dialog.
+  // Verify opening/cancelling, then deliver its native input/change contract;
+  // the manual checklist covers choosing the colour in the actual dialog.
+  await picker.evaluate((element, colour) => {
+    (element as HTMLInputElement).value = colour;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+}
 
 test('real static dashboard reviews meters, saves escaped notes and scrolls independently', async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -21,6 +34,16 @@ test('real static dashboard reviews meters, saves escaped notes and scrolls inde
   });
   const panel = page.locator('[data-nsa-panel="annotations"]');
   await expect(panel).toBeVisible();
+  const metricsToggle = panel.locator('[data-action="metrics-visible"]');
+  await expect(metricsToggle).toHaveAttribute('aria-expanded', 'false');
+  const actions = panel.locator('details[data-key="region-secondary"]');
+  await actions.locator(':scope > summary').click();
+  const spectrum = panel.locator('details[data-key="region-spectrum"]');
+  await spectrum.locator(':scope > summary').click();
+  await expect(spectrum.locator('tbody tr')).not.toHaveCount(0);
+  await expect(metricsToggle).toHaveAttribute('aria-expanded', 'false');
+  await spectrum.locator(':scope > summary').click();
+  await actions.locator(':scope > summary').click();
   await panel.locator('.nsa-selected [data-action="cycle-meter"][data-meter="P2"]').click();
   await expect(panel.locator('.nsa-selected [data-meter="P2"]')).toHaveAttribute('aria-label', /present/);
   await panel.locator('[data-action="region-category"]').selectOption('traffic');
@@ -47,7 +70,8 @@ test('real static dashboard reviews meters, saves escaped notes and scrolls inde
   const bounds = await panel.boundingBox();
   expect(bounds?.x).toBeLessThan(1300);
   expect((bounds?.x || 0) + (bounds?.width || 0)).toBeLessThanOrEqual(1600);
-  const scroll = panel.locator('[data-scroll-key="panel"]');
+  const scroll = panel.locator('[data-scroll-key="region-list"]');
+  expect(await scroll.evaluate(element => element.clientHeight)).toBeGreaterThanOrEqual(200);
   const pageY = await page.evaluate(() => window.scrollY);
   await scroll.evaluate(element => { element.scrollTop = 500; });
   expect(await scroll.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
@@ -95,9 +119,7 @@ test('dirty notes save without stealing native category and colour mouse interac
     .toBe('Saved before mouse category');
   await note.fill('Saved before mouse colour');
   const colour = panel.locator('[data-key="region-color:1"]');
-  await colour.click();
-  await expect(colour).toBeFocused();
-  await page.keyboard.type('#123456');
+  await chooseColour(page, colour, '#123456');
   await expect(colour).toHaveValue('#123456');
   await panel.locator('.nsa-selected h3').click();
   expect(await page.evaluate(() => (window as any).NoiseSurveyApp.store.getState().regions.byId[1].color)).toBe('#123456');
@@ -123,7 +145,7 @@ test('dirty notes save without stealing native category and colour mouse interac
   await expect(secondary).toHaveAttribute('open', '');
   await note.fill('Saved before colour and region selection');
   const secondColour = panel.locator('[data-key="region-color:2"]');
-  await secondColour.click(); await page.keyboard.type('#abcdef');
+  await chooseColour(page, secondColour, '#abcdef');
   await panel.locator('[data-action="select-region"][data-id="1"]').click();
   await expect(note).toHaveAttribute('data-id', '1');
   expect(await page.evaluate(() => (window as any).NoiseSurveyApp.store.getState().regions.byId[2].color)).toBe('#abcdef');

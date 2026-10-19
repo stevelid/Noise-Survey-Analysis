@@ -1,0 +1,134 @@
+{
+  "local_copy_path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-ui-final-20261019-130645-57e1299b\\repo",
+  "harness_path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-ui-final-20261019-130645-57e1299b\\repo\\scripts\\checkpoint_benchmark.py",
+  "fixture": {
+    "meters": 4,
+    "hours": 72,
+    "sample_interval_seconds": 1,
+    "samples_per_meter": 259200,
+    "third_octave_bands": 31,
+    "regions": 300,
+    "seed": 20261018
+  },
+  "ghosts_all": true,
+  "limitations": [
+    "Server timing is not measured by this static comparison."
+  ],
+  "static_build_ms": 2822.0851000514813,
+  "static_serialize_ms": 25150.896899984218,
+  "static_html_bytes": 262394316,
+  "modes": {
+    "static": {
+      "url": "file:///C:/Users/steve/AppData/Local/Temp/nsa-annotation-tests/stage-8-ui-final-20261019-130645-57e1299b/browser-benchmark/benchmark.html",
+      "viewport": [
+        1600,
+        1100
+      ],
+      "startup_definition": "navigation through initialized application and two animation frames; dataset pre-generated",
+      "startup": {
+        "runs": 3,
+        "median_ms": 13065.76229998609,
+        "p95_ms": 14255.121749971295,
+        "values_ms": [
+          14387.27279996965,
+          12966.571400000248,
+          13065.76229998609
+        ],
+        "first_navigation_ms": 14387.27279996965,
+        "repeat_navigation_median_ms": 13016.16684999317
+      },
+      "regions_loaded": 300,
+      "render": {
+        "runs": 20,
+        "median_ms": 77.09999999403954,
+        "p95_ms": 79.33000001013279,
+        "values_ms": [
+          72.80000001192093,
+          65.70000004768372,
+          79.30000001192093,
+          77.5,
+          79.09999996423721,
+          79.10000002384186,
+          76.79999995231628,
+          79,
+          74.69999998807907,
+          74.60000002384186,
+          77,
+          77.59999996423721,
+          79.30000001192093,
+          76.40000003576279,
+          54.19999998807907,
+          79.89999997615814,
+          72.60000002384186,
+          76,
+          78.79999995231628,
+          77.19999998807907
+        ]
+      },
+      "annotations_only_export": {
+        "runs": 20,
+        "median_ms": 2.100000023841858,
+        "p95_ms": 4.544999977946284,
+        "values_ms": [
+          7.300000011920929,
+          2.600000023841858,
+          3.600000023841858,
+          3.699999988079071,
+          2,
+          2.100000023841858,
+          2.100000023841858,
+          4.399999976158142,
+          2.099999964237213,
+          2,
+          2,
+          2,
+          2,
+          2.600000023841858,
+          3.800000011920929,
+          2,
+          3.799999952316284,
+          3.699999988079071,
+          1.899999976158142,
+          2
+        ]
+      },
+      "annotations_only_export_bytes": 94781,
+      "export": {
+        "runs": 20,
+        "median_ms": 2323.449999988079,
+        "p95_ms": 2475.6099999755634,
+        "values_ms": [
+          4028.099999964237,
+          2393.899999976158,
+          2334.5,
+          2322.300000011921,
+          2332.699999988079,
+          2317,
+          2317.2999999523163,
+          2323.599999964237,
+          2321.899999976158,
+          2303.800000011921,
+          2318.800000011921,
+          2333.300000011921,
+          2323.300000011921,
+          2335.7000000476837,
+          2317.7000000476837,
+          2314.400000035763,
+          2326.599999964237,
+          2335.400000035763,
+          2320.300000011921,
+          2325
+        ]
+      },
+      "export_bytes": 1103292,
+      "export_mode": "full analysis (OVERALL and SPECTRAL); annotations-only timed separately",
+      "side_panel_bounds": {
+        "x": 1248,
+        "y": 222,
+        "width": 344.015625,
+        "height": 866.9375
+      },
+      "console_page_errors": []
+    }
+  }
+}
