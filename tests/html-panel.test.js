@@ -122,6 +122,92 @@ describe('HTML annotation panel', () => {
         expect(textarea.value).toBe('Saved note');
     });
 
+    it('saves a dirty note and selects the clicked region without replacing its button before click', async () => {
+        app.store.dispatch(app.actions.regionsAdded([{ id: 2, positionId: 'P2', start: 3000, end: 4000 }]));
+        app.store.dispatch(app.actions.regionSelect(1));
+        setupDom(); await tick();
+        const textarea = root.querySelector('textarea[data-action="region-note"]');
+        textarea.focus(); textarea.value = 'Saved while selecting region two';
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        const button = root.querySelector('button[data-action="select-region"][data-id="2"]');
+        // Model browser ordering: mousedown focuses the button, firing change
+        // and blur before mouseup/click unless its default is prevented.
+        const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 });
+        button.dispatchEvent(down);
+        if (!down.defaultPrevented) {
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+            textarea.blur(); button.focus();
+        }
+        expect(down.defaultPrevented).toBe(true);
+        expect(button.isConnected).toBe(true);
+        expect(app.store.getState().regions.byId[1].note).toBe('Dog bark');
+        button.click(); await tick();
+        expect(app.store.getState().regions.byId[1].note).toBe('Saved while selecting region two');
+        expect(app.features.regions.selectors.selectSelectedRegion(app.store.getState()).id).toBe(2);
+    });
+
+    it('flushes a marker draft before changing tabs and leaves keyboard button activation available', async () => {
+        app.store.dispatch(app.actions.markerAdd(1500, { note: 'Original marker' }));
+        const marker = app.features.markers.selectors.selectAllMarkers(app.store.getState())[0];
+        app.store.dispatch(feature.thunks.panelCommandIntent('select-marker', { id: marker.id }));
+        app.store.dispatch(app.actions.setActiveSidePanelTab(1));
+        setupDom(); await tick();
+        const textarea = root.querySelector('textarea[data-action="marker-note"]');
+        textarea.focus(); textarea.value = 'Marker draft';
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        const button = root.querySelector('button[data-action="tab"][data-value="0"]');
+        const down = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 });
+        button.dispatchEvent(down); expect(down.defaultPrevented).toBe(true);
+        button.click(); await tick();
+        expect(app.store.getState().markers.byId[marker.id].note).toBe('Marker draft');
+        const tab = root.querySelector('button[data-action="tab"][data-value="1"]');
+        tab.focus();
+        const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+        tab.dispatchEvent(enter); expect(enter.defaultPrevented).toBe(false);
+        const cleanPointer = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 });
+        tab.dispatchEvent(cleanPointer); expect(cleanPointer.defaultPrevented).toBe(false);
+        tab.click();
+        expect(app.store.getState().view.activeSidePanelTab).toBe(1);
+    });
+
+    it('saves a dirty note while opening a disclosure and restores summary focus', async () => {
+        setupDom(); await tick();
+        const textarea = root.querySelector('textarea[data-action="region-note"]');
+        textarea.focus(); textarea.value = 'Saved while opening actions';
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        const summary = root.querySelector('details[data-key="region-secondary"] > summary');
+        const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 });
+        summary.dispatchEvent(down);
+        expect(down.defaultPrevented).toBe(true);
+        summary.click(); await tick();
+        expect(app.store.getState().regions.byId[1].note).toBe('Saved while opening actions');
+        const details = root.querySelector('details[data-key="region-secondary"]');
+        expect(details.open).toBe(true);
+        expect(root.activeElement).toBe(details.querySelector('summary'));
+        app.store.dispatch(app.actions.regionSetColor(1, '#123456'));
+        await tick();
+        expect(root.activeElement).toBe(root.querySelector('details[data-key="region-secondary"] > summary'));
+    });
+
+    it('saves dirty notes before Tab and Shift+Tab and restores the intended neighbouring field', async () => {
+        setupDom(); await tick();
+        for (const [shiftKey, expectedKey] of [[false, 'region-color:1'], [true, 'region-category:1']]) {
+            const textarea = root.querySelector('textarea[data-action="region-note"]');
+            textarea.focus(); textarea.value = `Saved with shift=${shiftKey}`;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            const tab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true });
+            textarea.dispatchEvent(tab); await tick();
+            expect(tab.defaultPrevented).toBe(true);
+            expect(app.store.getState().regions.byId[1].note).toBe(`Saved with shift=${shiftKey}`);
+            expect(root.activeElement?.dataset.key).toBe(expectedKey);
+        }
+        const clean = root.querySelector('textarea[data-action="region-note"]');
+        clean.focus();
+        const nativeTab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+        clean.dispatchEvent(nativeTab);
+        expect(nativeTab.defaultPrevented).toBe(false);
+    });
+
     it('requires the explicit second action before clearing marker snapshots', () => {
         app.store.dispatch(app.actions.markerAdd(1500, { note: 'Saved', metrics: { broadband: [] } }));
         const dispatch = (command, payload) => app.store.dispatch(feature.thunks.panelCommandIntent(command, payload));
@@ -147,5 +233,48 @@ describe('HTML annotation panel', () => {
         setupDom(); const control = root.querySelector('[data-action="cycle-meter"][data-meter="P2"]');
         events.dispose(); control.click();
         expect(app.store.getState().regions.byId[1].meterStates.P2).toBe('unchecked');
+    });
+
+    it('hides annotation overlays without deleting or filtering their lists', () => {
+        app.store.dispatch(app.actions.markerAdd(1500));
+        app.store.dispatch(app.actions.classificationsAdded([
+            { id: 1, positionId: 'P1', sourceId: 'dog', start: 1000, end: 2000 }
+        ]));
+        const before = feature.selectors.selectPanelData(app.store.getState());
+        setupDom();
+        for (const field of ['regions', 'markers', 'classifications']) {
+            const control = root.querySelector(`[data-action="annotation-visibility"][data-field="${field}"]`);
+            control.checked = false;
+            control.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        const state = app.store.getState();
+        const after = feature.selectors.selectPanelData(state);
+        expect(state.regions.overlaysVisible).toBe(false);
+        expect(state.markers.enabled).toBe(false);
+        expect(state.classifications.overlaysVisible).toBe(false);
+        expect(after.regions).toEqual(before.regions);
+        expect(after.markers).toEqual(before.markers);
+        expect(after.classifications).toEqual(before.classifications);
+    });
+
+    it('fits the sticky sidebar below the toolbar across Bokeh shadow boundaries', () => {
+        const toolbar = document.createElement('div');
+        toolbar.className = 'nsa-dashboard-controls';
+        toolbar.getBoundingClientRect = () => ({ top: 0, bottom: 70, height: 70 });
+        document.body.appendChild(toolbar);
+        try {
+            setupDom();
+            host.classList.add('nsa-annotation-sidebar');
+            events.dispose(); events.attach(models);
+            expect(host.style.top).toBe('82px');
+            expect(root.querySelector('[data-scroll-key="panel"]').style.maxHeight)
+                .toBe(`${Math.floor(window.innerHeight - 82 - 12)}px`);
+            toolbar.getBoundingClientRect = () => ({ top: -100, bottom: -30, height: 70 });
+            // Reattachment models a viewport refit without changing Redux.
+            const before = app.store.getState();
+            events.dispose(); events.attach(models);
+            expect(host.style.top).toBe('12px');
+            expect(app.store.getState()).toBe(before);
+        } finally { toolbar.remove(); }
     });
 });

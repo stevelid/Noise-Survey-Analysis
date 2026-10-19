@@ -369,6 +369,7 @@ class ControlsComponent:
         return column(
             controls_group,
             name="controls_component_layout",
+            css_classes=["nsa-dashboard-controls"],
             styles={
                 "gap": "8px",
                 "position": "sticky",

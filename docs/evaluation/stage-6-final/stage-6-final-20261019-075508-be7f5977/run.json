@@ -1,0 +1,103 @@
+{
+  "stage": "stage-6-final",
+  "run": "stage-6-final-20261019-075508-be7f5977",
+  "startedUtc": "2026-10-19T06:55:11.5688045Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-final-20261019-075508-be7f5977\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-final-20261019-075508-be7f5977\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-6-final\\stage-6-final-20261019-075508-be7f5977",
+  "head": "d0b9f3deeded6eabc2a9345579bb445a6ce0b1b0",
+  "sourceStatus": [
+    " M README.md",
+    " M USER_GUIDE.txt",
+    " M noise_survey_analysis/core/app_setup.py",
+    " M noise_survey_analysis/export/static_export.py",
+    " M noise_survey_analysis/main.py",
+    " M noise_survey_analysis/static/js/features/annotations/panelThunks.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelRenderer.js",
+    " M noise_survey_analysis/ui/components.py",
+    " M noise_survey_analysis/visualization/dashBuilder.py",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    " M tests/e2e/static-dashboard.spec.ts",
+    " M tests/html-panel.test.js",
+    "?? docs/evaluation/stage-6/",
+    "?? tests/test_html_dashboard_models.py"
+  ],
+  "sourceFileCount": 270,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 4.382
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-final-20261019-075508-be7f5977\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.139
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.066
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-final-20261019-075508-be7f5977\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 1,
+      "durationSeconds": 11.189
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "passed": 492,
+      "total": 495,
+      "failed": 0,
+      "pending": 0,
+      "skipped": 3
+    },
+    "playwright": {
+      "startTime": "2026-10-19T06:55:30.749Z",
+      "duration": 9993.651,
+      "expected": 7,
+      "skipped": 0,
+      "unexpected": 1,
+      "flaky": 0
+    }
+  },
+  "finishedUtc": "2026-10-19T06:55:40.9645804Z",
+  "failedSteps": [
+    "playwright"
+  ],
+  "suitesPassed": false
+}

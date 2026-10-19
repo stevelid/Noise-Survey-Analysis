@@ -1,0 +1,106 @@
+{
+  "stage": "stage-6-checkpoint",
+  "run": "stage-6-checkpoint-20261019-080343-1e012572",
+  "startedUtc": "2026-10-19T07:03:47.7926224Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-checkpoint-20261019-080343-1e012572\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-checkpoint-20261019-080343-1e012572\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-6-checkpoint\\stage-6-checkpoint-20261019-080343-1e012572",
+  "head": "d0b9f3deeded6eabc2a9345579bb445a6ce0b1b0",
+  "sourceStatus": [
+    " M README.md",
+    " M USER_GUIDE.txt",
+    " M noise_survey_analysis/core/app_setup.py",
+    " M noise_survey_analysis/export/static_export.py",
+    " M noise_survey_analysis/main.py",
+    " M noise_survey_analysis/static/js/features/annotations/panelThunks.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelEvents.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelRenderer.js",
+    " M noise_survey_analysis/ui/components.py",
+    " M noise_survey_analysis/visualization/dashBuilder.py",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    " M tests/e2e/static-dashboard.spec.ts",
+    " M tests/html-panel.test.js",
+    "?? docs/evaluation/known-issues/",
+    "?? docs/evaluation/stage-6-final/",
+    "?? docs/evaluation/stage-6-interaction/",
+    "?? docs/evaluation/stage-6-ready/",
+    "?? docs/evaluation/stage-6/",
+    "?? tests/test_html_dashboard_models.py"
+  ],
+  "sourceFileCount": 270,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 3.934
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-checkpoint-20261019-080343-1e012572\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.242
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.079
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-checkpoint-20261019-080343-1e012572\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.466
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "total": 499,
+      "skipped": 3,
+      "pending": 0,
+      "failed": 0,
+      "passed": 496
+    },
+    "playwright": {
+      "startTime": "2026-10-19T07:04:07.18Z",
+      "duration": 5267.741,
+      "expected": 8,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    }
+  },
+  "finishedUtc": "2026-10-19T07:04:12.7119116Z",
+  "failedSteps": [],
+  "suitesPassed": true
+}

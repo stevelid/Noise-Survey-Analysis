@@ -1,0 +1,104 @@
+{
+  "stage": "stage-6-interaction",
+  "run": "stage-6-interaction-20261019-075815-a5e38760",
+  "startedUtc": "2026-10-19T06:58:18.7535581Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-interaction-20261019-075815-a5e38760\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-interaction-20261019-075815-a5e38760\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-6-interaction\\stage-6-interaction-20261019-075815-a5e38760",
+  "head": "d0b9f3deeded6eabc2a9345579bb445a6ce0b1b0",
+  "sourceStatus": [
+    " M README.md",
+    " M USER_GUIDE.txt",
+    " M noise_survey_analysis/core/app_setup.py",
+    " M noise_survey_analysis/export/static_export.py",
+    " M noise_survey_analysis/main.py",
+    " M noise_survey_analysis/static/js/features/annotations/panelThunks.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelEvents.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelRenderer.js",
+    " M noise_survey_analysis/ui/components.py",
+    " M noise_survey_analysis/visualization/dashBuilder.py",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    " M tests/e2e/static-dashboard.spec.ts",
+    " M tests/html-panel.test.js",
+    "?? docs/evaluation/known-issues/",
+    "?? docs/evaluation/stage-6-final/",
+    "?? docs/evaluation/stage-6/",
+    "?? tests/test_html_dashboard_models.py"
+  ],
+  "sourceFileCount": 270,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 3.769
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-interaction-20261019-075815-a5e38760\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 5.958
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.059
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-interaction-20261019-075815-a5e38760\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.212
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "skipped": 3,
+      "passed": 494,
+      "total": 497,
+      "failed": 0,
+      "pending": 0
+    },
+    "playwright": {
+      "startTime": "2026-10-19T06:58:37.282Z",
+      "duration": 5028.003,
+      "expected": 8,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    }
+  },
+  "finishedUtc": "2026-10-19T06:58:42.5240257Z",
+  "failedSteps": [],
+  "suitesPassed": true
+}

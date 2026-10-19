@@ -664,7 +664,6 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
                 job_number=current_job_number,
                 server_mode=STREAMING_ENABLED,
                 position_offsets=_saved_offsets,
-                ui_settings=_config_extras.get('ui'),
             )
             doc.add_root(audio_control_source)
             doc.add_root(audio_status_source)

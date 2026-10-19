@@ -32,6 +32,18 @@ test('real static dashboard reviews meters, saves escaped notes and scrolls inde
   await panel.locator('.nsa-selected h3').click();
   await page.keyboard.press('Control+z');
   await expect(note).toHaveValue('Event 1');
+  await note.fill('Saved on leaving the field');
+  await panel.locator('[data-action="select-region"][data-id="2"]').click();
+  await expect(panel.locator('[data-action="region-note"]')).toHaveAttribute('data-id', '2');
+  expect(await page.evaluate(() => (window as any).NoiseSurveyApp.store.getState().regions.byId[1].note))
+    .toBe('Saved on leaving the field');
+  await note.fill('Saved before opening actions');
+  const secondary = panel.locator('details[data-key="region-secondary"]');
+  await secondary.locator(':scope > summary').click();
+  await expect(secondary).toHaveAttribute('open', '');
+  await note.fill('Saved before moving focus');
+  await note.press('Tab');
+  await expect(panel.locator('[data-key="region-color:2"]')).toBeFocused();
   const bounds = await panel.boundingBox();
   expect(bounds?.x).toBeLessThan(1300);
   expect((bounds?.x || 0) + (bounds?.width || 0)).toBeLessThanOrEqual(1600);
@@ -43,6 +55,14 @@ test('real static dashboard reviews meters, saves escaped notes and scrolls inde
   await page.screenshot({ path: testInfo.outputPath('main-layout.png') });
   await panel.screenshot({ path: testInfo.outputPath('regions-panel.png') });
   await page.evaluate(() => window.scrollTo(0, 700));
-  await expect.poll(async () => (await panel.boundingBox())?.y).toBeLessThanOrEqual(14);
+  const toolbar = page.locator('.nsa-dashboard-controls');
+  const clearance = async () => {
+    const side = await panel.boundingBox(), controls = await toolbar.boundingBox();
+    return (side?.y || 0) - (controls?.y || 0) - (controls?.height || 0);
+  };
+  await expect.poll(clearance).toBeGreaterThanOrEqual(0);
+  await expect.poll(clearance).toBeLessThanOrEqual(14);
+  await panel.getByRole('tab', { name: 'Markers', exact: true }).click();
+  await expect(panel.getByRole('tab', { name: 'Markers', exact: true })).toHaveAttribute('aria-selected', 'true');
   expect(errors).toEqual([]);
 });

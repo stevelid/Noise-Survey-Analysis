@@ -1,0 +1,150 @@
+{
+  "output": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\known-issue-log-only-20261019-065427",
+  "source_config": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-20261018-213138-12880e43\\server-smoke\\config.json",
+  "generated_config": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\known-issue-log-only-20261019-065427\\log-only-config.json",
+  "cases": {
+    "baseline": {
+      "local_copy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-20261018-093151-d5ef10bd\\repo",
+      "page_errors": [],
+      "console_errors": [
+        "[RenderError] renderMarkers: TypeError: Cannot use 'in' operator to search for 'Symbol(auto_ranged)' in undefined\n    at n.is_auto_ranged (http://localhost:50063/static/js/bokeh.min.js?v=887e6bace8d80f5c1555c1913f730061c2d73acb83adb7f4ccf2ef02ffc7e5e864f7b1c97db9a4f6643a1431700d65e2686759f5c4bb1ac92631e8b659ceead3:268:206)\n    at Array.filter (<anonymous>)\n    at get auto_ranged_renderers (http://localhost:50063/static/js/bokeh.min.js?v=887e6bace8d80f5c1555c1913f730061c2d73acb83adb7f4ccf2ef02ffc7e5e864f7b1c97db9a4f6643a1431700d65e2686759f5c4bb1ac92631e8b659ceead3:610:1442)\n    at l._update_dataranges (http://localhost:50063/static/js/bokeh.min.js?v=887e6bace8d80f5c1555c1913f730061c2d73acb83adb7f4ccf2ef02ffc7e5e864f7b1c97db9a4f6643a1431700d65e2686759f5c4bb1ac92631e8b659ceead3:616:1016)\n    at l.update_dataranges (http://localhost:50063/static/js/bokeh.min.js?v=887e6bace8d80f5c1555c1913f730061c2d73acb83adb7f4ccf2ef02ffc7e5e864f7b1c97db9a4f6643a1431700d65e2686759f5c4bb1ac92631e8b659ceead3:616:1776)\n    at l._actual_paint (http://localhost:50063/static/js/bokeh.min.js?v=887e6bace8d80f5c1555c1913f730061c2d73acb83adb7f4ccf2ef02ffc7e5e864f7b1c97db9a4f6643a1431700d65e2686759f5c4bb1ac92631e8b659ceead3:610:15462)\n    at l.paint (http://localhost:50063/static/js/bokeh.min.js?v=887e6bace8d80f5c1555c1913f730061c2d73acb83adb7f4ccf2ef02ffc7e5e864f7b1c97db9a4f6643a1431700d65e2686759f5c4bb1ac92631e8b659ceead3:610:14879)\n    at l._after_layout (http://localhost:50063/static/js/bokeh.min.js?v=887e6bace8d80f5c1555c1913f730061c2d73acb83adb7f4ccf2ef02ffc7e5e864f7b1c97db9a4f6643a1431700d65e2686759f5c4bb1ac92631e8b659ceead3:610:14713)\n    at l.after_layout (http://localhost:50063/static/js/bokeh.min.js?v=887e6bace8d80f5c1555c1913f730061c2d73acb83adb7f4ccf2ef02ffc7e5e864f7b1c97db9a4f6643a1431700d65e2686759f5c4bb1ac92631e8b659ceead3:578:6002)\n    at c.after_layout (http://localhost:50063/static/js/bokeh.min.js?v=887e6bace8d80f5c1555c1913f730061c2d73acb83adb7f4ccf2ef02ffc7e5e864f7b1c97db9a4f6643a1431700d65e2686759f5c4bb1ac92631e8b659ceead3:578:5982) {lastActionType: KEYBOARD_SETUP_COMPLETE, isHeavyUpdate: true, didParamChange: false, didViewportChange: false, didChartOffsetsChange: false}"
+      ],
+      "startup_bound_s": 30,
+      "inspection_delay_s": 5,
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-B",
+        "-m",
+        "bokeh",
+        "serve",
+        "noise_survey_analysis/main.py",
+        "--port",
+        "50063",
+        "--address",
+        "127.0.0.1",
+        "--unused-session-lifetime",
+        "300000",
+        "--args",
+        "--config",
+        "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\known-issue-log-only-20261019-065427\\log-only-config.json"
+      ],
+      "inspection": {
+        "app_ready": true,
+        "finite_viewport": false,
+        "viewport": {
+          "min": "NaN",
+          "max": "NaN"
+        },
+        "positions": [
+          "P1",
+          "P2",
+          "P3",
+          "P4"
+        ],
+        "sources": {
+          "P1": {
+            "overview": 0,
+            "log": 0
+          },
+          "P2": {
+            "overview": 0,
+            "log": 0
+          },
+          "P3": {
+            "overview": 0,
+            "log": 0
+          },
+          "P4": {
+            "overview": 0,
+            "log": 0
+          }
+        },
+        "source_populated": false
+      },
+      "elapsed_s": 9.523927900008857,
+      "nan_in_log": true,
+      "problem_lines": [
+        "Traceback (most recent call last):",
+        "ValueError: cannot convert float NaN to integer",
+        "Traceback (most recent call last):",
+        "ValueError: cannot convert float NaN to integer",
+        "Traceback (most recent call last):",
+        "ValueError: cannot convert float NaN to integer",
+        "Traceback (most recent call last):",
+        "ValueError: cannot convert float NaN to integer"
+      ],
+      "source_unchanged": true
+    },
+    "stage6": {
+      "local_copy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-20261019-074720-cc099262\\repo",
+      "page_errors": [],
+      "console_errors": [],
+      "startup_bound_s": 30,
+      "inspection_delay_s": 5,
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-B",
+        "-m",
+        "bokeh",
+        "serve",
+        "noise_survey_analysis/main.py",
+        "--port",
+        "56426",
+        "--address",
+        "127.0.0.1",
+        "--unused-session-lifetime",
+        "300000",
+        "--args",
+        "--config",
+        "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\known-issue-log-only-20261019-065427\\log-only-config.json"
+      ],
+      "inspection": {
+        "app_ready": true,
+        "finite_viewport": false,
+        "viewport": {
+          "min": "NaN",
+          "max": "NaN"
+        },
+        "positions": [
+          "P1",
+          "P2",
+          "P3",
+          "P4"
+        ],
+        "sources": {
+          "P1": {
+            "overview": 0,
+            "log": 0
+          },
+          "P2": {
+            "overview": 0,
+            "log": 0
+          },
+          "P3": {
+            "overview": 0,
+            "log": 0
+          },
+          "P4": {
+            "overview": 0,
+            "log": 0
+          }
+        },
+        "source_populated": false
+      },
+      "elapsed_s": 8.0222149999463,
+      "nan_in_log": true,
+      "problem_lines": [
+        "Traceback (most recent call last):",
+        "ValueError: cannot convert float NaN to integer",
+        "Traceback (most recent call last):",
+        "ValueError: cannot convert float NaN to integer",
+        "Traceback (most recent call last):",
+        "ValueError: cannot convert float NaN to integer",
+        "Traceback (most recent call last):",
+        "ValueError: cannot convert float NaN to integer"
+      ],
+      "source_unchanged": true
+    }
+  },
+  "same_observed_failure": true
+}

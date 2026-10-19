@@ -2,6 +2,8 @@
 
 Implementations live in component_parts; existing dashboard and external imports
 continue to use this module. Bokeh callback bodies are kept in their features.
+Legacy panel classes remain importable for external integrations, but the
+dashboard no longer constructs them or their redundant widgets.
 """
 
 # Preserve the names historically imported from this compatibility module.

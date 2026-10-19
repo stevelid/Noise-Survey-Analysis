@@ -2,8 +2,8 @@
                     NOISE SURVEY ANALYSIS - USER GUIDE
 ================================================================================
 
-Version: 1.2
-Last Updated: 2025-10-01
+Version: 1.3
+Last Updated: 2026-10-19
 
 ================================================================================
 TABLE OF CONTENTS
@@ -263,15 +263,15 @@ Main Components:
    - Parameter selector (LAeq, LAFmax, etc.)
    - Log View toggle (switches between log and overview data)
    - Hover Enabled toggle (enables/disables hover line)
-   - Clear All Markers button
+   - Clear all markers is in the Markers tab, behind confirmation
    - Chart visibility checkboxes
    - Session menu (Save/Load workspace, Export/Import annotations)
 
-6. Side Panel (Right Side) - Two Tabs:
+6. Side Panel (Right Side) - Independently scrolling HTML tabs:
    
    Regions Tab:
-   - List of all regions with timestamps
-   - Region details (duration, metrics, notes)
+   - Compact region rows with state strips and category/meter/review filters
+   - Selected region details, category, per-meter states, metrics and notes
    - Color picker for selected region
    - Notes text area
    - Action buttons: Auto Day & Night, Add Area, Merge Regions,
@@ -282,7 +282,10 @@ Main Components:
    - Marker details (timestamp, position, metrics)
    - Color picker for selected marker
    - Notes text area
-   - Action buttons: Add Marker at Tap, Copy Details, Delete Marker
+   - Copy Details, Delete Marker, and confirmed Clear all markers
+
+   Classifications Tab:
+   - Passive candidate selection, source/score filters, sorting and explicit P preview
 
 7. Audio Controls (Bottom Section)
    - Play/Pause toggle for each position
@@ -318,8 +321,8 @@ Time Selection:
 
 Keyboard Navigation:
 - Left/Right arrows: Move tap line to previous/next data point
-- Shift + Left/Right: Adjust right edge of selected region
-- Alt + Left/Right: Adjust left edge of selected region
+- Ctrl + Left/Right: Adjust selected region start (or nudge a selected marker)
+- Alt + Left/Right: Adjust selected region end
 - See Section 11 for complete keyboard shortcuts
 
 ================================================================================
@@ -347,7 +350,7 @@ Shift + Click (Create Region)
 - Hold Shift and click at a different location
 - Region is created spanning the two points
 - Works in both directions (left-to-right or right-to-left)
-- Region appears as colored overlay on all charts
+- Region appears at its origin; unchecked meters show the selected ghost
 - Region is added to the Regions panel
 
 Shift + Drag (Box Select)
@@ -441,293 +444,103 @@ To toggle visibility:
 6. MANAGING REGIONS
 ================================================================================
 
-What are Regions?
+A region is one manual annotation across meters. It retains its origin meter,
+notes, category, optional colour override and one or more non-contiguous areas.
+A state applies to the entire region, including every area:
 
-Regions are time spans that you define for detailed analysis. They appear as
-colored overlays on all charts and drive the metrics displayed in the side
-panel. Regions are essential for:
+  Present   ●  The sound occurs here; category-coloured band.
+  Absent    ✕  Checked and not there; light grey band.
+  Unchecked ○  Still to review; faint dashed ghost band when enabled.
 
-- Analyzing specific time periods (e.g., daytime, nighttime)
-- Calculating LAeq, LAFmax, LAF90 for defined periods
-- Comparing noise levels across different time windows
-- Documenting events or conditions in your survey
-- Generating reports with specific measurement periods
+The origin meter remains present. Other meters start unchecked. To mark the
+same sound at another meter, change its state rather than create a copy.
+The former copy-to-meter selector and copy-all button have been retired.
+The sidebar uses the HTML panel throughout.
 
-Each region can contain multiple non-contiguous areas, allowing you to analyze
-combined time periods (e.g., all daytime periods across multiple days).
+Creating a region:
+- Hold Shift and drag across a chart.
+- Or click to place the cursor, then Shift+click at the other boundary.
+- Or press R at the first cursor position, move the cursor on the same meter,
+  and press R again. Escape cancels an unfinished keyboard region.
 
-Creating Regions:
+Select a region in the compact list or on its origin/present band. The selected
+region appears above the list. Its meter strip shows the configured display
+names. Click a meter button to cycle unchecked -> present -> absent -> unchecked.
+Clicking its visible band on another meter does the same without seeking audio.
+Keys 1 to 9 address meters in display order; the origin is protected. Number keys
+ignore text fields, modifiers and repeated key-down events.
 
-Method 1: Shift + Click
-1. Click on a chart to place the tap line (first boundary)
-2. Hold Shift and click at another location (second boundary)
-3. Region is created spanning the two points
-4. Works in either direction (left-to-right or right-to-left)
-5. Region appears on all charts for that position
+Under Actions and settings, choose unchecked-band visibility:
+- Off.
+- Selected region only (default).
+- All regions.
+Present and absent bands remain visible independently of this ghost setting.
 
-Method 2: Shift + Drag (Box Select)
-1. Hold Shift key
-2. Click and drag horizontally on any chart
-3. Selection box appears during drag
-4. Release mouse to create region
-5. More precise than Shift + Click method
+Categories and notes:
+- Choose a category in the selected-region details.
+- Edit category names/colours or add a category under Categories.
+- Category sets the band colour unless an explicit override is entered.
+- Use category clears the region override.
+- Deleting a category reassigns affected regions to Other.
+- Notes save when leaving the field or with Ctrl+Enter. Escape cancels an
+  uncommitted HTML-panel draft. N focuses the selected region's note.
+- Ctrl+Z and Ctrl+Y undo/redo annotation, meter-state and category edits.
 
-Method 3: Auto Day & Night
-1. Click "Auto Day & Night" button in Regions panel
-2. Application automatically creates regions for:
-   - Day periods: 7:00 AM to 11:00 PM (green color)
-   - Night periods: 11:00 PM to 7:00 AM (purple color)
-3. Regions span entire dataset
-4. Useful for standard environmental noise assessments
-5. Can be customized or deleted after creation
+Review and filtering:
+- Filter by category, present at a chosen meter, present at only one meter,
+  or remaining unchecked meters.
+- Show metrics calculates LAeq, genuine LAFmax and LAF90 for each meter, with
+  actual resolution. A dash means unavailable, not zero.
+- Overview and 1-second LAF90 estimates are indicative; inspect export NOTES.
+- Centre brings the selection into view; [ and ] browse regions; B returns
+  to the earlier view.
 
-Method 4: From Markers (R Key)
-1. Create two markers at desired boundaries
-2. Press R key
-3. Region is created between the two most recent markers
-4. Markers remain after region creation
+Less-used actions are collapsed under Actions and settings:
+- Add area appends further selections to the current region.
+- Merge combines regions sharing an origin. Unchecked defers to the other
+  state; matching states persist. Present versus absent becomes unchecked,
+  and a message names meters needing re-check. Distinct notes are retained.
+- Split areas creates one annotation per area, preserving category and states.
+- Auto Day & Night creates one region per actual period, all meters present.
+  The default civil-time boundaries are 07:00-23:00 and 23:00-07:00, including
+  daylight-saving clock changes and partial periods at survey boundaries.
+- Copy summary and Copy spectrum place report/Excel-friendly text on the
+  clipboard. Spectrum shows the actual parameter and resolution used.
 
-Editing Regions:
-
-Selecting Regions:
-- Click on region overlay in any chart
-- Or click region row in Regions panel table
-- Selected region is highlighted in panel
-- Only one region can be selected at a time
-- Region details appear in side panel
-
-Changing Colors:
-1. Select a region
-2. Click the color picker in Region Details section
-3. Choose new color from palette
-4. Region color updates immediately on all charts
-5. Color is saved with region data
-
-Adding Notes:
-1. Select a region
-2. Type in the Notes text area in Region Details
-3. Notes save automatically as you type
-4. Notes persist when switching between regions
-5. Notes are included in exported data
-6. Use notes to document:
-   - Weather conditions
-   - Observed events
-   - Measurement context
-   - Analysis decisions
-
-Adjusting Boundaries:
-
-Keyboard Method:
-- Shift + Left Arrow: Move right boundary left
-- Shift + Right Arrow: Move right boundary right
-- Alt + Left Arrow: Move left boundary left
-- Alt + Right Arrow: Move left boundary right
-- Each press nudges by ~10% of current step size
-
-Mouse Method (if implemented):
-- Hover over region edge until cursor changes
-- Click and drag to adjust boundary
-- Release to set new boundary
-
-Adding/Removing Areas (Multi-Area Regions):
-
-Adding Areas:
-1. Select a region
-2. Click "Add Area" button in Region Details
-3. Add Area mode activates
-4. Use Shift + Click or Shift + Drag to create additional areas
-5. New areas are added to the same region
-6. Metrics update to include all areas
-7. Click "Add Area" again to exit mode
-
-Example Use Case:
-- Create region for "Morning Rush Hour"
-- Add areas for 7-9 AM on Monday, Tuesday, Wednesday
-- Single region now spans three separate time periods
-- Metrics show combined analysis of all three periods
-
-Removing Areas:
-- Hold Ctrl and click inside the area to remove
-- Area is deleted from the region
-- If region has only one area, entire region is deleted
-- Metrics update automatically
-
-Region Operations:
-
-Copy Summary:
-1. Select a region
-2. Click "Copy Summary" button
-3. Region data is copied to clipboard in text format
-4. Paste into reports, emails, or documents
-5. Includes: name, timestamps, duration, LAeq, LAFmax, LAF90, notes
-
-Copy Spectrum Values:
-1. Select a region
-2. Click "Copy Spectrum Values" button
-3. Spectral data copied to clipboard in tab-separated format
-4. Paste directly into Excel or other spreadsheet
-5. Includes frequency bands and average levels for region
-
-Merge Regions:
-1. Select the first region (source)
-2. Click "Merge Regions" button
-3. Dropdown appears with other regions
-4. Select target region from dropdown
-5. Click "Merge Regions" again to confirm
-6. Two regions combine into one multi-area region
-7. Notes from both regions are preserved
-8. Metrics update to include all areas
-
-Split Areas:
-1. Select a multi-area region
-2. Click "Split Areas" button
-3. Region splits into separate regions (one per area)
-4. Each new region appears in table
-5. Original region is deleted
-6. Useful for analyzing areas individually after grouping
-
-Delete Region:
-1. Select a region
-2. Click "Delete Region" button in panel
-3. Or hold Ctrl and click inside region on chart
-4. Region is deleted immediately (no confirmation)
-5. Region disappears from all charts and panel
-
-Region Visibility:
-
-Global Toggle:
-1. Click "Regions" toggle button in side panel header
-2. All region overlays hide/show on charts
-3. Region panel details hide/show
-4. Regions remain in memory (not deleted)
-5. Useful for viewing raw data without annotations
-
-Per-Region Visibility (if implemented):
-- Use checkbox next to region in table
-- Hide specific regions while keeping others visible
-- Hidden regions remain selectable in panel
+Deleting a region removes the annotation across all meters. Ctrl+click removes
+the clicked area, or the whole region if it has only one area. State changes
+are the way to record that a sound is absent at just one meter.
 
 ================================================================================
-7. MANAGING MARKERS
+7. MANAGING MARKERS AND CLASSIFICATIONS
 ================================================================================
 
-What are Markers?
+Markers remain separate global point annotations. Their line appears on every
+chart, and their saved metric snapshot retains the information available when
+created. They are not zero-width regions.
 
-Markers are point-in-time annotations that flag specific moments in your data.
-Unlike regions (which span time periods), markers identify single timestamps.
-Markers are useful for:
+- Press M at the current cursor, or double-click a chart, to add a marker.
+- With no cursor, M uses the viewport centre.
+- Duplicate timestamps are rejected.
+- Select a marker to edit its note/colour or inspect/copy its saved snapshot.
+- Ctrl+Left/Right nudges a selected marker.
+- Delete removes the selected marker; Ctrl+click near a line also removes it.
+- Clear all markers is in the Markers tab and requires confirmation.
 
-- Flagging noise complaints or events
-- Marking interesting acoustic phenomena
-- Noting measurement conditions or changes
-- Creating reference points for analysis
-- Building regions (two markers can become a region)
+The duplicate Add Marker at Tap button has been retired; use M.
+The main toolbar no longer contains an immediate Clear All Markers action.
+Marker shortcuts and global lines remain available alongside region states.
 
-Markers appear as vertical lines on all charts and are listed in the Markers
-panel with their timestamp, position, and any notes you've added.
-
-Creating Markers:
-
-Method 1: Double-Click
-1. Double-click on any time-series or spectrogram chart
-2. Marker is created at clicked timestamp
-3. Marker appears as vertical line (default: green)
-4. Marker is added to Markers panel
-5. Fastest method for quick annotations
-
-Method 2: M Key
-1. Click on chart to place tap line at desired timestamp
-2. Press M key
-3. Marker is created at tap line position
-4. More precise than double-clicking
-5. Useful when you need exact timestamp alignment
-
-Method 3: Add Marker at Tap Button
-1. Click on chart to place tap line
-2. Switch to Markers tab in side panel
-3. Click "Add Marker at Tap" button
-4. Marker is created at tap line position
-5. Same result as M key method
-
-Editing Markers:
-
-Selecting Markers:
-- Click marker line on any chart
-- Or click marker row in Markers panel table
-- Selected marker is highlighted in panel
-- Tap line jumps to marker timestamp
-- Marker details appear in side panel
-
-Changing Colors:
-1. Select a marker
-2. Click the color picker in Marker Details section
-3. Choose new color from palette
-4. Marker color updates immediately on all charts
-5. Use colors to categorize markers:
-   - Red: Complaints or issues
-   - Yellow: Weather events
-   - Blue: Measurement notes
-   - Green: Normal events (default)
-
-Adding Notes:
-1. Select a marker
-2. Type in the Notes text area in Marker Details
-3. Notes save automatically as you type
-4. Notes persist when switching between markers
-5. Notes are included in exported data
-6. Use notes to document:
-   - What event occurred
-   - Source of noise
-   - Weather conditions
-   - Observer comments
-   - Complaint details
-
-Fine-Tuning Position (if implemented):
-- Ctrl + Left Arrow: Move marker to previous data point
-- Ctrl + Right Arrow: Move marker to next data point
-- Useful for aligning marker with exact event peak
-
-Marker Operations:
-
-Copy Details:
-1. Select a marker
-2. Click "Copy Details" button
-3. Marker data is copied to clipboard in text format
-4. Paste into reports, emails, or documents
-5. Includes: timestamp, position, LAeq, LAFmax, notes
-
-Delete Marker:
-1. Select a marker
-2. Click "Delete Marker" button in panel
-3. Or hold Ctrl and click near marker on chart
-4. Marker is deleted immediately (no confirmation)
-5. Marker disappears from all charts and panel
-
-Clear All Markers:
-1. Click "Clear All Markers" button in Control Panel
-2. All markers are deleted immediately
-3. Use when starting fresh analysis
-4. Cannot be undone - save workspace first if needed
-
-Navigate Between Markers:
-- Left Arrow: Jump to previous marker (when marker selected)
-- Right Arrow: Jump to next marker (when marker selected)
-- Tap line moves to marker timestamp
-- Useful for reviewing flagged events sequentially
-
-Marker Visibility:
-
-Global Toggle:
-1. Click "Markers" toggle button in side panel header
-2. All marker lines hide/show on charts
-3. Markers remain in memory (not deleted)
-4. Useful for viewing data without marker clutter
-5. Markers panel remains accessible
-
-Per-Marker Visibility (if implemented):
-- Use checkbox next to marker in table
-- Hide specific markers while keeping others visible
-- Hidden markers remain selectable in panel
+Classifications are machine-generated candidates, held in a separate layer:
+- Import CSV/JSON from the menu or Classifications tab.
+- Selecting a row or classification box is passive: cursor, viewport and audio
+  stay unchanged.
+- P or Preview explicitly seeks and plays the selected candidate.
+- Filter by source, minimum score, and direct/supporting role where available.
+  Score is a model match score, not a calibrated probability.
+- Sort by start, score, source, state or meter.
+- Elevate to Region converts a candidate to a manual region. It reuses or
+  creates a category, keeps its span/origin and starts other meters unchecked.
 
 ================================================================================
 8. AUDIO PLAYBACK
@@ -950,13 +763,10 @@ Make Region(s) Button:
 1. Select desired time slice using Shift + Drag
 2. Review metrics to confirm correct time range
 3. Click "Make Region(s)" button in comparison panel
-4. Application creates one region per included position
-5. Each region:
-   - Spans the selected time slice
-   - Is assigned to its respective position
-   - Has default color and auto-generated name
-   - Appears in Regions panel after exiting comparison mode
-6. Regions are immediately visible on charts
+4. Application creates one region for the selected slice
+5. Included meters are marked present; other meters remain unchecked
+6. The first included meter in display order is its origin
+7. The region remains available after exiting comparison mode
 
 Example Workflow:
 - Enter Comparison Mode
@@ -994,399 +804,122 @@ Tips for Effective Comparison:
 - Combine with Auto Day & Night for comprehensive coverage
 
 ================================================================================
-10. EXPORTING DATA
+10. EXPORTING DATA AND SAVING WORK
 ================================================================================
 
-The application provides multiple export options for sharing analysis results,
-creating reports, and archiving your work.
+Quick browser export:
+Choose Menu -> Export Annotations (CSV). It works in server mode and static HTML.
+One CSV contains these separately headed sections, separated by blank records:
 
-Export Options:
+  REGIONS  Importable annotation fields, category, notes, colour override,
+           areas, meter states, offsets/source times, and origin headline levels.
+  OVERALL  One row per region and meter, including absent/unchecked meters,
+           with LAeq, LAFmax, LAF90, background reference and resolution.
+  SPECTRAL One row per region, meter and parameter; bands are frequency-ordered
+           columns. Missing parameters remain explicitly unavailable.
+  MARKERS  Global annotations and their complete saved metric snapshots.
+  NOTES    Sources, offsets, methods, resolution choices and caveats.
 
-1. Export Annotations (CSV)
-   - Exports all regions and markers to CSV file
-   - Accessible via: Menu → Export Annotations (CSV)
-   - File format: Spreadsheet-compatible
-   - Includes:
-     - Type (region or marker)
-     - ID
-     - Position ID
-     - Start timestamp (UTC)
-     - End timestamp (UTC, empty for markers)
-     - Notes
-     - Color
-   - Timestamp format: YYYY-MM-DD HH:mm:ss.sss (Excel-ready)
-   - Use for:
-     - Sharing annotations with colleagues
-     - Archiving analysis decisions
-     - Creating reports in Excel
-     - Backup of annotation work
+REGIONS comes first for quick inspection. Select a section's header and rows
+in Excel, then Format as Table to filter it. Date-times are UTC and compatible
+with Excel. Do not include the next section marker in the table selection.
 
-2. Import Annotations (CSV)
-   - Imports previously exported annotations
-   - Accessible via: Menu → Import Annotations (CSV)
-   - File picker opens to select CSV file
-   - Annotations are loaded and applied to current data
-   - Existing annotations are replaced
-   - Use for:
-     - Restoring previous analysis
-     - Applying annotations from another analyst
-     - Loading standardized region templates
-   - Note: Timestamps must match your data range
+The browser uses the best available resolution, independently of the current
+chart view. Auto selection prefers complete log coverage, then overview, then
+partial log if nothing better is available. Resolution, coverage and missing
+data are explicit. Rows for both log and overview are an optional export
+setting, off by default. A live streamed buffer
+may cover only part of the survey: use Python to calculate from source files.
+The collapsed Actions and settings area contains background-window, minimum
+context and both-resolution controls. Their values are saved in the workspace.
 
-3. Save Workspace
-   - Saves complete UI state to JSON file
-   - Accessible via: Menu → Save Workspace
-   - Includes:
-     - All markers and regions
-     - Active parameter selection
-     - Selected regions/markers
-     - Viewport and zoom settings
-     - Chart visibility settings
-     - Audio offset settings
-     - Source configuration references
-   - File naming: workspace-YYYY-MM-DDTHH-mm-ss.json
-   - Use for:
-     - Saving work-in-progress
-     - Creating analysis snapshots
-     - Sharing complete analysis state
-     - Resuming work later
+Importing annotations:
+Choose Menu -> Import Annotations (CSV). Import reads REGIONS and MARKERS only;
+OVERALL/SPECTRAL/NOTES analysis rows never become annotations. Metadata restores
+the category catalog, meter titles and offsets. Existing annotations are
+replaced. Old unsectioned CSV and annotation JSON remain supported.
 
-4. Load Workspace
-   - Restores previously saved workspace
-   - Accessible via: Menu → Load Workspace
-   - File picker opens to select workspace JSON
-   - UI state is restored immediately
-   - Warning if source files don't match current data
-   - Use for:
-     - Resuming previous analysis session
-     - Loading colleague's analysis
-     - Switching between different analysis views
+Full-resolution Python export:
+- In server mode choose Menu -> Export Annotations — Full Resolution.
+- Or, with the dashboard/control server running:
 
-5. Copy Region Summary
-   - Copies selected region data to clipboard
-   - Accessible via: Region Details → Copy Summary button
-   - Text format, ready for pasting
-   - Includes:
-     - Region name
-     - Start and end timestamps
-     - Duration
-     - LAeq, LAFmax, LAF90 values
-     - Notes
-   - Use for:
-     - Quick insertion into reports
-     - Email communication
-     - Documentation
+    nsa-ctl export-annotations --output "C:\Survey\annotations.full-resolution.csv"
 
-6. Copy Spectrum Values
-   - Copies spectral data for selected region
-   - Accessible via: Region Details → Copy Spectrum Values button
-   - Tab-separated format
-   - Includes:
-     - Frequency bands (Hz)
-     - Average levels (dB) for each band
-   - Paste directly into Excel or other spreadsheet
-   - Use for:
-     - Spectral analysis in Excel
-     - Creating custom charts
-     - Detailed frequency reporting
+- Add --include-all-resolutions to retain separate log and overview rows.
+- Set --background-window-s and --min-context-s to change background defaults.
+- Without a command line, drag a saved workspace or sectioned annotation CSV
+  onto export_annotations.bat. Source references must still resolve.
 
-7. Copy Marker Details
-   - Copies selected marker data to clipboard
-   - Accessible via: Marker Details → Copy Details button
-   - Text format, ready for pasting
-   - Includes:
-     - Timestamp
-     - Position
-     - LAeq, LAFmax values
-     - Notes
-   - Use for:
-     - Event logging
-     - Complaint documentation
-     - Quick reference notes
+Python reads source windows meter by meter rather than retaining all logs at
+once. It writes the same section layout. Default resolution preference is
+complete log coverage, then overview, then partial log if nothing better is
+available. Each spectral parameter selects its best resolution independently.
+Resolution, coverage and missing-data reasons are always explicit. Separate
+log/overview rows remain optional. Keep the original workspace alongside the
+export so it can be regenerated later.
 
-8. Static HTML Export
-   - Generates standalone HTML file of entire dashboard
-   - Command line: python -m noise_survey_analysis.main --generate-static config.json
-   - Output: Single .html file in same directory as config
-   - File is self-contained and portable
-   - No Python server required to view
-   - Limitations:
-     - Audio playback disabled
-     - No server-side features
-     - Larger file size with log data
-   - Use for:
-     - Email distribution
-     - Client reports
-     - Archive of analysis
-     - Offline viewing
+Background and calculation methods:
+- Region areas form a half-open union: a sample at the exact end belongs to the
+  next interval. Overlapping areas are not counted twice.
+- Equivalent levels use duration-weighted energy means. Maxima use genuine
+  maximum columns; missing LAFmax stays blank.
+- LAF90/background LA90 use the duration-weighted inverse-CDF 10th percentile.
+  Interval LAeq/LAF90 substitutes, overview data and 1-second data are indicative.
+- Default context is five minutes before/after each area, pooled together and
+  excluding regions marked present at that meter. At least sixty usable seconds
+  are required. The background is LA90 of this context; LAeq of exactly the
+  same context is also reported. Methods/settings appear in NOTES.
+- Chart offsets are subtracted when querying source times. Annotation times
+  remain on the aligned display timeline; both are recorded in REGIONS.
 
-Export Formats:
+For scripts, read_export_section(path, "OVERALL") from
+noise_survey_analysis.export.annotations returns a pandas DataFrame directly.
 
-CSV (Comma-Separated Values):
-- Standard spreadsheet format
-- Opens in Excel, Google Sheets, etc.
-- Used for: Annotations export/import
-- Human-readable and editable
-- Compatible with most data analysis tools
+Workspaces:
+Menu -> Save Workspace writes version 2 JSON: regions, states, categories,
+markers, classifications, source references and UI settings. Load Workspace
+restores it, or launch the server with --state path/to/workspace.json.
 
-JSON (JavaScript Object Notation):
-- Structured data format
-- Used for: Workspace save/load, configuration files
-- Preserves complex data structures
-- Machine-readable
-- Can be edited with text editor (advanced users)
+Version 1 saves migrate explicitly. Old cross-meter copies merge only when
+every normalized area endpoint agrees within 1 ms and either a non-empty
+whitespace-normalized note or a non-empty colour matches. Each group uses a
+fixed representative and contains at most one copy per origin meter. A message
+reports the number merged. Version 2 files are not deduplicated. Unknown future
+versions are rejected without replacing the current session.
 
-Plain Text:
-- Simple text format
-- Used for: Clipboard exports (regions, markers, spectrum)
-- Easy to paste into documents
-- Human-readable
-- No special software required
-
-HTML (HyperText Markup Language):
-- Web page format
-- Used for: Static dashboard export
-- Self-contained with embedded data
-- Opens in any web browser
-- Includes all charts and interactivity (except audio)
-
-Using Exported Data:
-
-In Reports:
-1. Export annotations to CSV
-2. Open in Excel
-3. Filter/sort to find relevant regions
-4. Copy data into report template
-5. Add context and analysis
-
-For Client Deliverables:
-1. Complete analysis in application
-2. Add detailed notes to regions and markers
-3. Generate static HTML export
-4. Email HTML file to client
-5. Client opens in browser - no software needed
-6. Include CSV export for raw data
-
-For Collaboration:
-1. Save workspace to JSON file
-2. Export annotations to CSV (backup)
-3. Share both files with colleague
-4. Colleague loads workspace in their application
-5. Analysis state is restored exactly
-6. Continue collaborative analysis
-
-For Archiving:
-1. Save workspace JSON (complete state)
-2. Export annotations CSV (human-readable backup)
-3. Generate static HTML (viewable archive)
-4. Store all three files with project data
-5. Future retrieval: Load workspace or view HTML
-
-For Custom Analysis:
-1. Copy spectrum values for regions of interest
-2. Paste into Excel or MATLAB
-3. Perform custom calculations or visualizations
-4. Export annotations CSV for timestamp reference
-5. Combine with other data sources as needed
-
-Best Practices:
-- Save workspace regularly during analysis
-- Export annotations before major changes
-- Generate static HTML for final deliverables
-- Keep workspace and CSV exports together
-- Use descriptive notes - they appear in exports
-- Test workspace load to verify completeness
+Save regularly. Reverting application code does not downgrade newer workspaces
+or CSV files; preserve original saves when comparing older program versions.
 
 ================================================================================
 11. KEYBOARD SHORTCUTS
 ================================================================================
 
-Keyboard shortcuts provide efficient navigation and control of the application.
-All shortcuts work when the browser window has focus.
+Shortcuts operate while chart/browser focus is outside an editable control.
 
-Global Shortcuts:
+  M                 Add a global marker at the cursor (or viewport centre).
+  R, then R         Pin a region's first and second bounds on the same meter.
+  Escape            Cancel unfinished region creation; within an HTML note,
+                    cancel the uncommitted draft.
+  Shift+drag        Create a region, or append an area in Add area mode.
+  Shift+click       Create a span from the current cursor.
+  1-9               Cycle selected-region state at that meter in display order.
+                    Origin is locked; repeats and modifiers are ignored.
+  [ / ]             Select previous/next region and bring it into view.
+  B                 Return to the view before a region-navigation jump.
+  N                 Focus the selected region's note.
+  Ctrl+Enter        Save an HTML note and return focus to chart shortcuts.
+  Ctrl+Z / Ctrl+Y   Undo / redo annotation edits.
+  Left / Right      Move the cursor using the current navigation step.
+  Ctrl+Left/Right   Nudge a selected marker, or adjust a selected region's start.
+  Alt+Left/Right    Adjust a selected region's end.
+  Delete/Backspace  Delete the selected marker, otherwise selected region.
+  Ctrl+click        Delete a region area or nearby marker.
+  P                 Explicitly preview the selected classification.
+  Space             Play/pause the active audio position in server mode.
 
-Spacebar - Play/Pause Audio
-- Toggles audio playback for active position
-- Audio starts from current tap line position
-- Works in Server Mode only
-- Press again to pause
-
-M - Add Marker at Tap Line
-- Creates marker at current tap line position
-- If no tap line, creates marker at viewport center
-- Marker is automatically selected
-- Fastest way to flag events while reviewing data
-
-R - Toggle Region Make Mode
-- Activates region creation mode
-- Alternative: Creates region from two most recent markers
-- Press again to deactivate mode
-- Use with Shift + Click to create regions
-
-Escape - Clear Selection / Exit Modes
-- Clears selected region or marker
-- Exits comparison mode (if active)
-- Exits region make mode (if active)
-- Cancels any active selection operation
-- Universal "cancel" or "back" action
-
-[ and ] - Step Through Regions
-- ] selects the next region in the Regions list; [ selects the previous one
-- The selected region is brought into view, zooming in if it is small
-- With no region selected, ] starts at the first region and [ at the last
-- A short message appears when there is no further region
-
-B - Back to Previous View
-- Returns to the view you were in before jumping to a region
-- A run of [ / ] presses counts as one jump, so one B press returns to
-  where you started
-- The "Back (B)" button in the Regions panel does the same; hover over it
-  to see the time range it will return to
-
-N - Edit Region Note
-- Moves the cursor into the selected region's note
-- If nothing is selected, selects the region under the tap line first
-- Esc or Ctrl + Enter saves the note and returns to chart shortcuts
-- "Unsaved changes" / "Saved" appears under the note box
-
-Arrow Keys - Navigation
-
-Left Arrow:
-- Move tap line to previous data point
-- If marker selected: Jump to previous marker
-- If region selected: Move left boundary left (with Alt)
-- Step size depends on data resolution
-
-Right Arrow:
-- Move tap line to next data point
-- If marker selected: Jump to next marker
-- If region selected: Move right boundary right (with Shift)
-- Step size depends on data resolution
-
-Modifier Keys:
-
-Shift + Click - Create Region Boundary
-- Click once to place tap line (first boundary)
-- Hold Shift and click again (second boundary)
-- Region is created spanning the two points
-- Works in either direction
-
-Shift + Drag - Box Select Region
-- Hold Shift key
-- Click and drag horizontally on chart
-- Selection box appears during drag
-- Release to create region
-- More precise than Shift + Click
-
-Shift + Left Arrow - Adjust Region Right Boundary
-- Region must be selected first
-- Moves right boundary to the left
-- Each press nudges by ~10% of step size
-- Use to shrink region from right side
-
-Shift + Right Arrow - Adjust Region Right Boundary
-- Region must be selected first
-- Moves right boundary to the right
-- Each press nudges by ~10% of step size
-- Use to expand region from right side
-
-Alt + Left Arrow - Adjust Region Left Boundary
-- Region must be selected first
-- Moves left boundary to the left
-- Each press nudges by ~10% of step size
-- Use to expand region from left side
-
-Alt + Right Arrow - Adjust Region Left Boundary
-- Region must be selected first
-- Moves left boundary to the right
-- Each press nudges by ~10% of step size
-- Use to shrink region from left side
-
-Ctrl + Click - Delete
-- Hold Ctrl and click inside region to delete it
-- Hold Ctrl and click near marker to delete it
-- Deletes closest marker within viewport
-- Immediate deletion (no confirmation)
-- For multi-area regions: deletes only clicked area
-
-Shift (Hold) - Enable Box Select Tool
-- Hold Shift key to activate box select
-- Cursor changes to indicate mode
-- Dragging creates selection box
-- Release Shift to return to pan tool
-- Useful for temporary box select access
-
-Shift (Release) - Finalize Region Selection
-- When using Shift + Drag method
-- Release mouse button to finalize selection
-- Region is created immediately
-- Box select tool remains active while Shift held
-
-Ctrl + Left Arrow - Nudge Marker Left (if implemented)
-- Marker must be selected first
-- Moves marker to previous data point
-- Use for fine-tuning marker position
-- Aligns marker with exact event peak
-
-Ctrl + Right Arrow - Nudge Marker Right (if implemented)
-- Marker must be selected first
-- Moves marker to next data point
-- Use for fine-tuning marker position
-- Aligns marker with exact event peak
-
-Chart Interaction Shortcuts:
-
-Mouse Wheel - Zoom
-- Scroll up to zoom in
-- Scroll down to zoom out
-- Zooms around cursor position
-- All time-based charts zoom together
-
-Click + Drag - Pan
-- Click and drag on chart to pan left/right
-- All time-based charts pan together
-- Does not work while Shift is held
-- Returns to original position if dragged outside chart
-
-Double-Click - Create Marker
-- Double-click on any chart
-- Marker created at clicked timestamp
-- Same as M key but at specific location
-- Fastest method for quick annotations
-
-Keyboard Shortcut Tips:
-
-1. Efficient Workflow:
-   - Use arrow keys to step through data
-   - Press M to drop markers at events
-   - Use Shift + Click to create regions
-   - Press Escape to clear selections
-
-2. Region Refinement:
-   - Create rough region with Shift + Drag
-   - Select region
-   - Use Shift/Alt + Arrows to adjust boundaries precisely
-   - Add notes while region is selected
-
-3. Audio Review:
-   - Click on chart to set position
-   - Press Spacebar to start playback
-   - Press M to mark events while listening
-   - Use Left/Right arrows to step through interesting sections
-
-4. Quick Comparison:
-   - Create markers at key timestamps
-   - Use Left/Right arrows to jump between markers
-   - Review notes and metrics for each
-   - Press R to create region from two markers
-
-5. Keyboard-Only Navigation:
-   - Use arrow keys to move tap line
-   - Press M to create markers
-   - Press R for regions (from markers)
-   - Press Escape to clear selections
-   - Minimal mouse usage for efficient workflow
+Mouse wheel zooms; ordinary dragging pans. Clicking a selected region's band
+on another meter changes its state without moving the cursor or seeking audio.
+Classification boxes retain passive selection ahead of ordinary band clicks.
 
 ================================================================================
 12. TROUBLESHOOTING
@@ -1878,5 +1411,5 @@ report them following the guidelines in Section 13 (Support).
 Happy analyzing!
 
 Document Version: 1.2
-Last Updated: 2025-10-01
+Last Updated: 2026-10-18
 Application Version: 1.2+

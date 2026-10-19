@@ -29,13 +29,8 @@ from noise_survey_analysis.ui.components import (
     ControlsComponent,
     RangeSelectorComponent,
     SummaryTableComponent,
-    ComparisonPanelComponent,
     create_audio_controls_for_position,
     create_position_title_and_offsets,
-    RegionPanelComponent,
-    MarkerPanelComponent,
-    ClassificationPanelComponent,
-    SidePanelComponent,
 )
 from noise_survey_analysis.core.data_processors import (
     GlyphDataProcessor,
@@ -150,8 +145,7 @@ class DashBuilder:
                      saved_workspace_state=None,
                      job_number=None,
                      server_mode: bool = False,
-                     position_offsets=None,
-                     ui_settings: Optional[Dict[str, Any]] = None):
+                     position_offsets=None):
         """
         The main public method that constructs the entire application layout.
         This is the primary entry point for this class.
@@ -168,8 +162,6 @@ class DashBuilder:
 
         # The sequence of operations is clear and logical
         self.server_mode = bool(server_mode)
-        requested_panel = (ui_settings or {}).get('side_panel', 'html')
-        self.side_panel_mode = requested_panel if requested_panel in ('legacy', 'html') else 'html'
         if not self.server_mode:
             self._load_deferred_log_data_for_static(app_data)
         prepared_glyph_data, available_params = self._prepare_glyph_data(app_data)
@@ -349,22 +341,10 @@ class DashBuilder:
         self.shared_components['freq_bar'] = FrequencyBarComponent()
 
         all_positions = list(app_data.positions())
-        self.shared_components['comparison_panel'] = ComparisonPanelComponent(all_positions)
         self.shared_components['comparison_frequency'] = ComparisonFrequencyBarComponent()
         self.shared_components['summary_table'] = SummaryTableComponent(all_positions, ['LAeq', 'LAFmax', 'LAF90'])
 
-        region_panel_div = RegionPanelComponent()
-        marker_panel_div = MarkerPanelComponent()
-        classification_panel_div = ClassificationPanelComponent()
-        side_panel = SidePanelComponent(region_panel_div, marker_panel_div, classification_panel_div)
-
-        self.shared_components['region_panel'] = region_panel_div
-        self.shared_components['marker_panel'] = marker_panel_div
-        self.shared_components['classification_panel'] = classification_panel_div
-        self.shared_components['side_panel'] = side_panel
-        self.shared_components['html_side_panel'] = (
-            HtmlSidePanelComponent() if getattr(self, 'side_panel_mode', 'html') == 'html' else None
-        )
+        self.shared_components['html_side_panel'] = HtmlSidePanelComponent()
 
         first_position_processed = False
         # Create components for each position found in the data
@@ -545,7 +525,6 @@ class DashBuilder:
     def _assemble_and_add_layout(self, doc):
         """Step 4: Gets the .layout() from each component and assembles the final page."""
         logger.info("DashboardBuilder: Assembling final Bokeh layout...")
-        use_html_panel = self.shared_components.get('html_side_panel') is not None
 
         position_layouts = []
         for position_name, comp_dict in self.components.items():
@@ -556,16 +535,15 @@ class DashBuilder:
                 comp_dict['position_controls']['layout'],
                 ts_layout
             )
-            if use_html_panel:
-                # Fixed 1600 px figures formerly pushed the sidebar off screen.
-                # Stretch the chart column while preserving each plot's height.
-                for chart in (comp_dict['timeseries'].figure, comp_dict['spectrogram'].figure):
-                    chart.width = None
-                    chart.sizing_mode = 'stretch_width'
-                    chart.min_width = 300
-                for layout in (ts_layout, spec_layout, ts_layout_with_controls, comp_dict['position_controls']['layout']):
-                    layout.sizing_mode = 'stretch_width'
-                    layout.styles = {**layout.styles, 'min-width': '0', 'overflow': 'visible'}
+            # Fixed 1600 px figures formerly pushed the sidebar off screen.
+            # Stretch the chart column while preserving each plot's height.
+            for chart in (comp_dict['timeseries'].figure, comp_dict['spectrogram'].figure):
+                chart.width = None
+                chart.sizing_mode = 'stretch_width'
+                chart.min_width = 300
+            for layout in (ts_layout, spec_layout, ts_layout_with_controls, comp_dict['position_controls']['layout']):
+                layout.sizing_mode = 'stretch_width'
+                layout.styles = {**layout.styles, 'min-width': '0', 'overflow': 'visible'}
 
             pos_layout = column(
                 ts_layout_with_controls,
@@ -580,9 +558,8 @@ class DashBuilder:
                     "box-shadow": "0 1px 3px rgba(15, 23, 42, 0.08)",
                 }
             )
-            if use_html_panel:
-                pos_layout.sizing_mode = 'stretch_width'
-                pos_layout.styles = {**pos_layout.styles, 'min-width': '0', 'overflow': 'visible'}
+            pos_layout.sizing_mode = 'stretch_width'
+            pos_layout.styles = {**pos_layout.styles, 'min-width': '0', 'overflow': 'visible'}
             position_layouts.append(pos_layout)
         
         # Create the JS initialization trigger Div
@@ -602,54 +579,29 @@ class DashBuilder:
         self.shared_components['comparison_frequency_layout'] = comparison_frequency_layout
 
         charts_stack_layout = column(*position_layouts, name="charts_stack_layout")
-        if use_html_panel:
-            charts_stack_layout.sizing_mode = 'stretch_width'
-            charts_stack_layout.styles = {'min-width': '0', 'overflow': 'visible'}
+        charts_stack_layout.sizing_mode = 'stretch_width'
+        charts_stack_layout.styles = {'min-width': '0', 'overflow': 'visible'}
 
-        region_panel_layout = self.shared_components['region_panel'].layout()
-        region_panel_layout.name = "region_panel_layout"
-        region_panel_layout.visible = True
-        self.shared_components['region_panel_layout'] = region_panel_layout
-
-        marker_panel_layout = self.shared_components['marker_panel'].layout()
-        marker_panel_layout.name = "marker_panel_layout"
-        marker_panel_layout.visible = True
-        self.shared_components['marker_panel_layout'] = marker_panel_layout
-
-        classification_panel_layout = self.shared_components['classification_panel'].layout()
-        classification_panel_layout.name = "classification_panel_layout"
-        classification_panel_layout.visible = True
-        self.shared_components['classification_panel_layout'] = classification_panel_layout
-
-        comparison_panel_layout = self.shared_components['comparison_panel'].layout()
-        comparison_panel_layout.visible = False
-        comparison_panel_layout.name = "comparison_panel_layout"
-        self.shared_components['comparison_panel_layout'] = comparison_panel_layout
-
-        side_panel_tabs = self.shared_components['side_panel'].layout()
-        side_panel_tabs.visible = not use_html_panel
-        self.shared_components['side_panel_tabs'] = side_panel_tabs
-
-        panel_children = [self.shared_components['html_side_panel'].layout()] if use_html_panel else [
-            side_panel_tabs, comparison_panel_layout
-        ]
         side_panel_container = column(
-            *panel_children,
+            self.shared_components['html_side_panel'].layout(),
             name="side_panel_container",
+            css_classes=["nsa-annotation-sidebar"],
             width=SIDE_PANEL_WIDTH + 32,
             styles={
                 "margin-top": "2px",
-                **({'position': 'sticky', 'top': '12px', 'align-self': 'flex-start', 'overflow': 'visible'} if use_html_panel else {}),
+                'position': 'sticky',
+                'top': '12px',
+                'align-self': 'flex-start',
+                'overflow': 'visible',
             }
         )
-        if use_html_panel:
-            for component in ('range_selector', 'freq_bar', 'comparison_frequency'):
-                chart = self.shared_components[component].figure
-                chart.width = None
-                chart.sizing_mode = 'stretch_width'
-            for layout in (controls_layout, range_selector_layout, freq_bar_layout, comparison_frequency_layout):
-                layout.sizing_mode = 'stretch_width'
-                layout.styles = {**layout.styles, 'overflow': 'visible', 'min-width': '0'}
+        for component in ('range_selector', 'freq_bar', 'comparison_frequency'):
+            chart = self.shared_components[component].figure
+            chart.width = None
+            chart.sizing_mode = 'stretch_width'
+        for layout in (controls_layout, range_selector_layout, freq_bar_layout, comparison_frequency_layout):
+            layout.sizing_mode = 'stretch_width'
+            layout.styles = {**layout.styles, 'overflow': 'visible', 'min-width': '0'}
         self.shared_components['side_panel_container'] = side_panel_container
 
         chart_content_row = row(
@@ -661,9 +613,8 @@ class DashBuilder:
                 "align-items": "flex-start",
             }
         )
-        if use_html_panel:
-            chart_content_row.sizing_mode = 'stretch_width'
-            chart_content_row.styles = {**chart_content_row.styles, 'overflow': 'visible', 'min-width': '0'}
+        chart_content_row.sizing_mode = 'stretch_width'
+        chart_content_row.styles = {**chart_content_row.styles, 'overflow': 'visible', 'min-width': '0'}
 
         main_layout = column(
             controls_layout,
@@ -677,9 +628,8 @@ class DashBuilder:
         )
 
         final_layout = main_layout
-        if use_html_panel:
-            main_layout.sizing_mode = 'stretch_width'
-            main_layout.styles = {'overflow': 'visible', 'min-width': '0'}
+        main_layout.sizing_mode = 'stretch_width'
+        main_layout.styles = {'overflow': 'visible', 'min-width': '0'}
 
         apply_theme(final_layout)
         doc.add_root(final_layout)
@@ -734,6 +684,8 @@ class DashBuilder:
                 'processors/spectral.js',
                 'processors/frequency.js',
                 'data-processors.js', # Public orchestration facade, after feature processors
+                # Compatibility helpers for external/fake-model integrations;
+                # the dashboard creates only the HTML annotation panel.
                 'services/markers/markerPanelRenderer.js',
                 'services/regions/regionPanelRenderer.js',
                 'services/classifications/classificationPanelRenderer.js',
@@ -835,13 +787,12 @@ class DashBuilder:
                 'freq_table_freq_range_hz': CHART_SETTINGS.get('freq_table_freq_range_hz'),
                 'log_view_max_viewport_seconds': LOG_VIEW_MAX_VIEWPORT_SECONDS,
                 'server_mode': getattr(self, 'server_mode', False),
-                'ui': {'side_panel': getattr(self, 'side_panel_mode', 'html')},
             },
             'sourceConfigs': getattr(self, 'source_configs', []),
             'jobNumber': getattr(self, 'job_number', None),
             'positionDisplayTitles': getattr(self, 'position_display_titles', {}),
             'savedWorkspaceState': getattr(self, 'saved_workspace_state', None),
-            'htmlSidePanel': self.shared_components['html_side_panel'].div if self.shared_components.get('html_side_panel') else None,
+            'htmlSidePanel': self.shared_components['html_side_panel'].div,
             'uiPositionElements': {},
             'positionHasLogData': {},  # per-position flag: whether log data exists (even if not yet loaded)
             'positionHasLogSpectral': {},  # per-position flag: whether log spectrogram data exists
@@ -875,102 +826,13 @@ class DashBuilder:
             'positionControls': {},
             'components': {},
             'frequencyBarLayout': self.shared_components.get('freq_bar_layout'),
-            'regionPanelLayout': self.shared_components.get('region_panel_layout'),
-            'markerPanelLayout': self.shared_components.get('marker_panel_layout'),
-            'classificationPanelLayout': self.shared_components.get('classification_panel_layout'),
-            'comparisonPanelLayout': self.shared_components.get('comparison_panel_layout'),
-            'sidePanelTabs': self.shared_components.get('side_panel_tabs'),
-            'regionGhostModeSelect': self.shared_components['region_panel'].ghost_mode_select,
             'sidePanelContainer': self.shared_components.get('side_panel_container'),
-            'comparisonPositionSelector': self.shared_components['comparison_panel'].position_selector,
-            'comparisonPositionIds': self.shared_components['comparison_panel'].position_ids,
-            'comparisonFinishButton': self.shared_components['comparison_panel'].finish_button,
-            'comparisonMakeRegionsButton': self.shared_components['comparison_panel'].make_regions_button,
-            'comparisonSliceInfoDiv': self.shared_components['comparison_panel'].slice_info_div,
-            'comparisonMetricsDiv': self.shared_components['comparison_panel'].metrics_table_div,
             'comparisonFrequencyLayout': self.shared_components.get('comparison_frequency_layout'),
             'comparisonFrequencySource': self.shared_components['comparison_frequency'].source,
             'comparisonFrequencyFigure': self.shared_components['comparison_frequency'].figure,
             'comparisonFrequencyTable': self.shared_components['comparison_frequency'].table_div,
             'comparisonFrequencyPalette': self.shared_components['comparison_frequency'].palette,
-            'regionPanelDiv': self.shared_components['region_panel'].container,
-            'regionPanelSource': self.shared_components['region_panel'].region_source,
-            'regionPanelTable': self.shared_components['region_panel'].region_table,
-            'regionPanelMessageDiv': self.shared_components['region_panel'].message_div,
-            'regionPanelCreationIndicatorDiv': self.shared_components['region_panel'].creation_indicator_div,
-            'regionPanelDetail': self.shared_components['region_panel'].detail_layout,
-            'regionPanelCopyButton': self.shared_components['region_panel'].copy_button,
-            'regionPanelDeleteButton': self.shared_components['region_panel'].delete_button,
-            'regionPanelAddAreaButton': self.shared_components['region_panel'].add_area_button,
-            'regionPanelMergeButton': self.shared_components['region_panel'].merge_button,
-            'regionPanelMergeSelect': self.shared_components['region_panel'].merge_select,
-            'regionPanelSplitButton': self.shared_components['region_panel'].split_button,
-            'regionPanelColorPicker': self.shared_components['region_panel'].color_picker,
-            'regionPanelNoteInput': self.shared_components['region_panel'].note_input,
-            'regionPanelMetricsDiv': self.shared_components['region_panel'].metrics_div,
-            'regionPanelFrequencyCopyButton': self.shared_components['region_panel'].frequency_copy_button,
-            'regionPanelFrequencyTableDiv': self.shared_components['region_panel'].frequency_table_div,
-            'regionPanelSpectrumDiv': self.shared_components['region_panel'].spectrum_div,
-            'regionVisibilityToggle': self.shared_components['region_panel'].visibility_toggle,
-            'regionAutoDayNightButton': self.shared_components['region_panel'].auto_daynight_button,
-            'regionPanelCopyTargetSelect': self.shared_components['region_panel'].copy_target_select,
-            'regionPanelCopyToAllPositionsButton': self.shared_components['region_panel'].copy_to_all_positions_button,
-            'regionPanelCenterButton': self.shared_components['region_panel'].center_region_button,
-            'regionPanelBackButton': self.shared_components['region_panel'].back_to_previous_view_button,
-            'regionPanelNoteStatusDiv': self.shared_components['region_panel'].note_status_div,
-            'regionPanelRecalculateButton': self.shared_components['region_panel'].recalculate_region_button,
-            'markerPanelDiv': self.shared_components['marker_panel'].container,
-            'markerPanelSource': self.shared_components['marker_panel'].marker_source,
-            'markerPanelTable': self.shared_components['marker_panel'].marker_table,
-            'markerPanelMessageDiv': self.shared_components['marker_panel'].message_div,
-            'markerPanelDetail': self.shared_components['marker_panel'].detail_layout,
-            'markerPanelColorPicker': self.shared_components['marker_panel'].color_picker,
-            'markerPanelNoteInput': self.shared_components['marker_panel'].note_input,
-            'markerPanelMetricsDiv': self.shared_components['marker_panel'].metrics_div,
-            'markerPanelCopyButton': self.shared_components['marker_panel'].copy_button,
-            'markerPanelDeleteButton': self.shared_components['marker_panel'].delete_button,
-            'markerPanelAddAtTapButton': self.shared_components['marker_panel'].add_at_tap_button,
-            'markerVisibilityToggle': self.shared_components['marker_panel'].visibility_toggle,
-            'classificationPanelDiv': self.shared_components['classification_panel'].container,
-            'classificationPanelSource': self.shared_components['classification_panel'].classification_source,
-            'classificationPanelTable': self.shared_components['classification_panel'].classification_table,
-            'classificationPanelMessageDiv': self.shared_components['classification_panel'].message_div,
-            'classificationPanelDetail': self.shared_components['classification_panel'].detail_layout,
-            'classificationPanelDetailDiv': self.shared_components['classification_panel'].detail_div,
-            'classificationPanelImportButton': self.shared_components['classification_panel'].import_button,
-            'classificationPanelExportButton': self.shared_components['classification_panel'].export_button,
-            'classificationPanelElevateButton': self.shared_components['classification_panel'].elevate_button,
-            'classificationPanelDeleteButton': self.shared_components['classification_panel'].delete_button,
-            'classificationVisibilityToggle': self.shared_components['classification_panel'].visibility_toggle,
-            'classificationPanelPreviewButton': self.shared_components['classification_panel'].preview_button,
-            'classificationPanelFilterLayout': self.shared_components['classification_panel'].filter_layout,
-            'classificationPanelMinimumScoreSlider': self.shared_components['classification_panel'].minimum_score_slider,
-            'classificationPanelShowingCountDiv': self.shared_components['classification_panel'].showing_count_div,
-            'classificationPanelSourceFilterToggle': self.shared_components['classification_panel'].source_filter_toggle,
-            'classificationPanelSourceFilterLayout': self.shared_components['classification_panel'].source_filter_layout,
-            'classificationPanelSourceCheckboxGroup': self.shared_components['classification_panel'].source_checkbox_group,
-            'classificationPanelRoleFilterLayout': self.shared_components['classification_panel'].role_filter_layout,
-            'classificationPanelRoleCheckboxGroup': self.shared_components['classification_panel'].role_checkbox_group,
         }
-
-        if self.shared_components.get('html_side_panel') is not None:
-            # JS callback arguments also become document references. Keeping an
-            # unused DataTable here serializes it even though it has no layout
-            # root, while Bokeh's standalone resource scan omits bokeh-tables.
-            # The HTML panel uses store intents and needs none of these widgets.
-            legacy_prefixes = ('regionPanel', 'markerPanel', 'classificationPanel')
-            legacy_names = {
-                'sidePanelTabs', 'regionGhostModeSelect', 'regionVisibilityToggle',
-                'regionAutoDayNightButton', 'markerVisibilityToggle',
-                'classificationVisibilityToggle', 'comparisonPanelLayout',
-                'comparisonPositionSelector', 'comparisonPositionIds',
-                'comparisonFinishButton', 'comparisonMakeRegionsButton',
-                'comparisonSliceInfoDiv', 'comparisonMetricsDiv',
-            }
-            js_models = {
-                key: value for key, value in js_models.items()
-                if not key.startswith(legacy_prefixes) and key not in legacy_names
-            }
 
         # Populate position-specific models
         for pos, comp_dict in self.components.items():

@@ -2,8 +2,8 @@
 
 **Purpose:** This checklist ensures all user interactions work correctly in the Bokeh environment. Run this checklist before each release or after significant changes to interaction logic.
 
-**Last Updated:** 2026-08-02
-**Version:** 1.7.0
+**Last Updated:** 2026-10-19
+**Version:** 1.8.0
 
 ---
 
@@ -45,16 +45,16 @@
 ### 1.2 Double Click 🟢
 - [ ] **Action:** Double-click on time series chart
 - [ ] **Expected:** New marker is created at clicked timestamp
-- [ ] **Expected:** Marker appears as orange vertical line on all charts
+- [ ] **Expected:** Marker appears as a vertical line in its chosen colour on all charts
 - [ ] **Expected:** Marker panel is displayed
 - [ ] **Expected:** New marker is the active selected marker
-- [ ] **Expected:** Marker appears in Markers panel table
+- [ ] **Expected:** Marker appears in Markers list
 
 ### 1.3 Shift + Click (Create Region) 🟢
 - [ ] **Action:** Click to place tap line, then Shift+click at different location
 - [ ] **Expected:** Region is created spanning from first to second click
 - [ ] **Expected:** Region appears as colored box on the charts
-- [ ] **Expected:** Region appears in Regions panel table
+- [ ] **Expected:** Region appears in Regions list
 - [ ] **Expected:** Region side panel is active
 - [ ] **Expected:** New region is the active selected region
 - [ ] **Expected:** Region details (timestamps, metrics) load in the side panel
@@ -84,8 +84,6 @@
 - [ ] **Expected:** Frequency bar updates to show spectrum at hover point
 - [ ] **Expected:** Hover line disappears when mouse leaves chart
 - [ ] **Test:** Disable "Hover Enabled" toggle - hover line should not appear
-
-### 1.7 
 
 ### 1.7 Range Selector 🟢
 - [ ] **Action:** Drag left handle of range selector
@@ -120,8 +118,8 @@
 - [ ] **Action:** Click on chart to place tap line, press R
 - [ ] **Expected:** Region creation mode activates
 - [ ] **Expected:** Side panel switches to Regions tab
-- [ ] **Expected:** Regions panel shows "Create Region mode active" banner with timestamp and position
-- [ ] **Expected:** Banner shows instructions: "Move tap line and press R again to finish, or Escape to cancel"
+- [ ] **Expected:** Regions panel shows a “Region start” status with the pinned timestamp
+- [ ] **Expected:** Status explains that R finishes the region and Esc cancels it
 - [ ] **Action:** Move tap line to different location, press R again
 - [ ] **Expected:** Region is created spanning from first to second tap position
 - [ ] **Expected:** Newly created region is automatically selected
@@ -177,7 +175,7 @@
 - [ ] **Action:** Select a marker, press Ctrl+Right Arrow
 - [ ] **Expected:** Marker timestamp moves forward (~5 minutes)
 - [ ] **Expected:** Marker updates on all charts immediately
-- [ ] **Expected:** Marker table updates with new timestamp
+- [ ] **Expected:** Marker list updates with the new timestamp
 - [ ] **Action:** Press Ctrl+Left Arrow
 - [ ] **Expected:** Marker timestamp moves backward
 - [ ] **Test:** Marker nudging takes priority over region adjustment when marker is selected
@@ -217,216 +215,203 @@
 - [ ] **Action:** Click to enable again
 - [ ] **Expected:** Hover functionality restores
 
-### 3.4 Clear All Markers Button 🟢
-- [ ] **Action:** Create 2-3 markers, click "Clear All Markers"
-- [ ] **Expected:** All markers disappear from charts
-- [ ] **Expected:** Markers panel table becomes empty
-- [ ] **Expected:** Marker selection clears
-- [ ] **Test:** After clearing, create new markers - should work normally
-- [ ] **Expected:** Newly created markers repopulate the table with every marker visible
-- [ ] **Test:** After clearing, all marker functionality still works (double-click, M key, etc.)
+### 3.4 Confirmed Marker Clearing 🟢
+- [ ] **Action:** Create 2–3 markers, open the Markers tab and choose “Clear all markers…”
+- [ ] **Expected:** A confirmation appears; every marker, note and snapshot remains until confirmed
+- [ ] **Action:** Choose Cancel
+- [ ] **Expected:** All markers remain on charts and in the list
+- [ ] **Action:** Request clearing again, then choose “Clear all markers” in the confirmation
+- [ ] **Expected:** Marker lines disappear, the marker list empties and selection clears
+- [ ] **Expected:** No separate Clear All Markers control appears in the top toolbar
+- [ ] **Test:** Create markers again with M and double-click; selection, notes and snapshots still work
 
-### 3.5 Chart Visibility Checkboxes 🟢
-- [ ] **Action:** Uncheck a time series visibility checkbox
+### 3.5 Chart Visibility Menu 🟢
+- [ ] **Action:** Open Plots and disable a time-series chart
 - [ ] **Expected:** That time series chart becomes hidden
-- [ ] **Action:** Check it again
+- [ ] **Action:** Enable that chart again
 - [ ] **Expected:** Chart becomes visible again
 - [ ] **Test:** Hide and show spectrogram charts
 - [ ] **Test:** Hide all charts, then show them all
 
 ### 3.6 Session Menu 🟡 PARTIAL
-- [ ] **Action:** Click Menu → "Save Workspace"
-- [ ] **Expected:** Workspace state saves to localStorage
-- [ ] **Expected:** Success message appears (if implemented)
-- [ ] **Action:** Make changes, click Menu → "Load Workspace"
-- [ ] **Expected:** Previous workspace state restores
-- [ ] **Action:** Click Menu → "Export Annotations (CSV)"
-- [ ] **Expected:** Each region row states its broadband data source in `metrics_data_resolution` and its spectral source in `metrics_spectrum_source`
-- [ ] **Expected:** CSV file downloads with all regions and markers
-- [ ] **Action:** Click Menu → "Import Annotations (CSV)"
-- [ ] **Expected:** File picker opens
-- [ ] **Expected:** Annotations load from selected CSV
-- [ ] **Expected:** Imported regions show overlays on all relevant charts
-- [ ] **Test:** Select an imported region and confirm metrics (duration, LAeq) populate without console errors
+- [ ] **Action:** Choose Menu → Save Workspace
+- [ ] **Expected:** A version-2 workspace JSON file downloads
+- [ ] **Action:** Change annotations, then choose Menu → Load Workspace and select the saved file
+- [ ] **Expected:** Regions, meter states, categories, markers and saved review settings restore
+- [ ] **Action:** Choose Menu → Export Annotations (CSV)
+- [ ] **Expected:** One sectioned CSV downloads with REGIONS, OVERALL, SPECTRAL and NOTES, plus MARKERS when present
+- [ ] **Expected:** REGIONS contains readable notes, times, categories, meter states and origin headline levels; analysis rows identify their data resolution
+- [ ] **Action:** Choose Menu → Import Annotations (CSV) and select the export
+- [ ] **Expected:** Annotations, states, categories and marker snapshots restore; analysis sections do not create annotations
+- [ ] **Test:** Import an old unsectioned annotation CSV; matching cross-meter copies consolidate and the merge count appears
+- [ ] **Test:** Select an imported region; on-demand metrics populate without console errors
+- [ ] **SERVER:** Menu → Export Annotations — Full Resolution produces a file using the source logs and reports completion or a useful error
+- [ ] **STATIC:** The full-resolution server command is absent; browser CSV import/export remains available
 
 ---
 
 ## 4. Region Panel Interactions 🟡 PARTIAL
 
-### 4.1 Region Table Selection 🟢
-- [ ] **Action:** Create 2-3 regions, click on one in the table
-- [ ] **Expected:** Region becomes selected (highlighted in table)
-- [ ] **Expected:** Region details appear in panel
-- [ ] **Expected:** Region highlights on charts
-- [ ] **Expected:** Marker selection clears (if any marker was selected)
-- [ ] **Expected:** Side panel shows Regions tab
-- [ ] **Action:** Click on a different region
-- [ ] **Expected:** Selection switches to new region
-- [ ] **Expected:** Previous region unhighlights
+### 4.1 Region List Selection and Filters 🟢
+- [ ] **Action:** Create 2–3 regions and select a compact row in the Regions list
+- [ ] **Expected:** The row and chart region highlight; selected-region details appear above the list
+- [ ] **Expected:** Marker selection clears and the Regions tab is active
+- [ ] **Action:** Select another row
+- [ ] **Expected:** Selection and details switch to that region
+- [ ] **Test:** Filter by category, Present at meter, Present at one meter only and Has unchecked meters
+- [ ] **Expected:** The list count and rows match each filter; annotations are retained when hidden by a filter
+- [ ] **Test:** Reset the filters and confirm all rows return
 
-### 4.2 Region Visibility Toggle 🟢
-- [ ] **Action:** Click "Regions" toggle to disable
-- [ ] **Expected:** All region overlays disappear from charts
-- [ ] **Expected:** Region panel details hide
-- [ ] **Action:** Click to enable again
-- [ ] **Expected:** Region overlays reappear
-- [ ] **Expected:** Region panel details show
+### 4.2 Region Band Visibility 🟢
+- [ ] **Action:** Expand Annotation visibility and untick Region bands
+- [ ] **Expected:** Region bands disappear from charts; the region list, selection and details remain available
+- [ ] **Action:** Tick Region bands again
+- [ ] **Expected:** Present, absent and currently enabled unchecked bands return
 
-### 4.3 Auto Day & Night Button 🟢
-- [ ] **Action:** Click "Auto Day & Night" button
-- [ ] **Expected:** Regions are automatically created for day periods (7am-11pm)
-- [ ] **Expected:** Regions are automatically created for night periods (11pm-7am)
-- [ ] **Expected:** Day regions have green color
-- [ ] **Expected:** Night regions have purple color
-- [ ] **Test:** Verify regions span entire dataset
+### 4.3 Auto Day & Night 🟢
+- [ ] **Action:** Expand Actions and settings, then choose Auto Day & Night
+- [ ] **Expected:** One region per day/night period spans the survey's civil-time boundaries: 07:00–23:00 and 23:00–07:00
+- [ ] **Expected:** Every meter is present in each generated region; no duplicate row is created per meter
+- [ ] **Expected:** Day and night colours remain distinguishable
+- [ ] **Test:** Check clipped first/last periods and a survey crossing a daylight-saving change
 
-### 4.4 Region Color Picker 🟢
-- [ ] **Action:** Select a region, change its color
-- [ ] **Expected:** Region color updates on all charts immediately
-- [ ] **Expected:** Region color updates in table
-- [ ] **Test:** Try multiple different colors
+### 4.4 Categories and Colour Overrides 🟢
+- [ ] **Action:** Select a region and change Category
+- [ ] **Expected:** Category colour becomes its default band and list-swatch colour
+- [ ] **Action:** Enter a valid Colour override, then leave the field
+- [ ] **Expected:** The override applies to that region without changing the category colour
+- [ ] **Action:** Choose Use category
+- [ ] **Expected:** The override clears and category colouring returns
+- [ ] **Test:** Under Actions and settings → Categories, create, rename and recolour a category
+- [ ] **Test:** Delete a category in use; affected regions move to Other, and Other itself cannot be deleted
+- [ ] **Expected:** Undo restores category/state/colour edits appropriately
 
-### 4.5 Region Notes Input 🟢
-- [ ] **Action:** Select a region, type notes in text area
-- [ ] **Expected:** Notes save automatically as you type
-- [ ] **Expected:** Notes persist when switching to another region and back
-- [ ] **Expected:** Keyboard shortcuts (Space, R, M) do not trigger while typing
-- [ ] **Test:** Type special characters and emojis
+### 4.5 Region Notes 🟢
+- [ ] **Action:** Edit the selected region's Notes, then leave the field or press Ctrl+Enter
+- [ ] **Expected:** The note saves and persists after selecting another region and returning
+- [ ] **Action:** Edit a draft, then press Esc
+- [ ] **Expected:** The draft cancels and the saved note returns
+- [ ] **Test:** While a draft has focus, change an unrelated annotation field
+- [ ] **Expected:** Draft text, caret position, expanded sections and panel scroll position survive
+- [ ] **Expected:** Chart shortcuts do not trigger while typing; special characters, HTML-like text and emojis display literally
 
-### 4.6 Copy Summary Button 🟡 PARTIAL
-- [ ] **Action:** Select a region with metrics, click "Copy Summary"
-- [ ] **Expected:** Region summary copies to clipboard
-- [ ] **Action:** Paste into text editor
-- [ ] **Expected:** Summary includes region name, timestamps, duration, metrics, notes
+### 4.6 Copy Summary 🟡 PARTIAL
+- [ ] **Action:** Select a region with metrics; expand Actions and settings and choose Copy summary
+- [ ] **Action:** Paste into a text editor
+- [ ] **Expected:** The summary identifies the region, origin meter, time span, duration and available levels
 
-### 4.7 Delete Region Button 🟢
-- [ ] **Action:** Select a region, click "Delete Region"
-- [ ] **Expected:** Region is deleted immediately
-- [ ] **Expected:** Region disappears from charts and table
-- [ ] **Expected:** Panel shows no selection
-- [ ] **Test:** Delete all regions, then create new ones - should work normally
-- [ ] **Test:** After deleting all regions and recreating them, all region functionality still works
-- [ ] **Expected:** When recreating multiple regions, every region appears in the regions table
+### 4.7 Delete Region 🟢
+- [ ] **Action:** Select a region and choose Delete in its selected-region details
+- [ ] **Expected:** That region disappears from charts and the list; no stale selection remains
+- [ ] **Test:** Delete all regions, then create several new ones
+- [ ] **Expected:** Every new region appears once; selection, states, categories, notes and editing still work
 
-### 4.8 Add Area Button 🟢
-- [ ] **Action:** Select a region, click "Add Area"
-- [ ] **Expected:** Add-area mode activates
-- [ ] **Action:** Shift+click to create another time span
-- [ ] **Expected:** New area is added to the same region
-- [ ] **Expected:** Region now spans multiple non-contiguous areas
-- [ ] **Action:** Click "Add Area" again
-- [ ] **Expected:** Add-area mode deactivates
+### 4.8 Add Area 🟢
+- [ ] **Action:** Select a region; expand Actions and settings and choose Add area
+- [ ] **Expected:** A status message identifies add-area mode
+- [ ] **Action:** Shift+drag another time span
+- [ ] **Expected:** The same region gains a non-contiguous area; its note, category and meter states remain shared across all areas
+- [ ] **Action:** Choose Finish adding areas
+- [ ] **Expected:** Subsequent new selections create independent regions again
 
-### 4.9 Merge Regions Button 🟢
-- [ ] **Action:** Create 2 regions, select one, click "Merge Regions"
-- [ ] **Expected:** Merge mode activates
-- [ ] **Expected:** Dropdown appears with other regions
-- [ ] **Action:** Select a region from dropdown, click "Merge Regions" again
-- [ ] **Expected:** Two regions merge into one
-- [ ] **Expected:** Merged region spans all areas from both regions
+### 4.9 Merge Regions 🟢
+- [ ] **Action:** Select the destination region, then choose another region under Actions and settings → Merge into selected region
+- [ ] **Expected:** Only other regions with the same origin meter are offered
+- [ ] **Expected:** The two regions become one with their combined areas
+- [ ] **Expected:** Unchecked defers to the other state; matching states remain; present/absent conflicts become unchecked and are named for re-check
+- [ ] **Test:** One undo restores both original regions
 
-### 4.10 Split Areas Button 🟢
-- [ ] **Action:** Create a multi-area region, select it, click "Split Areas"
-- [ ] **Expected:** Region splits into separate regions (one per area)
-- [ ] **Expected:** Each new region appears in table
-- [ ] **Expected:** Original region is deleted
+### 4.10 Split Areas 🟢
+- [ ] **Action:** Select a multi-area region and choose Actions and settings → Split areas
+- [ ] **Expected:** One region per area replaces the original; each preserves its category, note, colour override and meter states
+- [ ] **Test:** One undo restores the original multi-area region
 
-### 4.11 Copy Region to Position 🟢
-- [ ] **Action:** Create and select a region on Position 1 when at least three positions are loaded
-- [ ] **Expected:** "Copy Region To" lists each other position and "All other positions", but not Position 1
-- [ ] **Action:** Select Position 6 and click "Copy"
-- [ ] **Expected:** An identical region (areas, colour, and note) is added to Position 6 only; Position 1 remains unchanged
-- [ ] **Action:** Select "All other positions" and click "Copy"
-- [ ] **Expected:** An identical region is added to every position except the source position
+### 4.11 Per-Meter State Strip 🟢
+- [ ] **Action:** Create a region with at least three meters loaded
+- [ ] **Expected:** Its origin is present (●); other meters start unchecked (○), using their display titles
+- [ ] **Action:** Click another meter in the state strip repeatedly
+- [ ] **Expected:** Its state cycles unchecked → present → absent (✕) → unchecked without creating another region row
+- [ ] **Expected:** The origin remains present; tap/seek time and audio do not move
+- [ ] **Test:** Number keys 1–9 address meters in display order; they do nothing inside editable fields or with modifiers/key-repeat
+- [ ] **Expected:** There is no Copy Region To selector or copy-to-all control; undo restores state edits
 
-### 4.12 Region Data Source Labels 🟢
-- [ ] **Action:** View regions calculated from log and overview data
-- [ ] **Expected:** Each region card shows a "Log", "Overview", or "No data" badge matching its calculated metrics
-- [ ] **Expected:** When deferred log data arrives for a position, affected badges and details refresh without recreating the regions
+### 4.12 Per-Meter Metrics and Resolution 🟢
+- [ ] **Action:** Select a region and show its metrics
+- [ ] **Expected:** One row per meter shows LAeq, LAFmax, LAF90 and the actual data resolution, including absent/unchecked meters
+- [ ] **Expected:** Missing values remain unavailable; overview and 1 s LAF90 are identified as indicative
+- [ ] **Test:** Hide metrics, change selection, then choose Show metrics
+- [ ] **Expected:** The region list does not calculate metrics for every row
+- [ ] **Test:** Zoom or stream log data, then recalculate; resolution and levels update without recreating annotations
 
-### 4.13 Centre and Recalculate Region 🟢
-- [ ] **Action:** Select an off-screen region and click "Centre on Region"
-- [ ] **Expected:** The viewport centres on the complete region and keeps the current width unless it must widen to fit the region
-- [ ] **Action:** Zoom out to the full survey and centre on a region shorter than a tenth of the view
-- [ ] **Expected:** The view zooms in to roughly three times the region length, centred on it
-- [ ] **Action:** Hover over "Back (B)", then click it (or press <kbd>B</kbd>)
-- [ ] **Expected:** The tooltip names the earlier time range, and the view returns to it
-- [ ] **Action:** Zoom until the selected position displays overview data
-- [ ] **Expected:** The button reads "Recalculate (Overview)"
-- [ ] **Action:** Click it
-- [ ] **Expected:** The region badge and detail source read "Overview" and the exported annotation reports overview
-- [ ] **Action:** Zoom until the selected position displays log data and recalculate again
-- [ ] **Expected:** The badge/detail/export source read "Log"; log spectral data is used when available
+### 4.13 Centre, Back and Recalculate 🟢
+- [ ] **Action:** Select an off-screen region and choose Centre
+- [ ] **Expected:** The viewport centres on the complete region, using a useful width that includes all its areas
+- [ ] **Action:** Choose Back (B), or press B
+- [ ] **Expected:** The earlier view returns; a useful message appears if no prior view exists
+- [ ] **Action:** Show overview data, then choose Actions and settings → Recalculate
+- [ ] **Expected:** Selected metrics identify overview resolution
+- [ ] **Action:** Display log data and recalculate again
+- [ ] **Expected:** Selected metrics identify log resolution when the requested areas are fully covered; incomplete buffers do not masquerade as full log data
+- [ ] **Test:** Check export resolution columns separately: standard analysis exports choose the best available resolution, and optional dual-resolution export includes both
 
 ### 4.13a Region Review Keyboard Flow 🟢
-- [ ] **Action:** With several regions, press <kbd>]</kbd> repeatedly, then <kbd>[</kbd>
-- [ ] **Expected:** Each press selects the next/previous region in list order and brings it into view; past either end a "first/last region" message appears
-- [ ] **Action:** After several <kbd>]</kbd> presses, press <kbd>B</kbd> once
+- [ ] **Action:** With several regions, press ] repeatedly, then [
+- [ ] **Expected:** Selection steps through regions and brings them into view; first/last messages appear at the ends
+- [ ] **Action:** After several steps, press B once
 - [ ] **Expected:** The view returns to where it was before the first jump
-- [ ] **Action:** Press <kbd>N</kbd>, type a note, then press <kbd>Ctrl</kbd>+<kbd>Enter</kbd>
-- [ ] **Expected:** "Unsaved changes" shows while typing and "Saved" after; chart shortcuts work again
-- [ ] **Action:** Clear the selection, click inside a region to place the tap line, press <kbd>N</kbd>
-- [ ] **Expected:** That region is selected and its note is focused; with the tap line outside any region, a message explains how to select one
-- [ ] **Expected:** The "Keyboard shortcuts" block in the Regions panel is open when there are no regions and collapsed once regions exist
+- [ ] **Action:** Press N, type a note and press Ctrl+Enter
+- [ ] **Expected:** The note field receives focus and the saved text persists after switching regions
+- [ ] **Action:** Clear selection, place the tap line inside a region and press N
+- [ ] **Expected:** That region is selected and its note is focused; a tap outside regions produces a useful selection message
 
-### 4.14 Copy Spectrum Values Button 🟡 PARTIAL
-- [ ] **Action:** Select a region with spectrum data, click "Copy Spectrum Values"
-- [ ] **Expected:** Spectrum data copies to clipboard
-- [ ] **Action:** Paste into spreadsheet
-- [ ] **Expected:** Frequency bands and levels appear in columns
+### 4.14 Average Spectrum and Clipboard 🟡 PARTIAL
+- [ ] **Action:** Show selected-region metrics; expand Actions and settings → Average spectrum
+- [ ] **Expected:** The table identifies its parameter/resolution and lists frequency bands in order
+- [ ] **Action:** Choose Copy spectrum and paste into a spreadsheet
+- [ ] **Expected:** Frequency bands and levels occupy separate columns
 
 ---
 
 ## 5. Marker Panel Interactions 🟡 PARTIAL
 
-### 5.1 Marker Table Selection 🟡 PARTIAL
-- [ ] **Action:** Create 2-3 markers, click on one in the table
-- [ ] **Expected:** Marker becomes selected (highlighted in table)
-- [ ] **Expected:** Marker details appear in panel
-- [ ] **Expected:** Tap line jumps to marker timestamp
-- [ ] **Expected:** Region selection clears (if any region was selected)
-- [ ] **Expected:** Side panel shows Markers tab
-- [ ] **Action:** Click on a different marker
-- [ ] **Expected:** Selection switches to new marker
-- [ ] **Expected:** Tap line jumps to new marker timestamp
+### 5.1 Marker List Selection 🟡 PARTIAL
+- [ ] **Action:** Create 2–3 markers and select a row in the Markers list
+- [ ] **Expected:** The row highlights, saved snapshot/details appear, and the tap line moves to its timestamp
+- [ ] **Expected:** Region selection clears and the Markers tab is active
+- [ ] **Action:** Select another marker
+- [ ] **Expected:** Selection, timestamp and saved details switch correctly
 
-### 5.2 Marker Visibility Toggle 🟢
-- [ ] **Action:** Click "Markers" toggle to disable
-- [ ] **Expected:** All marker lines disappear from charts
-- [ ] **Action:** Click to enable again
-- [ ] **Expected:** Marker lines reappear
+### 5.2 Marker Line Visibility 🟢
+- [ ] **Action:** Expand Annotation visibility and untick Marker lines
+- [ ] **Expected:** Lines disappear from charts; all markers, notes and snapshots remain in the list
+- [ ] **Action:** Tick Marker lines again
+- [ ] **Expected:** The lines reappear at their original timestamps
 
-### 5.3 Marker Color Picker 🟢
-- [ ] **Action:** Select a marker, change its color
-- [ ] **Expected:** Marker color updates on all charts immediately
-- [ ] **Expected:** Marker color updates in table (if shown)
+### 5.3 Marker Colour 🟢
+- [ ] **Action:** Change the selected marker's Colour field, then leave it
+- [ ] **Expected:** The chart lines and list swatch update; the saved metric snapshot is preserved
 
-### 5.4 Marker Notes Input 🟢
-- [ ] **Action:** Select a marker, type notes in text area
-- [ ] **Expected:** Notes save automatically as you type
-- [ ] **Expected:** Notes persist when switching markers
-- [ ] **Expected:** Keyboard shortcuts (Space, R, M) do not trigger while typing
+### 5.4 Marker Notes 🟢
+- [ ] **Action:** Edit Notes and leave the field, or press Ctrl+Enter
+- [ ] **Expected:** Saved notes persist when switching markers
+- [ ] **Test:** Esc cancels an unsaved draft; chart shortcuts do not fire while editing
 
-### 5.5 Copy Details Button 🟡 PARTIAL
-- [ ] **Action:** Select a marker, click "Copy Details"
-- [ ] **Expected:** Marker details copy to clipboard
-- [ ] **Action:** Paste into text editor
-- [ ] **Expected:** Details include timestamp, position, metrics, notes
+### 5.5 Copy Snapshot 🟡 PARTIAL
+- [ ] **Action:** Select a marker and choose Copy snapshot
+- [ ] **Action:** Paste into a text editor
+- [ ] **Expected:** Timestamp, note and saved per-meter broadband/spectral metrics are included
 
-### 5.6 Delete Marker Button 🟢
-- [ ] **Action:** Select a marker, click "Delete Marker"
-- [ ] **Expected:** Marker is deleted immediately
-- [ ] **Expected:** Marker disappears from charts and table
-- [ ] **Expected:** Marker selection clears
-- [ ] **Test:** Delete all markers, then create new ones - should work normally
-- [ ] **Test:** After deleting all markers and recreating them, all marker functionality still works
+### 5.6 Delete Marker 🟢
+- [ ] **Action:** Select a marker and choose Delete marker
+- [ ] **Expected:** It disappears from charts and the list; selection clears
+- [ ] **Test:** Delete all markers, then create new ones; selection, notes, colours and snapshots still work
+- [ ] **Test:** Clear all markers through the confirmed flow in section 3.4
 
-### 5.7 Add Marker at Tap Button 🟢
-- [ ] **Action:** Click on chart to place tap line, click "Add Marker at Tap"
-- [ ] **Expected:** New marker is created at tap line position
-- [ ] **Expected:** Marker appears on charts and in table
-- [ ] **Expected:** Newly created marker is automatically selected
-- [ ] **Expected:** Marker details appear in panel
+### 5.7 Create Marker with M 🟢
+- [ ] **Action:** Place the tap line on a chart, then press M
+- [ ] **Expected:** A marker appears on every chart and in the Markers list, is selected, and has a saved metrics snapshot
+- [ ] **Test:** Double-click creates a marker through the same workflow
+- [ ] **Expected:** No Add Marker at Tap button is present
 
 ---
 
@@ -500,7 +485,7 @@
 ### 7.1 Enter Comparison Mode 🟢
 - [ ] **Action:** Click button to enter comparison mode
 - [ ] **Expected:** Comparison panel appears
-- [ ] **Expected:** Normal side panel hides
+- [ ] **Expected:** The HTML sidebar displays its Comparison view in place of the annotation-tab content
 - [ ] **Expected:** Box select tool becomes active
 - [ ] **Expected:** Instructions appear in comparison panel
 
@@ -508,7 +493,7 @@
 - [ ] **Action:** Uncheck a position in comparison selector
 - [ ] **Expected:** That position is excluded from comparison
 - [ ] **Expected:** Metrics update to exclude that position
-- [ ] **Action:** Check it again
+- [ ] **Action:** Tick that meter again in the Comparison view
 - [ ] **Expected:** Position is included again
 
 ### 7.3 Box Select Time Slice 🟡 PARTIAL
@@ -521,20 +506,21 @@
 ### 7.4 Metrics Table 🟡 PARTIAL
 - [ ] **Action:** Select a time slice in comparison mode
 - [ ] **Expected:** Table shows one row per included position
-- [ ] **Expected:** Each row shows duration, LAeq, LAFmax, LA90
+- [ ] **Expected:** Each row shows meter, LAeq, LAFmax, LAF90 and resolution; the slice times appear above
 - [ ] **Expected:** Values are accurate for selected time slice
 
-### 7.5 Make Region(s) Button 🟢
-- [ ] **Action:** Select a time slice, click "Make Region(s)"
-- [ ] **Expected:** One region is created per included position
-- [ ] **Expected:** Each region spans the selected time slice
-- [ ] **Expected:** Regions appear in Regions panel after exiting comparison mode
+### 7.5 Make Region 🟢
+- [ ] **Action:** Select a comparison time slice and choose Make Region
+- [ ] **Expected:** One region is created for the slice, with included meters marked present and other meters unchecked
+- [ ] **Expected:** The origin is the first included meter in display order
+- [ ] **Action:** Finish comparison and open Regions
+- [ ] **Expected:** The new annotation appears once, with its full meter-state strip
 
 ### 7.6 Finish Comparison Button 🟢
-- [ ] **Action:** Click "Finish Comparison"
+- [ ] **Action:** Choose Finish comparison
 - [ ] **Expected:** Comparison mode exits
 - [ ] **Expected:** Comparison panel hides
-- [ ] **Expected:** Normal side panel reappears
+- [ ] **Expected:** The annotation-tab content returns in the same sidebar
 - [ ] **Expected:** Pan tool becomes active again
 
 ---
@@ -606,7 +592,7 @@
 ### 9.7 Delete and Recreate All Annotations 🟢
 - [ ] **Test:** Create 3-4 regions and 3-4 markers
 - [ ] **Action:** Delete all regions one by one
-- [ ] **Action:** Delete all markers using "Clear All Markers"
+- [ ] **Action:** Open Markers → Clear all markers… and confirm
 - [ ] **Action:** Create new regions using Shift+click and R key
 - [ ] **Action:** Create new markers using double-click and M key
 - [ ] **Expected:** All region functionality works (selection, editing, notes, colors)
@@ -879,7 +865,7 @@ available locally.
 
 ## 13. Classification Review 🟡 PARTIAL
 
-**Setup:** Import a classifier CSV via Side Panel → Classifications → Import.
+**Setup:** Import a classifier CSV via Menu → Import Classifications (CSV/JSON), then open Classifications.
 A job 6461 motorcycle export is available at
 `G:\My Drive\Venta AI\skills\classify-survey-audio\references\manual-test\6461_motorcycle_classifications.csv`
 (85 events, mixed `on`/`uncertain` states, single source).
@@ -889,9 +875,9 @@ Audio-dependent steps (13.4) need 🔴 SERVER plus loaded audio.
 - [ ] **Action:** Click a classification box on the time series chart
 - [ ] **Expected:** That classification becomes selected (box gains a thick white outline)
 - [ ] **Expected:** Side panel switches to the Classifications tab
-- [ ] **Expected:** Matching table row highlights
-- [ ] **Expected:** Table scrolls to the row if it was off-screen
-- [ ] **Expected:** Detail panel below the table populates
+- [ ] **Expected:** The matching compact list row highlights
+- [ ] **Expected:** The list brings the selected row into view if it was off-screen
+- [ ] **Expected:** Selected-classification details above the list populate
 - [ ] **Expected:** Tap/seek line does **NOT** move
 - [ ] **Expected:** Viewport does **NOT** change
 - [ ] **Expected:** Audio does **NOT** start, stop or restart
@@ -903,19 +889,16 @@ Audio-dependent steps (13.4) need 🔴 SERVER plus loaded audio.
 - [ ] **Expected:** Tooltip appears **only** over classification boxes
 - [ ] **Test:** Normal line/spectrogram hover elsewhere on the chart still works
 
-### 13.3 Table Sorting 🟢
-- [ ] **Action:** Click the "Start" column header
-- [ ] **Expected:** Rows sort chronologically (**not** alphabetically — check that a
-      23:xx event sorts after a 09:xx event on the same day, and that events
-      spanning midnight order correctly)
-- [ ] **Action:** Click the "Score" column header
-- [ ] **Expected:** Rows sort numerically (0.09 sorts below 0.50, **not** as text)
-- [ ] **Action:** Sort by Score descending, then click a chart box
-- [ ] **Expected:** The correct sorted row highlights and scrolls into view
-- [ ] **Action:** Click a sorted row
-- [ ] **Expected:** The correct chart box highlights
-- [ ] **Expected:** Start column times match the times shown in the detail panel
-      (timezone consistency — they must not differ by an hour)
+### 13.3 Classification List Sorting 🟢
+- [ ] **Action:** Choose Start from the Sort selector
+- [ ] **Expected:** Entries sort chronologically across midnight
+- [ ] **Action:** Choose Score (highest first)
+- [ ] **Expected:** Scores sort numerically; unscored entries follow scored entries
+- [ ] **Action:** Try Source, State and Meter ordering
+- [ ] **Expected:** List order matches the chosen field
+- [ ] **Action:** After sorting, select a chart box, then select a different list row
+- [ ] **Expected:** The correct annotation highlights in each direction without moving the seek cursor or starting audio
+- [ ] **Expected:** List timestamps and selected details use the same display timezone
 
 ### 13.4 Preview with `P` Key 🔴 SERVER
 - [ ] **Action:** Select a classification, then press `P`
@@ -929,38 +912,38 @@ Audio-dependent steps (13.4) need 🔴 SERVER plus loaded audio.
 - [ ] **Test:** `P` while audio is already playing the **same** position does not restart it
 - [ ] **Test:** `P` while audio is playing a **different** position switches to this one
 - [ ] **Test:** The "Preview (P)" button in the detail panel does the same thing
-- [ ] **Test:** Preview button is disabled when no visible classification is selected
+- [ ] **Test:** Preview is absent when nothing is selected; a selected-but-filtered classification remains available for explicit preview
 
 ### 13.5 Minimum Score Filter 🟢
 - [ ] **Action:** Drag the "Minimum score" slider up
 - [ ] **Expected:** Low-scoring boxes disappear from the chart
-- [ ] **Expected:** Table rows reduce to match
+- [ ] **Expected:** List rows reduce to match
 - [ ] **Expected:** "Showing N of M" caption updates
 - [ ] **Expected:** Imported data is **not** deleted — reducing the slider restores them
 - [ ] **Test:** Entries with no score remain visible at any slider value
 
 ### 13.6 Source Visibility 🟢
-- [ ] **Action:** Click the "Sources (n/m)" toggle
+- [ ] **Action:** Expand Sources (n/m)
 - [ ] **Expected:** Checkbox list expands showing each source with its event count
 - [ ] **Action:** Untick a source
-- [ ] **Expected:** That source's boxes, table rows and right-hand lane label all disappear
+- [ ] **Expected:** That source's boxes, list rows and right-hand lane label all disappear
 - [ ] **Expected:** "Sources (n/m)" count updates
 - [ ] **Action:** Press "None" then "All"
 - [ ] **Expected:** All sources hide, then all reappear
-- [ ] **Test:** Collapsing the toggle hides the list without changing the filter
+- [ ] **Test:** Collapsing Sources hides its controls without changing the filter
 
 ### 13.7 Direct / Supporting Roles 🟢
 - [ ] **Setup:** Import a file containing supporting events, e.g.
       `G:\My Drive\Venta AI\skills\classify-survey-audio\references\manual-test\6461_supporting_vehicle_classifications.csv`
 - [ ] **Expected:** Direct/Supporting checkboxes appear, with Supporting **off** by default
 - [ ] **Action:** Tick Supporting
-- [ ] **Expected:** Supporting events appear in chart and table
+- [ ] **Expected:** Supporting events appear on the chart and in the list
 - [ ] **Test:** With a direct-only file imported, the Direct/Supporting control is hidden entirely
 
 ### 13.8 Selected-but-Hidden Handling 🟢
 - [ ] **Action:** Select a classification, then filter it out (raise the score slider above it)
 - [ ] **Expected:** Message "Selected classification is hidden by current filters"
-- [ ] **Expected:** No misleading highlighted table row remains
+- [ ] **Expected:** No misleading highlighted list row remains
 - [ ] **Action:** Restore the filter
 - [ ] **Expected:** The classification is still selected and its details return
 
@@ -1035,7 +1018,7 @@ _____________________________________________
 
 - [ ] Create a region: origin is present, every other meter is unchecked.
 - [ ] Comparison Make Region creates one object with all included meters present.
-- [ ] Copy-to-meter temporarily marks presence without creating another list row.
+- [ ] Meter-state strips mark presence without creating another region row; copy-to-meter controls are retired.
 - [ ] Merge same-origin regions: unchecked defers; present/absent conflicts become unchecked and are named for re-check. One undo restores both originals.
 - [ ] Split multi-area regions: each output preserves meter states and category; one undo restores the original.
 - [ ] Import a v1 workspace/legacy CSV containing matching cross-meter copies: consolidation count appears and originals on disk remain unchanged.
@@ -1061,5 +1044,7 @@ _____________________________________________
 - [ ] Notes, meter titles and category labels containing HTML-like text display literally and never create elements.
 - [ ] Export settings retain context window, minimum usable context and optional both-resolution rows across workspace save/load; default remains best available resolution.
 - [ ] Server menu offers full-resolution annotation export; static menu offers browser export only.
-- [ ] Set config `ui.side_panel` to `legacy`, restart and export static HTML: the previous Tabs panel remains available for comparison.
+- [ ] Open an older config containing `ui.side_panel: legacy`: the current HTML sidebar opens normally; the temporary comparison flag has retired.
+- [ ] No copy-to-meter selector or Add Marker at Tap button remains. Shift+drag, R twice, M and double-click still provide the quick annotation routes.
+- [ ] Collapsed Annotation visibility settings hide region bands, marker lines and classification bands independently; annotations remain in their lists and reappear when enabled.
 

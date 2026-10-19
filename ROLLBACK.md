@@ -12,7 +12,7 @@ All checkpoints are on the existing branch. Never force-push or move these tags.
 | `stage-4-html-side-panel` | HTML panel, independent sticky scrolling, single browser metrics and sectioned quick CSV. |
 | `stage-5-sectioned-export` | Bounded full-source exporter, section reader, server/CLI/Windows entry points and metric fallbacks. |
 | `stage-5-export-evaluation` | Stage-5 evaluation documentation follow-up; same application code as the preceding tag. |
-| `stage-6-clean-up` | Retire redundant controls and update guides (pending). |
+| `stage-6-clean-up` | Retire legacy panel/flag and duplicate controls; retain confirmed marker clearing; finish focus/scroll checks and guides. |
 | `stage-7-html-shell` / `stage-7-html-shell-reverted` | Evaluated page-shell outcome (pending). |
 
 Compare stages with `git diff <earlier-tag> <later-tag>`, for example `git diff stage-2-annotation-model stage-3-drawing`.

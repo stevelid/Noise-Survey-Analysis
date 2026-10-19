@@ -1,0 +1,140 @@
+{
+  "stage": "stage-6",
+  "run": "stage-6-20261019-074720-cc099262",
+  "startedUtc": "2026-10-19T06:47:25.9461669Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-20261019-074720-cc099262\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-20261019-074720-cc099262\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-6\\stage-6-20261019-074720-cc099262",
+  "head": "2e0f60b866315449503a075978875c5f7fe1f906",
+  "sourceStatus": [
+    " M README.md",
+    " M USER_GUIDE.txt",
+    " M noise_survey_analysis/control/commands.py",
+    " M noise_survey_analysis/control/control_server.py",
+    " M noise_survey_analysis/control/session_bridge.py",
+    " M noise_survey_analysis/control/validation.py",
+    " M noise_survey_analysis/control_cli.py",
+    " M noise_survey_analysis/core/app_callbacks.py",
+    " M noise_survey_analysis/core/app_setup.py",
+    " M noise_survey_analysis/export/static_export.py",
+    " M noise_survey_analysis/main.py",
+    " M noise_survey_analysis/static/js/features/annotations/panelThunks.js",
+    " M noise_survey_analysis/static/js/features/regions/annotationMetrics.js",
+    " M noise_survey_analysis/static/js/features/regions/regionUtils.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelRenderer.js",
+    " M noise_survey_analysis/ui/component_parts/controls.py",
+    " M noise_survey_analysis/ui/components.py",
+    " M noise_survey_analysis/visualization/dashBuilder.py",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    " M tests/annotation-metrics-export.test.js",
+    " M tests/html-panel.test.js",
+    "?? deploy/share/export_annotations.bat",
+    "?? deploy/share/export_annotations.ps1",
+    "?? docs/evaluation/stage-0-benchmark/",
+    "?? docs/evaluation/stage-5-engine-check/",
+    "?? docs/evaluation/stage-5-final/",
+    "?? docs/evaluation/stage-5/",
+    "?? export_annotations.bat",
+    "?? noise_survey_analysis/core/annotation_export_service.py",
+    "?? noise_survey_analysis/core/annotation_windows.py",
+    "?? noise_survey_analysis/export/annotations.py",
+    "?? scripts/full_export_benchmark.py",
+    "?? scripts/server_annotation_smoke.py",
+    "?? tests/test_annotation_export.py",
+    "?? tests/test_annotation_export_integration.py",
+    "?? tests/test_html_dashboard_models.py"
+  ],
+  "sourceFileCount": 270,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.217
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-20261019-074720-cc099262\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 10.882
+    },
+    "pytest": {
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "pytest",
+        "tests/",
+        "--junitxml=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-20261019-074720-cc099262\\evidence\\pytest.xml"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 44.212
+    },
+    "playwright-install": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "install",
+        "chromium"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 1.185
+    },
+    "playwright": {
+      "command": [
+        "npx.cmd",
+        "--no-install",
+        "playwright",
+        "test",
+        "--reporter=list,json",
+        "--output=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-6-20261019-074720-cc099262\\evidence\\playwright-artifacts"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.811
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "total": 495,
+      "pending": 0,
+      "failed": 0,
+      "skipped": 3,
+      "passed": 492
+    },
+    "pytest": {
+      "total": "464",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0"
+    },
+    "playwright": {
+      "startTime": "2026-10-19T06:48:38.16Z",
+      "duration": 5616.626,
+      "expected": 8,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    }
+  },
+  "finishedUtc": "2026-10-19T06:48:44.0481463Z",
+  "failedSteps": [],
+  "suitesPassed": true
+}

@@ -210,8 +210,4 @@ def load_config_extras(config_path='config.json'):
             "Loaded config extras: %d position offset(s), default_view keys=%s",
             len(positions), sorted(default_view) or 'none',
         )
-    extras = {'positions': positions, 'default_view': default_view}
-    raw_ui = config.get('ui')
-    if isinstance(raw_ui, dict) and raw_ui.get('side_panel') in ('legacy', 'html'):
-        extras['ui'] = {'side_panel': raw_ui['side_panel']}
-    return extras
+    return {'positions': positions, 'default_view': default_view}

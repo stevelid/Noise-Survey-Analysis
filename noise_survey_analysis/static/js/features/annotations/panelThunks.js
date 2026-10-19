@@ -3,8 +3,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 (function (app) {
     'use strict';
     const feature = app.features.annotationPanel;
+    function flushNoteDraft(dispatch, getState, draft) {
+        if (!draft || typeof draft.value !== 'string') return;
+        const id = Number(draft.id);
+        if (!Number.isFinite(id)) return;
+        const state = getState();
+        if (draft.command === 'region-note') {
+            const region = state.regions.byId[id];
+            if (region && (region.note || '') !== draft.value) {
+                dispatch(app.features.regions.thunks.saveRegionNoteIntent(id, draft.value));
+            }
+        } else if (draft.command === 'marker-note') {
+            const marker = state.markers.byId[id];
+            if (marker && (marker.note || '') !== draft.value) dispatch(app.actions.markerSetNote(id, draft.value));
+        }
+    }
     function panelCommandIntent(command, payload = {}) {
         return function (dispatch, getState) {
+            // Resolve the click against fresh state after saving the previous
+            // annotation, including commands that merge or delete that record.
+            flushNoteDraft(dispatch, getState, payload.draft);
             const state = getState();
             const actions = app.actions;
             const regionThunks = app.features.regions.thunks;
@@ -15,6 +33,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const id = Number(payload.id);
             const setPanel = changes => dispatch(feature.actions.panelSettingsChanged(changes));
             switch (command) {
+                case 'commit-note-draft': break; // The validated draft was saved above.
                 case 'tab': dispatch(actions.setActiveSidePanelTab(Number(payload.value))); break;
                 case 'filter': {
                     const allowed = ['categoryId', 'presentAt', 'onlyOneMeter', 'hasUnchecked'];
@@ -34,6 +53,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 case 'split-region': dispatch(regionThunks.splitSelectedRegionIntent()); break;
                 case 'auto-periods': dispatch(regionThunks.createAutoRegionsIntent()); break;
                 case 'ghost-mode': dispatch(regionThunks.setRegionGhostModeIntent(payload.value)); break;
+                case 'annotation-visibility':
+                    if (payload.field === 'regions') dispatch(actions.regionVisibilitySet({ showOverlays: Boolean(payload.value) }));
+                    else if (payload.field === 'markers') dispatch(actions.markersVisibilitySet(Boolean(payload.value)));
+                    else if (payload.field === 'classifications') dispatch(actions.classificationVisibilitySet({ showOverlays: Boolean(payload.value) }));
+                    break;
                 case 'metrics-visible': setPanel({ metricsVisible: !selectors.selectPanelState(state).metricsVisible }); break;
                 case 'export-setting':
                     if (payload.field === 'includeAllResolutions') setPanel({ includeAllResolutions: Boolean(payload.value) });

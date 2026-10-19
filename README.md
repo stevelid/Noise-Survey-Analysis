@@ -163,44 +163,64 @@ Limitations:
 *   Spectrogram charts and spectral parameter workflows are unavailable for generic sources.
 *   Features that expect standard metrics (`LAeq`, `LAFmax`, `LAF90`, etc.) may show blank or `N/A` if those columns are not present in the source.
 
-## Working with Markers and Regions
+## Working with annotations
 
+The Regions / Markers / Classifications sidebar stays beside the charts and scrolls independently. It uses compact rows, with selected-item details above the list. Less-used operations sit under **Actions and settings**.
 
-The dashboard provides two complementary annotation tools. Markers flag individual timestamps while regions capture spans that
-drive the metrics sidebar.
+### Regions across meters
 
-### Marker workflow
+A region is one sound event, with one or more time areas, an origin meter, a category and notes. Its state at each meter is **present** (`●`), **absent** (`✕`, checked and not there), or **unchecked** (`○`). The origin stays present; other meters initially remain unchecked.
 
-- **Drop a marker** with a quick double-click on any time-based chart. A persistent vertical line appears at that timestamp across linked views.
-- **Press `M`** to drop a marker at the current tap timestamp. Without an active tap, the keyboard intent centres on the viewport and preserves optional note or colour payloads.
-- **Remove a marker** by Ctrl+clicking near it. The thunk removes the closest marker within the current viewport so pixel-perfect clicks are unnecessary.
-- **Fine-tune a marker** with Ctrl + Left/Right. When a marker is selected, these shortcuts nudge it using the current keyboard step size so you can align it precisely with an event.
-- **Clear all markers** from the Region & Marker toolbar when you want to start from a clean slate.
-- **Share context:** Use the marker panel (or the `markerUpdate` actions) to capture notes and colours. `markerUtils.formatMarkersCsv` and `markerUtils.parseMarkersCsv` export and restore annotations for reporting workflows.
+- **Create:** Shift+drag on a chart, Shift+click from the current cursor, or press `R`, move the cursor, then press `R` again on the same meter.
+- **Review other meters:** select the region, then click its meter buttons or its visible band on another chart. States cycle unchecked → present → absent → unchecked. Keys `1`–`9` address meters in display order. These keys ignore text fields, modifiers and held-key repeats.
+- **Read the bands:** present uses the category colour; absent uses grey; unchecked uses a faint dashed ghost. Under Actions and settings, show ghosts for no regions, the selected region (default), or all regions.
+- **Categorise:** choose a category, edit its name/colour, or add one. A region colour override remains optional; **Use category** clears it. Deleting a category reassigns its regions to Other.
+- **Find events:** filter by category, present at a meter, present at one meter only, or remaining unchecked meters.
+- **Inspect levels:** Show metrics calculates the selected region at each meter. Resolution and missing values are explicit. The list itself does not calculate every region's levels.
+- **Refine:** use Add area, Merge or Split areas under Actions and settings. Merges require the same origin. Unchecked defers to a known state; present versus absent becomes unchecked and the message lists meters to re-check. Splits preserve category and states.
+- **Take notes:** save on leaving the field or Ctrl+Enter; Esc cancels an HTML-panel draft. `N` focuses the selected region's note. `[` / `]` browse regions and `B` returns to the earlier view.
+- **Undo:** Ctrl+Z / Ctrl+Y undo/redo annotation edits, meter states and category changes. Deleting a region removes that annotation across meters.
 
+Comparison's **Make Region** creates one region with included meters present. Auto Day & Night creates one region per actual daytime/nighttime period across all meters, using survey civil time (Europe/London by default), including clock changes and partial periods at survey boundaries.
 
+The copy-to-meter selector and copy-all button have been retired: the state strip records the same sound across meters without duplicate annotations. The sidebar uses the HTML implementation throughout.
 
-### Region workflow
+### Markers and classifications
 
-- **Create:** Hold Shift and drag horizontally on a timeseries or spectrogram. Alternatively, press `R` to convert the two most recent markers into a new region on the active position.
-- **Select:** Click the overlay or choose a region in the side panel; only one region is active at a time and it drives the metrics view.
-- **Refine:** Use Shift + Left/Right to move the right edge and Alt + Left/Right to move the left edge in roughly three-second increments. Drag handles respond to direct manipulation.
-- **Add more areas:** Enable Add Area in the panel to stitch additional Shift+drag selections into the active region; toggle it again to exit.
-- **Merge related regions:** Select the source region, click Merge Regions, and choose the destination. Notes capture the merge history automatically.
-- **Delete:** Hold Ctrl and click within a segment (or use the panel controls) to remove it. Metrics, clipboard summaries, and average spectrum visualisations refresh automatically.
-- **Capture notes and metrics:** The detail view refreshes LAeq, LAFmax, LAF90, and the Average Spectrum every time bounds change.
+Markers remain global point annotations, drawn on every chart. Add one with `M` or a double-click; duplicate timestamps are rejected. Their saved metric snapshots, notes, colours and shortcuts are preserved. The duplicate Add Marker at Tap button has been retired. Clear all markers from the Markers tab and confirm the request; the main toolbar no longer offers an immediate clear-all action.
 
-Tip: Markers and regions are stored per position, so you can maintain independent annotations for each measurement site without cross-contamination.
-
-
+Classifications remain a separate candidate layer. Selection leaves the cursor, viewport and audio unchanged. Press `P` or Preview for explicit playback, use source/score/role filters, then **Elevate to Region** when a candidate deserves a manual annotation. Elevation reuses or creates its category and starts other meters unchecked.
 
 ## Importing, Exporting, and Restoring Your Work
 
 ### Annotation CSV files
 
-Use the **Menu ▸ Export Annotations (CSV)** command to download a spreadsheet-friendly file containing every marker and region in the current session. The export includes the columns `type`, `id`, `positionId`, `start_utc`, `end_utc`, `note`, and `color`. Marker rows leave `end_utc` empty and record the marker timestamp in `start_utc`. All timestamps are written in UTC using the Excel-ready format `YYYY-MM-DD HH:mm:ss.sss`.
+**Menu → Export Annotations (CSV)** writes one sectioned file:
 
-Choose **Menu ▸ Import Annotations (CSV)** to restore annotations captured in the same format. The importer treats all timestamps as UTC milliseconds, rebuilds region areas, and preserves notes and colours before replacing the in-memory marker and region lists. This keeps annotations portable between workspaces and makes it easy to share review notes with collaborators.
+| Section | Purpose |
+| --- | --- |
+| REGIONS | One importable row per region: category, notes, colour override, areas, meter states, source-time provenance and headline origin levels. |
+| OVERALL | One row per region × meter, including absent and unchecked meters, with broadband levels, background comparison and data resolution. |
+| SPECTRAL | One row per region × meter × parameter, with frequency-ordered bands as columns. |
+| MARKERS | Global marker annotations and their saved metric snapshots. |
+| NOTES | Sources, offsets, calculation methods, resolution choices and caveats. |
+
+Select a section's header and rows in Excel to format that section as a table. Times are Excel-compatible UTC date-times. Metadata preserves the category catalog and meter identities/titles. Import reads REGIONS and MARKERS; analysis rows never become annotations. Old unsectioned CSV and annotation JSON still import.
+
+The browser export uses the best available data for each region and meter: complete log coverage, then overview, then explicitly labelled partial log data if nothing better is available. Coverage and missing-data reasons prevent a streamed fragment from appearing complete. Under Actions and settings, configure the background window/minimum context and optionally include separate log/overview analysis rows; this option is off by default. These settings are saved in the workspace.
+
+To calculate from the source files independently of the browser's streamed buffer, use **Menu → Export Annotations — Full Resolution** in server mode, or:
+
+```powershell
+nsa-ctl export-annotations --output "C:\Survey\annotations.full-resolution.csv"
+nsa-ctl export-annotations --output "C:\Survey\both-resolutions.csv" --include-all-resolutions
+```
+
+The dashboard/control server must be running for `nsa-ctl`. For an independent export, drag a workspace or annotation CSV onto `export_annotations.bat`; saved source references must still resolve. Python loads source windows per meter instead of retaining all meter logs together. Its default selects complete log coverage, then overview, then partial log coverage if that is all available. Spectra make this choice independently for each parameter. Resolution, coverage and missing-data reasons are explicit; separate log/overview rows remain optional.
+
+The default background is **LA90 of pooled context samples** from five minutes before/after each region area, excluding regions present at that meter; LAeq of the same usable context is also reported. At least sixty seconds is required. Configure the window/minimum through export options (`--background-window-s`, `--min-context-s`), and inspect NOTES for the applied settings. LAF90 from overview, 1 s data or interval levels is indicative. Missing genuine LAFmax stays blank.
+
+For Python analysis, use `read_export_section(path, "OVERALL")` from `noise_survey_analysis.export.annotations` to obtain a DataFrame without manually splitting the file.
 
 ### Classification annotation files
 
@@ -251,18 +271,11 @@ Imported classification intervals appear as low-height coloured lanes on the cha
 
 ### Workspace saves
 
-The **Menu ▸ Save Workspace** option captures the full Redux-style UI state—marker lists, active parameters, selected regions, viewport, and more—along with the set of source configurations currently in memory. The downloaded `workspace-*.json` file can be re-applied later in two ways:
+**Menu → Save Workspace** writes version 2 JSON containing annotations, categories, meter states, source references and UI settings. Load it from the menu or launch with `--state workspace.json`. Server source paths must still be available; static HTML can save and restore its browser annotation state, while server-only data/audio operations require the live application.
 
-1. **During an active session:** choose **Menu ▸ Load Workspace** and pick the JSON file. The interface is rehydrated immediately; if the save references different source files than the data you currently have loaded, the application warns you so you can reload matching data before continuing.
-2. **When launching the server:** provide the saved workspace when starting Bokeh to arrive at the same layout automatically. For example:
+Version 1 files pass through an explicit migration. Legacy copies on different meters combine only when every normalized area endpoint matches within 1 ms and either a non-empty whitespace-normalized note or non-empty colour matches. A group uses a fixed representative and never combines two copies from the same origin; an import message reports how many copies merged. Version 2 annotations are not deduplicated. Unsupported future versions are rejected without replacing the current session.
 
-    ```bash
-    bokeh serve noise_survey_analysis --show --args \
-        --config /path/to/config.json \
-        --state  /path/to/workspace-2024-01-01T12-00-00.json
-    ```
-
-The workspace loader rehydrates the UI while the `--config` argument points to the data to load. If you only need to restore layout choices without changing the dataset, you can omit `--config` and load sources from the selector after the workspace applies.
+Keep the original saved files when comparing older program versions: reverting code does not downgrade a version 2 workspace or sectioned CSV.
 
 ### Static HTML export from the dashboard menu
 
@@ -318,7 +331,8 @@ In live server sessions, use **Menu ▸ Generate Static HTML (Offline)** to crea
 │   │   └── utils.js          # JS utility functions
 │   ├── ui/                   # UI Widget and Component creation
 │   │   ├── __init__.py
-│   │   ├── components.py
+│   │   ├── components.py       # Stable imports for feature components
+│   │   ├── component_parts/    # Panels, controls, charts and shared helpers
 │   │   └── data_source_selector.py # The interactive UI for selecting data
 │   ├── visualization/        # Dashboard assembly and orchestration
 │   │   ├── __init__.py
