@@ -81,11 +81,7 @@ def generate_static_html(config_path: str, resources: str = "INLINE") -> Optiona
         # 4. Save the document using file_html (works under bokeh serve and CLI)
         try:
             res = CDN if str(resources).upper() == "CDN" else INLINE
-            html = file_html(
-                static_doc, res, title="Noise Survey Dashboard",
-                template=static_doc.template,
-                template_variables=static_doc.template_variables,
-            )
+            html = file_html(static_doc, res, title="Noise Survey Dashboard")
             with open(output_full_path, "w", encoding="utf-8") as f:
                 f.write(html)
             logger.info(f"--- Static HTML file saved successfully to {output_full_path} ---")

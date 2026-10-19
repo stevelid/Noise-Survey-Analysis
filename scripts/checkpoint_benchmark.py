@@ -49,10 +49,7 @@ def main():
     report["static_build_ms"] = harness.build_document(doc, manager, False)
     started = time.perf_counter()
     html = args.output / "benchmark.html"
-    html.write_text(file_html(
-        doc, INLINE, "NSA annotation benchmark",
-        template=doc.template, template_variables=doc.template_variables,
-    ), encoding="utf-8")
+    html.write_text(file_html(doc, INLINE, "NSA annotation benchmark"), encoding="utf-8")
     report["static_serialize_ms"] = (time.perf_counter() - started) * 1000
     report["static_html_bytes"] = html.stat().st_size
     del manager, doc

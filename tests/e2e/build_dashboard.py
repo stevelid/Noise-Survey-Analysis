@@ -18,11 +18,7 @@ def main() -> None:
     document = Document()
     build_document(document, load_manager(fixture), False)
     (output / "dashboard.html").write_text(
-        file_html(
-            document, INLINE, "NSA browser acceptance",
-            template=document.template,
-            template_variables=document.template_variables,
-        ), encoding="utf-8")
+        file_html(document, INLINE, "NSA browser acceptance"), encoding="utf-8")
 
 
 if __name__ == "__main__":
