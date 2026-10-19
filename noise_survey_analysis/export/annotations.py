@@ -18,12 +18,11 @@ import re
 import tempfile
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
-from ..core.annotation_metrics import (MetricResult, SPECTRAL_COLUMN, background_intervals,
-                                       compute_region_metrics, datetime_milliseconds,
-                                       union_intervals, _sample_geometry, _weights)
+from ..core.annotation_metrics import (MetricResult, PreparedMeterData, SPECTRAL_COLUMN,
+                                       background_intervals, compute_region_metrics,
+                                       prepare_meter_data, spectral_provenance, union_intervals)
 from ..core.annotation_windows import iter_source_windows
 from ..core.annotation_workspace import DEFAULT_CATEGORIES, migrate_workspace
 
@@ -240,38 +239,10 @@ def _write_section(writer, name: str, columns: list[str], rows: list[dict]):
     writer.writerow([])
 
 
-def _spectral_provenance(frame: pd.DataFrame, parameter: str, areas, offset_ms: float) -> tuple[float, float | None]:
-    """Parameter coverage follows native band clocks, independently of LAeq."""
-    source_areas = [(start - offset_ms, end - offset_ms) for start, end in union_intervals(areas)]
-    duration_s = sum(end - start for start, end in source_areas) / 1000
-    nominal = frame.attrs.get("sample_interval_s") or 0
-    timestamps = datetime_milliseconds(frame["Datetime"])
-    keep = np.zeros(len(frame), dtype=bool)
-    for start, end in source_areas:
-        keep |= (timestamps < end) & (timestamps + nominal * 1000 > start)
-    selected = frame.loc[keep]
-    coverages, periods = [], []
-    for name in frame:
-        match = SPECTRAL_COLUMN.match(str(name))
-        if not match or match.group(1) != parameter:
-            continue
-        finite = np.isfinite(pd.to_numeric(selected[name], errors="coerce").to_numpy(dtype=float))
-        series = selected.loc[finite, ["Datetime"]].copy()
-        if series.empty:
-            coverages.append(0.0)
-            continue
-        period_column = f"__sample_interval_s:{name}"
-        if period_column in selected:
-            series["__sample_interval_s"] = selected.loc[series.index, period_column]
-        elif "__sample_interval_s" in selected:
-            series["__sample_interval_s"] = selected.loc[series.index, "__sample_interval_s"]
-        native = pd.to_numeric(series.get("__sample_interval_s", pd.Series(dtype=float)), errors="coerce")
-        native = native[np.isfinite(native) & (native > 0)]
-        starts, ends, period = _sample_geometry(series, float(native.max()) if not native.empty else nominal or None)
-        coverages.append(min(1.0, float(_weights(starts, ends, source_areas).sum()) / duration_s) if duration_s else 0.0)
-        if period:
-            periods.append(period)
-    return min(coverages, default=0.0), max(periods, default=None)
+def _spectral_provenance(frame: pd.DataFrame | PreparedMeterData, parameter: str,
+                         areas, offset_ms: float) -> tuple[float, float | None]:
+    data = frame if isinstance(frame, PreparedMeterData) else prepare_meter_data(frame)
+    return spectral_provenance(data, parameter, areas, offset_ms)
 
 
 def _best_resolution(candidates: dict[str, tuple[Any, float]]) -> str | None:
@@ -346,14 +317,19 @@ def export_annotations(input_path: str | Path | dict, output_path: str | Path | 
                 except (OSError, ValueError, ImportError) as error:
                     notes.append({"key": f"source_error:{meter}:{Path(path).name}", "value": str(error)})
         frames = {}
-        for resolution, parts in chunks.items():
+        for resolution in tuple(chunks):
             # Broadband and spectral NTi files share timestamps; combine their
             # columns without counting duplicate timestamps or losing spectra.
-            combined = pd.concat(parts, ignore_index=True).sort_values("Datetime")
-            frames[resolution] = combined.groupby("Datetime", sort=True).first().reset_index()
-            frames[resolution].attrs["sample_interval_s"] = max(intervals[resolution]) if intervals[resolution] else None
-        if chunks:
-            del combined, parts
+            combined = pd.concat(chunks.pop(resolution), ignore_index=True).sort_values("Datetime")
+            grouped = combined.groupby("Datetime", sort=True).first().reset_index()
+            # Release source chunks and the joined table before preparing the
+            # numeric arrays, rather than retaining three copies during setup.
+            del combined
+            grouped.attrs["sample_interval_s"] = max(intervals[resolution]) if intervals[resolution] else None
+            # The retained window set is prepared once for all this meter's
+            # regions. No per-region sorting/copying or whole-file cache.
+            frames[resolution] = prepare_meter_data(grouped)
+            del grouped
         del chunks
         for region in regions:
             results = {resolution: compute_region_metrics(frame, region.get("areas") or [region],

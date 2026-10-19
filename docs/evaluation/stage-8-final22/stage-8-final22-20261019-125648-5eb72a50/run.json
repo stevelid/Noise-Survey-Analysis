@@ -1,0 +1,67 @@
+{
+  "stage": "stage-8-final22",
+  "run": "stage-8-final22-20261019-125648-5eb72a50",
+  "startedUtc": "2026-10-19T11:56:51.9545596Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-final22-20261019-125648-5eb72a50\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-final22-20261019-125648-5eb72a50\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-8-final22\\stage-8-final22-20261019-125648-5eb72a50",
+  "head": "f8f1dece85164bb55fa2a6ff914e3fd4e409af9f",
+  "sourceStatus": [
+    " M README.md",
+    " M USER_GUIDE.txt",
+    " M noise_survey_analysis/core/annotation_metrics.py",
+    " M noise_survey_analysis/export/annotations.py",
+    " M noise_survey_analysis/static/css/annotation-panel.css",
+    " M noise_survey_analysis/static/js/features/annotations/panelSelectors.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelEvents.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelRenderer.js",
+    " M noise_survey_analysis/static/js/services/session/annotationCsv.js",
+    " M noise_survey_analysis/static/js/services/session/sessionManager.js",
+    " M noise_survey_analysis/ui/component_parts/controls.py",
+    " M scripts/annotation_benchmark.py",
+    " M scripts/checkpoint_benchmark.py",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    " M tests/annotation-metrics-export.test.js",
+    " M tests/e2e/static-dashboard.spec.ts",
+    " M tests/html-panel.test.js",
+    " M tests/sessionManager-extra.test.js",
+    " M tests/sessionManager.test.js",
+    " M tests/test_annotation_export.py",
+    "?? docs/evaluation/stage-8-browser-panel/",
+    "?? docs/evaluation/stage-8-integration22/",
+    "?? docs/evaluation/stage-8-integration30/",
+    "?? scripts/profile_export_benchmark.py"
+  ],
+  "sourceFileCount": 271,
+  "results": {
+    "pytest": {
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "pytest",
+        "tests/",
+        "--junitxml=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-final22-20261019-125648-5eb72a50\\evidence\\pytest.xml"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 27.744
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "pytest": {
+      "errors": "0",
+      "total": "472",
+      "skipped": "0",
+      "failures": "0"
+    }
+  },
+  "finishedUtc": "2026-10-19T11:57:26.5467340Z",
+  "failedSteps": [],
+  "suitesPassed": true
+}

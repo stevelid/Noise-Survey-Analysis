@@ -11,7 +11,7 @@ import pytest
 
 from noise_survey_analysis.core.annotation_metrics import (
     background_intervals, compute_region_metrics, datetime_milliseconds,
-    subtract_intervals, weighted_quantile,
+    prepare_meter_data, spectral_provenance, subtract_intervals, weighted_quantile,
 )
 from noise_survey_analysis.core.annotation_windows import iter_source_windows
 from noise_survey_analysis.export.annotations import (
@@ -72,6 +72,56 @@ def test_datetime_storage_unit_does_not_change_region_or_spectral_metrics(unit):
     assert result.coverage == 1
     assert result.LAeq_dB == pytest.approx(67.4036269)
     assert result.spectra["LZeq"][63] == pytest.approx(57.4036269)
+
+
+def test_prepared_queries_keep_fractional_areas_gaps_and_identical_context_support():
+    data = pd.DataFrame({"Datetime": pd.to_datetime(BASE + np.array([0, 1, 10, 11]) * 1000, unit="ms", utc=True),
+                         "LAeq": [60, 70, 50, 80], "LAFmax": [61, 75, 55, 85],
+                         "LZeq_63": [40, 60, 30, 70], "LZeq_125": [40, np.nan, 30, 70]})
+    prepared = prepare_meter_data(data, sample_interval_s=1)
+    # Preparing is a snapshot: later edits to the caller's frame cannot alter
+    # levels midway through a multi-region export.
+    data.loc[:, "LAeq"] = 99
+    query = [*areas(.5, 1.5), *areas(10, 10.5)]
+    result = compute_region_metrics(prepared, query, context_areas=[*areas(1.5, 2), *areas(10.5, 11)], min_context_s=1)
+    assert result.coverage == 1
+    assert result.LAeq_dB == pytest.approx(10 * np.log10((10**6 + 10**7 + 10**5) / 3))
+    assert result.LAFmax_dB == 75
+    assert result.background_LA90_dB == 50
+    assert result.background_LAeq_dB == pytest.approx(10 * np.log10((10**7 + 10**5) / 2))
+    assert result.context_duration_s == 1
+    assert spectral_provenance(prepared, "LZeq", query) == (pytest.approx(2/3), 1)
+    gap = compute_region_metrics(prepared, areas(2, 10))
+    assert gap.coverage == 0
+    assert gap.LAeq_dB is None
+    # A subsequent query remains independent of both earlier queries.
+    assert compute_region_metrics(prepared, areas(11, 12)).LAeq_dB == 80
+
+
+def test_prepared_slow_column_can_overlap_window_without_a_raw_grid_row():
+    data = frame([60, 70], step=10, LZeq_63=[40, 50])
+    data["__sample_interval_s"] = .1
+    data["__sample_interval_s:LAeq"] = 1
+    prepared = prepare_meter_data(data, sample_interval_s=.1)
+    result = compute_region_metrics(prepared, areas(.5, 1))
+    assert result.LAeq_dB == 60
+    assert result.coverage == 1
+    assert result.spectra["LZeq"][63] is None
+
+
+def test_prepared_native_period_provenance_is_local_to_the_queried_bands():
+    data = frame([60, 70, 50], LZeq_63=[40, 50, 60])
+    data["__sample_interval_s:LZeq_63"] = [.1, .1, 1]
+    prepared = prepare_meter_data(data, sample_interval_s=1)
+    assert spectral_provenance(prepared, "LZeq", areas(0, .1)) == (1, .1)
+    assert spectral_provenance(prepared, "LZeq", areas(2, 3)) == (1, 1)
+
+
+def test_prepared_long_sample_touching_two_areas_is_counted_once_per_area():
+    prepared = prepare_meter_data(frame([60, 70], step=10), sample_interval_s=10)
+    result = compute_region_metrics(prepared, [*areas(1, 2), *areas(3, 4), *areas(10, 11)])
+    assert result.coverage == 1
+    assert result.LAeq_dB == pytest.approx(10 * np.log10((2 * 10**6 + 10**7) / 3))
 
 
 def test_overlapping_areas_counted_once_and_offset_applies_to_query():

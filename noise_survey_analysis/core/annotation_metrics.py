@@ -158,7 +158,124 @@ def _weights(times, ends, areas) -> np.ndarray:
     return weights
 
 
-def compute_region_metrics(frame: pd.DataFrame, areas, *, meter: str = "",
+@dataclass(frozen=True)
+class PreparedColumn:
+    """Finite samples on a column's native clock; shared across region queries."""
+    values: np.ndarray
+    starts: np.ndarray
+    ends: np.ndarray
+    periods: float | np.ndarray | None = None
+
+    def in_windows(self, areas) -> PreparedColumn:
+        # Ends are monotonic: no sample extends beyond the next native sample.
+        # Merge index ranges too, since one long sample may touch two windows.
+        ranges: list[tuple[int, int]] = []
+        for start, end in union_intervals(areas):
+            low = int(np.searchsorted(self.ends, start, side="right"))
+            high = int(np.searchsorted(self.starts, end, side="left"))
+            if low >= high:
+                continue
+            if ranges and low <= ranges[-1][1]:
+                ranges[-1] = (ranges[-1][0], max(high, ranges[-1][1]))
+            else:
+                ranges.append((low, high))
+        if not ranges:
+            return EMPTY_COLUMN
+
+        def select(values):
+            if len(ranges) == 1:
+                low, high = ranges[0]
+                return values[low:high]
+            return np.concatenate([values[low:high] for low, high in ranges])
+
+        periods = select(self.periods) if isinstance(self.periods, np.ndarray) else self.periods
+        return PreparedColumn(select(self.values), select(self.starts), select(self.ends), periods)
+
+
+EMPTY_VALUES = np.array([], dtype=float)
+EMPTY_COLUMN = PreparedColumn(EMPTY_VALUES, EMPTY_VALUES, EMPTY_VALUES)
+
+
+@dataclass(frozen=True)
+class PreparedMeterData:
+    """One meter/resolution prepared once, without a global whole-file cache."""
+    geometry: PreparedColumn
+    columns: dict[str, PreparedColumn]
+    sample_interval_s: float | None
+    missing_reason: str | None = None
+
+
+def prepare_meter_data(frame: pd.DataFrame | None,
+                       sample_interval_s: float | None = None) -> PreparedMeterData:
+    """Normalize and build native sample geometry once for repeated queries.
+
+    The caller owns this object and releases it before loading another meter.
+    All-finite bands share timestamp/end arrays; only sparse native clocks need
+    their own geometry. Numeric values are copied so later caller edits cannot
+    invalidate a prepared export halfway through its region queries.
+    """
+    if frame is None or frame.empty or "Datetime" not in frame:
+        return PreparedMeterData(EMPTY_COLUMN, {}, None, "No source samples in requested windows")
+    frame = frame.dropna(subset=["Datetime"]).sort_values("Datetime").drop_duplicates("Datetime", keep="first").reset_index(drop=True)
+    if frame.empty:
+        return PreparedMeterData(EMPTY_COLUMN, {}, None, "No valid source timestamps")
+    starts, ends, nominal = _sample_geometry(frame, sample_interval_s)
+    geometry = PreparedColumn(starts, starts, ends)
+    columns = {}
+    common_ends: dict[float, np.ndarray] = {}
+    for name in frame:
+        if name not in ("LAeq", "LAFmax", "LAF", "LAFp", "LAF90") and not SPECTRAL_COLUMN.match(str(name)):
+            continue
+        values = pd.to_numeric(frame[name], errors="coerce").to_numpy(dtype=float, copy=True)
+        finite = np.isfinite(values)
+        if not finite.any():
+            columns[name] = EMPTY_COLUMN
+            continue
+        all_finite = bool(finite.all())
+        times = starts if all_finite else starts[finite]
+        values = values if all_finite else values[finite]
+        period_name = f"__sample_interval_s:{name}"
+        if period_name not in frame:
+            period_name = "__sample_interval_s"
+        if period_name in frame:
+            periods = pd.to_numeric(frame[period_name], errors="coerce").to_numpy(dtype=float)
+            if not all_finite:
+                periods = periods[finite]
+            periods = np.where(np.isfinite(periods) & (periods > 0), periods, float(sample_interval_s or nominal or 0))
+            if periods.min() == periods.max():
+                periods = float(periods[0])
+        else:
+            periods = float(sample_interval_s or nominal or 0)
+        if all_finite and isinstance(periods, float) and periods in common_ends:
+            stops = common_ends[periods]
+        else:
+            caps = periods * TIME_MS_PER_SECOND
+            final_cap = caps[-1] if isinstance(caps, np.ndarray) else caps
+            stops = np.minimum(np.r_[times[1:], times[-1] + final_cap], times + caps)
+            if all_finite and isinstance(periods, float):
+                common_ends[periods] = stops
+        columns[name] = PreparedColumn(values, times, stops, periods)
+    return PreparedMeterData(geometry, columns, nominal)
+
+
+def spectral_provenance(data: PreparedMeterData, parameter: str, areas,
+                        chart_offset_ms: float = 0) -> tuple[float, float | None]:
+    """Minimum finite-band coverage and native period, using prepared clocks."""
+    source_areas = [(start - chart_offset_ms, end - chart_offset_ms) for start, end in union_intervals(areas)]
+    duration_s = sum(end - start for start, end in source_areas) / TIME_MS_PER_SECOND
+    coverages, periods = [], []
+    for name, column in data.columns.items():
+        match = SPECTRAL_COLUMN.match(str(name))
+        if not match or match.group(1) != parameter:
+            continue
+        selected = column.in_windows(source_areas)
+        coverages.append(min(1.0, float(_weights(selected.starts, selected.ends, source_areas).sum()) / duration_s) if duration_s else 0.0)
+        if len(selected.values) and selected.periods is not None:
+            periods.append(float(np.max(selected.periods)))
+    return min(coverages, default=0.0), max(periods, default=None)
+
+
+def compute_region_metrics(frame: pd.DataFrame | PreparedMeterData, areas, *, meter: str = "",
                            chart_offset_ms: float = 0, resolution: str = "log",
                            sample_interval_s: float | None = None,
                            context_areas=None, min_context_s: float = 60) -> MetricResult:
@@ -166,27 +283,20 @@ def compute_region_metrics(frame: pd.DataFrame, areas, *, meter: str = "",
     intervals = union_intervals(areas)
     source_areas = [(start - chart_offset_ms, end - chart_offset_ms) for start, end in intervals]
     requested_s = sum(end - start for start, end in intervals) / 1000
-    if frame is None or frame.empty or "Datetime" not in frame:
-        result.missing_reasons.append("No source samples in requested windows")
+    data = frame if isinstance(frame, PreparedMeterData) else prepare_meter_data(frame, sample_interval_s)
+    if data.missing_reason:
+        result.missing_reasons.append(data.missing_reason)
         return result
-    frame = frame.dropna(subset=["Datetime"]).sort_values("Datetime").drop_duplicates("Datetime", keep="first").reset_index(drop=True)
-    if frame.empty:
-        result.missing_reasons.append("No valid source timestamps")
-        return result
-    times, ends, nominal = _sample_geometry(frame, sample_interval_s)
+    nominal = data.sample_interval_s
     needed = [*source_areas, *[(start - chart_offset_ms, end - chart_offset_ms)
                              for start, end in union_intervals(context_areas or [])]]
-    keep = np.zeros(len(frame), dtype=bool)
-    for start, end in union_intervals(needed):
-        keep |= (times < end) & (times + float(nominal or 0) * 1000 > start)
-    frame = frame.loc[keep].reset_index(drop=True)
-    if frame.empty:
+    selected_geometry = data.geometry.in_windows(needed)
+    if not len(selected_geometry.starts) and not any(len(column.in_windows(needed).starts) for column in data.columns.values()):
         result.sample_interval_s = nominal
         result.missing_reasons.append("No source samples in requested windows")
         return result
-    times, ends, nominal = _sample_geometry(frame, sample_interval_s or nominal)
     result.sample_interval_s = nominal
-    weights = _weights(times, ends, source_areas)
+    weights = _weights(selected_geometry.starts, selected_geometry.ends, source_areas)
     result.coverage = min(1.0, float(weights.sum()) / requested_s) if requested_s > 0 else 0.0
 
     # Each parameter has its own native clock. Joining an NTi broadband file
@@ -196,22 +306,9 @@ def compute_region_metrics(frame: pd.DataFrame, areas, *, meter: str = "",
     def column_geometry(name: str):
         if name in column_cache:
             return column_cache[name]
-        if name not in frame:
-            value = (np.array([]), np.array([]), np.array([]), np.array([]))
-        else:
-            values = pd.to_numeric(frame[name], errors="coerce").to_numpy(dtype=float)
-            selected = frame.loc[np.isfinite(values), ["Datetime"]].copy()
-            values = values[np.isfinite(values)]
-            period_column = f"__sample_interval_s:{name}"
-            if period_column in frame:
-                selected["__sample_interval_s"] = frame.loc[selected.index, period_column]
-            elif "__sample_interval_s" in frame:
-                selected["__sample_interval_s"] = frame.loc[selected.index, "__sample_interval_s"]
-            if selected.empty:
-                value = (np.array([]), np.array([]), np.array([]), np.array([]))
-            else:
-                start, stop, _ = _sample_geometry(selected, sample_interval_s or nominal)
-                value = (values, start, stop, _weights(start, stop, source_areas))
+        selected = data.columns.get(name, EMPTY_COLUMN).in_windows(needed)
+        value = (selected.values, selected.starts, selected.ends,
+                 _weights(selected.starts, selected.ends, source_areas))
         column_cache[name] = value
         return value
 
@@ -252,7 +349,7 @@ def compute_region_metrics(frame: pd.DataFrame, areas, *, meter: str = "",
             result.missing_reasons.append(f"Background context below {min_context_s:g} usable seconds")
     if result.LAeq_dB is not None and result.background_LA90_dB is not None:
         result.diff_from_background_dB = result.LAeq_dB - result.background_LA90_dB
-    for name in frame.columns:
+    for name in data.columns:
         match = SPECTRAL_COLUMN.match(str(name))
         if not match:
             continue

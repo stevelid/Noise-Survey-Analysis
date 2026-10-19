@@ -1,0 +1,32 @@
+{
+  "local_copy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-final22-20261019-125648-5eb72a50\\repo",
+  "workspace": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-20261018-213138-12880e43\\full-export-benchmark\\benchmark-workspace.json",
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]",
+  "pandas": "2.2.3",
+  "numpy": "2.1.3",
+  "profiled": true,
+  "source_generation": "reused, outside timing",
+  "export_seconds": 26.884683999989647,
+  "rss": {
+    "available": true,
+    "sample_interval_s": 1.0,
+    "baseline_bytes": 94916608,
+    "peak_bytes": 436600832,
+    "samples": 28,
+    "peak_increase_bytes": 341684224
+  },
+  "output_bytes": 704361,
+  "row_counts": {
+    "REGIONS": 300,
+    "OVERALL": 1200,
+    "SPECTRAL": 1200
+  },
+  "equivalent_to": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-20261018-213138-12880e43\\full-export-benchmark\\annotations.full-resolution.csv",
+  "comparison_tolerance": {
+    "relative": 1e-10,
+    "absolute": 1e-06
+  },
+  "verified": true,
+  "profile_total_calls": 31207128,
+  "profile_total_seconds": 26.796637299999958
+}

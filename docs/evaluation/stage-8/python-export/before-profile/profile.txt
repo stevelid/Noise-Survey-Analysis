@@ -1,0 +1,45 @@
+Mon Oct 19 12:59:03 2026    C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-baseline-20261019-124812-9eb4b35c\profile-before\before.prof
+
+         315406985 function calls (306763674 primitive calls) in 526.155 seconds
+
+   Ordered by: cumulative time
+   List reduced from 3622 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+    457/1    0.004    0.000  526.160  526.160 {built-in method builtins.exec}
+        1    0.000    0.000  526.160  526.160 <frozen runpy>:206(run_module)
+        1    0.000    0.000  526.152  526.152 <frozen runpy>:65(_run_code)
+        1    0.000    0.000  526.152  526.152 C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-baseline-20261019-124812-9eb4b35c\repo\noise_survey_analysis\export\annotations.py:1(<module>)
+        1    0.004    0.004  525.739  525.739 C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-baseline-20261019-124812-9eb4b35c\repo\noise_survey_analysis\export\annotations.py:469(main)
+        1    0.930    0.930  525.734  525.734 C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-baseline-20261019-124812-9eb4b35c\repo\noise_survey_analysis\export\annotations.py:285(export_annotations)
+     1200   30.786    0.026  356.750    0.297 C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-baseline-20261019-124812-9eb4b35c\repo\noise_survey_analysis\core\annotation_metrics.py:151(compute_region_metrics)
+     1200    4.032    0.003  154.938    0.129 C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-baseline-20261019-124812-9eb4b35c\repo\noise_survey_analysis\export\annotations.py:242(_spectral_provenance)
+   168776    0.961    0.000  148.682    0.001 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\internals\managers.py:317(apply)
+    44400    1.324    0.000  145.758    0.003 C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-baseline-20261019-124812-9eb4b35c\repo\noise_survey_analysis\core\annotation_metrics.py:186(column_geometry)
+    83256    0.307    0.000  142.490    0.002 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\generic.py:6662(copy)
+    83256    0.540    0.000  139.581    0.002 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\internals\managers.py:557(copy)
+    91964    0.425    0.000  135.814    0.001 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\internals\blocks.py:790(copy)
+   496641  134.970    0.000  134.970    0.000 {method 'copy' of 'numpy.ndarray' objects}
+    79200    9.601    0.000  112.471    0.001 C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-baseline-20261019-124812-9eb4b35c\repo\noise_survey_analysis\core\annotation_metrics.py:125(_sample_geometry)
+234320/157520    1.127    0.000  111.021    0.001 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\indexing.py:1176(__getitem__)
+   153664    0.839    0.000  106.179    0.001 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\indexing.py:1365(_getitem_tuple)
+   309728    1.432    0.000   99.110    0.000 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\indexing.py:1397(_getitem_axis)
+    76864    0.898    0.000   68.832    0.001 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\indexing.py:1004(_getitem_tuple_same_dim)
+    79264    0.867    0.000   62.789    0.001 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\tools\datetimes.py:673(to_datetime)
+   153600    0.448    0.000   62.067    0.000 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\indexing.py:1334(_getitem_iterable)
+   356504    1.935    0.000   61.968    0.000 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\frame.py:4062(__getitem__)
+    79264    0.584    0.000   47.338    0.001 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\tools\datetimes.py:209(_maybe_cache)
+   153600    0.284    0.000   41.697    0.000 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\indexing.py:1532(_get_listlike_indexer)
+     1268    0.348    0.000   41.677    0.033 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\frame.py:6997(sort_values)
+   153600    1.374    0.000   41.144    0.000 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\indexes\base.py:6186(_get_indexer_strict)
+     1200    0.036    0.000   41.028    0.034 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\frame.py:6731(drop_duplicates)
+505680/505616    6.023    0.000   39.690    0.000 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\series.py:389(__init__)
+    79264    6.789    0.000   38.005    0.000 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\tools\datetimes.py:149(should_cache)
+     1264    0.039    0.000   35.973    0.028 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\frame.py:6538(dropna)
+     2468    0.021    0.000   34.990    0.014 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\frame.py:6239(reset_index)
+     1200    0.014    0.000   34.203    0.029 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\frame.py:4130(_getitem_bool_array)
+   153664    1.081    0.000   33.627    0.000 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\indexing.py:1032(_getitem_lowerdim)
+    81408    0.679    0.000   30.475    0.000 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\frame.py:4271(__setitem__)
+  5030200   29.457    0.000   30.092    0.000 C:\Users\steve\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\pandas\core\arrays\datetimes.py:645(__iter__)
+
+
