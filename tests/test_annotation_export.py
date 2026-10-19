@@ -10,7 +10,8 @@ import pandas as pd
 import pytest
 
 from noise_survey_analysis.core.annotation_metrics import (
-    background_intervals, compute_region_metrics, subtract_intervals, weighted_quantile,
+    background_intervals, compute_region_metrics, datetime_milliseconds,
+    subtract_intervals, weighted_quantile,
 )
 from noise_survey_analysis.core.annotation_windows import iter_source_windows
 from noise_survey_analysis.export.annotations import (
@@ -60,6 +61,17 @@ def test_known_answer_and_fractional_interval_weighting():
     partial = compute_region_metrics(data, areas(0, 1.5), sample_interval_s=1)
     assert partial.LAeq_dB == pytest.approx(66.0205999, abs=1e-6)
     assert "indicative" in result.percentile_method
+
+
+@pytest.mark.parametrize("unit", ["s", "ms", "us", "ns"])
+def test_datetime_storage_unit_does_not_change_region_or_spectral_metrics(unit):
+    data = frame([60, 70], LZeq_63=[50, 60])
+    data["Datetime"] = data["Datetime"].dt.as_unit(unit)
+    result = compute_region_metrics(data, areas(0, 2), sample_interval_s=1)
+    assert datetime_milliseconds(data["Datetime"]).tolist() == [BASE, BASE + 1000]
+    assert result.coverage == 1
+    assert result.LAeq_dB == pytest.approx(67.4036269)
+    assert result.spectra["LZeq"][63] == pytest.approx(57.4036269)
 
 
 def test_overlapping_areas_counted_once_and_offset_applies_to_query():
@@ -468,7 +480,7 @@ def test_explicit_utc_survives_bad_and_naive_timestamps_in_same_summer_chunk(tmp
                                       options={"parser_type": "generic", "timezone": "Europe/London"}))
     assert len(chunks) == 1
     assert list(chunks[0].frame.LAeq) == [60, 70, 65]
-    assert list(chunks[0].frame.Datetime.astype("int64") // 10**6) == [start, start + 1000, start + 2000]
+    assert list(datetime_milliseconds(chunks[0].frame.Datetime)) == [start, start + 1000, start + 2000]
 
 
 def test_standalone_regions_section_keeps_state_columns_and_does_not_consolidate_v2(tmp_path):

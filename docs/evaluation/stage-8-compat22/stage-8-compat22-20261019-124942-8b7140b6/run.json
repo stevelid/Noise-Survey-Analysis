@@ -1,0 +1,57 @@
+{
+  "stage": "stage-8-compat22",
+  "run": "stage-8-compat22-20261019-124942-8b7140b6",
+  "startedUtc": "2026-10-19T11:49:45.2334482Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-compat22-20261019-124942-8b7140b6\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-compat22-20261019-124942-8b7140b6\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-8-compat22\\stage-8-compat22-20261019-124942-8b7140b6",
+  "head": "48faf4af437beafae1a8bf917f54f13023195a09",
+  "sourceStatus": [
+    " M noise_survey_analysis/core/annotation_metrics.py",
+    " M noise_survey_analysis/core/annotation_windows.py",
+    " M noise_survey_analysis/export/annotations.py",
+    " M noise_survey_analysis/static/js/features/annotations/panelSelectors.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelEvents.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelRenderer.js",
+    " M noise_survey_analysis/static/js/services/session/annotationCsv.js",
+    " M noise_survey_analysis/static/js/services/session/sessionManager.js",
+    " M noise_survey_analysis/ui/component_parts/controls.py",
+    " M tests/annotation-metrics-export.test.js",
+    " M tests/sessionManager-extra.test.js",
+    " M tests/sessionManager.test.js",
+    " M tests/test_annotation_export.py",
+    "?? docs/evaluation/stage-8-baseline/"
+  ],
+  "sourceFileCount": 270,
+  "results": {
+    "pytest": {
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "pytest",
+        "tests/",
+        "--junitxml=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-compat22-20261019-124942-8b7140b6\\evidence\\pytest.xml"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 28.448
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "pytest": {
+      "total": "468",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    }
+  },
+  "finishedUtc": "2026-10-19T11:50:20.5257623Z",
+  "failedSteps": [],
+  "suitesPassed": true
+}

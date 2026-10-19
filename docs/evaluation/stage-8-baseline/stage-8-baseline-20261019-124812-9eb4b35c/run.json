@@ -1,0 +1,23 @@
+{
+  "stage": "stage-8-baseline",
+  "run": "stage-8-baseline-20261019-124812-9eb4b35c",
+  "startedUtc": "2026-10-19T11:48:16.5922309Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-baseline-20261019-124812-9eb4b35c\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-8-baseline-20261019-124812-9eb4b35c\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-8-baseline\\stage-8-baseline-20261019-124812-9eb4b35c",
+  "head": "48faf4af437beafae1a8bf917f54f13023195a09",
+  "sourceStatus": [],
+  "sourceFileCount": 270,
+  "results": {},
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {},
+  "finishedUtc": "2026-10-19T11:48:23.4894261Z",
+  "failedSteps": [],
+  "suitesPassed": true
+}

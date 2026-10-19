@@ -122,8 +122,18 @@ class MetricResult:
         return asdict(self)
 
 
+def datetime_milliseconds(values) -> np.ndarray:
+    """Return UTC epoch milliseconds independently of pandas' storage unit.
+
+    pandas 2/3 may retain seconds, milliseconds or microseconds rather than
+    nanoseconds. Integer conversion alone therefore has no fixed time unit.
+    """
+    dates = pd.DatetimeIndex(pd.to_datetime(values, utc=True))
+    return dates.as_unit("ns").asi8 / 1e6
+
+
 def _sample_geometry(frame: pd.DataFrame, sample_interval_s: float | None):
-    times = pd.to_datetime(frame["Datetime"], utc=True).astype("int64").to_numpy() / 1e6
+    times = datetime_milliseconds(frame["Datetime"])
     positive = np.diff(times)
     positive = positive[positive > 0]
     nominal = sample_interval_s or frame.attrs.get("sample_interval_s")

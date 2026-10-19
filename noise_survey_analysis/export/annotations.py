@@ -22,7 +22,8 @@ import numpy as np
 import pandas as pd
 
 from ..core.annotation_metrics import (MetricResult, SPECTRAL_COLUMN, background_intervals,
-                                       compute_region_metrics, union_intervals, _sample_geometry, _weights)
+                                       compute_region_metrics, datetime_milliseconds,
+                                       union_intervals, _sample_geometry, _weights)
 from ..core.annotation_windows import iter_source_windows
 from ..core.annotation_workspace import DEFAULT_CATEGORIES, migrate_workspace
 
@@ -244,7 +245,7 @@ def _spectral_provenance(frame: pd.DataFrame, parameter: str, areas, offset_ms: 
     source_areas = [(start - offset_ms, end - offset_ms) for start, end in union_intervals(areas)]
     duration_s = sum(end - start for start, end in source_areas) / 1000
     nominal = frame.attrs.get("sample_interval_s") or 0
-    timestamps = frame["Datetime"].astype("int64").to_numpy() / 1e6
+    timestamps = datetime_milliseconds(frame["Datetime"])
     keep = np.zeros(len(frame), dtype=bool)
     for start, end in source_areas:
         keep |= (timestamps < end) & (timestamps + nominal * 1000 > start)

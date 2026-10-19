@@ -1,6 +1,13 @@
 # Annotation refactor evaluation
 
-## Final summary
+## Stage 8 follow-up — in progress
+
+- Started from clean `main` at `48faf4a` / `stage-7-html-shell-reverted`. Continue editing/committing in Drive, using fresh immutable local verification copies and checkpoint pushes. Bokeh remains 3.4.1. Three sub-agents own Python compatibility/performance, browser export modes and the sidebar respectively; integration, measurements, documentation and Git stay with the primary agent.
+- **Pandas compatibility:** fixed implicit nanosecond timestamp conversion in the metric engine, bounded source reader and export provenance. Pandas can store dates at seconds/milliseconds/microseconds/nanoseconds; conversion now requests an explicit nanosecond representation before deriving epoch milliseconds. Added regression cases for all four units, and corrected an existing test's own storage-unit assumption. Both supported series work; no pandas upper bound is needed.
+- Full Python suite: **468 passed, 9 deprecation warnings** on **pandas 2.2.3**, local copy `C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-compat22-20261019-124942-8b7140b6\repo`; **468 passed, 9 warnings** on **pandas 3.0.6**, copy `C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-compat30-20261019-125041-a1f0ff3f\repo`. Source hashes unchanged; Bokeh 3.4.1 asserted in both. Pandas 3 is isolated in a temporary venv with the same interpreter/dependencies, leaving the installed pandas 2.2.3 environment unchanged. Receipts: `docs/evaluation/stage-8-compat22/` and `stage-8-compat30/`.
+- Unchanged exporter profiling uses the verified baseline snapshot `C:\Users\steve\AppData\Local\Temp\nsa-annotation-tests\stage-8-baseline-20261019-124812-9eb4b35c\repo` and the same Stage-5 300-region workspace/generated source CSVs, excluding source generation. Browser export and panel changes are under integration; final profiles, measurements, screenshots and totals will follow here.
+
+## Stages 0–7 summary (historical)
 
 **Final tag: `stage-7-html-shell-reverted`.** Stages 0–6 are implemented; Stage 7 was prototyped, tested, committed and reverted after its production-server check failed. The final application retains the Bokeh page layout and the new HTML annotation sidebar. All edits/commits stayed in the original Drive repository on `main`; checkpoints and tags are pushed to `origin`, without history rewriting. Safety snapshot: `66bd8df` / `baseline-pre-annotation-refactor`. Bokeh remains **3.4.1**.
 

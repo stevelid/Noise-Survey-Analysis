@@ -18,7 +18,7 @@ from typing import Iterator
 import numpy as np
 import pandas as pd
 
-from .annotation_metrics import union_intervals
+from .annotation_metrics import datetime_milliseconds, union_intervals
 from .data_parsers import NoiseParserFactory, SvanFileParser, NTiFileParser, NoiseSentryFileParser
 
 DEFAULT_CHUNK_ROWS = 16384
@@ -196,7 +196,7 @@ def iter_source_windows(path: str | Path, windows, *, options: dict | None = Non
         profile = options.get("data_profile") or options.get("profile") or inferred_profile
         if profile not in ("log", "overview"):
             profile = "overview" if nominal > 60 else "log"
-        times = frame["Datetime"].astype("int64").to_numpy() / 1e6
+        times = datetime_milliseconds(frame["Datetime"])
         keep = np.zeros(len(frame), dtype=bool)
         for start, end in requested:
             keep |= (times < end) & (times + nominal * 1000 > start)
