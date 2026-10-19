@@ -106,6 +106,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (data.key) session.drafts.delete(data.key);
         app.store.dispatch(app.features.annotationPanel.thunks.panelCommandIntent(data.action, payload));
     }
+    function flushDeferredPanel(session) {
+        if (!session.disposed) app.services.htmlPanelRenderer?.flushDeferredRender?.(session.models);
+    }
+    function shouldDeferRender(models) {
+        const session = sessionFor(models);
+        // The note is already in the store. Only DOM replacement waits for
+        // the native form interaction to finish; select change, input blur
+        // and disposal release it, including an unchanged control's blur.
+        return Boolean(session?.protectedControl?.isConnected || session?.protectedClick?.isConnected);
+    }
+    function releaseProtectedClick(session) {
+        const protectedClick = session.protectedClick;
+        session.protectedClick = null;
+        clearTimeout(session.clickReleaseTimer);
+        session.clickReleaseTimer = null;
+        return protectedClick;
+    }
     function bindRoot(session, root) {
         session.root = root;
         const pointerdown = event => {
@@ -114,19 +131,33 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // Keep this control alive until click can submit both intents together.
             const active = root.activeElement;
             const hasNoteDraft = active?.matches?.('textarea[data-action]') && session.drafts.has(active.dataset.key);
+            const formControl = event.target?.closest?.('input[data-action],select[data-action]');
+            if ((hasNoteDraft || session.protectedControl) && formControl && !formControl.disabled && event.button === 0) {
+                // Keep the native target alive through the note's blur save.
+                // Replacing a focused select also closes its native popup.
+                session.protectedControl = formControl;
+            }
+            if (session.protectedControl && control && !control.disabled && event.button === 0) {
+                // Its native blur must save (notably a colour edit), while the
+                // pending button/summary survives until its following click.
+                session.protectedClick = control;
+            }
             if (control && !control.disabled && event.button === 0 && hasNoteDraft) event.preventDefault();
         };
         const click = event => {
             const summary = event.target?.closest?.('details[data-key] > summary');
             if (summary) {
+                const protectedClick = session.protectedClick === summary ? releaseProtectedClick(session) : null;
+                if (protectedClick) session.protectedControl = null;
                 const draft = takeNoteDraft(session);
-                if (!draft) return;
+                if (!draft && !protectedClick) return;
                 event.preventDefault();
                 // Toggle before saving so the renderer captures the requested
                 // disclosure state, rather than the pre-click closed state.
                 summary.parentElement.open = !summary.parentElement.open;
                 const focus = focusDescriptor(summary);
-                app.store.dispatch(app.features.annotationPanel.thunks.panelCommandIntent('commit-note-draft', { draft }));
+                if (draft) app.store.dispatch(app.features.annotationPanel.thunks.panelCommandIntent('commit-note-draft', { draft }));
+                flushDeferredPanel(session);
                 session.focus = focus;
                 queueMicrotask(() => { if (!session.disposed) restore(session); });
                 return;
@@ -134,13 +165,32 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const control = event.target?.closest?.('button[data-action]');
             if (!control || control.disabled) return;
             event.preventDefault();
+            if (session.protectedClick === control) {
+                releaseProtectedClick(session);
+                session.protectedControl = null;
+            }
             const draft = takeNoteDraft(session);
             const raw = control.dataset.value;
             dispatchControl(session, control, raw === 'true' ? true : raw === 'false' ? false : raw, draft);
+            flushDeferredPanel(session);
         };
         const change = event => {
             const control = event.target?.closest?.('input[data-action],select[data-action],textarea[data-action]');
-            if (control) dispatchControl(session, control, control.type === 'checkbox' ? control.checked : control.value);
+            if (!control) return;
+            const protectedChange = control === session.protectedControl;
+            // Text-input change precedes focusout. Keep its node through that
+            // focus transition so restoration does not pull focus back to it.
+            if (protectedChange && control.tagName === 'SELECT') session.protectedControl = null;
+            dispatchControl(session, control, control.type === 'checkbox' ? control.checked : control.value);
+            // A no-op selection may not trigger the app's normal render path.
+            if (protectedChange) flushDeferredPanel(session);
+        };
+        const focusout = event => {
+            if (event.target !== session.protectedControl) return;
+            session.protectedControl = null;
+            // A select dismissed without choosing a different option still
+            // releases the deferred note/list update once focus leaves it.
+            queueMicrotask(() => flushDeferredPanel(session));
         };
         const input = event => {
             const control = event.target;
@@ -179,7 +229,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
         // mousedown covers browsers without Pointer Events. Keyboard buttons
         // retain native activation; only dirty-note Tab needs focus restoration.
-        const listeners = { pointerdown, mousedown: pointerdown, click, change, input, submit, keydown, toggle };
+        const listeners = { pointerdown, mousedown: pointerdown, click, change, focusout, input, submit, keydown, toggle };
         Object.entries(listeners).forEach(([type, handler]) => root.addEventListener(type, handler, type === 'toggle'));
         let fitPending = false;
         const onViewportChange = () => {
@@ -189,6 +239,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
         window.addEventListener('resize', onViewportChange);
         window.addEventListener('scroll', onViewportChange, { passive: true });
+        const finishPointer = () => {
+            if (!session.protectedClick) return;
+            clearTimeout(session.clickReleaseTimer);
+            // A normal click runs before this timer. A cancelled/dragged-away
+            // pointer still releases its guard, even if no click ever arrives.
+            session.clickReleaseTimer = setTimeout(() => {
+                releaseProtectedClick(session);
+                if (!session.disposed) flushDeferredPanel(session);
+            }, 0);
+        };
+        window.addEventListener('pointerup', finishPointer);
+        window.addEventListener('mouseup', finishPointer);
+        window.addEventListener('pointercancel', finishPointer);
         session.observer = new MutationObserver(() => restore(session));
         session.observer.observe(root, { childList: true, subtree: true });
         session.unbind = () => {
@@ -196,6 +259,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             Object.entries(listeners).forEach(([type, handler]) => root.removeEventListener(type, handler, type === 'toggle'));
             window.removeEventListener('resize', onViewportChange);
             window.removeEventListener('scroll', onViewportChange);
+            window.removeEventListener('pointerup', finishPointer);
+            window.removeEventListener('mouseup', finishPointer);
+            window.removeEventListener('pointercancel', finishPointer);
         };
         restore(session);
     }
@@ -204,7 +270,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!model) return () => {};
         if (current?.model === model) return current.dispose;
         current?.dispose();
-        const session = { model, root: null, drafts: new Map(), details: new Map(), scroll: new Map(), focus: null, discovery: [], disposed: false };
+        const session = { model, models, root: null, protectedControl: null, protectedClick: null, clickReleaseTimer: null, drafts: new Map(), details: new Map(), scroll: new Map(), focus: null, discovery: [], disposed: false };
         sessions.set(model, session);
         const observed = new WeakSet();
         let pending = false;
@@ -232,7 +298,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
         };
         session.dispose = () => {
-            session.disposed = true; session.unbind?.(); session.discovery.forEach(observer => observer.disconnect());
+            session.disposed = true; session.protectedControl = null; session.unbind?.(); session.discovery.forEach(observer => observer.disconnect());
+            releaseProtectedClick(session);
+            app.services.htmlPanelRenderer?.discardDeferredRender?.(models);
             sessions.delete(model); if (current === session) current = null;
         };
         current = session; discover(); return session.dispose;
@@ -243,5 +311,5 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         input.focus(); input.scrollIntoView?.({ block: 'nearest' }); return true;
     }
     app.services = app.services || {};
-    app.services.htmlPanelEvents = { attach, capture, focusNote, dispose: () => current?.dispose() };
+    app.services.htmlPanelEvents = { attach, capture, focusNote, shouldDeferRender, dispose: () => current?.dispose() };
 })(window.NoiseSurveyApp);

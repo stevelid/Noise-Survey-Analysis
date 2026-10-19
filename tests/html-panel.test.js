@@ -208,6 +208,93 @@ describe('HTML annotation panel', () => {
         expect(nativeTab.defaultPrevented).toBe(false);
     });
 
+    it('keeps native form targets alive while a dirty note saves on pointer blur', async () => {
+        setupDom(); await tick();
+        for (const [key, value] of [['region-category:1', 'traffic'], ['region-color:1', '#123456']]) {
+            const textarea = root.querySelector('textarea[data-action="region-note"]');
+            textarea.focus(); textarea.value = `Saved before ${key}`;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            const target = root.querySelector(`[data-key="${key}"]`);
+            const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 });
+            target.dispatchEvent(down);
+            expect(down.defaultPrevented).toBe(false);
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+            textarea.blur(); target.focus();
+            expect(app.store.getState().regions.byId[1].note).toBe(`Saved before ${key}`);
+            expect(target.isConnected).toBe(true);
+            expect(root.activeElement).toBe(target);
+            target.value = value;
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+            if (target.tagName === 'INPUT') target.blur();
+            await tick();
+            expect(events.shouldDeferRender(models)).toBe(false);
+        }
+        expect(app.store.getState().regions.byId[1].categoryId).toBe('traffic');
+        expect(app.store.getState().regions.byId[1].color).toBe('#123456');
+    });
+
+    it('releases deferred rendering after an unchanged control loses focus', async () => {
+        setupDom(); await tick();
+        const textarea = root.querySelector('textarea[data-action="region-note"]');
+        textarea.focus(); textarea.value = 'Saved without changing category';
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        const category = root.querySelector('[data-action="region-category"]');
+        category.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        textarea.blur(); category.focus();
+        expect(events.shouldDeferRender(models)).toBe(true);
+        category.blur(); await tick();
+        expect(events.shouldDeferRender(models)).toBe(false);
+        expect(root.querySelector('[data-action="select-region"][data-id="1"]').textContent).toBe('Saved without changing category');
+        expect(app.store.getState().regions.byId[1].note).toBe('Saved without changing category');
+    });
+
+    it.each(['region', 'summary', 'colour'])('preserves the first %s click after leaving a protected form control', async kind => {
+        app.store.dispatch(app.actions.regionsAdded([{ id: 2, positionId: 'P1', start: 3000, end: 4000 }]));
+        app.store.dispatch(app.actions.regionSelect(1));
+        setupDom(); await tick();
+        const textarea = root.querySelector('textarea[data-action="region-note"]');
+        textarea.focus(); textarea.value = `Saved before ${kind}`;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        const form = root.querySelector(`[data-key="${kind === 'colour' ? 'region-color:1' : 'region-category:1'}"]`);
+        form.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        textarea.blur(); form.focus();
+        const target = kind === 'summary'
+            ? root.querySelector('details[data-key="region-secondary"] > summary')
+            : root.querySelector('[data-action="select-region"][data-id="2"]');
+        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+        if (kind === 'colour') {
+            form.value = '#123456'; form.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        form.blur(); target.focus(); await tick();
+        expect(target.isConnected).toBe(true);
+        target.click(); await tick();
+        expect(events.shouldDeferRender(models)).toBe(false);
+        expect(app.store.getState().regions.byId[1].note).toBe(`Saved before ${kind}`);
+        if (kind === 'summary') expect(root.querySelector('details[data-key="region-secondary"]').open).toBe(true);
+        else expect(app.store.getState().regions.selectedId).toBe(2);
+        if (kind === 'colour') expect(app.store.getState().regions.byId[1].color).toBe('#123456');
+    });
+
+    it('releases an abandoned pointer-click guard without losing the saved note', async () => {
+        setupDom(); await tick();
+        const textarea = root.querySelector('textarea[data-action="region-note"]');
+        textarea.focus(); textarea.value = 'Saved before cancelled pointer';
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        const category = root.querySelector('[data-action="region-category"]');
+        category.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        textarea.blur(); category.focus();
+        const summary = root.querySelector('details[data-key="region-secondary"] > summary');
+        summary.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+        category.blur(); await tick();
+        expect(events.shouldDeferRender(models)).toBe(true);
+        window.dispatchEvent(new Event('pointercancel')); await tick();
+        expect(events.shouldDeferRender(models)).toBe(false);
+        expect(root.querySelector('[data-action="select-region"][data-id="1"]').textContent).toBe('Saved before cancelled pointer');
+    });
+
     it('requires the explicit second action before clearing marker snapshots', () => {
         app.store.dispatch(app.actions.markerAdd(1500, { note: 'Saved', metrics: { broadband: [] } }));
         const dispatch = (command, payload) => app.store.dispatch(feature.thunks.panelCommandIntent(command, payload));

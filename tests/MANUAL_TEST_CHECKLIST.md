@@ -289,6 +289,9 @@
 ### 4.5 Region Notes 🟢
 - [ ] **Action:** Edit the selected region's Notes, then leave the field or press Ctrl+Enter
 - [ ] **Expected:** The note saves and persists after selecting another region and returning
+- [ ] **Test:** With a dirty note, click Category and choose with the keyboard, then repeat with Colour override and type a colour: each control works on the first click and the note saves
+- [ ] **Test:** Click Category after editing a note, dismiss it without changing the category, then click outside: the saved note appears in the list without leaving rendering paused
+- [ ] **Test:** Repeat that unchanged-category flow but click another region or Actions and settings: the first click selects/opens it; repeat after typing a colour override and verify both the colour save and selection complete
 - [ ] **Action:** Edit a draft, then press Esc
 - [ ] **Expected:** The draft cancels and the saved note returns
 - [ ] **Test:** While a draft has focus, change an unrelated annotation field

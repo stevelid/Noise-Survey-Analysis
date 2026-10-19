@@ -387,7 +387,7 @@ This pattern keeps the code organized, predictable, and easier to debug and exte
 
 ## Testing Notes
 
-- Run Node-based tests from a local non-synced clone such as `C:\Dev\Noise Survey Analysis`; Vitest output is unreliable from the Google Drive worktree.
+- Edit and commit in the Drive repository. Run `./scripts/run_checkpoint_tests.ps1 -Stage <checkpoint>` to create a fresh throwaway local snapshot and run Vitest, Python and Playwright there; Drive can produce unreliable test output. The runner excludes `.git` and `node_modules`, checks source hashes, and copies reports back to `docs/evaluation/`. Do not edit or commit in the local snapshot.
 - `tests/data-processors-python-chain.test.js` is the seam test for spectrogram streaming. It generates a real Python reservoir payload with `tests/helpers/generate_spectrogram_chain_fixture.py` and feeds that payload into the JS selector logic.
 - The chain test covers the edge cases that previously needed slow browser smoke tests: viewport inside the reservoir but outside the initial display chunk, near-edge pans that should still show log data, partial-overlap fallback, and oversized viewport fallback.
 

@@ -296,14 +296,29 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             </div>`;
     }
 
+    // Retain only the latest paint while a native form interaction owns the
+    // existing DOM. The event lifecycle can flush it without reading the store.
+    const deferredRenders = new WeakMap();
+    function flushDeferredRender(models) {
+        const pending = models?.htmlSidePanel && deferredRenders.get(models.htmlSidePanel);
+        if (pending) render(pending.state, pending.models, pending.cache);
+    }
+    function discardDeferredRender(models) {
+        if (models?.htmlSidePanel) deferredRenders.delete(models.htmlSidePanel);
+    }
     function render(state, models, cache) {
         const model = models?.htmlSidePanel;
         if (!model) return;
+        if (app.services.htmlPanelEvents?.shouldDeferRender(models)) {
+            deferredRenders.set(model, { state, models, cache });
+            return;
+        }
+        deferredRenders.delete(model);
         const html = buildHtml(state, models, cache);
         if (model.text === html) return;
         app.services.htmlPanelEvents?.capture(models);
         model.text = html;
     }
     app.services = app.services || {};
-    app.services.htmlPanelRenderer = { render, buildHtml, escapeHtml: e };
+    app.services.htmlPanelRenderer = { render, flushDeferredRender, discardDeferredRender, buildHtml, escapeHtml: e };
 })(window.NoiseSurveyApp);
