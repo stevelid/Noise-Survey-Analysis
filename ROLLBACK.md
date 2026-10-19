@@ -11,6 +11,7 @@ All checkpoints are on the existing branch. Never force-push or move these tags.
 | `stage-3-drawing` | Present/absent/ghost overlays, ghost setting, click cycle and number shortcuts. |
 | `stage-4-html-side-panel` | HTML panel, independent sticky scrolling, single browser metrics and sectioned quick CSV. |
 | `stage-5-sectioned-export` | Bounded full-source exporter, section reader, server/CLI/Windows entry points and metric fallbacks. |
+| `stage-5-export-evaluation` | Stage-5 evaluation documentation follow-up; same application code as the preceding tag. |
 | `stage-6-clean-up` | Retire redundant controls and update guides (pending). |
 | `stage-7-html-shell` / `stage-7-html-shell-reverted` | Evaluated page-shell outcome (pending). |
 
