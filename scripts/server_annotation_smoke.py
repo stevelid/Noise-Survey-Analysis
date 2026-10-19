@@ -20,6 +20,7 @@ from playwright.sync_api import sync_playwright
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--require-shell", action="store_true", help="Require the Stage-7 HTML grid in the production response")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     if root.drive.upper() == "G:":
@@ -70,6 +71,13 @@ def main() -> None:
             page.wait_for_function("() => !!window.NoiseSurveyApp?.registry?.models?.htmlSidePanel", timeout=90000)
             page.wait_for_function("() => window.NoiseSurveyApp.store.getState().view.viewport.min > 1e12", timeout=30000)
             report["startup_ms"] = (time.perf_counter() - started) * 1000
+            report["shell_required"] = args.require_shell
+            shell = page.locator('.nsa-page-shell')
+            report["shell_present"] = shell.count() > 0
+            if args.require_shell:
+                page.screenshot(path=str(output / "server-shell-check.png"))
+                assert report["shell_present"], "Production response has no HTML grid shell; setting doc.template after WebSocket startup is too late"
+                assert shell.evaluate("element => getComputedStyle(element).display") == "grid"
             page.evaluate("""() => {
                 const app=window.NoiseSurveyApp, start=app.store.getState().view.viewport.min;
                 app.store.dispatch(app.actions.regionsAdded([{id:1,positionId:'P1',start:start+300000,end:start+310000,note:'Server smoke'}]));

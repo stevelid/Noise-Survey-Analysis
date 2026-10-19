@@ -1048,3 +1048,10 @@ _____________________________________________
 - [ ] No copy-to-meter selector or Add Marker at Tap button remains. Shift+drag, R twice, M and double-click still provide the quick annotation routes.
 - [ ] Collapsed Annotation visibility settings hide region bands, marker lines and classification bands independently; annotations remain in their lists and reappear when enabled.
 
+
+### Stage 7 experimental page shell (prototype only)
+
+- [ ] Open standalone HTML and a fresh production server session: controls, navigator, charts, annotations, frequency view and summary appear once inside the HTML grid.
+- [ ] Resize between wide and narrow windows; check chart sizing, sidebar placement and toolbar clearance. Repeat selection, note saving, Tab focus and panel scrolling.
+- [ ] Start the server without a config, use the source selector, then confirm the grid appears after the dashboard is built over WebSocket.
+- [ ] Compare layout/screenshots and timings with Stage 6; reject/revert the prototype if either run mode or the acceptance criteria fail.

@@ -1,6 +1,6 @@
 import logging
 from bokeh.plotting import curdoc
-from bokeh.layouts import column, row, LayoutDOM # Ensure column is imported
+from bokeh.layouts import column, LayoutDOM # Ensure column is imported
 from bokeh.models import Div, ColumnDataSource, CustomJS, Button, Range1d # Import for assertions and error messages
 from bokeh.models import Panel
 import pandas as pd
@@ -20,6 +20,7 @@ project_root = current_file.parent.parent  # Go up to "Noise Survey Analysis"
 sys.path.insert(0, str(project_root))
 
 from noise_survey_analysis.ui.theme import apply_theme
+from noise_survey_analysis.ui.html_shell import attach_html_shell
 from noise_survey_analysis.ui.component_parts.html_side_panel import HtmlSidePanelComponent
 from noise_survey_analysis.ui.components import (
     TimeSeriesComponent,
@@ -604,35 +605,20 @@ class DashBuilder:
             layout.styles = {**layout.styles, 'overflow': 'visible', 'min-width': '0'}
         self.shared_components['side_panel_container'] = side_panel_container
 
-        chart_content_row = row(
-            charts_stack_layout,
-            side_panel_container,
-            name="chart_content_row",
-            spacing=12,
-            styles={
-                "align-items": "flex-start",
-            }
-        )
-        chart_content_row.sizing_mode = 'stretch_width'
-        chart_content_row.styles = {**chart_content_row.styles, 'overflow': 'visible', 'min-width': '0'}
-
-        main_layout = column(
+        # Only the page-level row/column move into HTML. Bokeh retains each
+        # chart stack, the sidebar host and their existing names/callbacks.
+        page_roots = [
             controls_layout,
             range_selector_layout,
-            chart_content_row,
+            charts_stack_layout,
+            side_panel_container,
             freq_bar_layout,
             comparison_frequency_layout,
             self.shared_components['summary_table'].layout(),
             self.js_init_trigger,
-            name="main_layout",
-        )
-
-        final_layout = main_layout
-        main_layout.sizing_mode = 'stretch_width'
-        main_layout.styles = {'overflow': 'visible', 'min-width': '0'}
-
-        apply_theme(final_layout)
-        doc.add_root(final_layout)
+        ]
+        apply_theme(*page_roots)
+        attach_html_shell(doc, page_roots)
         doc.title = "Noise Survey Analysis Dashboard"
 
     def _load_all_js_files(self):
