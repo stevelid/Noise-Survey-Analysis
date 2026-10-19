@@ -336,6 +336,10 @@ class SessionBridge:
             timeout=timeout,
         )
 
+    def export_annotations(self, payload: dict | None = None, request_id: str = "") -> ControlResult:
+        """Ask the frontend for its current workspace, then queue a Python export."""
+        return self._send_js_command("export_annotations", payload or {}, request_id=request_id, timeout=10)
+
     def export_static_html(self, request_id: str = "") -> ControlResult:
         """Trigger a static HTML export through the session action source."""
         with self._lock:

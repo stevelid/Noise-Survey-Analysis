@@ -249,6 +249,15 @@ def build_parser() -> argparse.ArgumentParser:
     # export-static-html
     sub.add_parser("export-static-html", help="Trigger static HTML export")
 
+    annotations = sub.add_parser("export-annotations", help="Queue a full-resolution annotation CSV export")
+    annotations.add_argument("--output", required=True, help="Destination CSV path on the server")
+    annotations.add_argument("--include-all-resolutions", action="store_true",
+                             help="Include overview rows in addition to full-resolution log rows")
+    annotations.add_argument("--background-window-s", type=float, default=300,
+                             help="Context duration before and after each area (seconds; default 300)")
+    annotations.add_argument("--min-context-s", type=float, default=60,
+                             help="Minimum usable pooled context (seconds; default 60)")
+
     # fit-full-range
     sub.add_parser("fit-full-range", help="Reset the viewport to the full data range")
 
@@ -266,6 +275,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _cmd_export_annotations(args: argparse.Namespace, port: int, token: str) -> int:
+    result = _post(port, token, {
+        "command": "export_annotations", "request_id": "cli-export-annotations",
+        "payload": {"output_path": os.path.abspath(args.output),
+                    "include_all_resolutions": args.include_all_resolutions,
+                    "background_window_s": args.background_window_s,
+                    "min_context_s": args.min_context_s},
+    })
+    _print_result(result)
+    return 0 if result.get("success") else 1
+
+
 _HANDLERS = {
     "status": _cmd_status,
     "set-viewport": _cmd_set_viewport,
@@ -273,6 +294,7 @@ _HANDLERS = {
     "set-view": _cmd_set_view,
     "apply-workspace": _cmd_apply_workspace,
     "export-static-html": _cmd_export_static,
+    "export-annotations": _cmd_export_annotations,
     "fit-full-range": _cmd_fit_full_range,
     "center-on": _cmd_center_on,
 }

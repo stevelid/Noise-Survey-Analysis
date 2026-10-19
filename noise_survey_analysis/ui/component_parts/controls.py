@@ -29,7 +29,6 @@ class ControlsComponent:
         self.session_menu = self.add_session_menu()
         self.view_toggle = self.add_view_type_selector()
         self.hover_toggle = self.add_hover_toggle()
-        self.clear_markers_button = self.add_clear_markers_button()
         self.param_select = self.add_parameter_selector(available_params)
         self.global_audio_controls = self.add_global_audio_controls()
         self.log_threshold_spinner = self.add_log_threshold_spinner()
@@ -71,22 +70,6 @@ class ControlsComponent:
             }"""))
         return toggle
     
-    def add_clear_markers_button(self):
-        button = Button(
-            label="Clear All Markers", 
-            button_type="warning", 
-            width=140,
-            height=30,
-            name="clear_markers_button"
-        )
-        
-        button.js_on_event("button_click", CustomJS(code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.clearAllMarkers) {
-                window.NoiseSurveyApp.eventHandlers.clearAllMarkers();
-            } else {
-                console.error('window.NoiseSurveyApp.eventHandlers.clearAllMarkers function not found!');
-            }"""))
-        return button
-
     def add_global_audio_controls(self):
         """Creates global audio playback controls that work with the active position."""
         # Play/Pause Toggle Button
@@ -355,7 +338,6 @@ class ControlsComponent:
             self.view_toggle,
             self.log_threshold_spinner,
             self.hover_toggle,
-            self.clear_markers_button,
             self.status_chips['layout'],
             name="view_controls_group",
             styles={
@@ -423,6 +405,11 @@ class ControlsComponent:
                 ("Generate Static HTML (Offline)", "generate_static_html"),
             ],
         )
+
+        if self.server_mode:
+            menu = list(dropdown.menu)
+            menu.insert(4, ("Export Annotations — Full Resolution", "export_annotations_full_resolution"))
+            dropdown.menu = menu
 
         dropdown.js_on_event("menu_item_click", CustomJS(code="""
             const action = cb_obj?.item;

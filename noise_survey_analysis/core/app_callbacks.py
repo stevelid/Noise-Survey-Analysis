@@ -4,6 +4,7 @@ import logging
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, wait as futures_wait
+from copy import deepcopy
 from bokeh.plotting import curdoc
 from bokeh.models import ColumnDataSource, Button, Select, Div, CustomJS
 from datetime import datetime, timedelta, timezone
@@ -70,6 +71,7 @@ class AppCallbacks:
         self._streaming_timeout_id = None
         self._pending_stream_range = None
         self._static_export_in_progress = False
+        self._annotation_export_in_progress = False
         # Single worker so audio commands stay ordered relative to each other while
         # staying off the document's IOLoop.
         self._audio_command_executor = ThreadPoolExecutor(
@@ -233,6 +235,11 @@ class AppCallbacks:
 
         logger.info(f"Received session action command: {command} (request_id={request_id})")
 
+        if command == 'export_annotations':
+            self._handle_annotation_export(payload, request_id)
+            self._clear_session_action_command()
+            return
+
         if command == 'save_setup_to_config':
             # Cheap and synchronous -- a small JSON rewrite, no need to thread it.
             if not callable(self.save_setup_request_handler):
@@ -335,6 +342,39 @@ class AppCallbacks:
                 self._static_export_in_progress = False
 
         threading.Thread(target=run_export, daemon=True).start()
+
+    def _handle_annotation_export(self, payload, request_id):
+        if self._annotation_export_in_progress:
+            self._publish_session_status('warning', 'An annotation export is already running.',
+                                         done=True, request_id=request_id)
+            return
+        # The worker owns a stable lightweight snapshot, even if another session
+        # action arrives before it begins reading the queued request.
+        payload = deepcopy(payload)
+        self._annotation_export_in_progress = True
+        self._publish_session_status('info', 'Exporting full-resolution source windows…',
+                                     done=False, request_id=request_id)
+
+        def run_export():
+            try:
+                from .annotation_export_service import export_workspace_request
+                result = export_workspace_request(payload)
+                self._publish_session_status('info', result['message'], done=True,
+                                             output_path=result['output_path'], request_id=request_id)
+            except Exception as error:
+                logger.exception('Full-resolution annotation export failed')
+                self._publish_session_status('error', f'Annotation export failed: {error}',
+                                             done=True, request_id=request_id)
+            finally:
+                self._annotation_export_in_progress = False
+
+        try:
+            threading.Thread(target=run_export, name='nsa-annotation-export', daemon=True).start()
+        except Exception as error:
+            self._annotation_export_in_progress = False
+            logger.exception('Could not start annotation export worker')
+            self._publish_session_status('error', f'Could not start annotation export: {error}',
+                                         done=True, request_id=request_id)
 
     def _periodic_update_audio_status(self):
         """Periodically updates the audio status source with current playback information."""

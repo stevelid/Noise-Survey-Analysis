@@ -205,6 +205,9 @@ def _dispatch(
         if command == "export_static_html":
             return bridge.export_static_html(request_id=request_id)
 
+        if command == "export_annotations":
+            return bridge.export_annotations(payload=payload, request_id=request_id)
+
         return ControlResult.error(
             f"command {command!r} is not yet implemented", request_id=request_id
         )

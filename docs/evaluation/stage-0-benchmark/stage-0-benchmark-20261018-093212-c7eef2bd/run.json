@@ -1,0 +1,26 @@
+{
+  "stage": "stage-0-benchmark",
+  "run": "stage-0-benchmark-20261018-093212-c7eef2bd",
+  "startedUtc": "2026-10-18T08:32:15.4346322Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-benchmark-20261018-093212-c7eef2bd\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-benchmark-20261018-093212-c7eef2bd\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-0-benchmark\\stage-0-benchmark-20261018-093212-c7eef2bd",
+  "head": "66bd8dfa4a624c7dc4f0c7c93a8dcc72325f6dbd",
+  "sourceStatus": [
+    "?? EVALUATION.md",
+    "?? ROLLBACK.md",
+    "?? scripts/annotation_benchmark.py",
+    "?? scripts/run_checkpoint_tests.ps1"
+  ],
+  "sourceFileCount": 221,
+  "results": {},
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {},
+  "finishedUtc": "2026-10-18T08:32:22.0242475Z"
+}

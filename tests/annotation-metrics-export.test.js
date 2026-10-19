@@ -17,6 +17,39 @@ describe('shared authoritative metric contract', () => {
         expect(result.percentileMethod).toContain('indicative');
     });
 
+    it('retains genuine maxima and percentile-only data when LAeq is unavailable', () => {
+        const entity = { positionId: 'P1', areas: [{ start: 0, end: 2000 }] };
+        const models = { timeSeriesSources: { P1: { log: { data: { Datetime: [0, 1000], LAFmax: [75, 80] } } } } };
+        const maximum = engine.computeRegion(entity, {}, models);
+        expect(maximum.dataResolution).toBe('log');
+        expect(maximum.laeq).toBeNull();
+        expect(maximum.lafmax).toBe(80);
+        expect(maximum.lafmaxAvailable).toBe(true);
+        expect(maximum.missingReasons.join('; ')).toContain('LAeq column unavailable');
+        models.timeSeriesSources.P1.log.data = { Datetime: [0, 1000], LAF: [40, 50] };
+        const percentile = engine.computeRegion(entity, {}, models);
+        expect(percentile.dataResolution).toBe('log');
+        expect(percentile.laeq).toBeNull();
+        expect(percentile.la90).toBe(40);
+    });
+
+    it('keeps usable partial log broadband and spectra when no overview is available', () => {
+        const entity = { positionId: 'P1', areas: [{ start: 0, end: 4000 }] };
+        const models = { timeSeriesSources: { P1: { log: { data: { Datetime: [0, 1000], LAeq: [60, 70] } } } },
+            preparedGlyphData: { P1: { log: { prepared_params: { LZeq: {
+                times_ms: [0, 1000], n_times: 2, time_step: 1000, frequency_labels: ['63 Hz'], levels_flat_transposed: [60, 70]
+            } } } } } };
+        const result = engine.computeRegion(entity, {}, models);
+        expect(result.dataResolution).toBe('log');
+        expect(result.coverage).toBe(0.5);
+        expect(result.laeq).toBeCloseTo(67.4036268949, 6);
+        expect(result.missingReasons.join('; ')).toContain('incomplete timestamp coverage');
+        expect(result.spectra.LZeq.source).toBe('log');
+        expect(result.spectra.LZeq.coverage).toBe(0.5);
+        expect(result.spectra.LZeq.values[0]).toBeCloseTo(67.4036268949, 6);
+        expect(result.spectra.LZeq.missingReasons.join('; ')).toContain('incomplete timestamp coverage');
+    });
+
     it('agrees with Python within 0.05 dB for partial samples, areas, offsets and pooled context', () => {
         const data = { Datetime: [-3000, -2000, -1000, 0, 1000, 2000, 3000, 4000],
             LAeq: [40, 41, 42, 60, 70, 45, 46, 47], LAF: [35, 36, 37, 55, 65, 40, 41, 42],
@@ -137,9 +170,38 @@ describe('sectioned analysis CSV', () => {
         expect(spectral.map(row => row.data_resolution)).toEqual(['log', 'overview']);
         expect(Number(spectral[0]['63Hz'])).toBeCloseTo(67.4036268949, 6);
     });
+
+    it('labels both requested OVERALL resolutions even for a spectral-only meter', () => {
+        const entity = { id: 1, positionId: 'P1', areas: [{ start: 0, end: 2000 }] };
+        const prepared = { times_ms: [0, 1000], n_times: 2, time_step: 1000,
+            frequency_labels: ['63 Hz'], levels_flat_transposed: [60, 70] };
+        const models = { preparedGlyphData: { P1: { log: { prepared_params: { LZeq: prepared } },
+            overview: { prepared_params: { LZeq: prepared } } } } };
+        const csv = app.annotationCsv.buildAnnotationsCsv([], [entity], {}, { models, include_all_resolutions: true });
+        const rows = app.annotationCsv.readSection(app.annotationCsv.parseCsvRows(csv), 'OVERALL');
+        expect(rows.map(row => row.data_resolution)).toEqual(['log', 'overview']);
+        rows.forEach(row => {
+            expect(row.LAeq_dB).toBe('');
+            expect(row.LAFmax_dB).toBe('');
+            expect(row.missing_reasons).toContain('LAeq column unavailable');
+        });
+    });
 });
 
 describe('bounded geometry-sensitive metric cache', () => {
+    it('distinguishes explicit native sample periods from inferred cadence', () => {
+        app.regions.invalidateMetricsCache();
+        const region = { id: 1, positionId: 'P1', areas: [{ start: 0, end: 2000 }] };
+        const models = { timeSeriesSources: { P1: { log: { data: {
+            Datetime: [0, 100, 200, 1000, 1100, 1200], LAeq: [60, null, null, 70, null, null]
+        } } } } };
+        const inferred = app.regions.getRegionMetrics(region, {}, {}, models, { resolution: 'log' });
+        const explicit = app.regions.getRegionMetrics(region, {}, {}, models,
+            { resolution: 'log', columnSampleIntervalsS: { LAeq: 1 } });
+        expect(inferred.coverage).toBeCloseTo(.1);
+        expect(explicit.coverage).toBe(1);
+        expect(explicit).not.toBe(inferred);
+    });
     it('reuses notes/colours/categories and invalidates only changed background geometry/presence', () => {
         const utils = app.regions;
         utils.invalidateMetricsCache();

@@ -1,0 +1,36 @@
+{
+  "local_copy_path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-20261018-213138-12880e43\\repo",
+  "exporter_path": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-20261018-213138-12880e43\\repo\\noise_survey_analysis\\export\\annotations.py",
+  "exporter_sha256": "658ee6cd5df7773c94e5ef2ba654987e006ffb9e3a2b5e0e640f121bcaba85d9",
+  "fixture": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-0-benchmark-20261018-093212-c7eef2bd\\benchmark-output\\survey",
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]",
+  "notes": [
+    "Source CSV generation excluded from export timing.",
+    "All regions present at all four meters; original origins and multi-area geometry retained.",
+    "RSS is sampled for this Python process every second; it can miss shorter peaks.",
+    "Generation arrays are released before export; allocator-retained pages can remain in baseline RSS."
+  ],
+  "generation_seconds": 48.505315400019754,
+  "source_csv_bytes": 282010900,
+  "samples_per_meter": 259200,
+  "meters": 4,
+  "spectral_bands": 31,
+  "generation_rounding_decimals": 3,
+  "export_seconds": 355.38575280003715,
+  "rss": {
+    "available": true,
+    "sample_interval_s": 1.0,
+    "baseline_bytes": 101879808,
+    "peak_bytes": 591024128,
+    "samples": 354,
+    "peak_increase_bytes": 489144320
+  },
+  "output_csv": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-20261018-213138-12880e43\\full-export-benchmark\\annotations.full-resolution.csv",
+  "output_bytes": 704361,
+  "row_counts": {
+    "REGIONS": 300,
+    "OVERALL": 1200,
+    "SPECTRAL": 1200
+  },
+  "verified": true
+}

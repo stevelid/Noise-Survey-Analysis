@@ -189,7 +189,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             backgroundGeometrySignature(state, meter), state?.regions?.metricsRevision || 0];
         const background = [options.backgroundWindowS ?? state?.annotationPanel?.backgroundWindowS ?? 300,
             options.minContextS ?? state?.annotationPanel?.minContextS ?? 60];
-        const cacheKey = `${regionId}_${JSON.stringify([meter, parameter, offsetMs, resolution, getRegionAreas(region), revision, background])}`;
+        const cadence = [options.sampleIntervalS ?? null, options.columnSampleIntervalsS ?? null];
+        const cacheKey = `${regionId}_${JSON.stringify([meter, parameter, offsetMs, resolution, getRegionAreas(region), revision, background, cadence])}`;
 
         if (!options?.force && _metricsCache.has(cacheKey)) {
             return _metricsCache.get(cacheKey);

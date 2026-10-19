@@ -1,0 +1,90 @@
+{
+  "stage": "stage-5-final",
+  "run": "stage-5-final-20261018-213634-5f791d1d",
+  "startedUtc": "2026-10-18T20:36:38.6385395Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-final-20261018-213634-5f791d1d\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-final-20261018-213634-5f791d1d\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-5-final\\stage-5-final-20261018-213634-5f791d1d",
+  "head": "2e0f60b866315449503a075978875c5f7fe1f906",
+  "sourceStatus": [
+    " M README.md",
+    " M USER_GUIDE.txt",
+    " M noise_survey_analysis/control/commands.py",
+    " M noise_survey_analysis/control/control_server.py",
+    " M noise_survey_analysis/control/session_bridge.py",
+    " M noise_survey_analysis/control/validation.py",
+    " M noise_survey_analysis/control_cli.py",
+    " M noise_survey_analysis/core/app_callbacks.py",
+    " M noise_survey_analysis/core/app_setup.py",
+    " M noise_survey_analysis/export/static_export.py",
+    " M noise_survey_analysis/main.py",
+    " M noise_survey_analysis/static/js/features/annotations/panelThunks.js",
+    " M noise_survey_analysis/static/js/features/regions/annotationMetrics.js",
+    " M noise_survey_analysis/static/js/services/panels/htmlPanelRenderer.js",
+    " M noise_survey_analysis/ui/component_parts/controls.py",
+    " M noise_survey_analysis/ui/components.py",
+    " M noise_survey_analysis/visualization/dashBuilder.py",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    " M tests/annotation-metrics-export.test.js",
+    " M tests/html-panel.test.js",
+    "?? deploy/share/export_annotations.bat",
+    "?? deploy/share/export_annotations.ps1",
+    "?? docs/evaluation/stage-0-benchmark/",
+    "?? docs/evaluation/stage-5-engine-check/",
+    "?? docs/evaluation/stage-5/",
+    "?? export_annotations.bat",
+    "?? noise_survey_analysis/core/annotation_export_service.py",
+    "?? noise_survey_analysis/core/annotation_windows.py",
+    "?? noise_survey_analysis/export/annotations.py",
+    "?? scripts/full_export_benchmark.py",
+    "?? scripts/server_annotation_smoke.py",
+    "?? tests/test_annotation_export.py",
+    "?? tests/test_annotation_export_integration.py",
+    "?? tests/test_html_dashboard_models.py"
+  ],
+  "sourceFileCount": 270,
+  "results": {
+    "npm-ci": {
+      "command": [
+        "npm.cmd",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 4.184
+    },
+    "vitest": {
+      "command": [
+        "npm.cmd",
+        "test",
+        "--",
+        "--run",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-final-20261018-213634-5f791d1d\\evidence\\vitest.json"
+      ],
+      "exitCode": 0,
+      "durationSeconds": 6.399
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "vitest": {
+      "total": 494,
+      "failed": 0,
+      "passed": 491,
+      "skipped": 3,
+      "pending": 0
+    }
+  },
+  "finishedUtc": "2026-10-18T20:36:56.2100798Z",
+  "failedSteps": [],
+  "suitesPassed": true
+}

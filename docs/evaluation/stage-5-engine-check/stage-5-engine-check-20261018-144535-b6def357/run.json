@@ -1,0 +1,76 @@
+{
+  "stage": "stage-5-engine-check",
+  "run": "stage-5-engine-check-20261018-144535-b6def357",
+  "startedUtc": "2026-10-18T13:45:39.4846819Z",
+  "originalRepository": "G:\\My Drive\\Programing\\Noise Survey Analysis",
+  "localCopy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-engine-check-20261018-144535-b6def357\\repo",
+  "localEvidence": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-engine-check-20261018-144535-b6def357\\evidence",
+  "evidenceDestination": "G:\\My Drive\\Programing\\Noise Survey Analysis\\docs\\evaluation\\stage-5-engine-check\\stage-5-engine-check-20261018-144535-b6def357",
+  "head": "4dc7860df759d15f0ca69a609a58f43e00d2c79d",
+  "sourceStatus": [
+    " M noise_survey_analysis/main.py",
+    " M noise_survey_analysis/static/js/core/actions.js",
+    " M noise_survey_analysis/static/js/core/history.js",
+    " M noise_survey_analysis/static/js/core/rootReducer.js",
+    " M noise_survey_analysis/static/js/features/classifications/classificationThunks.js",
+    " M noise_survey_analysis/static/js/features/regions/regionReducer.js",
+    " M noise_survey_analysis/static/js/features/regions/regionSelectors.js",
+    " M noise_survey_analysis/static/js/features/regions/regionThunks.js",
+    " M noise_survey_analysis/static/js/features/regions/regionUtils.js",
+    " M noise_survey_analysis/static/js/services/session/sessionManager.js",
+    " M noise_survey_analysis/visualization/dashBuilder.py",
+    " M scripts/run_checkpoint_tests.ps1",
+    " M tests/MANUAL_TEST_CHECKLIST.md",
+    " M tests/copy-region-position.test.js",
+    " M tests/loadCoreModules.js",
+    " M tests/regions.test.js",
+    " M tests/sessionManager-extra.test.js",
+    " M tests/thunks.test.js",
+    "?? docs/evaluation/stage-0-benchmark/",
+    "?? docs/evaluation/stage-1/benchmark/",
+    "?? docs/evaluation/stage-2/",
+    "?? noise_survey_analysis/core/annotation_metrics.py",
+    "?? noise_survey_analysis/core/annotation_windows.py",
+    "?? noise_survey_analysis/core/annotation_workspace.py",
+    "?? noise_survey_analysis/export/annotations.py",
+    "?? noise_survey_analysis/static/js/features/regions/annotationModel.js",
+    "?? noise_survey_analysis/static/js/services/session/workspaceMigration.js",
+    "?? tests/annotation-model.test.js",
+    "?? tests/test_annotation_export.py",
+    "?? tests/test_annotation_workspace.py",
+    "?? tests/workspace-v2.test.js"
+  ],
+  "sourceFileCount": 249,
+  "results": {
+    "pytest": {
+      "command": [
+        "C:\\Users\\steve\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "pytest",
+        "tests/test_annotation_export.py",
+        "--junitxml=C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-5-engine-check-20261018-144535-b6def357\\evidence\\pytest.xml"
+      ],
+      "exitCode": 1,
+      "durationSeconds": 14.177
+    }
+  },
+  "copyExitCode": 1,
+  "sourceStableDuringCopy": true,
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]\nbokeh=3.4.1\npytest=7.4.0",
+  "node": "v24.13.1",
+  "npm": "11.8.0",
+  "copiedSourceUnchanged": true,
+  "counts": {
+    "pytest": {
+      "failures": "1",
+      "total": "15",
+      "skipped": "0",
+      "errors": "0"
+    }
+  },
+  "finishedUtc": "2026-10-18T13:46:01.0692328Z",
+  "failedSteps": [
+    "pytest"
+  ],
+  "suitesPassed": false
+}

@@ -14,6 +14,7 @@ ALLOWED_COMMANDS: frozenset[str] = frozenset({
     "set_view_mode",
     "apply_workspace",
     "export_static_html",
+    "export_annotations",
 })
 
 # Valid view mode values.

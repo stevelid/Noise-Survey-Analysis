@@ -249,19 +249,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const context = contextAreas(region, regions, meter, backgroundWindow);
         const requested = options.resolution || 'auto';
         const candidates = requested === 'auto' ? ['log', 'overview'] : [requested];
-        let chosen = null, metrics = null;
+        let metrics = null, partialLog = null;
         for (const resolution of candidates) {
             const data = models?.timeSeriesSources?.[meter]?.[resolution]?.data;
             if (!data?.Datetime?.length) continue;
             const value = computeSamples(data, areas, { resolution, chartOffsetMs: offset, contextAreas: context,
                 minContextS: options.minContextS ?? state?.annotationPanel?.minContextS ?? DEFAULT_MIN_CONTEXT_S,
                 sampleIntervalS: options.sampleIntervalS, columnSampleIntervalsS: options.columnSampleIntervalsS });
-            if (value.laeq === null) continue;
-            // A streamed fragment is never accepted as a complete auto selection.
-            if (requested === 'auto' && resolution === 'log' && value.coverage < 1 - COVERAGE_TOLERANCE) continue;
-            chosen = resolution; metrics = value; break;
+            const usable = value.laeq !== null || value.lafmax !== null || value.la90 !== null;
+            if (requested !== 'auto') { metrics = value; break; }
+            if (!usable) continue;
+            // Prefer complete log, then overview. Retain usable partial log or
+            // maximum/percentile-only data as an explicitly labelled last resort.
+            if (resolution === 'log' && (value.laeq === null || value.coverage < 1 - COVERAGE_TOLERANCE)) {
+                partialLog = value;
+                continue;
+            }
+            metrics = value; break;
         }
-        if (!metrics) metrics = computeSamples({}, areas, { resolution: 'none', chartOffsetMs: offset });
+        metrics ||= partialLog;
+        if (!metrics) metrics = computeSamples({}, areas, { resolution: requested === 'auto' ? 'none' : requested, chartOffsetMs: offset });
         const streamed = streamedSpectrum(models, meter);
         const preparedByResolution = Object.fromEntries(['log', 'overview'].map(resolution => [resolution,
             models?.preparedGlyphData?.[meter]?.[resolution]?.prepared_params || {}]));
@@ -270,21 +277,25 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const requestedParameter = options.parameter || state?.view?.selectedParameter || 'LZeq';
         metrics.spectra = {};
         names.forEach(name => {
-            let selected = null;
+            let selected = null, partialLogSpectrum = null;
             const resolutions = requested === 'auto' ? ['log', 'overview'] : [requested];
             for (const resolution of resolutions) {
                 const candidates = [resolution === 'log' && streamed?.parameter === name ? streamed : null, preparedByResolution[resolution]?.[name]].filter(Boolean);
                 for (const candidate of candidates) {
                     const value = spectrum(candidate, areas, { chartOffsetMs: offset, parameter: name });
                     if (!value.values.some(Number.isFinite)) continue;
-                    if (requested === 'auto' && resolution === 'log' && value.coverage < 1 - COVERAGE_TOLERANCE) continue;
-                    selected = { ...value, source: resolution,
+                    const result = { ...value, source: resolution,
                         missingReasons: value.coverage < 1 - COVERAGE_TOLERANCE ? ['Spectral area has incomplete timestamp coverage'] : [] };
+                    if (requested === 'auto' && resolution === 'log' && value.coverage < 1 - COVERAGE_TOLERANCE) {
+                        if (!partialLogSpectrum || result.coverage > partialLogSpectrum.coverage) partialLogSpectrum = result;
+                        continue;
+                    }
+                    selected = result;
                     break;
                 }
                 if (selected) break;
             }
-            if (selected) metrics.spectra[name] = selected;
+            if (selected || partialLogSpectrum) metrics.spectra[name] = selected || partialLogSpectrum;
         });
         const parameter = metrics.spectra[requestedParameter] ? requestedParameter : (metrics.spectra.LZeq ? 'LZeq' : requestedParameter);
         metrics.spectrum = metrics.spectra[parameter] || { labels: [], values: [], source: null };

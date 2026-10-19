@@ -138,7 +138,10 @@ def validate_command_payload(command: str, payload: dict[str, Any]) -> dict[str,
         allowed = ", ".join(sorted(ALLOWED_COMMANDS))
         raise ValueError(f"unknown command {command!r}; allowed: {allowed}")
 
-    payload = payload or {}
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise ValueError("Command payload must be an object")
 
     if command == "set_viewport":
         start, end = validate_viewport(payload.get("start"), payload.get("end"))
@@ -182,6 +185,28 @@ def validate_command_payload(command: str, payload: dict[str, Any]) -> dict[str,
             validated_payload = validate_workspace_payload(inline)
             return {"payload": validated_payload}
         raise ValueError("apply_workspace requires either 'path' or 'payload'")
+
+    if command == "export_annotations":
+        result = {}
+        output = payload.get("output_path")
+        if output is not None:
+            if not isinstance(output, str) or not output.strip() or "\x00" in output:
+                raise ValueError("output_path must be a non-empty path")
+            result["output_path"] = output
+        include_all = payload.get("include_all_resolutions", False)
+        if not isinstance(include_all, bool):
+            raise ValueError("include_all_resolutions must be a boolean")
+        result["include_all_resolutions"] = include_all
+        for name, default, maximum in (("background_window_s", 300, 86400), ("min_context_s", 60, 172800)):
+            value = payload.get(name, default)
+            try:
+                number = float(value)
+            except (ValueError, TypeError):
+                raise ValueError(f"{name} must be a finite number") from None
+            if isinstance(value, bool) or not math.isfinite(number) or number < 0 or number > maximum or name == "background_window_s" and number == 0:
+                raise ValueError(f"Invalid {name}")
+            result[name] = number
+        return result
 
     # Commands with no required payload: status, fit_full_range, export_static_html
     return {}

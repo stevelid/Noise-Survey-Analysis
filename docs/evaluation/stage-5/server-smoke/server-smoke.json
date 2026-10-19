@@ -1,0 +1,14 @@
+{
+  "local_copy": "C:\\Users\\steve\\AppData\\Local\\Temp\\nsa-annotation-tests\\stage-4-browser-20261018-212455-30d03c35\\repo",
+  "mode": "production bokeh serve",
+  "page_errors": [],
+  "startup_ms": 2937.2326000011526,
+  "export_rows": 4,
+  "meters": [
+    "P1",
+    "P2",
+    "P3",
+    "P4"
+  ],
+  "passed": true
+}
