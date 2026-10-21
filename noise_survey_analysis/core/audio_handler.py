@@ -10,6 +10,7 @@ import time
 import datetime
 import threading
 import re
+import weakref
 from typing import Callable, Optional, List, Tuple
 import logging
 
@@ -39,6 +40,13 @@ import pandas as pd # Make sure pandas is imported
 logger = logging.getLogger(__name__)
 
 from noise_survey_analysis.core import status_console
+
+# Every handler in this server process that still owns a VLC player. All sessions
+# play through the same speakers, and an abandoned session (refreshed or closed tab)
+# lingers until Bokeh's unused-session-lifetime expires - so starting playback in one
+# session pauses every other (see AudioPlaybackHandler._claim_exclusive_playback).
+_live_handlers = weakref.WeakSet()
+_live_handlers_lock = threading.RLock()
 
 class AudioPlaybackHandler:
     """
@@ -89,6 +97,8 @@ class AudioPlaybackHandler:
                 if self.vlc_instance is None or self.player is None:
                     raise RuntimeError("Failed to initialize VLC instance or player.")
                 self.audio_available = True
+                with _live_handlers_lock:
+                    _live_handlers.add(self)
             except Exception as e:
                 logger.error(f"VLC initialization failed: {e}. Audio will be disabled.", exc_info=True)
                 self.vlc_instance = self.player = None
@@ -235,6 +245,8 @@ class AudioPlaybackHandler:
             self._is_playing = False
             return False
 
+        self._claim_exclusive_playback()
+
         # Capture the transport state before any fallback teardown so status
         # reporting can distinguish a seek from a fresh play.
         was_playing = self._is_playing
@@ -341,6 +353,17 @@ class AudioPlaybackHandler:
         return True # Indicate successful initiation
         # --- End of Original Core Play Logic ---
 
+    def _claim_exclusive_playback(self):
+        """Pause every other live handler so only this one is audible."""
+        with _live_handlers_lock:
+            others = [h for h in _live_handlers if h is not self]
+            for other in others:
+                try:
+                    if other.pause():
+                        logger.info("Paused audio from another session so this one can play.")
+                except Exception as e:
+                    logger.warning(f"Could not pause another session's audio: {e}")
+
     def _seek_within_current_media(self, offset_seconds: float) -> bool:
         """
         Move the already-loaded media to ``offset_seconds`` without reloading it.
@@ -406,6 +429,7 @@ class AudioPlaybackHandler:
 
         if not self._is_playing and self.player.get_media():
             if self.player.get_state() == vlc.State.Paused:
+                 self._claim_exclusive_playback()
                  self.player.play()
                  self._is_playing = True
                  logger.info("Playback resumed")
@@ -488,6 +512,10 @@ class AudioPlaybackHandler:
         Should be called when the audio handler is no longer needed.
         """
         logger.info("Releasing VLC resources...")
+        # Deregister first, under the lock, so no other session can pause this player
+        # while it is being freed.
+        with _live_handlers_lock:
+            _live_handlers.discard(self)
         try:
             # Stop any ongoing playback first
             self.stop()

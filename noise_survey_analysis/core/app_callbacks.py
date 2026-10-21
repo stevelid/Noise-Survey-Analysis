@@ -36,6 +36,11 @@ class AppCallbacks:
     # Commands are bounded (VLC settle sleeps plus a 0.5s monitor join), so this is
     # generous; exceeding it means something is wedged and hanging teardown is worse.
     AUDIO_SHUTDOWN_GRACE_SECONDS = 5.0
+    # Status ticks (200ms each) a session may sit with no browser connected before its
+    # audio is paused. A refreshed or closed tab never reconnects to its old session,
+    # and Bokeh only destroys that session after --unused-session-lifetime, so without
+    # this the old player keeps playing for minutes.
+    DISCONNECTED_PAUSE_TICKS = 5
 
     def __init__(
         self,
@@ -82,6 +87,7 @@ class AppCallbacks:
         self._audio_shutdown = False
         self._audio_release_lock = threading.Lock()
         self._audio_released = False
+        self._disconnected_ticks = 0
 
         if not self.audio_handler:
             logger.info("AppCallbacks initialized without audio handler. Audio features disabled.")
@@ -120,13 +126,15 @@ class AppCallbacks:
         # document callbacks on a single IOLoop, so doing that here freezes the whole
         # dashboard - streaming, rendering and status ticks alike - for the duration.
         # Hand it to a single worker so commands still apply in order.
+        self._submit_audio_task(command, self._execute_audio_control_command, command, position_id, value)
+
+    def _submit_audio_task(self, label, fn, *args):
+        """Queue work that touches VLC on the single audio worker, unless shut down."""
         with self._audio_commands_lock:
             if self._audio_shutdown:
-                logger.debug("Ignoring audio control command after shutdown: %s", command)
+                logger.debug("Ignoring audio control command after shutdown: %s", label)
                 return
-            future = self._audio_command_executor.submit(
-                self._execute_audio_control_command, command, position_id, value
-            )
+            future = self._audio_command_executor.submit(fn, *args)
             self._pending_audio_commands.add(future)
         future.add_done_callback(self._forget_audio_command)
 
@@ -381,6 +389,8 @@ class AppCallbacks:
         if not self.audio_handler or not getattr(self.audio_handler, 'audio_available', False):
             return
 
+        self._pause_if_disconnected()
+
         is_playing = self.audio_handler.is_playing()
         current_position_dt = self.audio_handler.get_current_position()
         playback_rate = self.audio_handler.get_playback_rate()
@@ -410,6 +420,25 @@ class AppCallbacks:
             'volume_boost': [(0, boost_active)],
             'current_file_name': [(0, current_file_name)]
         })
+
+    def _browser_connection_count(self):
+        """WebSocket connections to this document's session, or None outside a server."""
+        try:
+            count = self.doc.session_context.session.connection_count
+        except Exception:
+            return None
+        return count if isinstance(count, int) else None
+
+    def _pause_if_disconnected(self):
+        """Pause playback once the session has had no browser for a short grace period."""
+        count = self._browser_connection_count()
+        if count is None or count > 0:
+            self._disconnected_ticks = 0
+            return
+        self._disconnected_ticks += 1
+        if self._disconnected_ticks == self.DISCONNECTED_PAUSE_TICKS and self.audio_handler.is_playing():
+            logger.info("No browser connected to session; pausing audio.")
+            self._submit_audio_task('pause (disconnected)', self.audio_handler.pause)
 
     def _start_periodic_update(self):
         """Starts the periodic callback for audio status updates."""
