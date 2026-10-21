@@ -296,7 +296,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const comparison = state.view?.mode === 'comparison';
         const content = comparison ? comparisonPanel(data, state, models, cache) : tab === 1 ? markerPanel(data, state) : tab === 2 ? classificationPanel(data, state) : regionPanel(data, state, models, cache);
         return `<div class="nsa-annotation-panel" data-nsa-panel="annotations" data-nsa-model="${e(models?.htmlSidePanel?.id || '')}">
-            <nav role="tablist" aria-label="Annotations">${TAB_LABELS.map((label, index) => button('tab', label, `role="tab" data-value="${index}" data-key="tab:${index}" aria-selected="${!comparison && tab === index}"${disabled(comparison)}`)).join('')}</nav>
+            <header class="nsa-panel-header"><nav role="tablist" aria-label="Annotations">${TAB_LABELS.map((label, index) => button('tab', label, `role="tab" data-value="${index}" data-key="tab:${index}" aria-selected="${!comparison && tab === index}"${disabled(comparison)}`)).join('')}</nav>${button('sidebar-toggle', '›', 'class="nsa-panel-collapse" aria-label="Hide annotations panel" title="Hide panel"')}</header>
             <div class="nsa-panel-scroll" data-scroll-key="panel">
             <div role="tabpanel" class="${!comparison && tab === 0 ? 'nsa-region-view' : 'nsa-other-view'}" aria-label="${comparison ? 'Comparison' : TAB_LABELS[tab]}">${content}
             ${displaySettings(state)}</div>

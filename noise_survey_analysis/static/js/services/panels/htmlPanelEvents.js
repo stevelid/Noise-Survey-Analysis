@@ -59,18 +59,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         // on generated model IDs or penetrating unrelated chart shadow roots.
         const panelHost = session.root.host;
         let sidebar = panelHost?.closest('.nsa-annotation-sidebar');
+        let inner = null;
         let toolbar = null;
         for (let scope = session.root; scope; scope = scope.host?.getRootNode()) {
             toolbar = toolbar || scope.querySelector('.nsa-dashboard-controls');
             if (scope.host?.classList.contains('nsa-annotation-sidebar')) sidebar = scope.host;
+            if (scope.host?.classList.contains('nsa-annotation-inner')) inner = scope.host;
         }
         const toolbarBounds = toolbar?.getBoundingClientRect();
         const top = Math.max(12, toolbarBounds?.height > 0 ? toolbarBounds.bottom + 12 : 12);
-        for (const host of [sidebar, panelHost]) {
+        for (const host of [inner]) {
             if (host && host.style.top !== `${top}px`) host.style.top = `${top}px`;
         }
         // The natural chart-row position may still be lower than the toolbar.
-        const height = Math.max(180, window.innerHeight - Math.max(top, scroll.getBoundingClientRect().top) - 12);
+        const chrome = inner ? Math.max(0, scroll.getBoundingClientRect().top - inner.getBoundingClientRect().top) : 0;
+        const height = Math.max(180, window.innerHeight - top - chrome - 12);
         const value = `${Math.floor(height)}px`;
         if (scroll.style.maxHeight !== value) scroll.style.maxHeight = value;
         if (scroll.style.height !== value) scroll.style.height = value;

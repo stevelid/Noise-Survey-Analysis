@@ -178,6 +178,11 @@ class ServerDataHandler:
         if not isinstance(start_ms, Real) or not isinstance(end_ms, Real):
             return
 
+        # Reject transient/non-finite ranges before they can trigger a false
+        # log-loading state. Bokeh updates the endpoints independently.
+        if not math.isfinite(start_ms) or not math.isfinite(end_ms) or start_ms >= end_ms:
+            return
+
         self._range_update_counter += 1
         request_id = self._range_update_counter
         # Remembered so a background lazy load that finishes later refreshes against the

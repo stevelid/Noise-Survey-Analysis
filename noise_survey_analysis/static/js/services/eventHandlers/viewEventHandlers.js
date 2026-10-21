@@ -28,7 +28,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }, DEBOUNCE_DELAY);
 
     function handleRangeUpdate(cb_obj) {
-        debouncedRangeUpdate(cb_obj.start, cb_obj.end);
+        // Bokeh emits start/end separately. Read the settled pair together so a
+        // renderer never restores a stale half of an in-progress wheel gesture.
+        clearTimeout(handleRangeUpdate.timer);
+        handleRangeUpdate.timer = setTimeout(() => {
+            let min = Number(cb_obj.start), max = Number(cb_obj.end);
+            if (!Number.isFinite(min) || !Number.isFinite(max)) return;
+            if (min > max) [min, max] = [max, min];
+            if (min === max) max = min + 1000;
+            debouncedRangeUpdate(min, max);
+        }, 0);
     }
 
     function handleParameterChange(value) {

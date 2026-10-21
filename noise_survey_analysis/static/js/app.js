@@ -512,7 +512,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         // render the side panel
-        if (isInitialLoad || didMarkersChange || didRegionsChange || didClassificationsChange
+        if (state.view.sidebarCollapsed !== prev.view?.sidebarCollapsed
+            || isInitialLoad || didMarkersChange || didRegionsChange || didClassificationsChange
             || didActiveSidePanelTabChange || didPendingRegionChange || didDataRefresh
             || didAnnotationPanelChange || didComparisonChange
             || (models?.htmlSidePanel && (isHeavyUpdate || didDisplayTitlesChange || didRegionNoteStatusChange))) {

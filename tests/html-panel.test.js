@@ -416,7 +416,7 @@ describe('HTML annotation panel', () => {
         document.body.appendChild(toolbar);
         try {
             setupDom();
-            host.classList.add('nsa-annotation-sidebar');
+            host.classList.add('nsa-annotation-inner');
             events.dispose(); events.attach(models);
             expect(host.style.top).toBe('82px');
             expect(root.querySelector('[data-scroll-key="panel"]').style.maxHeight)

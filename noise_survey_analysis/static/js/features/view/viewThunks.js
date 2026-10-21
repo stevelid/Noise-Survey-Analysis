@@ -76,7 +76,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             const min = Number(payload?.min);
             const max = Number(payload?.max);
-            if (!Number.isFinite(min) || !Number.isFinite(max)) {
+            if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) {
                 return;
             }
 

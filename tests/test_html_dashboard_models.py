@@ -31,6 +31,20 @@ def test_dashboard_document_contains_html_annotations_without_legacy_widgets():
     assert document.get_model_by_name("html_side_panel") is not None
     assert list(document.select({"type": DataTable})) == []
     assert list(document.select({"type": Tabs})) == []
+    page = document.get_model_by_name("charts_page")
+    content = document.get_model_by_name("chart_content_row")
+    assert content.children[0] is page
+    assert content.children[1].name == "side_panel_container"
+    assert content.children[1].sizing_mode == "stretch_height"
+    assert document.get_model_by_name("annotation_panel_toggle") is not None
+    assert document.get_model_by_name("frequency_bar_layout") in page.children
+    assert document.get_model_by_name("summary_table_div") in page.references()
+    master = document.get_model_by_name("master_x_range")
+    assert master.min_interval == 1000
+    assert master.max_interval == master.end - master.start
+    assert master.bounds == (master.start, master.end)
+    assert "change:start" in master.js_property_callbacks
+    assert "change:end" in master.js_property_callbacks
 
 
 def test_retired_panel_flag_is_ignored_without_losing_recording_setup(tmp_path):

@@ -820,8 +820,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             tableBodyHtml += `<tr><td class='timestamp-info' colspan='${parameters.length + 1}'>Values at: ${timestampStr}</td></tr>`;
 
             state.view.availablePositions.forEach(pos => {
-                let rowHtml = `<tr><td class="position-header">${pos}</td>`;
                 const activeLineData = dataCache.activeLineData[pos];
+                const resolution = activeLineData?.dataViewType === 'log' ? 'Log' : 'Overview';
+                let rowHtml = `<tr><td class="position-header">${escapeHtml(pos)} <small>(${resolution})</small></td>`;
 
                 if (activeLineData && activeLineData.Datetime && activeLineData.Datetime.length > 0) {
                     const idx = app.utils.findAssociatedDateIndex(activeLineData, timestamp);
@@ -1049,6 +1050,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const { models, controllers } = app.registry;
         if (!models) return;
         if (models.htmlSidePanel) {
+            const collapsed = Boolean(state.view?.sidebarCollapsed);
+            const panel = models.sidePanelContainer;
+            const toggle = models.annotationPanelToggle;
+            const expandedWidth = Number(toggle?.tags?.[0]) || 352;
+            if (panel) {
+                panel.width = collapsed ? 0 : expandedWidth;
+                panel.styles = { ...panel.styles, 'border-left': collapsed ? '0' : '1px solid #e2e8f0' };
+                const inner = panel.children?.[0];
+                if (inner) inner.styles = { ...inner.styles, transform: collapsed ? 'translateX(-28px)' : 'none', 'z-index': '5' };
+            }
+            if (models.chartContentRow) models.chartContentRow.spacing = collapsed ? 0 : 12;
+            if (toggle) toggle.visible = collapsed;
+            models.htmlSidePanel.visible = !collapsed;
             app.services.htmlPanelRenderer?.render(state, models, app.dataCache);
             return;
         }

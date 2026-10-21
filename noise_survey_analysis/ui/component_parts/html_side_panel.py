@@ -14,10 +14,10 @@ class HtmlSidePanelComponent:
         self.div = Div(
             text='<div class="nsa-annotation-panel">Loading annotations…</div>',
             name="html_side_panel",
-            width=SIDE_PANEL_WIDTH + 32,
+            sizing_mode="stretch_width",
             margin=0,
             css_classes=["nsa-html-panel-host"],
-            styles={"position": "sticky", "top": "12px", "align-self": "start", "overflow": "visible"},
+            styles={"overflow": "visible", "min-width": "0"},
             stylesheets=[InlineStyleSheet(css=css_path.read_text(encoding="utf-8"))],
         )
 

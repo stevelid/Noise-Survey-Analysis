@@ -474,7 +474,7 @@ class DashBuilder:
                     elif initial_start == initial_end:
                         initial_end = initial_start + 60000
 
-                    master_x_range = Range1d(start=initial_start, end=initial_end, name="master_x_range")
+                    master_x_range = Range1d(start=initial_start, end=initial_end, bounds=(initial_start, initial_end), min_interval=1000, max_interval=initial_end - initial_start, name="master_x_range")
                     logger.debug(
                         "Created explicit master_x_range for server_mode=%s: type=%s start=%s end=%s",
                         self.server_mode,
@@ -499,7 +499,7 @@ class DashBuilder:
                     elif initial_start == initial_end:
                         initial_end = initial_start + 60000
 
-                    master_x_range = Range1d(start=initial_start, end=initial_end, name="master_x_range")
+                    master_x_range = Range1d(start=initial_start, end=initial_end, bounds=(initial_start, initial_end), min_interval=1000, max_interval=initial_end - initial_start, name="master_x_range")
 
                 range_selector = self.shared_components.get('range_selector')
                 if range_selector is not None and hasattr(range_selector, 'range_tool'):
@@ -517,6 +517,7 @@ class DashBuilder:
                     console.error('NoiseSurveyApp.eventHandlers.handleRangeUpdate not defined!');
                 }
             """)
+            master_x_range.js_on_change('start', range_update_js)
             master_x_range.js_on_change('end', range_update_js)
         else:
             logger.warning("No master_x_range available; skipping range update callback.")
@@ -582,16 +583,26 @@ class DashBuilder:
         charts_stack_layout.sizing_mode = 'stretch_width'
         charts_stack_layout.styles = {'min-width': '0', 'overflow': 'visible'}
 
+        panel_toggle = Button(tags=[SIDE_PANEL_WIDTH + 32], label="‹", name="annotation_panel_toggle", width=28, height=32, margin=0, visible=False)
+        panel_toggle.js_on_click(CustomJS(code="""
+            window.NoiseSurveyApp?.store?.dispatch(window.NoiseSurveyApp.actions.sidebarToggle());
+        """))
+        self.shared_components['annotation_panel_toggle'] = panel_toggle
+        panel_body = self.shared_components['html_side_panel'].layout()
+        panel_inner = column(panel_toggle, panel_body, sizing_mode='stretch_width',
+                             css_classes=['nsa-annotation-inner'],
+                             styles={'position': 'sticky', 'top': '12px', 'min-width': '0'})
         side_panel_container = column(
-            self.shared_components['html_side_panel'].layout(),
+            panel_inner,
             name="side_panel_container",
             css_classes=["nsa-annotation-sidebar"],
+            sizing_mode="stretch_height",
             width=SIDE_PANEL_WIDTH + 32,
             styles={
                 "margin-top": "2px",
-                'position': 'sticky',
-                'top': '12px',
-                'align-self': 'flex-start',
+                'align-self': 'stretch',
+                'border-left': '1px solid #e2e8f0',
+                'min-width': '0',
                 'overflow': 'visible',
             }
         )
@@ -604,25 +615,29 @@ class DashBuilder:
             layout.styles = {**layout.styles, 'overflow': 'visible', 'min-width': '0'}
         self.shared_components['side_panel_container'] = side_panel_container
 
+        summary_layout = self.shared_components['summary_table'].layout()
+        summary_layout.width = None
+        summary_layout.sizing_mode = 'stretch_width'
+        charts_page = column(range_selector_layout, charts_stack_layout, freq_bar_layout,
+                             comparison_frequency_layout, summary_layout,
+                             name="charts_page", sizing_mode='stretch_width',
+                             styles={'min-width': '0', 'overflow': 'visible'})
         chart_content_row = row(
-            charts_stack_layout,
+            charts_page,
             side_panel_container,
             name="chart_content_row",
             spacing=12,
             styles={
-                "align-items": "flex-start",
+                "align-items": "stretch",
             }
         )
+        self.shared_components['chart_content_row'] = chart_content_row
         chart_content_row.sizing_mode = 'stretch_width'
         chart_content_row.styles = {**chart_content_row.styles, 'overflow': 'visible', 'min-width': '0'}
 
         main_layout = column(
             controls_layout,
-            range_selector_layout,
             chart_content_row,
-            freq_bar_layout,
-            comparison_frequency_layout,
-            self.shared_components['summary_table'].layout(),
             self.js_init_trigger,
             name="main_layout",
         )
@@ -827,6 +842,8 @@ class DashBuilder:
             'components': {},
             'frequencyBarLayout': self.shared_components.get('freq_bar_layout'),
             'sidePanelContainer': self.shared_components.get('side_panel_container'),
+            'annotationPanelToggle': self.shared_components.get('annotation_panel_toggle'),
+            'chartContentRow': self.shared_components.get('chart_content_row'),
             'comparisonFrequencyLayout': self.shared_components.get('comparison_frequency_layout'),
             'comparisonFrequencySource': self.shared_components['comparison_frequency'].source,
             'comparisonFrequencyFigure': self.shared_components['comparison_frequency'].figure,

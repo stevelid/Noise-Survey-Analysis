@@ -15,6 +15,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const actionTypes = {
 
         // Initialization
+        SIDEBAR_TOGGLE: 'view/sidebarToggle',
         INITIALIZE_STATE: 'INITIALIZE_STATE',
         STATE_REHYDRATED: 'STATE_REHYDRATED',
 
@@ -133,6 +134,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         viewToggle: (newViewType) => ({ type: actionTypes.VIEW_TOGGLE, payload: { newViewType } }),
         
+        sidebarToggle: () => ({ type: actionTypes.SIDEBAR_TOGGLE }),
         viewportChange: (min, max) => ({ type: actionTypes.VIEWPORT_CHANGE, payload: { min, max } }),
 
         regionViewportCentered: (min, max) => ({

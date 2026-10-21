@@ -41,6 +41,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         globalViewType: 'log',
         selectedParameter: 'LZeq',
         hoverEnabled: true,
+        sidebarCollapsed: false,
         activeSidePanelTab: DEFAULT_ACTIVE_TAB,
         logViewThreshold: { mode: 'auto', seconds: null },
         mode: 'normal',
@@ -177,7 +178,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 };
             }
 
+            case actionTypes.SIDEBAR_TOGGLE:
+                return { ...state, sidebarCollapsed: !state.sidebarCollapsed };
+
             case actionTypes.VIEWPORT_CHANGE:
+                if (!Number.isFinite(action.payload?.min) || !Number.isFinite(action.payload?.max)
+                    || action.payload.min >= action.payload.max) return state;
                 return {
                     ...state,
                     viewport: action.payload

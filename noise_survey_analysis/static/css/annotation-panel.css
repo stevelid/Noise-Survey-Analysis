@@ -67,3 +67,8 @@
 .nsa-confirm { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 4px; padding: 8px; margin: 8px 0; }
 @media (max-width: 700px) { :host { position: static; } .nsa-panel-scroll { max-height: 75vh; } }
 @media (max-height: 700px) { .nsa-region-view .nsa-region-list-section { flex-basis: 180px; min-height: 180px; } }
+
+/* One compact header; the reopen button floats at the chart edge. */
+.nsa-panel-header { display: flex; align-items: center; border-bottom: 1px solid var(--nsa-border, #e2e8f0); padding-right: 3px; }
+.nsa-panel-header nav { flex: 1; min-width: 0; border-bottom: 0; }
+.nsa-panel-header .nsa-panel-collapse { flex: 0 0 24px; width: 24px; height: 26px; padding: 0; border-color: transparent; font-size: 20px; line-height: 1; }

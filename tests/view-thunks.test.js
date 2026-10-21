@@ -2,11 +2,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import './loadCoreModules.js';
 import '../noise_survey_analysis/static/js/features/view/viewThunks.js';
+import '../noise_survey_analysis/static/js/services/eventHandlers/viewEventHandlers.js';
 
 const app = window.NoiseSurveyApp;
 const originalRegionThunks = app.features.regions.thunks;
 
 describe('View thunks', () => {
+    it('rejects reversed and collapsed viewport limits', () => {
+        const dispatch = vi.fn();
+        for (const bounds of [{ min: 2000, max: 1000 }, { min: 1000, max: 1000 }]) {
+            app.features.view.thunks.handleViewportChangeIntent(bounds)(dispatch, () => ({ view: {} }));
+        }
+        expect(dispatch).not.toHaveBeenCalled();
+    });
+
     beforeEach(() => {
         app.features.regions.thunks = { ...originalRegionThunks };
         app.registry = app.registry || {};
@@ -93,5 +102,29 @@ describe('View thunks', () => {
 
         expect(dispatch).toHaveBeenNthCalledWith(1, app.actions.viewportChange(0, 60000));
         expect(dispatch).toHaveBeenNthCalledWith(2, app.actions.viewToggle('log'));
+    });
+});
+
+describe('settled Bokeh range events', () => {
+    it('coalesces start/end updates and sorts reversed endpoints', () => {
+        vi.useFakeTimers();
+        const originalStore = app.store;
+        const dispatch = vi.fn();
+        const intent = vi.spyOn(app.thunks, 'handleViewportChangeIntent');
+        app.store = { dispatch };
+        try {
+            const range = { start: 3000, end: 2000 };
+            app.services.eventHandlers.view.handleRangeUpdate(range);
+            range.end = 1000;
+            app.services.eventHandlers.view.handleRangeUpdate(range);
+            vi.runAllTimers();
+            expect(intent).toHaveBeenCalledTimes(1);
+            expect(intent).toHaveBeenCalledWith({ min: 1000, max: 3000 });
+            expect(dispatch).toHaveBeenCalledTimes(1);
+        } finally {
+            app.store = originalStore;
+            intent.mockRestore();
+            vi.useRealTimers();
+        }
     });
 });

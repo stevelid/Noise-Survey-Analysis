@@ -34,6 +34,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const setPanel = changes => dispatch(feature.actions.panelSettingsChanged(changes));
             switch (command) {
                 case 'commit-note-draft': break; // The validated draft was saved above.
+                case 'sidebar-toggle': dispatch(actions.sidebarToggle()); break;
                 case 'tab': dispatch(actions.setActiveSidePanelTab(Number(payload.value))); break;
                 case 'filter': {
                     const allowed = ['categoryId', 'presentAt', 'onlyOneMeter', 'hasUnchecked'];

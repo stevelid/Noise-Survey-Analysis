@@ -1171,6 +1171,26 @@ describe('NoiseSurveyApp.renderers', () => {
     });
 
     describe('renderSummaryTable', () => {
+        it('follows active log/overview values and labels each meter independently', () => {
+            const state = { interaction: { tap: { isActive: true, timestamp: 100 } }, view: { availablePositions: ['P1', 'P2'] } };
+            const div = window.NoiseSurveyApp.registry.models.summaryTableDiv;
+            div.text = '<table><thead><tr><th>Position</th><th>LAeq</th></tr></thead><tbody></tbody></table>';
+            window.NoiseSurveyApp.utils.findAssociatedDateIndex.mockReturnValue(0);
+            const cache = { activeLineData: {
+                P1: { Datetime: [100], LAeq: [41], dataViewType: 'log' },
+                P2: { Datetime: [100], LAeq: [52], dataViewType: 'overview' }
+            } };
+            renderers.renderSummaryTable(state, cache);
+            expect(div.text).toContain('P1 <small>(Log)</small>');
+            expect(div.text).toContain('P2 <small>(Overview)</small>');
+            expect(div.text).toContain('<td>41.0</td>');
+            cache.activeLineData.P1 = { Datetime: [100], LAeq: [63], dataViewType: 'overview' };
+            renderers.renderSummaryTable(state, cache);
+            expect(div.text).toContain('P1 <small>(Overview)</small>');
+            expect(div.text).toContain('<td>63.0</td>');
+            expect(div.text).not.toContain('<td>41.0</td>');
+        });
+
         it('should display placeholder if no tap interaction', () => {
             const mockState = { interaction: { tap: { isActive: false } } };
             const mockDataCache = {};
@@ -1199,7 +1219,7 @@ describe('NoiseSurveyApp.renderers', () => {
             const tsStr = new Date(100).toLocaleString();
             expect(actual).toContain(`<thead><tr><th class="position-header">Position</th><th>LAeq</th><th>LCeq</th></tr></thead>`);
             expect(actual).toContain(`Values at: ${tsStr}`);
-            expect(actual).toContain(`<td class="position-header">P1</td>`);
+            expect(actual).toContain(`<td class="position-header">P1 <small>(Overview)</small></td>`);
             expect(actual).toContain(`<td>70.0</td>`);
             expect(actual).toContain(`<td>80.0</td>`);
         });
