@@ -9,10 +9,10 @@ from typing import Any
 WORKSPACE_VERSION = 2
 LEGACY_TIME_TOLERANCE_MS = 1
 DEFAULT_CATEGORIES = [
-    {"id": "dog-bark", "label": "Dog bark", "color": "#e65100"},
-    {"id": "traffic", "label": "Traffic", "color": "#1976d2"},
-    {"id": "plant", "label": "Plant", "color": "#388e3c"},
+    {"id": "music", "label": "Music", "color": "#e65100"},
     {"id": "speech", "label": "Speech", "color": "#7b1fa2"},
+    {"id": "plant", "label": "Plant", "color": "#388e3c"},
+    {"id": "deliveries", "label": "Deliveries", "color": "#1976d2"},
     {"id": "other", "label": "Other", "color": "#1e88e5"},
 ]
 
@@ -73,10 +73,12 @@ def normalize_region(region: dict[str, Any], positions: list[str]) -> dict[str, 
     normalized = {key: value if value in {"present", "absent", "unchecked"} else "unchecked"
                   for key, value in normalized.items()}
     normalized[origin] = "present"
+    category_ids = region.get("categoryIds") if isinstance(region.get("categoryIds"), list) else [region.get("categoryId")]
+    category_ids = list(dict.fromkeys(value for value in category_ids if isinstance(value, str) and value and value != "other")) or ["other"]
     return {**deepcopy(region), "positionId": origin, "areas": areas,
             "start": areas[0]["start"], "end": areas[-1]["end"],
             "note": region.get("note") if isinstance(region.get("note"), str) else "",
-            "color": normalize_color(region.get("color")), "categoryId": region.get("categoryId") or "other",
+            "color": normalize_color(region.get("color")), "categoryId": category_ids[0], "categoryIds": category_ids,
             "meterStates": normalized}
 
 

@@ -1,26 +1,20 @@
 /* Attached to the Div shadow root. Shared --nsa-* theme tokens inherit here. */
 :host { position: sticky; top: 12px; align-self: start; overflow: visible; }
-.nsa-annotation-panel { width: 100%; color: var(--nsa-text, #0f172a); background: var(--nsa-surface, white); border: 1px solid var(--nsa-border, #e2e8f0); border-radius: var(--nsa-radius, 6px); font: 12px/1.45 var(--nsa-font, 'Segoe UI', sans-serif); box-sizing: border-box; }
+.nsa-annotation-panel { width: 340px; max-width: 100%; min-width: 0; color: var(--nsa-text, #0f172a); background: var(--nsa-surface, white); border: 1px solid var(--nsa-border, #e2e8f0); border-radius: var(--nsa-radius, 6px); font: 12px/1.45 var(--nsa-font, 'Segoe UI', sans-serif); box-sizing: border-box; }
 .nsa-annotation-panel * { box-sizing: border-box; }
 .nsa-annotation-panel nav { display: flex; border-bottom: 1px solid var(--nsa-border, #e2e8f0); padding: 5px; gap: 3px; }
 .nsa-annotation-panel nav button { flex: 1; padding: 7px 3px; border-color: transparent; font-size: 11px; }
 .nsa-annotation-panel nav button[aria-selected="true"] { color: var(--nsa-accent, #2563eb); background: var(--nsa-accent-soft, #eff6ff); font-weight: 600; }
 .nsa-panel-scroll { overflow-y: auto; overflow-x: hidden; height: calc(100vh - 74px); max-height: calc(100vh - 74px); scrollbar-gutter: stable; padding: 8px; overscroll-behavior: contain; display: flex; flex-direction: column; }
-.nsa-region-view { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 5px; }
-.nsa-region-view .nsa-selected { flex: 0 1 auto; max-height: 54%; min-height: 0; overflow: auto; overscroll-behavior: contain; margin: 0; padding-bottom: 7px; }
 .nsa-colour-status { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--nsa-text-muted, #64748b); }
 .nsa-colour-status label { margin: 0 !important; }
 .nsa-region-view .nsa-selected label { margin: 4px 0; }
 .nsa-region-view .nsa-selected textarea { min-height: 44px; }
 .nsa-region-view .nsa-selected h3 { margin: 2px 0 5px; }
 .nsa-region-view .nsa-selected .nsa-buttons { margin: 5px 0; }
-.nsa-region-view .nsa-region-list-section { display: flex; flex-direction: column; flex: 1 0 260px; min-height: 260px; margin: 0; padding: 0; }
 .nsa-region-list-section h3 { margin: 3px 0 !important; }
 .nsa-region-view .nsa-region-filters { flex: 0 0 auto; margin-top: 0; padding: 4px 0; }
-.nsa-region-filters .nsa-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 8px; max-height: 160px; overflow: auto; }
 .nsa-region-filters .nsa-check { font-size: 11px; }
-.nsa-region-view > details { flex: 0 0 auto; max-height: 30%; overflow: auto; margin-top: 0; padding-top: 5px; }
-.nsa-region-view .nsa-region-list-section .nsa-annotation-list { flex: 1 1 0; min-height: 0; max-height: none; margin: 0; }
 .nsa-annotation-panel h3 { margin: 8px 0; font-size: 13px; color: var(--nsa-text-secondary, #334155); }
 .nsa-annotation-panel h3 small { font-weight: 400; font-size: 11px; }
 .nsa-annotation-panel section { border-bottom: 1px solid var(--nsa-border, #e2e8f0); padding-bottom: 10px; margin-bottom: 10px; }
@@ -66,9 +60,46 @@
 .nsa-category-editor button { font-size: 10px; }
 .nsa-confirm { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 4px; padding: 8px; margin: 8px 0; }
 @media (max-width: 700px) { :host { position: static; } .nsa-panel-scroll { max-height: 75vh; } }
-@media (max-height: 700px) { .nsa-region-view .nsa-region-list-section { flex-basis: 180px; min-height: 180px; } }
 
 /* One compact header; the reopen button floats at the chart edge. */
 .nsa-panel-header { display: flex; align-items: center; border-bottom: 1px solid var(--nsa-border, #e2e8f0); padding-right: 3px; }
 .nsa-panel-header nav { flex: 1; min-width: 0; border-bottom: 0; }
 .nsa-panel-header .nsa-panel-collapse { flex: 0 0 24px; width: 24px; height: 26px; padding: 0; border-color: transparent; font-size: 20px; line-height: 1; }
+/* One panel scroll surface; only the compact list has its own bounded scroll. */
+.nsa-region-view { display: block; min-height: 0; }
+.nsa-region-view .nsa-selected { margin: 0; padding-bottom: 8px; overflow: visible; }
+.nsa-region-view .nsa-region-list-section { margin: 0 0 10px; padding-bottom: 5px; }
+.nsa-region-view .nsa-region-list-section .nsa-annotation-list { max-height: min(28vh, 240px); overflow-y: auto; margin: 4px 0; }
+.nsa-region-filters .nsa-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 8px; }
+.nsa-region-row { display: flex; align-items: center; gap: 5px; min-height: 32px; padding: 4px 2px; }
+.nsa-region-row > input { flex: 0 0 auto; margin: 0; }
+.nsa-region-row .nsa-row-button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nsa-origin-badge { display: inline-block; flex: 0 0 auto; max-width: 65px; padding: 1px 4px; border-radius: 3px; background: var(--nsa-accent-soft, #eff6ff); color: var(--nsa-text-secondary, #334155); font-size: 10px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.nsa-category-badge { display: inline-flex; align-items: center; gap: 3px; flex: 0 1 auto; max-width: 76px; padding: 1px 3px; border: 1px solid; border-radius: 3px; font-size: 10px; white-space: nowrap; overflow: hidden; }
+.nsa-category-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+.nsa-category-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 5px 0; }
+.nsa-category-chips button { border-left: 3px solid var(--category-color); padding: 3px 6px; font-size: 11px; }
+.nsa-category-chips button[aria-pressed="true"] { background: var(--nsa-accent-soft, #eff6ff); outline: 1px solid var(--category-color); }
+.nsa-global-settings-content { margin: 4px 0 4px 10px; padding-left: 10px; border-left: 2px solid var(--nsa-border-strong, #cbd5e1); }
+.nsa-global-settings-content > details { margin-top: 0; padding: 6px 0; }
+.nsa-global-settings-content > details > summary { padding-left: 2px; }
+.nsa-global-settings-content > details > :not(summary) { margin-left: 9px; }
+.nsa-inline-category { display: flex; gap: 4px; align-items: center; margin: 6px 0; }
+.nsa-inline-category input:first-child { flex: 1; min-width: 0; }
+.nsa-inline-category button { flex: 0 0 auto; }
+.nsa-marker-list-section { margin: 0 0 10px; padding-bottom: 5px; }
+.nsa-marker-list-section h3, .nsa-selected-marker h3 { margin: 3px 0 !important; }
+.nsa-marker-list-section .nsa-annotation-list { max-height: min(28vh, 240px); overflow-y: auto; margin: 4px 0; }
+.nsa-marker-row { min-height: 32px; padding: 4px 2px; }
+.nsa-marker-time { flex: 0 0 auto; color: var(--nsa-text-muted, #64748b); font-size: 10px; white-space: nowrap; }
+.nsa-marker-row .nsa-row-button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nsa-selected-marker { margin: 0; padding-bottom: 8px; }
+.nsa-selected-marker textarea { min-height: 44px; }
+.nsa-selected-marker details details { margin-left: 10px; }
+.nsa-keyboard-help { flex: 0 0 auto; margin: 0 0 8px !important; padding: 4px 0 6px !important; border-top: 0 !important; border-bottom: 1px solid var(--nsa-border, #e2e8f0); }
+.nsa-keyboard-help > summary { font-size: 11px; }
+.nsa-shortcut-group h4 { margin: 8px 0 3px; color: var(--nsa-text-secondary, #334155); font-size: 11px; }
+.nsa-shortcut-group dl { margin: 0; }
+.nsa-shortcut-group dl > div { display: grid; grid-template-columns: minmax(88px, 1fr) minmax(0, 1.5fr); gap: 7px; padding: 3px 0; border-bottom: 1px solid var(--nsa-border, #e2e8f0); }
+.nsa-shortcut-group dt, .nsa-shortcut-group dd { margin: 0; }
+.nsa-shortcut-group kbd { font: inherit; font-weight: 600; white-space: normal; }

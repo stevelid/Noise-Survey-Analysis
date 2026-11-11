@@ -446,9 +446,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             case actionTypes.REGION_CATEGORY_SET: {
-                const { id, categoryId } = action.payload || {};
+                const { id, categoryId, categoryIds } = action.payload || {};
                 return state.byId[id] && state.categories?.byId?.[categoryId]
-                    ? updateRegion(state, id, { categoryId }) : state;
+                    ? updateRegion(state, id, { categoryId, categoryIds: categoryIds || [categoryId] }) : state;
             }
 
             case actionTypes.REGION_CATEGORY_CATALOG_SET: {
@@ -456,11 +456,32 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 if (!categories?.byId || !Array.isArray(categories.allIds)) return state;
                 const byId = { ...state.byId };
                 Object.entries(reassignedById).forEach(([id, categoryId]) => {
-                    if (byId[id] && categories.byId[categoryId]) byId[id] = { ...byId[id], categoryId };
+                    if (byId[id] && categories.byId[categoryId]) {
+                        const retained = (byId[id].categoryIds || [byId[id].categoryId]).filter(value => categories.byId[value] && value !== 'other');
+                        const categoryIds = retained.length ? retained : ['other'];
+                        byId[id] = { ...byId[id], categoryId: categoryIds[0], categoryIds };
+                    }
                 });
                 if (JSON.stringify(categories) === JSON.stringify(state.categories)
                     && JSON.stringify(byId) === JSON.stringify(state.byId)) return state;
                 return { ...state, categories, byId };
+            }
+
+            case actionTypes.REGIONS_MERGED: {
+                const { targetId, sourceIds, region } = action.payload || {};
+                const target = state.byId[targetId];
+                if (!target || !Array.isArray(sourceIds) || !sourceIds.length || !region
+                    || sourceIds.includes(targetId) || new Set(sourceIds).size !== sourceIds.length
+                    || !sourceIds.every(id => state.byId[id]?.positionId === target.positionId)) return state;
+                const next = sourceIds.reduce((current, id) => removeRegion(current, id), state);
+                return { ...next, byId: { ...next.byId, [targetId]: region }, selectedId: targetId };
+            }
+
+            case actionTypes.REGION_UNMERGED: {
+                const { id, regions, categories } = action.payload || {};
+                if (!state.byId[id]?.mergeSources?.length || !Array.isArray(regions) || regions.length < 2) return state;
+                const next = addMultipleRegions(removeRegion(state, id), regions);
+                return { ...next, categories: categories || state.categories, selectedId: regions[0].id };
             }
 
             case actionTypes.REGION_MERGED: {

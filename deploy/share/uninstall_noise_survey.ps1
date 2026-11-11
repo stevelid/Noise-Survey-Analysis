@@ -33,12 +33,16 @@ if (-not $Quiet) {
 if (Test-Path $paths.PidFile) {
     $pidText = try { Get-Content -Path $paths.PidFile -ErrorAction Stop | Select-Object -First 1 } catch { $null }
     if ($pidText -match '^\d+$') {
-        try { Stop-Process -Id ([int]$pidText) -Force -ErrorAction SilentlyContinue } catch { }
+        $process = Get-CimInstance Win32_Process -Filter "ProcessId=$pidText" -ErrorAction SilentlyContinue
+        if ($process -and $process.ExecutablePath -ieq $paths.VenvPython -and $process.CommandLine -match 'bokeh.*serve') {
+            try { Stop-Process -Id ([int]$pidText) -Force -ErrorAction SilentlyContinue } catch { }
+        }
     }
 }
 
 # --- Registry ----------------------------------------------------------------
 $keys = @(
+    'HKCU\Software\Classes\SystemFileAssociations\.cil\shell\ExtractTHData',
     'HKCU\Software\Classes\SystemFileAssociations\.svl\shell\ExtractTHData',
     'HKCU\Software\Classes\SystemFileAssociations\.svn\shell\ExtractTHData',
     'HKCU\Software\Classes\SystemFileAssociations\.csv\shell\ExtractTHData',
@@ -60,6 +64,15 @@ Write-NsaOk 'Right-click menus removed.'
 # --- Desktop shortcut --------------------------------------------------------
 $shortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Noise Survey Analysis.lnk'
 if (Test-Path $shortcut) { Remove-Item -Path $shortcut -Force -ErrorAction SilentlyContinue }
+foreach ($label in @('Import SD Card', 'Process Meter File')) {
+    $link = Join-Path ([Environment]::GetFolderPath('Desktop')) ($label + '.lnk')
+    if (Test-Path -LiteralPath $link) {
+        $shell = New-Object -ComObject WScript.Shell
+        if ($shell.CreateShortcut($link).TargetPath.StartsWith($paths.ShareRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $link -Force
+        }
+    }
+}
 Write-NsaOk 'Desktop shortcut removed.'
 
 # --- Local files -------------------------------------------------------------
@@ -70,10 +83,19 @@ if ($KeepLogs -and (Test-Path $paths.Logs)) {
 }
 
 if (Test-Path $paths.InstallRoot) {
-    Remove-Item -Path $paths.InstallRoot -Recurse -Force -ErrorAction SilentlyContinue
+    $absolute = [IO.Path]::GetFullPath($paths.InstallRoot).TrimEnd('\')
+    $expected = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'NoiseSurveyAnalysis'
+    if ($absolute -ine $expected.TrimEnd('\')) { throw 'Uninstall only removes the standard local application folder.' }
+    # The bundled Python is private and portable; system Python is untouched.
+    foreach ($child in @(Get-ChildItem -LiteralPath $absolute -Force)) {
+        Assert-NsaLocalPath $child.FullName
+        Remove-Item -LiteralPath $child.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 if (Test-Path $paths.InstallRoot) {
-    Write-NsaWarn "Some files could not be removed from $($paths.InstallRoot) - close the dashboard and run this again."
+    $remaining = @(Get-ChildItem -LiteralPath $paths.InstallRoot -Force)
+    if ($remaining.Count -eq 0) { Remove-Item -LiteralPath $paths.InstallRoot -Force }
+    else { Write-NsaWarn 'Some local files are still in use. Close the dashboard and retry.' }
 } else {
     Write-NsaOk 'Local application and Python environment removed.'
 }

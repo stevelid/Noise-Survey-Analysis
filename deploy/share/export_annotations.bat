@@ -1,3 +1,6 @@
 @echo off
+setlocal DisableDelayedExpansion
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0export_annotations.ps1" %*
-if errorlevel 1 pause
+set "NSA_EXIT=%ERRORLEVEL%"
+if not "%NSA_EXIT%"=="0" pause
+exit /b %NSA_EXIT%

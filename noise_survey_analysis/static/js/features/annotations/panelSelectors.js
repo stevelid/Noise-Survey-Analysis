@@ -13,7 +13,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         spectrumVisible: DEFAULT_SPECTRUM_VISIBLE, clearMarkersPending: false,
         backgroundWindowS: DEFAULT_BACKGROUND_WINDOW_SECONDS,
         minContextS: DEFAULT_MIN_CONTEXT_SECONDS,
-        includeAllResolutions: false,
+        includeAllResolutions: false, checkedRegionIds: [],
     };
     function reducer(state = initialState, action) {
         if (action.type !== PANEL_CHANGED) return state;
@@ -40,7 +40,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             meter: (a, b) => selectMeterTitle(state, a.positionId).localeCompare(selectMeterTitle(state, b.positionId))
         };
         return {
-            ui, positions: selectPositions(state),
+            ui, checkedRegions: regionSelectors.selectAllRegions(state).filter(region => ui.checkedRegionIds.includes(region.id)), positions: selectPositions(state),
             regions: regionSelectors.selectFilteredRegions(state, ui.filters),
             allRegions: regionSelectors.selectAllRegions(state),
             region: regionSelectors.selectSelectedRegion(state),

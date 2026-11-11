@@ -163,7 +163,7 @@ describe('sectioned analysis CSV', () => {
     it('round-trips region identity, all meter states, categories, marker snapshots and multiline text', () => {
         const categories = app.annotationModel.normalizeCatalog();
         const regions = [app.annotationModel.normalizeRegion({ id: 4, positionId: 'P1', areas: [{ start: 0, end: 2000 }],
-            categoryId: 'plant', color: null, note: 'Fan, "night"\n[OVERALL]\nUnicode: café', meterStates: { P2: 'absent', P3: 'unchecked' } }, ['P1', 'P2', 'P3'])];
+            categoryIds: ['plant', 'speech'], categoryId: 'plant', color: null, note: 'Fan, "night"\n[OVERALL]\nUnicode: café', meterStates: { P2: 'absent', P3: 'unchecked' } }, ['P1', 'P2', 'P3'])];
         const state = { regions: { byId: { 4: regions[0] }, allIds: [4], categories }, view: { availablePositions: ['P1', 'P2', 'P3'], positionChartOffsets: { P2: 1000 } } };
         const markers = [{ id: 8, timestamp: 1000, note: 'Peak', color: '#abcdef', metrics: { broadband: [{ positionId: 'P1', value: 70 }] } }];
         const csv = app.annotationCsv.buildAnnotationsCsv(markers, regions, state, { models: {}, mode: 'full' });
@@ -267,3 +267,50 @@ describe('bounded geometry-sensitive metric cache', () => {
         expect(utils.getRegionMetrics(entity, {}, {}, {})).not.toBe(first);
     });
 });
+
+describe('local time basis and resolution labelling in the region export', () => {
+    const csvFor = (region, models, state = { view: { availablePositions: ['P1'] } }, options = {}) => app.annotationCsv.buildAnnotationsCsv(
+        [], [region], state, { models, mode: 'full', ...options });
+    const regionsRow = csv => app.annotationCsv.readSection(app.annotationCsv.parseCsvRows(csv), 'REGIONS')[0];
+
+    it('keeps UTC start/end but adds naive BST columns that match the instrument log text', () => {
+        // Log says 2026-09-02 10:57:00 (BST); the true instant is 09:57:00 UTC.
+        const start = Date.UTC(2026, 8, 2, 9, 57, 0);
+        const region = { id: 1, positionId: 'P1', areas: [{ start, end: start + 60000 }] };
+        const row = regionsRow(csvFor(region, {}));
+        expect(row.start).toBe('2026-09-02 09:57:00.000');
+        expect(row.start_local).toBe('2026-09-02 10:57:00.000');
+        expect(row.end_local).toBe('2026-09-02 10:58:00.000');
+        expect(row.source_start_local).toBe(row.start_local);
+    });
+
+    it('uses GMT in winter, the configured timezone, and subtracts chart offset for source_*_local', () => {
+        const winter = Date.UTC(2026, 0, 15, 10, 0, 0);
+        const region = { id: 1, positionId: 'P1', areas: [{ start: winter, end: winter + 1000 }] };
+        expect(regionsRow(csvFor(region, {})).start_local).toBe('2026-01-15 10:00:00.000');
+        expect(regionsRow(csvFor(region, { config: { timezone: 'Europe/Paris' } })).start_local).toBe('2026-01-15 11:00:00.000');
+        const state = { view: { availablePositions: ['P1'], positionChartOffsets: { P1: 3600000 } } };
+        const row = regionsRow(csvFor(region, {}, state));
+        expect(row.start_local).toBe('2026-01-15 10:00:00.000');
+        expect(row.source_start_local).toBe('2026-01-15 09:00:00.000');
+        const notes = app.annotationCsv.readSection(app.annotationCsv.parseCsvRows(csvFor(region, {})), 'NOTES');
+        expect(notes).toContainEqual({ key: 'local_time_zone', value: 'Europe/London' });
+    });
+
+    it('labels the metric resolution, reports A-weighted LAeq, and never emits an LZeq broadband label', () => {
+        const region = { id: 1, positionId: 'P1', areas: [{ start: 0, end: 2000 }] };
+        const logOnly = { timeSeriesSources: { P1: { log: { data: { Datetime: [0, 1000], LAeq: [60, 70] } } } } };
+        const both = { timeSeriesSources: { P1: { log: { data: { Datetime: [0, 1000], LAeq: [60, 70] } },
+            overview: { data: { Datetime: [0], LAeq: [50] } } } } };
+        const overviewOnly = { timeSeriesSources: { P1: { overview: { data: { Datetime: [0, 1000], LAeq: [50, 50] } } } } };
+        expect(regionsRow(csvFor(region, logOnly)).data_resolution).toBe('log');
+        const preferred = regionsRow(csvFor(region, both));
+        expect(preferred.data_resolution).toBe('log');
+        expect(Number(preferred.LAeq_dB)).toBeCloseTo(67.4036, 3);
+        expect(regionsRow(csvFor(region, overviewOnly)).data_resolution).toBe('overview');
+        const header = app.annotationCsv.parseCsvRows(csvFor(region, logOnly)).find(row => row.includes('LAeq_dB'));
+        expect(header).not.toContain('metrics_parameter');
+        expect(header).toContain('data_resolution');
+    });
+});
+

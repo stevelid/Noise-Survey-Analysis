@@ -402,6 +402,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (Number.isFinite(nextRegionId)) {
 
                 dispatch(selectRegionIntent(nextRegionId));
+                dispatch(actions.regionNoteFocusRequested());
             }
         };
     }
@@ -502,49 +503,98 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
 
-    function mergeRegionIntoSelectedIntent(sourceId) {
+    function mergeRegionsIntent(ids, requestedTargetId = null) {
         return function (dispatch, getState) {
-            if (!actions || typeof getState !== 'function') return;
             const state = getState();
-            const regionsState = regionSelectors.selectRegionsState?.(state) || state?.regions;
-            const targetId = regionsState?.selectedId;
-            const sourceNumericId = Number(sourceId);
-            if (!Number.isFinite(targetId) || !Number.isFinite(sourceNumericId) || targetId === sourceNumericId) return;
-            const target = regionsState.byId[targetId];
-            const source = regionsState.byId[sourceNumericId];
-            if (!target || !source || target.positionId !== source.positionId) return;
-            const positions = getAvailablePositions(state);
-            const left = getMeterStates(target, positions);
-            const right = getMeterStates(source, positions);
-            let merged;
-            if (app.annotationModel?.mergeMeterStates) merged = app.annotationModel.mergeMeterStates(left, right, positions);
-            else {
-                const states = {};
-                const conflicts = [];
-                [...new Set([...positions, ...Object.keys(left), ...Object.keys(right)])].forEach(id => {
-                    const a = left[id] || METER_UNCHECKED;
-                    const b = right[id] || METER_UNCHECKED;
-                    states[id] = a === METER_UNCHECKED ? b : (b === METER_UNCHECKED || a === b ? a : METER_UNCHECKED);
-                    if (a !== METER_UNCHECKED && b !== METER_UNCHECKED && a !== b) conflicts.push(id);
-                });
-                merged = { states, conflicts };
+            const selected = regionSelectors.selectSelectedRegion(state);
+            const unique = [...new Set(ids.map(Number))];
+            const originals = unique.map(id => state.regions.byId[id]);
+            if (originals.length < 2 || originals.some(region => !region)
+                || originals.some(region => region.positionId !== originals[0].positionId)) {
+                dispatch(actions.noticeShown('Choose at least two regions from the same origin meter.', 'warning')); return;
             }
-            const note = [...new Set([target.note, source.note].filter(Boolean))].join('\n');
-            const region = {
-                ...target,
-                areas: [...getRegionAreas(target), ...getRegionAreas(source)],
-                meterStates: merged.states,
-                note
-            };
-            app.regions?.invalidateRegionMetrics?.(targetId);
-            app.regions?.invalidateRegionMetrics?.(sourceNumericId);
-            // One semantic action makes replacing the target and removing the
-            // source a single undoable transition, with no half-merged state.
-            dispatch(actions.regionMerged(targetId, sourceNumericId, region));
-            const names = merged.conflicts.map(id => state?.view?.positionDisplayTitles?.[id] || id);
-            dispatch(actions.noticeShown(names.length
-                ? `Regions merged. Re-check required: ${names.join(', ')}.` : 'Regions merged.',
-            names.length ? 'warning' : 'info'));
+            const targetId = unique.includes(requestedTargetId) ? requestedTargetId
+                : unique.includes(selected?.id) ? selected.id : unique[0];
+            const target = state.regions.byId[targetId];
+            const ordered = [target, ...originals.filter(region => region.id !== targetId)];
+            const positions = getAvailablePositions(state);
+            let meterStates = getMeterStates(target, positions);
+            const conflicts = new Set();
+            ordered.slice(1).forEach(source => {
+                const merged = app.annotationModel.mergeMeterStates(meterStates, getMeterStates(source, positions), positions);
+                meterStates = merged.states;
+                merged.conflicts.forEach(id => conflicts.add(id));
+            });
+            // Once conflicting checked values occur, later sources cannot clear that conflict.
+            conflicts.forEach(id => { meterStates[id] = METER_UNCHECKED; });
+            meterStates[target.positionId] = METER_PRESENT;
+            const snapshot = value => JSON.parse(JSON.stringify(value));
+            const categoryIds = [...new Set(ordered.flatMap(item => item.categoryIds || [item.categoryId || 'other']))]
+                .filter(id => id !== 'other');
+            if (!categoryIds.length) categoryIds.push('other');
+            const region = app.annotationModel.normalizeRegion({ ...target,
+                areas: ordered.flatMap(getRegionAreas), meterStates,
+                note: [...new Set(ordered.map(item => item.note).filter(Boolean))].join('\n'),
+                categoryIds,
+                mergeSources: snapshot(ordered),
+                mergeCategories: snapshot(state.regions.categories)
+            }, positions);
+            unique.forEach(id => app.regions?.invalidateRegionMetrics?.(id));
+            dispatch(actions.regionsMerged(targetId, unique.filter(id => id !== targetId), region));
+            dispatch(actions.noticeShown(conflicts.size ? `Regions merged. Re-check required: ${[...conflicts].map(id => state.view?.positionDisplayTitles?.[id] || id).join(', ')}.` : 'Regions merged. Originals retained for Unmerge.', conflicts.size ? 'warning' : 'info'));
+        };
+    }
+
+    function mergeRegionIntoSelectedIntent(sourceId) {
+        return (dispatch, getState) => {
+            const selected = regionSelectors.selectSelectedRegion(getState());
+            if (selected) dispatch(mergeRegionsIntent([selected.id, Number(sourceId)], selected.id));
+        };
+    }
+
+    function unmergeSelectedRegionIntent() {
+        return (dispatch, getState) => {
+            const state = getState();
+            const region = regionSelectors.selectSelectedRegion(state);
+            if (!Array.isArray(region?.mergeSources) || region.mergeSources.length < 2) return;
+            const positions = getAvailablePositions(state);
+            const originals = region.mergeSources.map(source => app.annotationModel.normalizeRegion(JSON.parse(JSON.stringify(source)), positions));
+            if (originals.some(source => !source || source.positionId !== region.positionId)) {
+                dispatch(actions.noticeShown('Original region records are invalid; nothing changed.', 'warning')); return;
+            }
+            // Imported snapshots may have IDs now used by unrelated live regions.
+            const used = new Set(state.regions.allIds.filter(id => id !== region.id));
+            let counter = Math.max(state.regions.counter, ...state.regions.allIds.map(id => id + 1));
+            originals.forEach(source => {
+                if (!Number.isFinite(source.id) || used.has(source.id)) {
+                    while (used.has(counter)) counter++;
+                    source.id = counter++;
+                }
+                used.add(source.id);
+            });
+            const categories = app.annotationModel.normalizeCatalog(state.regions.categories);
+            const saved = app.annotationModel.normalizeCatalog(region.mergeCategories);
+            // Restore a deleted original category; never replace an existing global category.
+            originals.forEach(source => {
+                (source.categoryIds || [source.categoryId]).forEach(categoryId => {
+                    if (!categories.byId[categoryId] && saved.byId[categoryId]) {
+                        categories.byId[categoryId] = saved.byId[categoryId]; categories.allIds.push(categoryId);
+                    }
+                });
+            });
+            dispatch(actions.regionUnmerged(region.id, originals, categories));
+            app.regions?.invalidateMetricsCache?.();
+            dispatch(actions.noticeShown('Original regions restored. Edits made after this merge were replaced; Undo reverses this.'));
+        };
+    }
+
+    function playSelectedRegionIntent() {
+        return (dispatch, getState) => {
+            const state = getState();
+            const region = regionSelectors.selectSelectedRegion(state);
+            if (!region) return;
+            dispatch(actions.tap(Math.max(0, getRegionAreas(region)[0].start), region.positionId, 'region_preview'));
+            if (!state.audio?.isPlaying || state.audio.activePositionId !== region.positionId) dispatch(actions.audioPlayPauseToggle(region.positionId, true));
         };
     }
 
@@ -670,6 +720,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const newRegions = areas.map(area => ({
                 ...region,
                 id: undefined,
+                mergeSources: undefined, mergeCategories: undefined,
                 start: area.start,
                 end: area.end,
                 areas: [{ start: area.start, end: area.end }],
@@ -773,8 +824,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const payload = typeof regionId === 'object' ? regionId : { id: regionId, categoryId };
             const state = getState();
             const id = Number(payload.id ?? payload.regionId ?? state?.regions?.selectedId);
-            if (!state?.regions?.byId?.[id] || !state.regions.categories?.byId?.[payload.categoryId]) return;
-            dispatch(actions.regionCategorySet(id, payload.categoryId));
+            const region = state?.regions?.byId?.[id];
+            if (!region || !state.regions.categories?.byId?.[payload.categoryId]) return;
+            const current = region.categoryIds || [region.categoryId || 'other'];
+            let categoryIds;
+            if (payload.categoryId === 'other') categoryIds = ['other'];
+            else if (current.includes(payload.categoryId) && !payload.ensure) {
+                categoryIds = current.filter(value => value !== payload.categoryId);
+                if (!categoryIds.length) categoryIds = ['other'];
+            } else categoryIds = [payload.categoryId, ...current.filter(value => value !== payload.categoryId && value !== 'other')];
+            dispatch(actions.regionCategorySet(id, categoryIds[0], categoryIds));
         };
     }
 
@@ -825,7 +884,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             delete byId[categoryId];
             const reassignedById = {};
             Object.values(state.regions.byId).forEach(region => {
-                if (region.categoryId === categoryId) reassignedById[region.id] = model.DEFAULT_CATEGORY_ID;
+                if ((region.categoryIds || [region.categoryId]).includes(categoryId)) reassignedById[region.id] = model.DEFAULT_CATEGORY_ID;
             });
             // Catalog removal and reassignment share one history checkpoint.
             dispatch(actions.regionCategoryCatalogSet({ byId, allIds: catalog.allIds.filter(id => id !== categoryId) }, reassignedById));
@@ -1055,7 +1114,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         createRegionsFromComparisonIntent,
         createRegionIntent,
         createAutoRegionsIntent,
-        mergeRegionIntoSelectedIntent,
+        mergeRegionIntoSelectedIntent, mergeRegionsIntent, unmergeSelectedRegionIntent, playSelectedRegionIntent,
         resizeSelectedRegionIntent,
         splitSelectedRegionIntent,
         toggleRegionCreationIntent,

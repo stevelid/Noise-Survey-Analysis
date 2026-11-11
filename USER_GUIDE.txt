@@ -1,3 +1,9 @@
+TEAM INSTALLATION (4 NOVEMBER 2026)
+Run START_HERE.bat from G:\Shared drives\Venta\Software\Noise Survey Analysis.
+Use the installed desktop shortcut or right-click an existing survey config.
+Python, packages and audio are supplied by shared setup. The current team
+launch/repair instructions are in README.txt at the shared release root.
+
 ================================================================================
                     NOISE SURVEY ANALYSIS - USER GUIDE
 ================================================================================

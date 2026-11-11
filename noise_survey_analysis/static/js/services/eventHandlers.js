@@ -525,6 +525,21 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const isDeleteKey = rawKey === 'Delete' || rawKey === 'Backspace';
         const isMeterKey = /^[1-9]$/.test(rawKey) && !isCtrlOrMeta && !e.altKey && !e.shiftKey && !e.repeat;
 
+        // Metric shortcuts: Shift+1/2/3 would clash with meter keys, so use E / X / L.
+        const metricPatterns = { e: /eq$/i, x: /fmax$/i, l: /f?90$/i };
+        if (!isCtrlOrMeta && !e.altKey && !e.shiftKey && !e.repeat && metricPatterns[normalizedKey]) {
+            const select = app.registry?.models?.paramSelect;
+            const options = (select?.options || []).map(o => (Array.isArray(o) ? o[0] : o));
+            const currentWeighting = String(select?.value || '').charAt(1);
+            const matches = options.filter(o => metricPatterns[normalizedKey].test(o));
+            const target = matches.find(o => o.charAt(1) === currentWeighting) || matches[0];
+            if (target) {
+                if (typeof e.preventDefault === 'function') e.preventDefault();
+                if (select.value !== target) select.value = target;
+                return;
+            }
+        }
+
         if (isPreviewKey && !isCtrlOrMeta) {
             if (typeof e.preventDefault === 'function') e.preventDefault();
             const previewThunk = app.features?.classifications?.thunks?.previewSelectedClassificationIntent;

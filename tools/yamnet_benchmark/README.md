@@ -8,7 +8,7 @@ modify `noise_survey_analysis/` or any dashboard config, and it is not
 wired into the dashboard's production workflow.
 
 The maintained findings and recommendation are kept with the operational skill at
-`G:\My Drive\Venta AI\skills\classify-survey-audio\references\yamnet-benchmark-report.md`.
+`G:\Shared drives\Venta\Venta AI\skills\classify-survey-audio\references\yamnet-benchmark-report.md`.
 Generated results, cached audio and model files are deliberately excluded from this
 repository; the `results/`, `data/` and `tfhub_cache/` entries below describe
 reproducible local working folders only.
@@ -30,7 +30,7 @@ from scratch:
 ```powershell
 python -m venv "$HOME\.venv-yamnet-benchmark"
 & "$HOME\.venv-yamnet-benchmark\Scripts\Activate.ps1"
-pip install -r "G:\My Drive\Programing\Noise Survey Analysis\tools\yamnet_benchmark\requirements.txt"
+pip install -r "G:\Shared drives\Venta\Software\Noise Survey Analysis\Noise Survey Analysis\tools\yamnet_benchmark\requirements.txt"
 ```
 
 Python 3.13.14 was the only interpreter available on this machine and
@@ -70,7 +70,7 @@ never uploaded anywhere — all processing is local.
 ## Exact rerun command
 
 ```powershell
-cd "G:\My Drive\Programing\Noise Survey Analysis"
+cd "G:\Shared drives\Venta\Software\Noise Survey Analysis\Noise Survey Analysis"
 & "$HOME\.venv-yamnet-benchmark\Scripts\Activate.ps1"
 python tools\yamnet_benchmark\benchmark_yamnet.py `
   --excerpt-seconds 3600 --test-window-seconds 1800 `
@@ -134,11 +134,11 @@ YAMNet/AudioSet class name (Dog, Music, Aircraft, ...), and
 `--survey-start-local`/`--timezone`/`--position-id` let it run against any
 job, not just 6461 (all default to the original job 6461 motorcycle values
 for backward compatibility). See the
-`classify-survey-audio` skill (`G:\My Drive\Venta AI\skills\classify-survey-audio\core.md`)
+`classify-survey-audio` skill (`G:\Shared drives\Venta\Venta AI\skills\classify-survey-audio\core.md`)
 for the general workflow and flag reference.
 
 ```powershell
-cd "G:\My Drive\Programing\Noise Survey Analysis"
+cd "G:\Shared drives\Venta\Software\Noise Survey Analysis\Noise Survey Analysis"
 & "$HOME\.venv-yamnet-benchmark\Scripts\Activate.ps1"
 python tools\yamnet_benchmark\run_full_day_detection.py `
   --high-threshold 0.20 --low-threshold 0.10 `

@@ -38,14 +38,13 @@ This is intentionally simpler than the earlier generic Python -> JS command/ack 
 
 ## Enabling the Control Server
 
-Start the Bokeh server with the `--control-port` flag:
+Use the shared launcher with the `-ControlPort` option:
 
-```bash
-# Start with control server on port 8765 (default)
-bokeh serve noise_survey_analysis --show --args --control-port 8765
+```powershell
+& "G:\Shared drives\Venta\Software\Noise Survey Analysis\launch_noise_survey.ps1" -ControlPort 8765
 
 # With a config file
-bokeh serve noise_survey_analysis --show --args --config config.json --control-port 8765
+& "G:\Shared drives\Venta\Software\Noise Survey Analysis\launch_noise_survey.ps1" -ConfigPath "<config path>" -ControlPort 8765
 ```
 
 When the control server starts, it prints:
@@ -62,14 +61,16 @@ The token is also written to a temp file for CLI auto-discovery.
 
 ### Installation
 
-The CLI is included in the `noise_survey_analysis` package:
+The CLI is included in the shared `noise_survey_analysis` package. Run shared
+setup once, then use its private Python:
 
-```bash
-# Run directly
-python noise_survey_analysis/control_cli.py <command>
+```powershell
+& "$env:LOCALAPPDATA\NoiseSurveyAnalysis\venv\Scripts\python.exe" "G:\Shared drives\Venta\Software\Noise Survey Analysis\Noise Survey Analysis\noise_survey_analysis\control_cli.py" status
 
-# Or create a shortcut alias
-doskey nsa-ctl=python "G:\My Drive\Programing\Noise Survey Analysis\noise_survey_analysis\control_cli.py" $*
+# Optional alias for this PowerShell session
+function nsa-ctl {
+    & "$env:LOCALAPPDATA\NoiseSurveyAnalysis\venv\Scripts\python.exe" "G:\Shared drives\Venta\Software\Noise Survey Analysis\Noise Survey Analysis\noise_survey_analysis\control_cli.py" @args
+}
 ```
 
 ### Global Options

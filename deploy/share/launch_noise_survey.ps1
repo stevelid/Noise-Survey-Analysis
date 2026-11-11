@@ -133,7 +133,10 @@ try {
     }
 
     $serveArgs = @('-m', 'bokeh', 'serve', $appDir,
+                   '--address', '127.0.0.1',
                    '--port', "$port",
+                   '--allow-websocket-origin', "localhost:$port",
+                   '--allow-websocket-origin', "127.0.0.1:$port",
                    '--unused-session-lifetime', "$script:UnusedSessionLifetimeMs")
     if (-not $NoBrowser) { $serveArgs += '--show' }
 
@@ -162,7 +165,10 @@ try {
     $argumentString = ($serveArgs | ForEach-Object { Format-NsaArgument $_ }) -join ' '
     Add-Content -Path $log -Value "command: $($paths.VenvPython) $argumentString" -Encoding UTF8
 
-    $process = Start-Process -FilePath $paths.VenvPython -ArgumentList $argumentString -NoNewWindow -PassThru
+    $serverLog = Join-Path $paths.Logs ('server_' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
+    $serverErrors = $serverLog + '.errors.log'
+    Write-NsaInfo "Dashboard log: $serverLog"
+    $process = Start-Process -FilePath $paths.VenvPython -ArgumentList $argumentString -WorkingDirectory $paths.InstallRoot -NoNewWindow -PassThru -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrors
     if (-not $process) { throw 'Failed to start the Bokeh server process.' }
 
     # Touching .Handle makes .NET cache the process handle. Without it,

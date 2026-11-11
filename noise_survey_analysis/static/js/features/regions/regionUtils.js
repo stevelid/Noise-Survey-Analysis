@@ -258,6 +258,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return {
                     id: region.id,
                     positionId: region.positionId,
+                    categoryId: region.categoryId, categoryIds: region.categoryIds, meterStates: region.meterStates,
+                    mergeSources: region.mergeSources, mergeCategories: region.mergeCategories,
                     areas: displayAreas.map(area => ({ start: area.start, end: area.end })),
                     start: region.start,
                     end: region.end,
@@ -296,7 +298,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     areas,
                     note: typeof item?.note === 'string' ? item.note : '',
                     color: typeof item?.color === 'string' ? item.color : undefined,
+                    ...(item?.mergeSources ? { mergeSources: item.mergeSources, mergeCategories: item.mergeCategories } : {}),
                     ...(item?.categoryId ? { categoryId: item.categoryId } : {}),
+                    ...(item?.categoryIds ? { categoryIds: item.categoryIds } : {}),
                     ...(item?.meterStates ? { meterStates: item.meterStates } : {})
                 };
             }).filter(Boolean);

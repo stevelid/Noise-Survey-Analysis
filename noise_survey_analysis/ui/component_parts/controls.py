@@ -9,6 +9,7 @@ from bokeh.models import (
     Select,
     Spinner,
     Toggle,
+    Tooltip,
 )
 from typing import Dict, List
 from bokeh.layouts import Row, column
@@ -278,7 +279,11 @@ class ControlsComponent:
             value="LZeq",
             width=80,
             height=30,
-            name="global_parameter_selector"
+            name="global_parameter_selector",
+            description=Tooltip(
+                content="Shortcuts: E = Leq, X = Lmax, L = L90",
+                position="right",
+            ),
         )
         select.js_on_change("value", CustomJS(args={"select_widget": select}, code="""if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleParameterChange) {
                 window.NoiseSurveyApp.eventHandlers.handleParameterChange(cb_obj.value, select_widget); // Pass the select widget itself

@@ -4,8 +4,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     'use strict';
     const EXPORT_MODE_ANNOTATIONS = 'annotations';
     const EXPORT_MODE_FULL = 'full';
-    const REGION_FIELDS = ['id', 'category', 'category_label', 'note', 'colour', 'start', 'end', 'duration_s', 'origin_meter', 'areas'];
-    const PROVENANCE_FIELDS = ['chart_offset_ms', 'source_start', 'source_end', 'source_areas', 'data_resolution', 'sample_interval_s', 'coverage', 'LAeq_dB', 'LAFmax_dB'];
+    const REGION_FIELDS = ['id', 'category', 'category_label', 'category_ids', 'note', 'colour', 'start', 'end', 'duration_s', 'origin_meter', 'areas', 'merge_sources', 'merge_categories'];
+    const PROVENANCE_FIELDS = ['chart_offset_ms', 'source_start', 'source_end', 'source_areas', 'data_resolution', 'sample_interval_s', 'coverage', 'LAeq_dB', 'LAFmax_dB',
+        'start_local', 'end_local', 'source_start_local', 'source_end_local'];
+    const DEFAULT_TIMEZONE = 'Europe/London';
     const OVERALL_FIELDS = ['region_id', 'category', 'meter', 'state', 'data_resolution', 'sample_interval_s', 'coverage',
         'LAeq_dB', 'LAFmax_dB', 'LAF90_dB', 'background_dB', 'background_LA90_dB', 'background_LAeq_dB',
         'diff_from_background_dB', 'context_duration_s', 'percentile_method', 'missing_reasons'];
@@ -17,6 +19,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     };
     const timestamp = value => Number.isFinite(Number(value)) && value != null
         ? new Date(Number(value)).toISOString().replace('T', ' ').replace('Z', '') : '';
+
+    /** Naive wall-clock time in `zone` (what Svantek/NTi logs record), same text format as `timestamp`. */
+    function localTimestamp(value, zone) {
+        if (!Number.isFinite(Number(value)) || value == null) return '';
+        const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: zone || DEFAULT_TIMEZONE, hourCycle: 'h23',
+            year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            .formatToParts(new Date(Number(value))).map(part => [part.type, part.value]));
+        const millis = String(((Number(value) % 1000) + 1000) % 1000).padStart(3, '0');
+        return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}.${millis}`;
+    }
 
     function parseCsvRows(text) {
         const rows = [], row = [];
@@ -68,6 +80,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const positions = [...new Set([...(state.view?.availablePositions || []), ...Object.keys(models.timeSeriesSources || {}),
             ...regions.flatMap(region => [region.positionId, ...Object.keys(region.meterStates || {})])])].filter(Boolean);
         const categories = app.annotationModel.normalizeCatalog(state.regions?.categories);
+        const zone = options.timezone || models.config?.timezone || DEFAULT_TIMEZONE;
         const exported = options.exportedAt || new Date().toISOString();
         const allResolutions = options.include_all_resolutions ?? options.includeAllResolutions ?? state.annotationPanel?.includeAllResolutions ?? false;
         const metricsOptions = {
@@ -78,7 +91,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             version: 2, categories,
             meters: positions.map(id => ({ id, title: state.view?.positionDisplayTitles?.[id] || id })),
             sourceConfigs: options.sourceConfigs || models.sourceConfigs || [],
-            chart_offsets_ms: state.view?.positionChartOffsets || {}
+            chart_offsets_ms: state.view?.positionChartOffsets || {},
+            local_time_zone: zone
         };
         const lines = [[`NSA annotations export`, 'format=2', `exported=${exported}`, `resolution=${includeAnalysis ? 'best-available' : 'not-calculated'}`].map(escape).join(','),
             ['metadata', JSON.stringify(metadata)].map(escape).join(','), ''];
@@ -107,12 +121,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const category = categories.byId[normalized.categoryId];
             annotationRows.push({
                 id: normalized.id, category: normalized.categoryId, category_label: category?.label || normalized.categoryId,
+                category_ids: JSON.stringify(normalized.categoryIds),
                 note: normalized.note, colour: normalized.color, start: timestamp(normalized.start), end: timestamp(normalized.end),
                 duration_s: origin.durationMs / 1000, origin_meter: normalized.positionId, areas: JSON.stringify(normalized.areas),
+                merge_sources: normalized.mergeSources ? JSON.stringify(normalized.mergeSources) : '',
+                merge_categories: normalized.mergeCategories ? JSON.stringify(normalized.mergeCategories) : '',
                 ...normalized.meterStates, chart_offset_ms: origin.chartOffsetMs,
                 source_start: timestamp(origin.sourceAreas[0]?.start), source_end: timestamp(origin.sourceAreas.at(-1)?.end),
                 source_areas: JSON.stringify(origin.sourceAreas), data_resolution: origin.dataResolution,
-                sample_interval_s: origin.sampleIntervalS, coverage: origin.coverage, LAeq_dB: origin.laeq, LAFmax_dB: origin.lafmax
+                sample_interval_s: origin.sampleIntervalS, coverage: origin.coverage, LAeq_dB: origin.laeq, LAFmax_dB: origin.lafmax,
+                start_local: localTimestamp(normalized.start, zone), end_local: localTimestamp(normalized.end, zone),
+                source_start_local: localTimestamp(origin.sourceAreas[0]?.start, zone), source_end_local: localTimestamp(origin.sourceAreas.at(-1)?.end, zone)
             });
             if (!includeAnalysis) return;
             positions.forEach(meter => {
@@ -151,7 +170,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         section('MARKERS', MARKER_FIELDS, markers.map(marker => ({ id: marker.id, timestamp: timestamp(marker.timestamp), note: marker.note,
             colour: marker.color, metrics: JSON.stringify(marker.metrics || marker.metricsSnapshot || {}) })));
         section('NOTES', ['key', 'value'], Object.entries({
-            exported, export_mode: mode, time_zone: 'UTC', source_files: JSON.stringify(metadata.sourceConfigs), chart_offsets_ms: JSON.stringify(metadata.chart_offsets_ms),
+            exported, export_mode: mode, time_zone: 'UTC', local_time_zone: zone,
+            time_basis: `start/end/source_start/source_end are true UTC. start_local/end_local/source_start_local/source_end_local are naive ${zone} wall-clock time (BST in summer) and match the instrument _log.csv/_summary.csv time basis; use source_*_local to look up rows in the survey files (the source_* columns remove any chart alignment offset). All metrics are calculated for the UTC instants; data_resolution gives the resolution they came from (log or overview).`,
+            source_files: JSON.stringify(metadata.sourceConfigs), chart_offsets_ms: JSON.stringify(metadata.chart_offsets_ms),
             resolution_policy: includeAnalysis
                 ? (allResolutions ? 'Separate log and overview rows where available' : 'Best available resolution per region and meter; complete log preferred, otherwise overview, otherwise partial log with coverage recorded')
                 : 'Annotations only; survey metrics are not calculated and headline metric columns are blank. Marker snapshots are preserved unchanged.',
@@ -184,6 +205,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const areas = record.areas ? JSON.parse(record.areas) : [{ start: parseTimestamp(record.start), end: parseTimestamp(record.end) }];
             return app.annotationModel.normalizeRegion({ id: Number(record.id), positionId: record.origin_meter,
                 areas, note: record.note, color: record.colour || null, categoryId: record.category || 'other',
+                categoryIds: record.category_ids ? JSON.parse(record.category_ids) : undefined,
+                mergeSources: record.merge_sources ? JSON.parse(record.merge_sources) : undefined,
+                mergeCategories: record.merge_categories ? JSON.parse(record.merge_categories) : undefined,
                 meterStates: Object.fromEntries(positions.map(id => [id, record[id] || 'unchecked'])) }, positions);
         }).filter(Boolean);
         const markers = readSection(rows, 'MARKERS').map(record => ({ id: Number(record.id), timestamp: parseTimestamp(record.timestamp),

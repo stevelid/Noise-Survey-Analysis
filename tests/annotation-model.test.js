@@ -92,13 +92,26 @@ describe('annotation normalization', () => {
 });
 
 describe('annotation operations and history', () => {
+    it('toggles several categories, filters by any tag and restores legacy single-category regions', () => {
+        const store = freshStore();
+        store.dispatch(app.actions.regionsAdded([region({ categoryId: 'music' })]));
+        store.dispatch(intents.setRegionCategoryIntent(1, 'speech'));
+        expect(store.getState().regions.byId[1].categoryIds).toEqual(['speech', 'music']);
+        expect(app.features.regions.selectors.selectFilteredRegions(store.getState(), { categoryId: 'music' })).toHaveLength(1);
+        store.dispatch(intents.setRegionCategoryIntent(1, 'speech'));
+        expect(store.getState().regions.byId[1].categoryIds).toEqual(['music']);
+        store.dispatch(intents.setRegionCategoryIntent(1, 'music'));
+        expect(store.getState().regions.byId[1].categoryIds).toEqual(['other']);
+        expect(model.normalizeRegion(region({ categoryId: 'plant' }), positions).categoryIds).toEqual(['plant']);
+    });
+
     it('changes meter states and categories undoably, preserving the origin', () => {
         const store = freshStore();
         store.dispatch(app.actions.regionsAdded([region()]));
         app.history.reset();
         store.dispatch(intents.setRegionMeterStateIntent(1, 'P2', 'absent'));
-        store.dispatch(intents.setRegionCategoryIntent(1, 'traffic'));
-        expect(store.getState().regions.byId[1]).toMatchObject({ categoryId: 'traffic', meterStates: { P2: 'absent' } });
+        store.dispatch(intents.setRegionCategoryIntent(1, 'deliveries'));
+        expect(store.getState().regions.byId[1]).toMatchObject({ categoryId: 'deliveries', meterStates: { P2: 'absent' } });
         store.dispatch(app.actions.undo());
         expect(store.getState().regions.byId[1].categoryId).toBe('other');
         store.dispatch(app.actions.undo());

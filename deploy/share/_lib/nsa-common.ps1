@@ -67,7 +67,7 @@ function Get-NsaLogFile { return $script:NsaLogFile }
 
 function Wait-NsaForUser {
     param([string]$Message = 'Press Enter to close this window')
-    if ($Host.Name -eq 'ConsoleHost') {
+    if ($Host.Name -eq 'ConsoleHost' -and $env:NSA_NONINTERACTIVE -ne '1') {
         Write-Host ''
         Read-Host $Message | Out-Null
     }
@@ -90,6 +90,8 @@ function Get-NsaPaths {
     }
 
     $installRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'NoiseSurveyAnalysis'
+    # Used for isolated install verification; normal users never set this.
+    if ($env:NSA_INSTALL_ROOT) { $installRoot = [IO.Path]::GetFullPath($env:NSA_INSTALL_ROOT) }
 
     $payload = Join-Path $ShareRoot 'Noise Survey Analysis'
 
@@ -97,6 +99,10 @@ function Get-NsaPaths {
         ShareRoot    = $ShareRoot
         SharePayload = $payload
         ShareSlm     = Join-Path $ShareRoot 'SLM Parsers'
+        SdImporter   = Join-Path $ShareRoot 'SD Card Import\sd-import-interactive.ps1'
+        Bootstrap    = Join-Path $ShareRoot 'runtime\bootstrap.json'
+        Python       = Join-Path $installRoot 'python\python.exe'
+        Vlc          = Join-Path $installRoot 'vlc'
         Wheelhouse   = Join-Path $ShareRoot 'runtime\wheelhouse'
         Manifest     = Join-Path $ShareRoot 'runtime\manifest.json'
         # The application runs in place on the synced shared drive.
@@ -139,6 +145,22 @@ function Get-NsaFileHashSafe {
     param([string]$Path)
     if (-not (Test-Path $Path)) { return '' }
     try { return (Get-FileHash -Path $Path -Algorithm SHA256).Hash } catch { return '' }
+}
+
+function Assert-NsaReleaseComplete {
+    param($Paths)
+    if (Test-Path -LiteralPath (Join-Path $Paths.ShareRoot 'runtime\updating.txt')) { throw 'A software update is being published. Wait for Google Drive to finish syncing and try again.' }
+    $inventoryPath = Join-Path $Paths.ShareRoot 'runtime\release-integrity.json'
+    if (-not (Test-Path -LiteralPath $inventoryPath)) { throw 'Release inventory is missing. Wait for Google Drive to finish syncing.' }
+    $inventory = Get-Content -LiteralPath $inventoryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $prefix = [IO.Path]::GetFullPath($Paths.ShareRoot).TrimEnd('\') + '\'
+    foreach ($entry in $inventory.files.PSObject.Properties) {
+        $file = [IO.Path]::GetFullPath((Join-Path $Paths.ShareRoot $entry.Name))
+        if (-not $file.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
+            (Get-NsaFileHashSafe $file) -ine $entry.Value) {
+            throw "Software file missing or incomplete: $($entry.Name). Wait for Google Drive to finish syncing, then run setup again."
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -187,7 +209,8 @@ function Find-NsaPythonInterpreters {
         if ($found.ContainsKey($key)) { return }
         $ver = Get-NsaPythonVersion -Exe $exe
         if (-not $ver) { return }
-        if ($ver -lt $MinimumVersion) { return }
+        if ($ver -lt $MinimumVersion -or $ver.Major -ne 3 -or $ver.Minor -ne 13) { return }
+        if (-not (Test-NsaPython64Bit -Exe $exe)) { return }
         $found[$key] = [pscustomobject]@{
             Path    = $exe
             Version = $ver
@@ -196,6 +219,8 @@ function Find-NsaPythonInterpreters {
             Source  = $source
         }
     }
+
+    Add-Candidate (Get-NsaPaths).Python 'private Python'
 
     # 1. The py launcher knows about every registered install.
     $py = Get-Command 'py.exe' -ErrorAction SilentlyContinue
@@ -213,6 +238,8 @@ function Find-NsaPythonInterpreters {
     #    "not installed" stub. Both are probed the same way: the stub cannot
     #    report a version, so it is filtered out by Get-NsaPythonVersion.
     foreach ($cmd in @(Get-Command 'python.exe' -All -ErrorAction SilentlyContinue)) {
+        # Probing an uninstalled Store alias opens the Store on a fresh PC.
+        if ($cmd.Source -match '\\WindowsApps\\python.exe$') { continue }
         $label = if ($cmd.Source -like '*\WindowsApps\*') { 'Microsoft Store' } else { 'PATH' }
         Add-Candidate $cmd.Source $label
     }
@@ -263,6 +290,7 @@ function Select-NsaPython {
         # A normally installed Python is preferred over the Store alias, which
         # sandboxes its file access and is more awkward to support.
         if ($i.Source -ne 'Microsoft Store') { $score += 10 }
+        if ($i.Source -eq 'private Python') { $score += 1000 }
         [pscustomobject]@{ Interp = $i; Score = $score }
     }
 
@@ -274,11 +302,33 @@ function Select-NsaPython {
 function Install-NsaPython {
     <#
       .SYNOPSIS
-      Installs Python for the current user via winget. Returns $true if a usable
-      interpreter exists afterwards.
+      Unpacks the private Python runtime. The legacy winget route is retained
+      only for older distributions without bootstrap assets.
     #>
     param([string]$Version = '3.13', [Version]$MinimumVersion = [Version]'3.10')
 
+    $paths = Get-NsaPaths
+    $bootstrap = Get-NsaManifest -ManifestPath $paths.Bootstrap
+    if ($bootstrap -and $bootstrap.PSObject.Properties['python']) {
+        $installer = Join-Path (Join-Path $paths.ShareRoot 'runtime') $bootstrap.python.file
+        if (-not (Test-Path -LiteralPath $installer)) { throw 'Python installer is missing. Make this software folder Available offline in Google Drive, then retry.' }
+        if ((Get-NsaFileHashSafe $installer) -ine $bootstrap.python.sha256) { throw 'Python installer failed its integrity check. Wait for Google Drive to finish syncing and retry.' }
+        New-Item -ItemType Directory -Path $paths.InstallRoot -Force | Out-Null
+        $target = Split-Path -Parent $paths.Python
+        $stage = Join-Path $paths.InstallRoot 'python-unpack'
+        Assert-NsaLocalPath $stage
+        if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+        Write-NsaInfo 'Unpacking the bundled Python runtime for your Windows account...'
+        Expand-Archive -LiteralPath $installer -DestinationPath $stage -Force
+        $tools = Join-Path $stage 'tools'
+        if (-not (Get-NsaPythonVersion -Exe (Join-Path $tools 'python.exe'))) { throw 'The bundled Python runtime cannot run on this computer.' }
+        Assert-NsaLocalPath $target
+        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+        Assert-NsaLocalPath $tools
+        Move-Item -LiteralPath $tools -Destination $target
+        Remove-Item -LiteralPath $stage -Recurse -Force
+        return ((Find-NsaPythonInterpreters -MinimumVersion $MinimumVersion).Count -gt 0)
+    }
     $winget = Get-Command 'winget.exe' -ErrorAction SilentlyContinue
     if (-not $winget) {
         Write-NsaFail 'Python is not installed and winget is not available to install it automatically.'
@@ -340,9 +390,7 @@ function Test-NsaAppAvailable {
 # Virtual environment and dependencies
 # ---------------------------------------------------------------------------
 
-# xlrd is here because the "Extract TH data" parsers need it and share this
-# environment - a dashboard that runs while the parsers fail is still broken.
-$script:NsaImportCheck = 'import bokeh, pandas, numpy, scipy, soundfile, openpyxl, pytz, xlrd'
+# check_environment.py checks dashboard and parser packages together.
 
 function Test-NsaVenvHealthy {
     <#
@@ -352,19 +400,41 @@ function Test-NsaVenvHealthy {
       most common cause of "it worked yesterday" - checking for the folder is
       not enough.
     #>
-    param([string]$VenvPython)
+    param([string]$VenvPython, [string]$RequirementsFile)
     if (-not (Test-Path $VenvPython)) { return $false }
     try {
-        & $VenvPython -c $script:NsaImportCheck 2>&1 | Out-Null
-        return ($LASTEXITCODE -eq 0)
+        $checkArgs = @((Join-Path $PSScriptRoot 'check_environment.py'))
+        if ($RequirementsFile) { $checkArgs += @('--requirements', $RequirementsFile) }
+        $savedPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $output = & $VenvPython @checkArgs 2>&1
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = $savedPreference
+        if ($code -ne 0 -and $script:NsaLogFile) {
+            Add-Content -LiteralPath $script:NsaLogFile -Value ($output | Out-String) -Encoding UTF8
+        }
+        return ($code -eq 0)
     } catch { return $false }
+}
+
+function Assert-NsaLocalPath {
+    param([string]$Path)
+    $root = [IO.Path]::GetFullPath((Get-NsaPaths).InstallRoot).TrimEnd('\') + '\'
+    $resolved = [IO.Path]::GetFullPath($Path)
+    if (-not $resolved.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { throw "Refusing to change a path outside the local install: $resolved" }
+    if (Test-Path -LiteralPath $resolved) {
+        $linked = @(Get-Item -LiteralPath $resolved -Force; Get-ChildItem -LiteralPath $resolved -Recurse -Force -ErrorAction Stop) |
+            Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }
+        if ($linked) { throw "Refusing to remove a linked folder: $resolved" }
+    }
 }
 
 function New-NsaVenv {
     param([string]$PythonExe, [string]$VenvPath)
     if (Test-Path $VenvPath) {
+        Assert-NsaLocalPath $VenvPath
         Write-NsaInfo 'Removing the previous environment...'
-        Remove-Item -Path $VenvPath -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $VenvPath -Recurse -Force -ErrorAction Stop
     }
     & $PythonExe -m venv $VenvPath
     if ($LASTEXITCODE -ne 0) { throw "Failed to create the virtual environment at $VenvPath (exit code $LASTEXITCODE)." }
@@ -395,9 +465,7 @@ function Install-NsaDependencies {
     $haveWheelhouse = (Test-Path $tagDir) -and
                       (@(Get-ChildItem -Path $tagDir -Filter '*.whl' -ErrorAction SilentlyContinue).Count -gt 0)
 
-    # pip is bundled by ensurepip, so this is only a nice-to-have. Never let a
-    # missing network connection stop the install here.
-    & $VenvPython -m pip install --upgrade pip --disable-pip-version-check --quiet 2>&1 | Out-Null
+    # ensurepip already supplied pip. Do not contact the network on an offline install.
 
     $attempts = @()
     if ($haveWheelhouse) {
@@ -412,9 +480,15 @@ function Install-NsaDependencies {
 
     foreach ($attempt in $attempts) {
         Write-NsaInfo "Installing packages from $($attempt.Label)..."
-        $pipArgs = @('-m', 'pip', 'install', '--disable-pip-version-check', '-r', $RequirementsFile) + $attempt.Args
+        $pipArgs = @('-m', 'pip', 'install', '--isolated', '--disable-pip-version-check', '--no-input', '--only-binary=:all:', '--timeout', '20', '--retries', '1', '-r', $RequirementsFile) + $attempt.Args
+        # Windows PowerShell 5.1 treats native stderr as an ErrorRecord. pip
+        # warnings must not bypass the controlled fallback below.
+        $savedPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
         $output = & $VenvPython @pipArgs 2>&1
-        if ($LASTEXITCODE -eq 0) {
+        $pipCode = $LASTEXITCODE
+        $ErrorActionPreference = $savedPreference
+        if ($pipCode -eq 0) {
             Write-NsaOk "Packages installed from $($attempt.Label)."
             return $true
         }
@@ -441,6 +515,7 @@ function Get-NsaVlcStatus {
       A 32-bit-only VLC alongside 64-bit Python is a silent failure worth naming.
     #>
     $paths64 = @(
+        (Join-Path (Get-NsaPaths).Vlc 'libvlc.dll'),
         (Join-Path $env:ProgramFiles 'VideoLAN\VLC\libvlc.dll'),
         'C:\Program Files\VideoLAN\VLC\libvlc.dll'
     )
@@ -459,6 +534,27 @@ function Get-NsaVlcStatus {
 }
 
 function Install-NsaVlc {
+    $paths = Get-NsaPaths
+    $bootstrap = Get-NsaManifest -ManifestPath $paths.Bootstrap
+    if ($bootstrap -and $bootstrap.PSObject.Properties['vlc']) {
+        $archive = Join-Path (Join-Path $paths.ShareRoot 'runtime') $bootstrap.vlc.file
+        if (-not (Test-Path -LiteralPath $archive)) { throw 'Bundled audio runtime is missing. Wait for Google Drive to finish syncing.' }
+        if ((Get-NsaFileHashSafe $archive) -ine $bootstrap.vlc.sha256) { throw 'Bundled audio runtime failed its integrity check. Wait for Google Drive to finish syncing.' }
+        $stage = Join-Path $paths.InstallRoot 'vlc-unpack'
+        Assert-NsaLocalPath $stage
+        if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+        Write-NsaInfo 'Preparing the bundled audio player (no administrator rights needed)...'
+        Expand-Archive -LiteralPath $archive -DestinationPath $stage -Force
+        $dll = @(Get-ChildItem -LiteralPath $stage -Filter libvlc.dll -Recurse -File)
+        if ($dll.Count -ne 1) { throw 'The bundled audio runtime is incomplete.' }
+        Assert-NsaLocalPath $paths.Vlc
+        if (Test-Path -LiteralPath $paths.Vlc) { Remove-Item -LiteralPath $paths.Vlc -Recurse -Force }
+        $vlcSource = Split-Path -Parent $dll[0].FullName
+        Assert-NsaLocalPath $vlcSource
+        Move-Item -LiteralPath $vlcSource -Destination $paths.Vlc
+        Remove-Item -LiteralPath $stage -Recurse -Force
+        return $true
+    }
     $winget = Get-Command 'winget.exe' -ErrorAction SilentlyContinue
     if (-not $winget) { return $false }
     Write-NsaInfo 'Installing VLC media player (needed for audio playback)...'
@@ -477,7 +573,7 @@ function Install-NsaVlc {
 # The one function that makes everything ready
 # ---------------------------------------------------------------------------
 
-function Invoke-NsaEnsureReady {
+function Invoke-NsaEnsureReadyCore {
     <#
       .SYNOPSIS
       Brings the local install up to date with the shared drive, repairing
@@ -499,9 +595,12 @@ function Invoke-NsaEnsureReady {
     )
 
     $manifest = Get-NsaManifest -ManifestPath $Paths.Manifest
-    $minPython = [Version]'3.10'
+    Assert-NsaReleaseComplete $Paths
+    if (-not [Environment]::Is64BitOperatingSystem) { throw 'This package needs 64-bit Windows 10 or 11.' }
+    if (-not [Environment]::Is64BitProcess) { throw 'Please run setup from 64-bit Windows Explorer.' }
+    $minPython = [Version]'3.13'
     $wheelTags = @()
-    $preferred = @('3.13', '3.12', '3.11')
+    $preferred = @('3.13')
     $requirementsName = 'requirements-lock.txt'
     $deployedVersion = 'unknown'
 
@@ -522,6 +621,13 @@ function Invoke-NsaEnsureReady {
         return [pscustomobject]@{ Ready = $false; Manifest = $manifest }
     }
     if (-not $Quiet) { Write-NsaOk "Application found on the shared drive (version $deployedVersion)." }
+    foreach ($required in @((Join-Path $Paths.ShareSlm 'src\process_files.py'), $Paths.SdImporter)) {
+        if (-not (Test-Path -LiteralPath $required)) { throw "Tool missing: $required. Wait for Google Drive to finish syncing and run setup again." }
+    }
+    # Resolve Drive letters from the share location. For a package copied to
+    # another folder, let the dashboard discover the user's Drive location.
+    $jobsBesideShare = Join-Path (Split-Path -Parent (Split-Path -Parent $Paths.ShareRoot)) 'Jobs'
+    if (Test-Path -LiteralPath $jobsBesideShare) { $env:NOISE_SURVEY_BASE_JOB_DIR = $jobsBesideShare }
 
     # Keep Python's bytecode cache off the synced drive. Without this, every run
     # writes __pycache__ folders that Drive then syncs to everyone else.
@@ -529,20 +635,40 @@ function Invoke-NsaEnsureReady {
     $env:PYTHONPYCACHEPREFIX = $Paths.PyCache
 
     $requirementsFile = Join-Path $Paths.App $requirementsName
-    if (-not (Test-Path $requirementsFile)) {
-        $requirementsFile = Join-Path $Paths.App 'requirements.txt'
-    }
+    if (-not (Test-Path $requirementsFile)) { throw 'The pinned package list is missing. Wait for Drive to finish syncing.' }
     $requirementsHash = Get-NsaFileHashSafe -Path $requirementsFile
+    if (-not $requirementsHash) { throw 'Could not read the pinned package list.' }
+
+    # Audio is checked before the healthy-environment early return. A PC with
+    # healthy packages but missing VLC used to skip this repair forever.
+    if ((Test-Path -LiteralPath $Paths.Bootstrap) -and
+        ($Force -or -not (Test-Path -LiteralPath (Join-Path $Paths.Vlc 'libvlc.dll')))) {
+        if (-not (Install-NsaVlc)) { throw 'Could not prepare the bundled audio runtime.' }
+    }
+    $vlc = Get-NsaVlcStatus
+    if (-not $vlc.Installed -or $vlc.Bitness -ne '64-bit') {
+        if (Test-Path -LiteralPath $Paths.Bootstrap) {
+            if (-not (Install-NsaVlc)) { throw 'Could not prepare the bundled audio runtime.' }
+            $vlc = Get-NsaVlcStatus
+        } elseif ($AllowVlcInstall) { $null = Install-NsaVlc; $vlc = Get-NsaVlcStatus }
+    }
+    if ($vlc.Installed -and $vlc.Bitness -eq '64-bit') {
+        $vlcDir = Split-Path -Parent $vlc.Path
+        $env:PYTHON_VLC_LIB_PATH = $vlc.Path
+        $env:PYTHON_VLC_MODULE_PATH = $vlcDir
+        $env:VLC_PLUGIN_PATH = Join-Path $vlcDir 'plugins'
+        $env:PATH = $vlcDir + ';' + $env:PATH
+    }
 
     # --- 2. Decide whether the environment needs rebuilding ------------------
     $stamp = Get-NsaStamp -StampPath $Paths.Stamp
-    $venvHealthy = Test-NsaVenvHealthy -VenvPython $Paths.VenvPython
+    $venvHealthy = Test-NsaVenvHealthy -VenvPython $Paths.VenvPython -RequirementsFile $requirementsFile
 
     $reasons = @()
     if ($Force)                                          { $reasons += 'a rebuild was requested' }
     if (-not $venvHealthy)                               { $reasons += 'the Python environment is missing or incomplete' }
     if (-not $stamp)                                     { $reasons += 'no previous install was recorded' }
-    elseif ($stamp.PSObject.Properties['requirements_hash'] -and
+    elseif (-not $stamp.PSObject.Properties['requirements_hash'] -or
             $stamp.requirements_hash -ne $requirementsHash) { $reasons += 'the required packages have changed' }
 
     if ($reasons.Count -eq 0) {
@@ -554,6 +680,9 @@ function Invoke-NsaEnsureReady {
     foreach ($r in $reasons) { Write-NsaInfo "Reason: $r." }
 
     # --- 3. Find (or install) Python ----------------------------------------
+    if ((Test-Path -LiteralPath $Paths.Bootstrap) -and -not (Get-NsaPythonVersion -Exe $Paths.Python)) {
+        if (-not (Install-NsaPython -MinimumVersion $minPython)) { throw 'Could not prepare the bundled Python runtime.' }
+    }
     $interpreters = Find-NsaPythonInterpreters -MinimumVersion $minPython
     if ($interpreters.Count -eq 0) {
         Write-NsaWarn "Python $minPython or newer was not found on this computer."
@@ -628,4 +757,20 @@ function Invoke-NsaEnsureReady {
     }
 
     return [pscustomobject]@{ Ready = $true; Manifest = $manifest; Rebuilt = $true }
+}
+
+function Invoke-NsaEnsureReady {
+    param([Parameter(Mandatory=$true)]$Paths, [switch]$Force, [switch]$Quiet, [switch]$AllowVlcInstall)
+    # Setup and a right-click launch must not rebuild the same venv together.
+    $mutex = New-Object Threading.Mutex($false, 'Local\VentaNoiseSurveyEnvironment')
+    $locked = $false
+    try {
+        Write-NsaInfo 'Checking the installation. First-time preparation can take a few minutes...'
+        try { $locked = $mutex.WaitOne(300000) } catch [Threading.AbandonedMutexException] { $locked = $true }
+        if (-not $locked) { throw 'Another setup is still running. Let it finish, then try again.' }
+        Invoke-NsaEnsureReadyCore -Paths $Paths -Force:$Force -Quiet:$Quiet -AllowVlcInstall:$AllowVlcInstall
+    } finally {
+        if ($locked) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
 }

@@ -6,7 +6,7 @@ knows how to import (Side panel -> Classifications -> Import).
 
 Defaults are job-6461-specific (motorcycle detection on R14.WAV) since that's
 what this script was first built for, but every default is a CLI flag —
-see `classify-survey-audio` skill (G:\\My Drive\\Venta AI\\skills\\classify-survey-audio\\core.md)
+see `classify-survey-audio` skill (G:\\Shared drives\\Venta\\Venta AI\\skills\\classify-survey-audio\\core.md)
 for the general workflow on a different job or a different target sound.
 
 This does NOT clip audio and does NOT modify the dashboard. It produces a

@@ -78,6 +78,12 @@ try {
     }
 
     # --- Packages ------------------------------------------------------------
+    $audioRuntime = Get-NsaVlcStatus
+    if ($audioRuntime.Installed -and $audioRuntime.Bitness -eq '64-bit') {
+        $env:PYTHON_VLC_LIB_PATH = $audioRuntime.Path
+        $env:PYTHON_VLC_MODULE_PATH = Split-Path -Parent $audioRuntime.Path
+        $env:PATH = $env:PYTHON_VLC_MODULE_PATH + ';' + $env:PATH
+    }
     Add-Heading 'Installed packages in the dashboard environment'
     if (Test-Path $paths.VenvPython) {
         $probe = @'
@@ -148,7 +154,7 @@ for name, dist in [("bokeh","bokeh"),("pandas","pandas"),("numpy","numpy"),("sci
     Add-Line "The diagnostic script itself failed: $($_.Exception.Message)"
 }
 
-$reportDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'NoiseSurveyAnalysis\logs'
+$reportDir = (Get-NsaPaths -ShareRoot $PSScriptRoot).Logs
 if (-not (Test-Path $reportDir)) { New-Item -ItemType Directory -Path $reportDir -Force | Out-Null }
 $reportPath = Join-Path $reportDir ("diagnostic_{0}_{1}.txt" -f $env:COMPUTERNAME, (Get-Date -Format 'yyyyMMdd-HHmmss'))
 Set-Content -Path $reportPath -Value $lines -Encoding UTF8
@@ -159,6 +165,6 @@ Write-Host "  $reportPath" -ForegroundColor White
 Write-Host ''
 Write-Host 'Send that file to Steve.' -ForegroundColor Green
 
-if (-not $NoOpen) { try { Start-Process notepad.exe $reportPath } catch { } }
+if (-not $NoOpen) { try { Start-Process notepad.exe -ArgumentList ('"{0}"' -f $reportPath) } catch { } }
 
 Wait-NsaForUser

@@ -10,10 +10,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const DEFAULT_REGION_COLOR = '#1e88e5';
     const LEGACY_AREA_TOLERANCE_MS = 1;
     const DEFAULT_CATEGORIES = Object.freeze([
-        Object.freeze({ id: 'dog-bark', label: 'Dog bark', color: '#e65100' }),
-        Object.freeze({ id: 'traffic', label: 'Traffic', color: '#1976d2' }),
-        Object.freeze({ id: 'plant', label: 'Plant', color: '#388e3c' }),
+        Object.freeze({ id: 'music', label: 'Music', color: '#e65100' }),
         Object.freeze({ id: 'speech', label: 'Speech', color: '#7b1fa2' }),
+        Object.freeze({ id: 'plant', label: 'Plant', color: '#388e3c' }),
+        Object.freeze({ id: 'deliveries', label: 'Deliveries', color: '#1976d2' }),
         Object.freeze({ id: DEFAULT_CATEGORY_ID, label: 'Other', color: DEFAULT_REGION_COLOR })
     ]);
 
@@ -91,13 +91,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!region || typeof region.positionId !== 'string' || !region.positionId) return null;
         const areas = normalizeAreas(region);
         if (!areas.length) return null;
+        const categoryIds = [...new Set((Array.isArray(region.categoryIds) ? region.categoryIds : [region.categoryId])
+            .filter(id => typeof id === 'string' && id && id !== DEFAULT_CATEGORY_ID))];
+        if (!categoryIds.length) categoryIds.push(DEFAULT_CATEGORY_ID);
         return {
             ...region,
             areas,
             start: areas[0].start,
             end: areas[areas.length - 1].end,
             note: typeof region.note === 'string' ? region.note : '',
-            categoryId: typeof region.categoryId === 'string' && region.categoryId ? region.categoryId : DEFAULT_CATEGORY_ID,
+            categoryId: categoryIds[0], categoryIds,
             color: normalizeColor(region.color),
             meterStates: normalizeMeterStates(region, positions)
         };

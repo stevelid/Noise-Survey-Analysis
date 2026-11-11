@@ -545,3 +545,58 @@ def test_standalone_regions_section_keeps_state_columns_and_does_not_consolidate
     assert len(regions["allIds"]) == 2
     assert regions["byId"]["1"]["meterStates"] == {"P1": "present", "P2": "absent"}
     assert regions["categories"]["byId"]["custom"]["label"] == "Custom label"
+
+
+def test_merge_originals_survive_python_export_round_trip(tmp_path):
+    path, payload = workspace(tmp_path)
+    region = payload["appState"]["regions"]["byId"]["7"]
+    originals = [json.loads(json.dumps(region)), {**region, "id": 8, "note": "Original second note", "categoryId": "other"}]
+    region["mergeSources"] = originals
+    region["mergeCategories"] = payload["appState"]["regions"]["categories"]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    restored = load_annotation_input(export_annotations(path))
+    actual = restored["appState"]["regions"]["byId"]["7"]
+    assert actual["mergeSources"] == originals
+    assert actual["mergeCategories"] == region["mergeCategories"]
+
+
+def test_multiple_categories_survive_python_export_round_trip(tmp_path):
+    path, payload = workspace(tmp_path)
+    region = payload["appState"]["regions"]["byId"]["7"]
+    region["categoryIds"] = ["custom", "plant"]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    actual = load_annotation_input(export_annotations(path))["appState"]["regions"]["byId"]["7"]
+    assert actual["categoryIds"] == ["custom", "plant"]
+
+
+def test_bst_region_lines_up_with_naive_local_log_times_and_labels_resolution(tmp_path):
+    """Regression (job 6550): UTC region times sat 1 h early against naive BST logs."""
+    log = tmp_path / "P1_log.csv"
+    pd.DataFrame({"Datetime": ["2026-07-01 11:00:00", "2026-07-01 11:00:01"], "LAeq": [60, 70]}).to_csv(log, index=False)
+    sources = [{"position_name": "P1", "parser_type": "generic", "timezone": "Europe/London", "file_paths": [str(log)]}]
+    # 11:00:00 BST is 10:00:00 UTC.
+    start = pd.Timestamp("2026-07-01 10:00:00", tz="UTC").value // 10**6
+    region = {"id": 1, "positionId": "P1", "areas": [{"start": start, "end": start + 2000}], "note": "",
+              "categoryId": "other", "color": None, "meterStates": {"P1": "present"}}
+    payload = {"version": 2, "sourceConfigs": sources, "appState": {
+        "view": {"availablePositions": ["P1"], "positionChartOffsets": {"P1": 0}},
+        "regions": {"byId": {"1": region}, "allIds": [1], "categories": []}, "markers": {"byId": {}, "allIds": []}}}
+    path = tmp_path / "bst.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    table = read_export_section(export_annotations(path), "REGIONS")
+    row = table.loc[0]
+    assert row["start"] == "2026-07-01 10:00:00.000"          # true UTC retained for existing readers
+    assert row["start_local"] == "2026-07-01 11:00:00.000"    # matches the log file text
+    assert row["end_local"] == "2026-07-01 11:00:02.000"
+    assert row["source_start_local"] == row["start_local"]
+    assert row["LAeq_dB"] == pytest.approx(67.403627)         # the log rows were really found
+    assert row["data_resolution"] == "log"
+    assert "metrics_parameter" not in table.columns and "LAeq_dB" in table.columns
+
+
+def test_local_columns_remove_chart_offset_for_source_time(tmp_path):
+    path, payload = workspace(tmp_path)
+    payload["appState"]["view"]["positionChartOffsets"] = {"P1": 3600000}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    row = read_export_section(export_annotations(path), "REGIONS").loc[0]
+    assert pd.Timestamp(row["source_start_local"]) == pd.Timestamp(row["start_local"]) - pd.Timedelta(hours=1)

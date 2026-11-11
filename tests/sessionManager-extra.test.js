@@ -433,7 +433,7 @@ describe('NoiseSurveyApp.session extra flows', () => {
                 areas: [{ start: Date.UTC(2024, 2, 10, 9, 0, 0), end: Date.UTC(2024, 2, 10, 9, 30, 0) }],
                 note: 'CSV region',
                 color: '#fedcba',
-                categoryId: 'other',
+                categoryId: 'other', categoryIds: ['other'],
                 meterStates: { P2: 'present' }
             }
         ]);

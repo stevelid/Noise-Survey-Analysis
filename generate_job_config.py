@@ -164,11 +164,9 @@ def generate_config_file(job_number, scan_dir, config_name=None):
         "config_base_path": scan_dir.replace('\\', '/'),
         "output_filename": f"{job_number}_survey_dashboard.html",
         "_instructions": (
-            "To launch the dashboard: "
-            "1) cd \"G:/My Drive/Programing/Noise Survey Analysis\" && "
-            "bokeh serve noise_survey_analysis --unused-session-lifetime 300000  "
-            "2) open http://localhost:5006/noise_survey_analysis?config="
-            f"{config_url_path}/{config_name or f'noise_survey_config_{job_number}.json'}"
+            "Right-click this JSON file and choose 'Open in Noise Survey Analysis'. "
+            "Team launcher: G:/Shared drives/Venta/Software/Noise Survey Analysis/launch_noise_survey.bat. "
+            "For first-time setup run START_HERE.bat in that shared folder."
         ),
         "sources": []
     }

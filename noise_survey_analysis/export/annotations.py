@@ -28,6 +28,7 @@ from ..core.annotation_workspace import DEFAULT_CATEGORIES, migrate_workspace
 
 SECTIONS = ("REGIONS", "OVERALL", "SPECTRAL", "MARKERS", "NOTES")
 FORMAT_VERSION = 2
+DEFAULT_TIMEZONE = "Europe/London"
 COVERAGE_TOLERANCE = 1e-6
 
 
@@ -126,9 +127,10 @@ def load_annotation_input(input_path: str | Path | dict) -> dict:
     meters = metadata.get("meters", [])
     meter_ids = [entry["id"] if isinstance(entry, dict) else str(entry) for entry in meters]
     if sectioned:
-        annotation_fields = {"id", "category", "category_label", "note", "colour", "start", "end", "duration_s",
-                             "origin_meter", "areas", "chart_offset_ms", "source_start", "source_end", "source_areas",
-                             "data_resolution", "sample_interval_s", "coverage", "LAeq_dB", "LAFmax_dB"}
+        annotation_fields = {"id", "category", "category_label", "category_ids", "note", "colour", "start", "end", "duration_s",
+                             "origin_meter", "areas", "merge_sources", "merge_categories", "chart_offset_ms", "source_start", "source_end", "source_areas",
+                             "data_resolution", "sample_interval_s", "coverage", "LAeq_dB", "LAFmax_dB",
+                             "start_local", "end_local", "source_start_local", "source_end_local"}
         for column in table:
             if column not in annotation_fields and table[column].isin(("present", "absent", "unchecked")).any() and column not in meter_ids:
                 meter_ids.append(column)
@@ -156,7 +158,10 @@ def load_annotation_input(input_path: str | Path | dict) -> dict:
         states[origin] = "present"
         regions.append({"id": row.get("id"), "positionId": origin, "areas": areas,
                         "note": row.get("note", ""), "color": row.get("colour") or row.get("color") or None,
-                        "categoryId": row.get("category") or row.get("categoryId") or "other", "meterStates": states})
+                        "categoryId": row.get("category") or row.get("categoryId") or "other", "meterStates": states,
+                        "categoryIds": _json_value(row.get("category_ids"), None),
+                        "mergeSources": _json_value(row.get("merge_sources"), None),
+                        "mergeCategories": _json_value(row.get("merge_categories"), None)})
     marker_table = read_export_section(path, "MARKERS")
     for row in marker_table.to_dict("records"):
         markers.append({"id": row.get("id"), "timestamp": _timestamp_ms(row.get("timestamp") or row.get("start")),
@@ -221,6 +226,18 @@ def _regions(workspace: dict) -> list[dict]:
 
 def _iso(milliseconds: float) -> str:
     return pd.Timestamp(milliseconds, unit="ms", tz="UTC").strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+
+def _local_iso(milliseconds: float, zone: str) -> str:
+    """Naive wall-clock time in `zone`: the time basis of Svantek/NTi/Sentry log files."""
+    return pd.Timestamp(milliseconds, unit="ms", tz="UTC").tz_convert(zone).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+
+def _meter_zone(sources: list[dict], meter: str) -> str:
+    for source in sources:
+        if source.get("position_name") == meter and source.get("timezone"):
+            return source["timezone"]
+    return DEFAULT_TIMEZONE
 
 
 def _value(value):
@@ -386,16 +403,21 @@ def export_annotations(input_path: str | Path | dict, output_path: str | Path | 
         origin = region["positionId"]
         offset_ms = float(offsets.get(origin, 0) or 0)
         areas = union_intervals(region.get("areas") or [region])
+        zone = _meter_zone(sources, origin)
         result = headline.get((str(region["id"]), origin), MetricResult("none"))
-        region_rows.append({"id": region["id"], "category": region["categoryId"],
+        region_rows.append({"id": region["id"], "category": region["categoryId"], "category_ids": json.dumps(region["categoryIds"]),
             "category_label": catalog.get(region["categoryId"], {}).get("label", region["categoryId"]),
             "note": region.get("note", ""), "colour": region.get("color"),
             "start": _iso(areas[0][0]), "end": _iso(areas[-1][1]),
             "duration_s": sum(end - start for start, end in areas) / 1000,
             "origin_meter": origin, "areas": json.dumps([{"start": start, "end": end} for start, end in areas]),
+            "merge_sources": json.dumps(region["mergeSources"]) if region.get("mergeSources") else "",
+            "merge_categories": json.dumps(region["mergeCategories"]) if region.get("mergeCategories") else "",
             **{meter: region["meterStates"].get(meter, "unchecked") for meter in meters},
             "chart_offset_ms": offset_ms, "source_start": _iso(areas[0][0] - offset_ms),
             "source_end": _iso(areas[-1][1] - offset_ms),
+            "start_local": _local_iso(areas[0][0], zone), "end_local": _local_iso(areas[-1][1], zone),
+            "source_start_local": _local_iso(areas[0][0] - offset_ms, zone), "source_end_local": _local_iso(areas[-1][1] - offset_ms, zone),
             "source_areas": json.dumps([{"start": start - offset_ms, "end": end - offset_ms} for start, end in areas]),
             "data_resolution": result.data_resolution, "sample_interval_s": result.sample_interval_s,
             "coverage": result.coverage, "LAeq_dB": result.LAeq_dB, "LAFmax_dB": result.LAFmax_dB})
@@ -405,7 +427,7 @@ def export_annotations(input_path: str | Path | dict, output_path: str | Path | 
               {"key": "background_method", "value": f"Duration-weighted LA90 (inverse-CDF p10) of pooled {background_window_s:g}s before/after each area, excluding all regions present at the meter; minimum {min_context_s:g}s. LAeq reported for the identical usable context. Difference = region LAeq - context LA90."},
               {"key": "percentile_caveat", "value": "LAF90 from overview or 1 s data is indicative. Where fast-level samples are unavailable, percentiles of LAeq (or interval LAF90) are estimates, not reconstructed fast-level statistics."},
               {"key": "colour", "value": "Blank colour means category default; nonblank colour is a per-region override."},
-              {"key": "time_basis", "value": "Date-times are UTC; source times subtract target-meter chart offset. Half-open intervals, duration weighted, overlapping areas/context counted once; nominal sample intervals do not bridge gaps."},
+              {"key": "time_basis", "value": "Date-times are UTC except the *_local columns, which are naive local wall-clock time (BST in summer) in the source timezone (default Europe/London) and match the instrument log files; use source_start_local/source_end_local to look up log rows. Metric resolution is in data_resolution (log or overview); source times subtract target-meter chart offset. Half-open intervals, duration weighted, overlapping areas/context counted once; nominal sample intervals do not bridge gaps."},
               {"key": "sources", "value": json.dumps(sources)}, {"key": "chart_offsets_ms", "value": json.dumps(offsets)}]
     markers_state = state.get("markers") or {}
     markers = markers_state if isinstance(markers_state, list) else markers_state.get("items", markers_state.get("markers", []))
@@ -425,8 +447,9 @@ def export_annotations(input_path: str | Path | dict, output_path: str | Path | 
                 "meters": [{"id": meter, "title": titles.get(meter, meter)} for meter in meters],
                 "chart_offsets_ms": offsets, "sourceConfigs": sources})])
             writer.writerow([])
-            _write_section(writer, "REGIONS", ["id", "category", "category_label", "note", "colour", "start", "end", "duration_s", "origin_meter", "areas", *meters,
-                "chart_offset_ms", "source_start", "source_end", "source_areas", "data_resolution", "sample_interval_s", "coverage", "LAeq_dB", "LAFmax_dB"], region_rows)
+            _write_section(writer, "REGIONS", ["id", "category", "category_label", "category_ids", "note", "colour", "start", "end", "duration_s", "origin_meter", "areas", "merge_sources", "merge_categories", *meters,
+                "chart_offset_ms", "source_start", "source_end", "source_areas", "data_resolution", "sample_interval_s", "coverage", "LAeq_dB", "LAFmax_dB",
+                "start_local", "end_local", "source_start_local", "source_end_local"], region_rows)
             _write_section(writer, "OVERALL", ["region_id", "category", "meter", "state", "data_resolution", "sample_interval_s", "coverage", "LAeq_dB", "LAFmax_dB", "LAF90_dB",
                 "background_dB", "background_LA90_dB", "background_LAeq_dB", "diff_from_background_dB", "context_duration_s", "percentile_method", "missing_reasons"], overall)
             _write_section(writer, "SPECTRAL", ["region_id", "category", "meter", "state", "parameter", "data_resolution", "sample_interval_s", "coverage", "missing_reasons", *[f"{frequency:g}Hz" for frequency in sorted(bands)]], spectral)

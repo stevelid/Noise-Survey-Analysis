@@ -30,6 +30,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         'regions/categorySet',
         'regions/categoryCatalogSet',
         'regions/regionMerged',
+        'regions/regionsMerged',
+        'regions/regionUnmerged',
         'regions/regionSplit',
         'markers/markerAdded',
         'markers/markerRemoved',

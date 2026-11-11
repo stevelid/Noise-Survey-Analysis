@@ -66,7 +66,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function selectFilteredRegions(state, filters = selectRegionsState(state).filters || {}) {
         const positions = state?.view?.availablePositions || [];
         return selectAllRegions(state).filter(region => {
-            if (filters.categoryId && region.categoryId !== filters.categoryId) return false;
+            if (filters.categoryId && !(region.categoryIds || [region.categoryId]).includes(filters.categoryId)) return false;
             if (filters.presentAt && selectRegionMeterState(state, region, filters.presentAt) !== METER_PRESENT) return false;
             if (filters.onlyOneMeter && positions.filter(id => selectRegionMeterState(state, region, id) === METER_PRESENT).length !== 1) return false;
             return !filters.hasUnchecked || positions.some(id => selectRegionMeterState(state, region, id) === METER_UNCHECKED);

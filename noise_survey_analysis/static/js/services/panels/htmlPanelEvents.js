@@ -211,10 +211,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
         const submit = event => {
             const form = event.target;
-            if (form?.dataset?.action !== 'create-category') return;
+            if (!['create-category', 'create-region-category'].includes(form?.dataset?.action)) return;
             event.preventDefault();
-            session.drafts.delete('new-category-label');
-            app.store.dispatch(app.features.annotationPanel.thunks.panelCommandIntent('create-category', {
+            session.drafts.delete('new-category-label'); session.drafts.delete('inline-category-label');
+            app.store.dispatch(app.features.annotationPanel.thunks.panelCommandIntent(form.dataset.action, {
                 label: form.elements.namedItem('label').value, color: form.elements.namedItem('color').value
             }));
         };

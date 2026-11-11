@@ -41,6 +41,23 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     if (allowed.includes(payload.field)) setPanel({ filters: { [payload.field]: payload.value } });
                     break;
                 }
+                case 'check-region': {
+                    const ids = selectors.selectPanelState(state).checkedRegionIds;
+                    if (state.regions.byId[id]) setPanel({ checkedRegionIds: payload.value ? [...new Set([...ids, id])] : ids.filter(value => value !== id) });
+                    break;
+                }
+                case 'clear-region-checks': setPanel({ checkedRegionIds: [] }); break;
+                case 'merge-checked': {
+                    const ids = selectors.selectPanelData(state).checkedRegions.map(region => region.id);
+                    dispatch(regionThunks.mergeRegionsIntent(ids)); setPanel({ checkedRegionIds: [] }); break;
+                }
+                case 'unmerge-region': dispatch(regionThunks.unmergeSelectedRegionIntent()); break;
+                case 'play-region': dispatch(regionThunks.playSelectedRegionIntent()); break;
+                case 'create-region-category': {
+                    const categoryId = dispatch(regionThunks.createCategoryIntent({ label: payload.label, color: payload.color }));
+                    if (region && categoryId) dispatch(regionThunks.setRegionCategoryIntent({ id: region.id, categoryId, ensure: true }));
+                    break;
+                }
                 case 'select-region': dispatch(regionThunks.selectRegionIntent(id)); break;
                 case 'cycle-meter': dispatch(regionThunks.cycleRegionMeterStateIntent(id, payload.meter)); break;
                 case 'region-category': dispatch(regionThunks.setRegionCategoryIntent(id, payload.value)); break;
@@ -59,7 +76,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     else if (payload.field === 'markers') dispatch(actions.markersVisibilitySet(Boolean(payload.value)));
                     else if (payload.field === 'classifications') dispatch(actions.classificationVisibilitySet({ showOverlays: Boolean(payload.value) }));
                     break;
-                case 'metrics-visible': setPanel({ metricsVisible: !selectors.selectPanelState(state).metricsVisible }); break;
+                case 'metrics-visible': setPanel({ metricsVisible: typeof payload.value === 'boolean' ? payload.value : !selectors.selectPanelState(state).metricsVisible }); break;
                 case 'spectrum-visible': setPanel({ spectrumVisible: Boolean(payload.value) }); break;
                 case 'export-setting':
                     if (payload.field === 'includeAllResolutions') setPanel({ includeAllResolutions: Boolean(payload.value) });

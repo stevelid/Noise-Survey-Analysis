@@ -93,6 +93,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         REGION_CATEGORY_CATALOG_SET: 'regions/categoryCatalogSet',
         REGION_MERGED: 'regions/regionMerged',
         REGION_SPLIT: 'regions/regionSplit',
+        REGIONS_MERGED: 'regions/regionsMerged',
+        REGION_UNMERGED: 'regions/regionUnmerged',
         REGION_GHOST_MODE_SET: 'regions/ghostModeSet',
 
         REGION_CREATION_STARTED: 'interaction/regionCreationStarted',
@@ -343,14 +345,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             type: actionTypes.REGION_METER_STATES_SET, payload: { id, meterStates }
         }),
 
-        regionCategorySet: (id, categoryId) => ({
-            type: actionTypes.REGION_CATEGORY_SET, payload: { id, categoryId }
+        regionCategorySet: (id, categoryId, categoryIds) => ({
+            type: actionTypes.REGION_CATEGORY_SET, payload: { id, categoryId, categoryIds }
         }),
 
         regionCategoryCatalogSet: (categories, reassignedById = {}) => ({
             type: actionTypes.REGION_CATEGORY_CATALOG_SET, payload: { categories, reassignedById }
         }),
 
+        regionsMerged: (targetId, sourceIds, region) => ({ type: actionTypes.REGIONS_MERGED, payload: { targetId, sourceIds, region } }),
+        regionUnmerged: (id, regions, categories) => ({ type: actionTypes.REGION_UNMERGED, payload: { id, regions, categories } }),
         regionMerged: (targetId, sourceId, region) => ({
             type: actionTypes.REGION_MERGED, payload: { targetId, sourceId, region }
         }),

@@ -136,14 +136,17 @@ describe('Region Management (Multi-Area)', () => {
             const thunk = mergeRegionIntoSelectedIntent(2);
             thunk(dispatch, getState);
 
-            expect(dispatch).toHaveBeenCalledWith(
-                actions.regionMerged(1, 2, {
-                    ...getState().regions.byId[1],
-                    areas: [{ start: 100, end: 200 }, { start: 300, end: 400 }],
-                    meterStates: { P1: 'present' },
-                    note: ''
-                })
-            );
+            // The compatibility entry point delegates to the atomic batch merge.
+            const nested = dispatch.mock.calls[0][0];
+            nested(dispatch, getState);
+            expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+                type: window.NoiseSurveyApp.actionTypes.REGIONS_MERGED,
+                payload: expect.objectContaining({ targetId: 1, sourceIds: [2],
+                    region: expect.objectContaining({
+                        areas: [{ start: 100, end: 200 }, { start: 300, end: 400 }],
+                        mergeSources: [getState().regions.byId[1], getState().regions.byId[2]]
+                    }) })
+            }));
             expect(dispatch).not.toHaveBeenCalledWith(actions.regionRemove(2));
         });
     });

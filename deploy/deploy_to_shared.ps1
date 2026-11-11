@@ -32,6 +32,8 @@ param(
     [switch]$RebuildWheelhouse,
     [switch]$SkipGitCheck,
     [switch]$RemoveLegacyGit,
+    [string]$ParserSource = 'G:\My Drive\Programing\SLM Parsers\SLM Parsers\src',
+    [string]$SdImporterSource = 'G:\Shared drives\Venta\Venta AI\skills\import-sd\scripts\sd-import-interactive.ps1',
     [switch]$WhatIf
 )
 
@@ -42,6 +44,21 @@ $ShareDir  = Join-Path $PSScriptRoot 'share'
 $PayloadDest = Join-Path $Destination 'Noise Survey Analysis'
 $RuntimeDest = Join-Path $Destination 'runtime'
 $WheelDest   = Join-Path $RuntimeDest 'wheelhouse'
+
+# All mirror/removal targets must be below this explicit release directory.
+$Destination = [IO.Path]::GetFullPath($Destination).TrimEnd('\')
+if ($Destination -eq [IO.Path]::GetPathRoot($Destination).TrimEnd('\') -or
+    $RepoRoot.StartsWith($Destination + '\', [StringComparison]::OrdinalIgnoreCase) -or
+    $Destination.StartsWith($RepoRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+    $Destination -ieq $RepoRoot) { throw 'Destination must be a separate, dedicated release folder.' }
+foreach ($target in @($PayloadDest, (Join-Path $Destination '_lib'), (Join-Path $Destination 'SLM Parsers\src'), $WheelDest)) {
+    $absolute = [IO.Path]::GetFullPath($target)
+    if (-not $absolute.StartsWith($Destination + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe deployment target: $absolute" }
+    if (Test-Path -LiteralPath $absolute) {
+        $links = @(Get-Item -LiteralPath $absolute -Force; Get-ChildItem -LiteralPath $absolute -Recurse -Force) | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }
+        if ($links) { throw "Linked deployment target refused: $absolute" }
+    }
+}
 
 function Write-Step { param([string]$T) Write-Host "`n$T" -ForegroundColor Cyan; Write-Host ('-' * $T.Length) -ForegroundColor Cyan }
 function Write-Ok   { param([string]$T) Write-Host "  [ok] $T" -ForegroundColor Green }
@@ -80,6 +97,16 @@ if (-not (Test-Path $ShareDir)) {
 foreach ($f in @('requirements-lock.txt')) {
     if (-not (Test-Path (Join-Path $RepoRoot $f))) { throw "Required file missing from the repo: $f" }
 }
+foreach ($required in @((Join-Path $ParserSource 'process_files.py'), (Join-Path $ParserSource 'Noise_Sentry\cil_to_csv.py'), $SdImporterSource, (Join-Path $RuntimeDest 'bootstrap.json'))) {
+    if (-not (Test-Path -LiteralPath $required)) { throw "Required release input missing: $required. Prepare bootstrap assets first." }
+}
+if (-not $WhatIf -and -not $RebuildWheelhouse) {
+    & python -m pip install --dry-run --ignore-installed --isolated --no-index --find-links (Join-Path $WheelDest 'cp313') --only-binary=:all: -r (Join-Path $RepoRoot 'requirements-lock.txt') *> $null
+    if ($LASTEXITCODE -ne 0) { throw 'Offline package store does not satisfy the lock. Rebuild it before publishing.' }
+}
+foreach ($f in $PayloadFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $f))) { throw "Missing payload source: $f" }
+}
 
 if (-not $SkipGitCheck) {
     Push-Location $RepoRoot
@@ -97,10 +124,20 @@ if (-not $SkipGitCheck) {
         if ($LASTEXITCODE -ne 0) { $script:GitCommit = 'unknown' }
     } finally { Pop-Location }
 } else {
-    $script:GitCommit = 'skipped'
+    $script:GitCommit = (& git -C $RepoRoot rev-parse --short HEAD 2>$null)
+    if ($LASTEXITCODE -ne 0) { $script:GitCommit = 'unknown' }
 }
 
 # --- 1. Application payload ---------------------------------------------------
+
+if (-not $WhatIf -and (Test-Path -LiteralPath (Join-Path $RuntimeDest 'manifest.json'))) {
+    & python (Join-Path $PSScriptRoot 'release_integrity.py') backup $Destination
+    if ($LASTEXITCODE -ne 0) { throw 'Previous-release backup failed; nothing has been overwritten.' }
+}
+if (-not $WhatIf) {
+    New-Item -ItemType Directory -Path $RuntimeDest -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $RuntimeDest 'updating.txt') -Value 'Publishing a software update. If this remains, re-run deployment.' -Encoding ASCII
+}
 
 Write-Step '1. Application code'
 
@@ -124,6 +161,17 @@ foreach ($file in $PayloadFiles) {
     if ($LASTEXITCODE -ge 8) { throw "Failed to copy $file (robocopy exit code $LASTEXITCODE)." }
 }
 Write-Ok "Support files synced ($($PayloadFiles.Count) candidates)."
+
+# Classification workflows also use this application distribution. Publish the
+# runnable YAMNet tools and their setup guide, excluding generated survey/model
+# data and caches. Its optional TensorFlow environment remains separate.
+$classifierSource = Join-Path $RepoRoot 'tools\yamnet_benchmark'
+$classifierDest = Join-Path $PayloadDest 'tools\yamnet_benchmark'
+if (-not $WhatIf) { New-Item -ItemType Directory -Path $classifierDest -Force | Out-Null }
+$classifierArgs = @($classifierSource, $classifierDest, '*.py', '*.md', '*.txt') + $roboCommon
+& robocopy.exe @classifierArgs | Out-Null
+if ($LASTEXITCODE -ge 8) { throw 'Failed to publish survey audio classification tools.' }
+Write-Ok 'Survey audio classification scripts and setup guide synced.'
 
 # The old deployment left stale copies of files that have since been renamed or
 # removed. Clear anything at the payload root that is no longer part of the set.
@@ -182,6 +230,26 @@ $scriptArgs = @($ShareDir, $Destination, '*.ps1', '*.bat', '*.txt') + $roboCommo
 if ($LASTEXITCODE -ge 8) { throw "Failed to copy the launcher scripts (robocopy exit code $LASTEXITCODE)." }
 Write-Ok 'Setup, launch, diagnose, uninstall and config scripts synced.'
 
+# Parsers and SD importer are part of every release, never a separate manual sync.
+$parserPublishSource = $ParserSource
+if (-not $WhatIf) {
+    # Publish runnable source only. The development parser tree also contains
+    # raw surveys, manuals and an abandoned experimental USB driver.
+    $parserPublishSource = Join-Path $env:TEMP ('nsa_parser_release_' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $parserPublishSource -Force | Out-Null
+    & robocopy.exe $ParserSource $parserPublishSource '*.py' 'requirements.txt' /S /XD __pycache__ .pytest_cache .git .vscode /XF svan_usb_download.py /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw 'Could not prepare the parser source for publishing.' }
+}
+$parserArgs = @($parserPublishSource, (Join-Path $Destination 'SLM Parsers\src'), '/MIR', '/XD', '__pycache__', '.pytest_cache', '.git', '/XF', '*.pyc', '*.log', 'parse_log.txt') + $roboCommon
+& robocopy.exe @parserArgs | Out-Null
+if ($LASTEXITCODE -ge 8) { throw 'Failed to publish meter parsers.' }
+if (-not $WhatIf) {
+    $sdDest = Join-Path $Destination 'SD Card Import'
+    New-Item -ItemType Directory -Path $sdDest -Force | Out-Null
+    Copy-Item -LiteralPath $SdImporterSource -Destination (Join-Path $sdDest 'sd-import-interactive.ps1') -Force
+}
+Write-Ok 'Current SVAN/Noise Sentry parsers and the canonical SD importer synced. NTi parser is in the dashboard package.'
+
 # Retire the superseded scripts from the previous deployment so nobody runs them.
 $obsolete = @('fix_extract_th_context_menu.bat', 'fix_extract_th_context_menu.ps1', 'README.md')
 if (-not $WhatIf) {
@@ -212,15 +280,18 @@ if ($RebuildWheelhouse) {
         # File Stream drive is slow and half-finished downloads there are worse
         # than none at all.
         $staging = Join-Path $env:TEMP ("nsa_wheels_{0}" -f $pythonTag)
+        $absoluteStage = [IO.Path]::GetFullPath($staging)
+        $tempPrefix = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+        if (-not $absoluteStage.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+            (Split-Path -Leaf $absoluteStage) -notmatch '^nsa_wheels_cp\d+$') { throw 'Unsafe wheel staging path.' }
+        if ((Test-Path -LiteralPath $staging) -and (Get-Item -LiteralPath $staging -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked staging directory refused.' }
         if (Test-Path $staging) { Remove-Item -Path $staging -Recurse -Force }
         New-Item -ItemType Directory -Path $staging -Force | Out-Null
 
         Write-Info2 "Downloading wheels for $pythonTag (this takes a few minutes)..."
         & python -m pip download -r $lockFile -d $staging --only-binary=:all:
         if ($LASTEXITCODE -ne 0) {
-            Write-Warn2 'Binary-only download failed; retrying and allowing source distributions.'
-            & python -m pip download -r $lockFile -d $staging
-            if ($LASTEXITCODE -ne 0) { throw 'pip download failed. The wheelhouse was not updated.' }
+            throw 'Binary download failed. Source distributions are not suitable for a click-to-install Windows release.'
         }
 
         if (-not (Test-Path $tagDir)) { New-Item -ItemType Directory -Path $tagDir -Force | Out-Null }
@@ -265,11 +336,16 @@ $manifest = [ordered]@{
     deployed_at       = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
     deployed_by       = $env:USERNAME
     git_commit        = $script:GitCommit
+    source_dirty      = [bool](& git -C $RepoRoot status --porcelain 2>$null)
     payload_dir       = 'Noise Survey Analysis'
     requirements_file = 'requirements-lock.txt'
-    min_python        = '3.10'
-    preferred_python  = $preferred
-    wheelhouse_tags   = $tags
+    min_python        = '3.13'
+    preferred_python  = @('3.13')
+    wheelhouse_tags   = @($tags | Where-Object { $_ -eq 'cp313' })
+    platform          = 'Windows 10/11 x64'
+    parser_source     = $ParserSource
+    sd_import_source  = $SdImporterSource
+    requirements_sha256 = (Get-FileHash -LiteralPath $lockFile).Hash
 }
 
 if ($WhatIf) {
@@ -278,6 +354,9 @@ if ($WhatIf) {
 } else {
     if (-not (Test-Path $RuntimeDest)) { New-Item -ItemType Directory -Path $RuntimeDest -Force | Out-Null }
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $RuntimeDest 'manifest.json') -Encoding UTF8
+    & python (Join-Path $PSScriptRoot 'release_integrity.py') create $Destination
+    if ($LASTEXITCODE -ne 0) { throw 'Release integrity manifest could not be generated.' }
+    Remove-Item -LiteralPath (Join-Path $RuntimeDest 'updating.txt') -Force
     Write-Ok "Version $version published."
     if ($tags.Count -gt 0) { Write-Ok "Offline installs supported for: $($tags -join ', ')" }
     else { Write-Warn2 'No offline package store - team machines will need internet access.' }

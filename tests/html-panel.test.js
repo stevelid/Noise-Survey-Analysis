@@ -34,7 +34,7 @@ describe('HTML annotation panel', () => {
             const next = app.rootReducer(state || base, action);
             return { ...next, annotationPanel: feature.reducer(state?.annotationPanel, action) };
         });
-        app.store.dispatch(app.actions.regionsAdded([{ id: 1, positionId: 'P1', start: 1000, end: 2000, note: 'Dog bark', categoryId: 'dog-bark', meterStates: { P1: 'present', P2: 'unchecked' } }]));
+        app.store.dispatch(app.actions.regionsAdded([{ id: 1, positionId: 'P1', start: 1000, end: 2000, note: 'Dog bark', categoryId: 'music', meterStates: { P1: 'present', P2: 'unchecked' } }]));
         app.store.dispatch(app.actions.regionSelect(1));
         app.dataCache = {};
         originalMetrics = app.regions.getRegionMetrics;
@@ -47,7 +47,7 @@ describe('HTML annotation panel', () => {
         state.regions.byId[1].note = '<img src=x onerror="bad()"> & notes';
         state.regions.byId[1].color = 'red;position:fixed';
         state.view.positionDisplayTitles.P2 = '<script>bad()</script>';
-        state.regions.categories.byId['dog-bark'].label = 'Dogs " & <b>';
+        state.regions.categories.byId.music.label = 'Dogs " & <b>';
         const html = renderer.buildHtml(state, {}, {});
         const template = document.createElement('template'); template.innerHTML = html;
         expect(template.content.querySelector('script,img')).toBeNull();
@@ -71,7 +71,7 @@ describe('HTML annotation panel', () => {
 
     it('starts with metrics collapsed and preserves the explicit choice through workspace state rehydration', () => {
         setupDom();
-        expect(root.querySelector('[data-action="metrics-visible"]').getAttribute('aria-expanded')).toBe('false');
+        expect(root.querySelector('[data-action="metrics-visible"] summary').getAttribute('aria-expanded')).toBe('false');
         expect(app.regions.getRegionMetrics).not.toHaveBeenCalled();
         for (const expected of [true, false]) {
             app.store.dispatch(feature.thunks.panelCommandIntent('metrics-visible'));
@@ -125,7 +125,7 @@ describe('HTML annotation panel', () => {
         const rendered = root.querySelector('details[data-key="region-spectrum"]');
         expect(rendered.open).toBe(true);
         expect(rendered.querySelector('table').textContent).toContain('63 Hz');
-        expect(root.querySelector('[data-action="metrics-visible"]').getAttribute('aria-expanded')).toBe('false');
+        expect(root.querySelector('[data-action="metrics-visible"] summary').getAttribute('aria-expanded')).toBe('false');
         rendered.open = false; rendered.dispatchEvent(new Event('toggle')); await tick();
         expect(app.regions.getRegionMetrics).toHaveBeenCalledTimes(1);
     });
@@ -164,15 +164,29 @@ describe('HTML annotation panel', () => {
         expect(app.store.getState().regions.byId[1].note).toBe('Dog bark');
     });
 
-    it('preserves details scroll for the same region and starts a different region at the top', async () => {
-        app.store.dispatch(app.actions.regionsAdded([{ id: 2, positionId: 'P1', start: 3000, end: 4000 }]));
-        app.store.dispatch(app.actions.regionSelect(1));
+    it('uses one panel scroll with the region list before selected details', async () => {
         setupDom(); await tick();
-        root.querySelector('[data-scroll-key="selected-region:1"]').scrollTop = 80;
-        app.store.dispatch(app.actions.regionSetColor(1, '#123456')); await tick();
-        expect(root.querySelector('[data-scroll-key="selected-region:1"]').scrollTop).toBe(80);
-        app.store.dispatch(app.actions.regionSelect(2)); await tick();
-        expect(root.querySelector('[data-scroll-key="selected-region:2"]').scrollTop).toBe(0);
+        const list = root.querySelector('.nsa-region-list-section');
+        const selected = root.querySelector('.nsa-selected');
+        expect(list.compareDocumentPosition(selected) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(root.querySelector('[data-scroll-key^="selected-region:"]')).toBeNull();
+        expect(root.querySelector('.nsa-region-row [data-action="cycle-meter"]')).toBeNull();
+    });
+
+    it('keeps keyboard help available and expanded across annotation tabs', async () => {
+        setupDom(); await tick();
+        const help = root.querySelector('details[data-key="keyboard-help"]');
+        expect(help).not.toBeNull();
+        expect(help.open).toBe(false);
+        expect(help.textContent).toContain('Ctrl + Enter');
+        expect(help.textContent).toContain('Move the selected marker');
+        help.querySelector('summary').click();
+        app.store.dispatch(app.actions.setActiveSidePanelTab(1));
+        await tick();
+        expect(root.querySelector('details[data-key="keyboard-help"]').open).toBe(true);
+        app.store.dispatch(app.actions.setActiveSidePanelTab(2));
+        await tick();
+        expect(root.querySelector('details[data-key="keyboard-help"]').open).toBe(true);
     });
 
     it('commits notes with Ctrl+Enter and cancels drafts with Escape', async () => {
@@ -235,6 +249,28 @@ describe('HTML annotation panel', () => {
         expect(app.store.getState().view.activeSidePanelTab).toBe(1);
     });
 
+    it('shows a compact marker list before its details and saves a note while selecting another marker', async () => {
+        app.store.dispatch(app.actions.markerAdd(1500, { note: 'First sound' }));
+        app.store.dispatch(app.actions.markerAdd(2500, { note: 'Second sound' }));
+        const markers = app.features.markers.selectors.selectAllMarkers(app.store.getState());
+        app.store.dispatch(feature.thunks.panelCommandIntent('select-marker', { id: markers[0].id }));
+        app.store.dispatch(app.actions.setActiveSidePanelTab(1));
+        setupDom(); await tick();
+        const list = root.querySelector('.nsa-marker-list-section');
+        const detail = root.querySelector('.nsa-selected-marker');
+        expect(list.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(root.querySelectorAll('.nsa-marker-row')).toHaveLength(2);
+        expect(root.querySelector('.nsa-marker-row .nsa-row-button').textContent).toBe('First sound');
+        expect(root.querySelector('details[data-key^="marker-measurements:"]').open).toBe(false);
+        const textarea = root.querySelector('textarea[data-action="marker-note"]');
+        textarea.focus(); textarea.value = 'Updated while browsing';
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        root.querySelector(`button[data-action="select-marker"][data-id="${markers[1].id}"]`).click();
+        await tick();
+        expect(app.store.getState().markers.byId[markers[0].id].note).toBe('Updated while browsing');
+        expect(root.querySelector('.nsa-selected-marker textarea').value).toBe('Second sound');
+    });
+
     it('saves a dirty note while opening a disclosure and restores summary focus', async () => {
         setupDom(); await tick();
         const textarea = root.querySelector('textarea[data-action="region-note"]');
@@ -256,7 +292,7 @@ describe('HTML annotation panel', () => {
 
     it('saves dirty notes before Tab and Shift+Tab and restores the intended neighbouring field', async () => {
         setupDom(); await tick();
-        for (const [shiftKey, expectedKey] of [[false, 'region-color:1'], [true, 'region-category:1']]) {
+        for (const [shiftKey, expectedKey] of [[false, 'category-chip:music']]) {
             const textarea = root.querySelector('textarea[data-action="region-note"]');
             textarea.focus(); textarea.value = `Saved with shift=${shiftKey}`;
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -275,7 +311,7 @@ describe('HTML annotation panel', () => {
 
     it('keeps native form targets alive while a dirty note saves on pointer blur', async () => {
         setupDom(); await tick();
-        for (const [key, value] of [['region-category:1', 'traffic'], ['region-color:1', '#123456']]) {
+        for (const [key, value] of [['region-color:1', '#123456']]) {
             const textarea = root.querySelector('textarea[data-action="region-note"]');
             textarea.focus(); textarea.value = `Saved before ${key}`;
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -294,7 +330,6 @@ describe('HTML annotation panel', () => {
             await tick();
             expect(events.shouldDeferRender(models)).toBe(false);
         }
-        expect(app.store.getState().regions.byId[1].categoryId).toBe('traffic');
         expect(app.store.getState().regions.byId[1].color).toBe('#123456');
     });
 
@@ -303,7 +338,7 @@ describe('HTML annotation panel', () => {
         const textarea = root.querySelector('textarea[data-action="region-note"]');
         textarea.focus(); textarea.value = 'Saved without changing category';
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
-        const category = root.querySelector('[data-action="region-category"]');
+        const category = root.querySelector('[data-key="region-color:1"]');
         category.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
         textarea.dispatchEvent(new Event('change', { bubbles: true }));
         textarea.blur(); category.focus();
@@ -321,7 +356,7 @@ describe('HTML annotation panel', () => {
         const textarea = root.querySelector('textarea[data-action="region-note"]');
         textarea.focus(); textarea.value = `Saved before ${kind}`;
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
-        const form = root.querySelector(`[data-key="${kind === 'colour' ? 'region-color:1' : 'region-category:1'}"]`);
+        const form = root.querySelector(`[data-key="${kind === 'colour' ? 'region-color:1' : 'region-color:1'}"]`);
         form.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
         textarea.dispatchEvent(new Event('change', { bubbles: true }));
         textarea.blur(); form.focus();
@@ -347,7 +382,7 @@ describe('HTML annotation panel', () => {
         const textarea = root.querySelector('textarea[data-action="region-note"]');
         textarea.focus(); textarea.value = 'Saved before cancelled pointer';
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
-        const category = root.querySelector('[data-action="region-category"]');
+        const category = root.querySelector('[data-key="region-color:1"]');
         category.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
         textarea.dispatchEvent(new Event('change', { bubbles: true }));
         textarea.blur(); category.focus();
