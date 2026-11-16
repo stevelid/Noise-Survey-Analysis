@@ -11,12 +11,25 @@ import logging
 import os
 import threading
 import time
+import uuid
 from typing import Any, Optional
 
 from .commands import ControlResult
-from .validation import validate_viewport, validate_view_mode, validate_parameter
+from .validation import (
+    validate_viewport,
+    validate_view_mode,
+    validate_parameter,
+    validate_workspace_payload,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def make_unique_request_id(request_id: str = "") -> str:
+    """Return a request id that is never empty and never repeats."""
+    suffix = uuid.uuid4().hex[:12]
+    request_id = (request_id or "").strip()
+    return f"{request_id}-{suffix}" if request_id else suffix
 
 
 class SessionBridge:
@@ -37,6 +50,8 @@ class SessionBridge:
         self._control_state_source: Any = None  # ColumnDataSource
         self._automation_command_source: Any = None  # ColumnDataSource
         self._automation_result_source: Any = None  # ColumnDataSource
+        # Extra per-session registrations (position list, config path, ...), see register().
+        self._context: dict[str, Any] = {}
         # Pending result futures keyed by request_id
         self._pending: dict[str, threading.Event] = {}
         self._results: dict[str, dict] = {}
@@ -54,8 +69,14 @@ class SessionBridge:
         control_state_source: Any = None,
         automation_command_source: Any = None,
         automation_result_source: Any = None,
+        **context: Any,
     ) -> None:
         """Register the active Bokeh document and optional model references.
+
+        Any extra keyword arguments (for example ``positions=[...]``,
+        ``config_path=...``) are kept as per-session context and read back with
+        :meth:`get_context`; they are replaced on every ``register`` call and cleared
+        by ``unregister``.
 
         Safe to call from any thread; uses an internal lock.
         """
@@ -67,11 +88,26 @@ class SessionBridge:
             self._control_state_source = control_state_source
             self._automation_command_source = automation_command_source
             self._automation_result_source = automation_result_source
+            self._context = dict(context)
         logger.info("SessionBridge: session registered (doc=%s)", type(doc).__name__)
 
-    def unregister(self) -> None:
-        """Clear the active session reference."""
+    def get_context(self, key: str, default: Any = None) -> Any:
+        """Return an extra value passed to :meth:`register`, or ``default``."""
         with self._lock:
+            return self._context.get(key, default)
+
+    def unregister(self, doc: Any = None) -> None:
+        """Clear the active session reference.
+
+        When ``doc`` is given, the registration is only cleared if it still
+        belongs to that document (a stale session's destroy callback must not
+        clear a newer session's registration).  ``doc=None`` clears
+        unconditionally.
+        """
+        with self._lock:
+            if doc is not None and self._doc is not doc:
+                logger.info("SessionBridge: unregister ignored (registration belongs to a newer session)")
+                return
             self._doc = None
             self._master_x_range = None
             self._param_select = None
@@ -79,6 +115,7 @@ class SessionBridge:
             self._control_state_source = None
             self._automation_command_source = None
             self._automation_result_source = None
+            self._context = {}
         logger.info("SessionBridge: session unregistered")
 
     @property
@@ -317,7 +354,7 @@ class SessionBridge:
                     f"workspace file not found: {path!r}", request_id=request_id
                 )
             try:
-                with open(path, "r", encoding="utf-8") as fh:
+                with open(path, "r", encoding="utf-8-sig") as fh:
                     payload = json.load(fh)
             except Exception as exc:
                 return ControlResult.error(
@@ -329,7 +366,12 @@ class SessionBridge:
                 "apply_workspace requires path or payload", request_id=request_id
             )
 
-        return self._send_js_command(
+        try:
+            payload = validate_workspace_payload(payload)
+        except ValueError as exc:
+            return ControlResult.error(str(exc), request_id=request_id)
+
+        return self.send_command(
             "apply_workspace",
             {"payload": payload},
             request_id=request_id,
@@ -338,7 +380,32 @@ class SessionBridge:
 
     def export_annotations(self, payload: dict | None = None, request_id: str = "") -> ControlResult:
         """Ask the frontend for its current workspace, then queue a Python export."""
-        return self._send_js_command("export_annotations", payload or {}, request_id=request_id, timeout=10)
+        return self.send_command("export_annotations", payload or {}, request_id=request_id, timeout=10)
+
+    def annotation_command(
+        self,
+        command: str,
+        payload: Optional[dict] = None,
+        request_id: str = "",
+        timeout: float = 15.0,
+    ) -> ControlResult:
+        """Run an annotation command (list/add/update/delete regions and markers, show).
+
+        The payload must already be validated (``annotation_validation``).  The browser applies
+        it and the handler's ``data`` comes back on the result.  A read-only command that gets
+        no answer, and a mutating command that is not acknowledged, are both failures.
+        """
+        from .annotation_validation import ANNOTATION_COMMANDS, MUTATING_ANNOTATION_COMMANDS
+
+        if command not in ANNOTATION_COMMANDS:
+            return ControlResult.error(f"not an annotation command: {command!r}", request_id=request_id)
+        return self.send_command(
+            command,
+            payload or {},
+            request_id=request_id,
+            timeout=timeout,
+            mutating=command in MUTATING_ANNOTATION_COMMANDS,
+        )
 
     def export_static_html(self, request_id: str = "") -> ControlResult:
         """Trigger a static HTML export through the session action source."""
@@ -347,6 +414,8 @@ class SessionBridge:
 
         if doc is None:
             return ControlResult.error("no active session", request_id=request_id)
+
+        request_id = make_unique_request_id(request_id)
 
         # Trigger via session_action_source by scheduling on the Bokeh loop.
         # The AppCallbacks handler picks this up.
@@ -393,12 +462,35 @@ class SessionBridge:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def send_command(
+        self,
+        command: str,
+        payload: Optional[dict] = None,
+        *,
+        request_id: str = "",
+        timeout: float = 10.0,
+        mutating: bool = True,
+    ) -> ControlResult:
+        """Send ``command`` to the browser's automation registry and wait for its result.
+
+        The JS side runs the handler registered with
+        ``app.session.registerAutomationCommand(command, handler)``; its
+        ``{success, message, data}`` result comes back as the returned ``ControlResult``
+        (``data`` is the handler's ``data``).  No acknowledgement within ``timeout`` is a
+        failure either way; ``mutating`` only changes the wording (a mutating command may
+        or may not have been applied, a read-only one simply got no answer).
+        """
+        return self._send_js_command(
+            command, payload or {}, request_id=request_id, timeout=timeout, mutating=mutating
+        )
+
     def _send_js_command(
         self,
         command: str,
         payload: dict,
         request_id: str,
         timeout: float,
+        mutating: bool = True,
     ) -> ControlResult:
         """Schedule ``command`` on the JS bridge and optionally wait for ack."""
         with self._lock:
@@ -414,12 +506,14 @@ class SessionBridge:
                 request_id=request_id,
             )
 
-        event: Optional[threading.Event] = None
+        # The browser drops commands whose request_id is empty or equal to the
+        # previous one, so every dispatch gets a unique id.  A client-supplied id
+        # is kept as a prefix for log correlation.
+        request_id = make_unique_request_id(request_id)
 
-        if request_id:
-            event = threading.Event()
-            with self._lock:
-                self._pending[request_id] = event
+        event = threading.Event()
+        with self._lock:
+            self._pending[request_id] = event
 
         def _send() -> None:
             try:
@@ -437,33 +531,35 @@ class SessionBridge:
 
         doc.add_next_tick_callback(_send)
 
-        if event is not None:
-            got_result = event.wait(timeout=timeout)
-            with self._lock:
-                self._pending.pop(request_id, None)
-            if got_result:
-                result = self._results.pop(request_id, {})
-                if result.get("success"):
-                    return ControlResult.ok(
-                        message=result.get("message", "OK"),
-                        data=result.get("data"),
-                        request_id=request_id,
-                    )
-                return ControlResult.error(
-                    result.get("message", "Command failed"),
+        got_result = event.wait(timeout=timeout)
+        with self._lock:
+            self._pending.pop(request_id, None)
+        if got_result:
+            result = self._results.pop(request_id, {})
+            if result.get("success"):
+                return ControlResult.ok(
+                    message=result.get("message", "OK"),
+                    data=result.get("data"),
                     request_id=request_id,
                 )
-            # Timed out but treat as success (fire-and-forget with best-effort ack)
-            logger.warning(
-                "SessionBridge: JS ack timed out for %r (request_id=%s)",
-                command, request_id,
-            )
-            return ControlResult.ok(
-                message=f"{command} sent (ack timed out)",
+            return ControlResult.error(
+                result.get("message", "Command failed"),
                 request_id=request_id,
             )
-
-        return ControlResult.ok(
-            message=f"{command} command scheduled",
+        # These commands mutate the dashboard; without an acknowledgement we cannot
+        # claim they happened (browser closed, tab throttled, or command dropped).
+        self._results.pop(request_id, None)
+        logger.warning(
+            "SessionBridge: JS ack timed out for %r (request_id=%s)",
+            command, request_id,
+        )
+        if not mutating:
+            return ControlResult.error(
+                f"{command} was sent but the browser did not respond within {timeout:g}s",
+                request_id=request_id,
+            )
+        return ControlResult.error(
+            f"{command} was sent but the browser did not acknowledge it within "
+            f"{timeout:g}s; it may not have been applied",
             request_id=request_id,
         )

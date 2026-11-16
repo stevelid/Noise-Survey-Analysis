@@ -95,6 +95,7 @@ describe('processComparisonSliceMetrics', () => {
         const expectedLa90 = calcMetrics.calcLA90([50, 60]);
         expect(metrics.dataset).toBe('log');
         expect(metrics.laeq).toBeCloseTo(expectedLaeq ?? 0, 6);
+        expect(metrics.coarseResolution).toBe(false);
         expect(metrics.lafmax).toBeCloseTo(expectedLafmax ?? 0, 6);
         expect(metrics.la90).toBeCloseTo(expectedLa90 ?? 0, 6);
         expect(metrics.la90Available).toBe(true);

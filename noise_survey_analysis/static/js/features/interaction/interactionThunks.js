@@ -166,7 +166,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 if (ctrlKey || altKey || payload?.metaKey || payload?.shiftKey || payload?.repeat || payload?.isEditable) return;
                 const state = typeof getState === 'function' ? getState() : null;
                 const id = state?.regions?.selectedId;
-                const positionId = state?.view?.availablePositions?.[Number(rawKey) - 1];
+                // Key N is the Nth chart as displayed (after any reorder), not the Nth in data order.
+                const available = state?.view?.availablePositions || [];
+                const ordered = app.features?.layout?.selectors?.selectOrderedPositions;
+                const positionId = (typeof ordered === 'function' ? ordered(state, available) : available)[Number(rawKey) - 1];
                 const cycle = app.features?.regions?.thunks?.cycleRegionMeterStateIntent;
                 if (Number.isFinite(id) && positionId && typeof cycle === 'function') dispatch(cycle(id, positionId));
                 return;

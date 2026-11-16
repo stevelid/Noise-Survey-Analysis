@@ -43,7 +43,8 @@ def load_config_and_prepare_sources(config_path='config.json'):
 
     logger.info(f"Attempting to load configuration from: {config_full_path}")
     try:
-        with open(config_full_path, 'r') as f:
+        # utf-8-sig: PowerShell 5 writes a BOM; plain utf-8 would fail to parse it.
+        with open(config_full_path, 'r', encoding='utf-8-sig') as f:
             config = json.load(f)
     except FileNotFoundError:
         logger.error(f"Configuration file not found at {config_full_path}")
@@ -160,7 +161,7 @@ def load_config_extras(config_path='config.json'):
     config_full_path = Path(config_path) if os.path.isabs(config_path) else project_root / config_path
 
     try:
-        with open(config_full_path, 'r', encoding='utf-8') as f:
+        with open(config_full_path, 'r', encoding='utf-8-sig') as f:
             config = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
         logger.debug("No config extras available from %s: %s", config_full_path, exc)

@@ -105,6 +105,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         AUDIO_RATE_CHANGE_REQUEST: 'audio/RATE_CHANGE_REQUEST', 
         AUDIO_BOOST_TOGGLE_REQUEST: 'audio/BOOST_TOGGLE_REQUEST', 
 
+        // Layout (see features/layout/layoutReducer.js)
+        LAYOUT_POSITION_ORDER_SET: 'layout/positionOrderSet',
+        LAYOUT_SPECTROGRAM_MODE_SET: 'layout/spectrogramModeSet',
+        LAYOUT_Y_AXIS_MODE_SET: 'layout/yAxisModeSet',
+        LAYOUT_FIT_TO_WINDOW_SET: 'layout/fitToWindowSet',
+        LAYOUT_WHEEL_ZOOM_LOCK_SET: 'layout/wheelZoomLockSet',
+        LAYOUT_FREQUENCY_DOCK_OPEN_SET: 'layout/frequencyDockOpenSet',
+
         // History
         HISTORY_UNDO: 'history/undo',
         HISTORY_REDO: 'history/redo',
@@ -424,6 +432,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         dataRefreshed: (positionId) => ({
             type: actionTypes.DATA_REFRESHED,
             payload: { positionId }
+        }),
+
+        // order: array of position ids, or null to restore the default (data) order.
+        layoutPositionOrderSet: (order) => ({
+            type: actionTypes.LAYOUT_POSITION_ORDER_SET,
+            payload: { order: Array.isArray(order) ? order : null }
+        }),
+        // mode: 'full' | 'strip' | 'hidden'
+        layoutSpectrogramModeSet: (positionId, mode) => ({
+            type: actionTypes.LAYOUT_SPECTROGRAM_MODE_SET,
+            payload: { positionId, mode }
+        }),
+        // mode: 'auto' | 'shared' | 'locked'
+        layoutYAxisModeSet: (mode) => ({ type: actionTypes.LAYOUT_Y_AXIS_MODE_SET, payload: { mode } }),
+        layoutFitToWindowSet: (enabled) => ({
+            type: actionTypes.LAYOUT_FIT_TO_WINDOW_SET, payload: { enabled: Boolean(enabled) }
+        }),
+        layoutWheelZoomLockSet: (locked) => ({
+            type: actionTypes.LAYOUT_WHEEL_ZOOM_LOCK_SET, payload: { locked: Boolean(locked) }
+        }),
+        layoutFrequencyDockOpenSet: (open) => ({
+            type: actionTypes.LAYOUT_FREQUENCY_DOCK_OPEN_SET, payload: { open: Boolean(open) }
         }),
 
         undo: () => ({ type: actionTypes.HISTORY_UNDO }),

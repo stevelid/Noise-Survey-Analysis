@@ -218,7 +218,12 @@ C) Static HTML Generation (For Sharing)
    - No Python server required to view
    - Audio playback disabled
    - Perfect for reports and email distribution
-   - Output file saved in same directory as config
+   - Output file saved in same directory as config (or --output <file or folder>)
+   - Bakes in the job's autosaved annotations/offsets (or --state workspace.json)
+   - --static-detail auto|full|regions|overview (default auto: full 1 s data if the
+     estimated size is under 150 MB, otherwise 1 s data only around regions/markers)
+   - --audio-clips writes 16 kHz mono WAV clips (regions up to 60 s, 20 MB cap) to <name>_clips/
+   - Annotation edits made in the static file are kept in the browser (localStorage)
 
 Opening the Generated Dashboard:
 

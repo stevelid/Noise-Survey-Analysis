@@ -10,7 +10,9 @@ import os
 import json
 import struct
 import logging
+import io
 from io import StringIO
+from concurrent.futures import ThreadPoolExecutor
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,6 +49,105 @@ def _resolve_timezone(tz: Optional[str]) -> str:
             f"Invalid timezone '{tz}': {exc}. Falling back to {DEFAULT_TIMEZONE}."
         )
         return DEFAULT_TIMEZONE
+
+
+# --- NTi log file naming -----------------------------------------------------
+# NTi XL2 logs are `<date>_SLM_000_123_Log.txt` / `<date>_SLM_000_RTA_3rd_Log.txt`.
+# Long logs are split by the meter into `..._Log_00.txt`, `..._Log_01.txt`, ...
+# and every part repeats the full header (including `# RTA LOG Results` /
+# `# Broadband LOG Results`), so each part parses on its own and the parts are
+# stitched together by the normal time-sorted merge in DataManager.
+# This is the ONE definition of "is this an NTi log file"; generate_job_config.py
+# imports it (combine_nti_reports.py is a standalone script and carries a copy).
+NTI_LOG_FILENAME_RE = re.compile(r'_log(?:_\d+)?\.txt$', re.IGNORECASE)
+
+
+def is_nti_log_filename(name: str) -> bool:
+    """True for NTi log filenames, including split parts (`_Log_00.txt`)."""
+    return bool(NTI_LOG_FILENAME_RE.search(os.path.basename(str(name))))
+
+
+def nti_log_sort_key(name: str) -> Tuple[str, int]:
+    """Sort key putting split parts of one log in part order (`_Log.txt` first, then `_Log_00`, `_Log_01`...)."""
+    base = os.path.basename(str(name)).lower()
+    match = re.search(r'_log(?:_(\d+))?\.txt$', base)
+    if not match:
+        return (base, -1)
+    return (base[:match.start()], int(match.group(1)) if match.group(1) is not None else -1)
+
+
+def localize_naive_to_utc(series: pd.Series, tz: str) -> pd.Series:
+    """Interpret naive wall-clock timestamps as ``tz`` local time and return UTC.
+
+    Autumn clock change (ambiguous hour, e.g. Europe/London 2026-10-25 01:00-02:00):
+      1. try pandas ``ambiguous='infer'``;
+      2. if that fails, derive the DST flag from row order. Rows are walked in file
+         order; within the repeated hour, rows before the clock steps backwards are
+         DST (first pass), the row where it steps backwards and everything after is
+         standard time (second pass). Rows are never dropped.
+      3. if the file holds only ONE pass through the repeated hour (no backwards
+         step), assume first pass (DST=True) when the file starts before the repeated
+         hour, otherwise second pass (DST=False) when the file starts inside/after it
+         and carries on beyond it; a file wholly inside the hour defaults to DST=True.
+
+    Spring forward (nonexistent hour, e.g. 01:00-02:00 on 2026-03-29): a reading that
+    cannot exist means the meter clock had not yet changed, i.e. it still showed
+    standard time, so those rows are shifted by +1 h (01:30 -> 01:30 UTC). This keeps
+    them distinct and in order instead of collapsing the hour onto one instant.
+
+    A warning is logged with the number of rows resolved by each fallback.
+    """
+    naive = series.dt.tz_localize(None)
+    nonexistent = pd.Timedelta(hours=1)
+
+    # Spring-forward bookkeeping (informational only: the shift is applied below).
+    try:
+        n_nonexistent = int(naive.dt.tz_localize(tz, ambiguous=True, nonexistent='NaT').isna().sum()
+                            - naive.isna().sum())
+    except Exception:
+        n_nonexistent = 0
+
+    try:
+        localized = naive.dt.tz_localize(tz, ambiguous='infer', nonexistent=nonexistent)
+        n_ambiguous = 0
+    except Exception:
+        probe = naive.dt.tz_localize(tz, ambiguous='NaT', nonexistent=nonexistent)
+        amb_mask = (probe.isna() & naive.notna()).to_numpy()
+        dst_flags = np.ones(len(naive), dtype=bool)
+        values = naive.to_numpy()
+        starts_before_hour = None
+        amb_idx_all = np.flatnonzero(amb_mask)
+        days = values[amb_idx_all].astype('datetime64[D]')
+        for day in np.unique(days):
+            rows = amb_idx_all[days == day]           # file-order row numbers in this day's repeated hour
+            ts = values[rows].astype('datetime64[ns]').astype('int64')
+            backwards = np.flatnonzero(np.diff(ts) < 0)
+            if backwards.size:
+                dst_flags[rows[backwards[0] + 1:]] = False
+            else:
+                hour_start = values[rows].min().astype('datetime64[h]')
+                first_valid = values[~np.isnat(values)].min() if (~np.isnat(values)).any() else values[rows[0]]
+                last_valid = values[~np.isnat(values)].max() if (~np.isnat(values)).any() else values[rows[-1]]
+                hour_end = hour_start + np.timedelta64(1, 'h')
+                if first_valid < hour_start:
+                    dst_flags[rows] = True
+                elif last_valid >= hour_end:
+                    dst_flags[rows] = False
+                else:
+                    dst_flags[rows] = True
+        n_ambiguous = int(amb_mask.sum())
+        localized = naive.dt.tz_localize(tz, ambiguous=dst_flags, nonexistent=nonexistent)
+        logger.warning(
+            "Autumn clock change: %d row(s) in the repeated hour could not be inferred by pandas "
+            "and were resolved from row order (%s).", n_ambiguous, tz,
+        )
+
+    if n_nonexistent > 0:
+        logger.warning(
+            "Spring clock change: %d row(s) fall in the non-existent hour (%s); treated as standard "
+            "time (shifted +1 h) so they stay distinct and in order.", n_nonexistent, tz,
+        )
+    return localized.dt.tz_convert('UTC')
 
 # Standard 1/3 octave band center frequencies (as strings for matching cleaned column suffixes)
 # Used by parsers to identify and normalize frequency parts of column names.
@@ -146,6 +247,36 @@ class AbstractNoiseParser(ABC):
             logger.debug(f"Failed to read header for {file_path}: {exc}")
         return lines
 
+    _KNOWN_DATETIME_FORMATS = ('%Y-%m-%d %H:%M:%S',)
+
+    @classmethod
+    def _to_datetime_fast(cls, series: pd.Series) -> pd.Series:
+        """``pd.to_datetime(series, errors='coerce')`` with an explicit format when one fits.
+
+        For large series a known format is tried on a sample first; if the sample parses
+        completely the whole series is parsed with it (rows that do not match become NaT,
+        exactly as format inference would give). Anything else uses plain inference.
+        """
+        if len(series) >= 1000 and series.dtype == object:
+            sample = series.iloc[:200]
+            for fmt in cls._KNOWN_DATETIME_FORMATS:
+                try:
+                    if pd.to_datetime(sample, format=fmt, errors='coerce').notna().sum() == sample.notna().sum():
+                        result = pd.to_datetime(series, format=fmt, errors='coerce')
+                        # Rows outside the sample may use another format: retry just the
+                        # unparsed, non-empty ones with plain inference.
+                        failed = result.isna() & series.notna() & (series.astype(str).str.strip() != '')
+                        n_failed = int(failed.sum())
+                        if n_failed:
+                            retry = pd.to_datetime(series[failed], errors='coerce')
+                            result = result.copy()
+                            result[failed] = retry
+                            logger.debug("%d of %d timestamps needed the inference fallback", n_failed, len(series))
+                        return result
+                except Exception:
+                    continue
+        return pd.to_datetime(series, errors='coerce')
+
     def _normalize_datetime_column(self, df: pd.DataFrame,
                                    dt_col_names: List[str],
                                    new_name: str = 'Datetime',
@@ -173,24 +304,12 @@ class AbstractNoiseParser(ABC):
             selected = (dt_col_names[0],)
 
         def _to_utc(series: pd.Series) -> pd.Series:
-            s = pd.to_datetime(series, errors='coerce')
+            s = self._to_datetime_fast(series)
             try:
                 # Treat values as local time in self.timezone (default: Europe/London)
                 # regardless of any incoming timezone info.
-                s = s.dt.tz_localize(None)
-                try:
-                    s = s.dt.tz_localize(
-                        self.timezone,
-                        ambiguous='infer',
-                        nonexistent='shift_forward',
-                    )
-                except Exception:
-                    s = s.dt.tz_localize(
-                        self.timezone,
-                        ambiguous='NaT',
-                        nonexistent='shift_forward',
-                    )
-                s = s.dt.tz_convert('UTC')
+                # (see localize_naive_to_utc for the DST rules and fallbacks)
+                s = localize_naive_to_utc(s, self.timezone)
             except Exception as e:
                 logger.warning(f"Failed to localize/convert timezone: {e}")
             return s
@@ -212,7 +331,13 @@ class AbstractNoiseParser(ABC):
                 df = df.drop(columns=[old_dt_col])
 
         # Drop rows where datetime failed to parse
+        rows_before_dropna = len(df)
         df = df.dropna(subset=[new_name])
+        if len(df) < rows_before_dropna:
+            logger.warning(
+                "Dropped %d of %d row(s) whose timestamp could not be parsed.",
+                rows_before_dropna - len(df), rows_before_dropna,
+            )
 
         if sort and not df.empty:
             df = df.sort_values(by=new_name).reset_index(drop=True)
@@ -1036,6 +1161,22 @@ class NTiFileParser(AbstractNoiseParser):
             return parsed_data_obj
 
         try:
+            is_log_file = is_nti_log_filename(filename_lower)
+            is_spectral = "_rta_" in filename_lower
+            fast = None
+            try:
+                if os.path.getsize(file_path) >= self.FAST_PATH_MIN_BYTES:
+                    fast = self._read_table_fast(file_path, is_spectral, is_log_file)
+            except Exception as exc:
+                logger.debug("NTi fast path unavailable for %s (%s); using the line-based reader", file_path, exc)
+                fast = None
+            if fast is not None:
+                df_raw, head_lines, headers = fast
+                parsed_data_obj.metadata.update(self._extract_nti_metadata(head_lines))
+                parsed_data_obj.data_profile = 'log' if is_log_file else 'overview'
+                parsed_data_obj.spectral_data_type = 'third_octave' if is_spectral else 'none'
+                return self._finish_nti_parse(parsed_data_obj, df_raw, headers, is_spectral, return_all_columns)
+
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f: lines = f.readlines()
             if not lines: parsed_data_obj.metadata['error'] = "File empty"; return parsed_data_obj
 
@@ -1045,7 +1186,7 @@ class NTiFileParser(AbstractNoiseParser):
             
             parsed_data_obj.metadata.update(self._extract_nti_metadata(content_lines))
             
-            is_log_file = "_log.txt" in filename_lower
+            is_log_file = is_nti_log_filename(filename_lower)  # includes split parts (_Log_00.txt)
             is_spectral = "_rta_" in filename_lower
             
             parsed_data_obj.data_profile = 'log' if is_log_file else 'overview'
@@ -1069,18 +1210,126 @@ class NTiFileParser(AbstractNoiseParser):
 
             data_str = "".join(table_lines[data_start_row:])
             df_raw = pd.read_csv(StringIO(data_str), sep='\t', header=None, names=headers, on_bad_lines='warn', low_memory=False)
+            return self._finish_nti_parse(parsed_data_obj, df_raw, headers, is_spectral, return_all_columns)
 
+        except FileNotFoundError:
+            parsed_data_obj.metadata['error'] = "File not found"; return parsed_data_obj
+        except Exception as e:
+            parsed_data_obj.metadata['error'] = str(e)
+            logger.error(f"NTiParser: Error parsing {file_path}: {e}", exc_info=True)
+            return parsed_data_obj
+
+    # Files at least this big use the streaming reader (smaller ones are not worth the extra path).
+    FAST_PATH_MIN_BYTES = 4 * 1024 * 1024
+    _FAST_HEAD_MAX_LINES = 400
+    _FAST_TABLE_HEAD_LINES = 60
+    _FAST_CHUNK_BYTES = 32 * 1024 * 1024
+    _FAST_MAX_THREADS = 8
+
+    def _read_table_fast(self, file_path: str, is_spectral: bool, is_log_file: bool):
+        """Read the data table of a large NTi file without materialising it as text lines.
+
+        Scans only the header, then hands the data bytes straight to the C CSV reader (in
+        parallel byte-range chunks for big files). Returns (df_raw, head_lines, headers) or
+        None whenever anything is unusual, in which case the caller uses the original
+        line-based reader, which also owns every error message.
+        """
+        data_start_marker = "# RTA LOG Results" if is_spectral and is_log_file else \
+                            "# RTA Results" if is_spectral and not is_log_file else \
+                            "# Broadband LOG Results" if not is_spectral and is_log_file else \
+                            "# Broadband Results"
+        size = os.path.getsize(file_path)
+        with open(file_path, 'rb') as fh:
+            head_lines: List[str] = []
+            marker_idx = -1
+            while len(head_lines) < self._FAST_HEAD_MAX_LINES:
+                raw = fh.readline()
+                if not raw:
+                    return None
+                text = raw.decode('utf-8', errors='ignore').replace('\r\n', '\n')
+                if "#CheckSum" in text:
+                    return None
+                head_lines.append(text)
+                if text.strip().startswith(data_start_marker):
+                    marker_idx = len(head_lines) - 1
+                    break
+            if marker_idx < 0:
+                return None
+
+            table_head: List[str] = []
+            offsets: List[int] = []
+            while len(table_head) < self._FAST_TABLE_HEAD_LINES:
+                pos = fh.tell()
+                raw = fh.readline()
+                if not raw:
+                    break
+                text = raw.decode('utf-8', errors='ignore').replace('\r\n', '\n')
+                if "#CheckSum" in text:
+                    return None
+                if text.strip():
+                    table_head.append(text)
+                    offsets.append(pos)
+            if not table_head:
+                return None
+
+            headers, data_start_row = self._get_nti_headers_and_data_start(table_head, is_spectral, head_lines, marker_idx)
+            if not headers or data_start_row < 0 or data_start_row >= len(table_head) - 1:
+                return None
+            data_start = offsets[data_start_row]
+
+            # Everything from the "#CheckSum" line onward is not data. It sits at the very end.
+            tail_len = min(size, 1 << 20)
+            fh.seek(size - tail_len)
+            tail = fh.read(tail_len)
+            cs = tail.find(b"#CheckSum")
+            if cs >= 0:
+                line_start = tail.rfind(b"\n", 0, cs) + 1
+                data_end = size - tail_len + line_start
+            else:
+                data_end = size
+            if data_end <= data_start:
+                return None
+
+            n_chunks = int(max(1, min(self._FAST_MAX_THREADS, (data_end - data_start) // self._FAST_CHUNK_BYTES)))
+            bounds = [data_start]
+            for i in range(1, n_chunks):
+                fh.seek(data_start + (data_end - data_start) * i // n_chunks)
+                fh.readline()  # advance to the next line start
+                bounds.append(min(fh.tell(), data_end))
+            bounds.append(data_end)
+            ranges = [(a, b) for a, b in zip(bounds[:-1], bounds[1:]) if b > a]
+
+        def read_range(rng):
+            with open(file_path, 'rb') as handle:
+                handle.seek(rng[0])
+                payload = handle.read(rng[1] - rng[0])
+            return pd.read_csv(io.BytesIO(payload), sep='\t', header=None, names=headers,
+                               on_bad_lines='warn', low_memory=False, encoding_errors='ignore')
+
+        if len(ranges) == 1:
+            parts = [read_range(ranges[0])]
+        else:
+            with ThreadPoolExecutor(max_workers=len(ranges)) as pool:
+                parts = list(pool.map(read_range, ranges))
+        df_raw = parts[0] if len(parts) == 1 else pd.concat(parts, ignore_index=True)
+        return df_raw, head_lines, headers
+
+    def _finish_nti_parse(self, parsed_data_obj: ParsedData, df_raw: pd.DataFrame, headers: List[str],
+                          is_spectral: bool, return_all_columns: bool) -> ParsedData:
+        """Shared tail of parse(): turn the raw table into the standard frames."""
+        file_path = parsed_data_obj.original_file_path
+        try:
             cols_to_drop = [h for h in df_raw.columns if h.startswith('__') and df_raw[h].isnull().all()]
             df_raw = df_raw.drop(columns=cols_to_drop)
 
             if df_raw.empty: parsed_data_obj.metadata['error'] = "No data parsed from table"; return parsed_data_obj
-            
+
             datetime_cols_in_raw = [c for c in ['Date', 'Time', 'Start Date', 'Start Time'] if c in df_raw.columns]
             if not datetime_cols_in_raw: parsed_data_obj.metadata['error']="Could not determine datetime columns"; return parsed_data_obj
 
             df_processed = self._normalize_datetime_column(df_raw.copy(), dt_col_names=datetime_cols_in_raw)
             if df_processed.empty: parsed_data_obj.metadata['error']="All rows failed Datetime parsing"; return parsed_data_obj
-            
+
             df_processed = self._safe_convert_to_float(df_processed)
             parsed_data_obj.sample_period_seconds = self._calculate_sample_period(df_processed)
             
@@ -1578,7 +1827,7 @@ class NoiseParserFactory:
                 return None
 
         # NTi files have very specific naming conventions
-        if '_report.txt' in filename_lower or '_log.txt' in filename_lower:
+        if '_report.txt' in filename_lower or is_nti_log_filename(filename_lower):
             if "_rta_" in filename_lower or "_123_" in filename_lower:
                 return NTiFileParser(timezone=timezone)
 

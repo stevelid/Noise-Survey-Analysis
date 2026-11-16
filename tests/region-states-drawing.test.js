@@ -90,14 +90,14 @@ describe('multi-meter Quad overlays', () => {
         expect(target.regionGhostOverlay.source.data.meter_id).toEqual(['P4', 'P4']);
     });
 
-    it('keeps two renderers per chart for 300 regions across repeated updates', () => {
+    it('keeps three renderers (normal, ghost, suggestions) per chart for 300 regions across repeated updates', () => {
         const regions = Array.from({ length: 300 }, (_, index) => annotation({ id: index + 1,
             areas: [{ start: index * 3000, end: index * 3000 + 2000 }] }));
         const charts = positions.map(chart);
         charts.forEach(target => {
             target.syncRegions(regions, 1, { ghostMode: 'all' });
             target.syncRegions(regions, 2, { ghostMode: 'all' });
-            expect(target.model.renderers).toHaveLength(2);
+            expect(target.model.renderers).toHaveLength(3);
             expect(target.regionOverlay.source.data.left.length + target.regionGhostOverlay.source.data.left.length).toBe(300);
             target.syncRegions([], null);
             expect(target.regionOverlay.renderer.visible).toBe(false);

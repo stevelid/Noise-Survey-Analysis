@@ -359,7 +359,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                             dataCache,
                             models,
                             {
-                                reason: ' - Overview - zoom in for Log',
+                                reason: ' (Overview - Zoom in for Log Data)',
                                 statusCode: 'zoom_required',
                                 statusLabel: 'Zoom in for log spectrogram',
                                 requestedViewType: viewType,
@@ -493,21 +493,38 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 } else {
                     // Log view active, but no log data exists
-                    const pendingBecauseViewportTooLarge = logDataExists && viewportTooLarge;
+                    // The server tells us (positionHasLogSpectral) whether this position has
+                    // a spectral log at all. When it explicitly does not, say so instead of
+                    // reporting an endless "loading" state.
+                    const noSpectralLog = models.positionHasLogSpectral?.[position] === false;
+                    const pendingBecauseViewportTooLarge = !noSpectralLog && logDataExists && viewportTooLarge;
+                    const waitingForSpectralLog = !noSpectralLog && logDataExists && !pendingBecauseViewportTooLarge;
+                    let fallbackReason = logDataExists ? ' (Overview - Streaming Log Data...)' : ' (Overview)';
+                    let fallbackCode = logDataExists ? 'loading_log' : 'overview_only';
+                    let fallbackLabel = logDataExists ? 'Waiting for log spectrogram' : 'Overview data only';
+                    if (noSpectralLog) {
+                        fallbackReason = ' (Overview - No 1 s spectral log for this position)';
+                        fallbackCode = 'no_spectral_log';
+                        fallbackLabel = 'No 1 s spectral log for this position';
+                    } else if (pendingBecauseViewportTooLarge) {
+                        fallbackReason = ' (Overview - Zoom in for Log Data)';
+                        fallbackCode = 'zoom_required';
+                        fallbackLabel = 'Zoom in for log spectrogram';
+                    }
                     ({ finalDataToUse, finalGlyphData, displayMetadata } = buildOverviewSpectrogramFallback(
                         overviewData,
                         position,
                         dataCache,
                         models,
                         {
-                            reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)',
-                            statusCode: pendingBecauseViewportTooLarge ? 'zoom_required' : (logDataExists ? 'loading_log' : 'overview_only'),
-                            statusLabel: pendingBecauseViewportTooLarge ? 'Zoom in for log spectrogram' : (logDataExists ? 'Waiting for log spectrogram' : 'Overview data only'),
+                            reason: fallbackReason,
+                            statusCode: fallbackCode,
+                            statusLabel: fallbackLabel,
                             requestedViewType: viewType,
                             selectedParameter: parameter,
                             displayedParameter: parameter,
                             logDataExists,
-                            isLoading: logDataExists && !pendingBecauseViewportTooLarge,
+                            isLoading: waitingForSpectralLog,
                             requiresZoom: pendingBecauseViewportTooLarge,
                         }
                     ));

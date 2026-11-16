@@ -1295,6 +1295,68 @@ class StreamingBackendTests(unittest.TestCase):
         # Should trigger a reservoir refresh (coverage < 80%)
         handler._update_position.assert_called_once()
 
+    def _make_reservoir_handler(self, name):
+        position = PositionData(name=name)
+        position.sample_periods_seconds = {0.1}
+        position.log_spectral = pd.DataFrame({
+            "Datetime": [pd.Timestamp("2024-01-01T00:00:00Z")],
+            "LZeq_100": [60],
+            "LZeq_200": [65],
+        })
+        handler = ServerDataHandler(FakeDoc({}), DummyDataManager({name: position}), CHART_SETTINGS)
+        # Fully covered viewport: buffer and reservoir both include it.
+        handler._buffer_bounds[name] = (-4 * 60 * 1000, 44 * 60 * 1000)
+        handler._spectrogram_chunk_bounds[name] = (-2 * 60 * 1000, 42 * 60 * 1000)
+        handler._update_position = MagicMock()
+        return handler
+
+    def test_reservoir_is_reused_when_parameter_unchanged(self):
+        handler = self._make_reservoir_handler("P_param_same")
+        handler._spectrogram_chunk_params["P_param_same"] = handler.selected_parameter
+
+        handler.handle_range_update(0, 40 * 60 * 1000)
+
+        handler._update_position.assert_not_called()
+
+    def test_reservoir_is_refreshed_when_parameter_changes_while_covered(self):
+        handler = self._make_reservoir_handler("P_param_changed")
+        handler._spectrogram_chunk_params["P_param_changed"] = "LZeq"
+
+        handler.set_selected_parameter("LAFmax")
+        handler.handle_range_update(0, 40 * 60 * 1000)
+
+        handler._update_position.assert_called_once()
+        self.assertEqual(handler._update_position.call_args.kwargs["refresh_totals"], False)
+
+    def test_update_log_spectrogram_records_reservoir_parameter(self):
+        name = "P_param_record"
+        start_ms = 1_700_000_000_000
+        times = pd.to_datetime(start_ms + np.arange(0, 120) * 1000, unit="ms", utc=True)
+        position = PositionData(name=name)
+        position.sample_periods_seconds = {1.0}
+        df = pd.DataFrame({"Datetime": times, "LZeq_100": 60.0, "LZeq_200": 65.0,
+                           "LAFmax_100": 70.0, "LAFmax_200": 75.0})
+        position.log_spectral = df
+        spec_source = ColumnDataSource(data={})
+        doc = FakeDoc({
+            f"source_{name}_timeseries_log": ColumnDataSource(data={}),
+            f"source_{name}_spectrogram_log": spec_source,
+            f"figure_{name}_timeseries": DummyFigure(width=320),
+            f"figure_{name}_spectrogram": DummyFigure(width=320),
+        })
+        handler = ServerDataHandler(doc, DummyDataManager({name: position}), CHART_SETTINGS)
+        bundle = handler.position_models[name]
+        end_ms = start_ms + 119_000
+
+        handler._update_log_spectrogram(df, bundle, start_ms, end_ms, position_id=name,
+                                        position_data=position, sample_period_seconds=1.0)
+        self.assertEqual(handler._spectrogram_chunk_params.get(name), "LZeq")
+
+        handler.set_selected_parameter("LAFmax")
+        handler._update_log_spectrogram(df, bundle, start_ms, end_ms, position_id=name,
+                                        position_data=position, sample_period_seconds=1.0)
+        self.assertEqual(handler._spectrogram_chunk_params.get(name), "LAFmax")
+
     def test_update_log_spectrogram_streams_reservoir_for_wide_viewport(self):
         """With reservoir mode, wide viewports are no longer skipped by _update_log_spectrogram.
 

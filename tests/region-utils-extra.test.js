@@ -57,7 +57,7 @@ describe('NoiseSurveyApp.features.regions.utils (extra coverage)', () => {
             areas: [{ start: 0, end: 2000 }]
         };
         const state = { view: { selectedParameter: 'LAeq' } };
-        const metrics = regionUtils.computeRegionMetrics(region, state, {}, {
+        const models = {
             timeSeriesSources: {
                 P1: {
                     log: {
@@ -71,9 +71,11 @@ describe('NoiseSurveyApp.features.regions.utils (extra coverage)', () => {
                 }
             },
             preparedGlyphData: {}
-        });
+        };
+        const metrics = regionUtils.computeRegionMetrics(region, state, {}, models);
 
         expect(metrics.dataResolution).toBe('log');
+        expect(metrics.coarseResolution).toBe(false);
         expect(metrics.lafmax).toBe(81);
         expect(metrics.la90Available).toBe(true);
         expect(metrics.la90).toBe(50);

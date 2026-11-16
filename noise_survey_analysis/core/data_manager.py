@@ -152,6 +152,20 @@ class PositionData:
         # periods (seconds) seen so far for that series, used to derive a
         # stable "expected period" reference regardless of file arrival order.
         self._gap_known_periods: Dict[str, List[float]] = {}
+        # Per-file coverage for the same series: (start, end, period_seconds).
+        # A position can mix files with very different periods (e.g. a 30 s test
+        # run followed by a 5 min deployment), so the "expected period" for a gap
+        # is the period of the file that owns the preceding sample, not one global
+        # figure (a single global mode flagged every 5 min step as a gap and
+        # interleaved all-NaN marker rows with every real row).
+        self._gap_segments: Dict[str, List[Tuple[pd.Timestamp, pd.Timestamp, float]]] = {}
+
+        # Per-file load failures for this position, readable by the UI / status
+        # console: [{'file_path', 'file_name', 'error', 'stage' ('eager'|'lazy')}].
+        # A file that fails to parse is NOT treated as loaded, so it can be retried.
+        self.load_errors: List[Dict[str, Any]] = []
+        # Files that parsed and were merged successfully (eager or lazy).
+        self.loaded_file_paths: List[str] = []
 
 
     def __repr__(self) -> str:
@@ -205,6 +219,50 @@ class PositionData:
     @property
     def has_spectral_data(self) -> bool:
         return self.has_overview_spectral or self.has_log_spectral
+    @property
+    def has_load_errors(self) -> bool:
+        return bool(self.load_errors)
+    @property
+    def load_status(self) -> str:
+        """'ok' (no failures), 'partial' (some files failed, some loaded) or 'failed'
+        (files failed and none loaded). Deferred log files that have not been tried
+        yet count as neither."""
+        if not self.load_errors:
+            return 'ok'
+        return 'partial' if self.loaded_file_paths else 'failed'
+
+    def record_load_error(self, file_path: str, message: str, stage: str = 'eager',
+                          parser_type: Optional[str] = None) -> None:
+        """Record that ``file_path`` failed to load (parse error, missing file, no parser...).
+
+        Logs ONE line naming the file (WARNING+ lines are shown in the terminal status
+        pane), stores the failure in ``load_errors`` and ``source_file_metadata`` and
+        replaces any earlier failure for the same file so a retry does not stack up.
+        """
+        message = ' '.join(str(message).split()) or 'unknown error'
+        file_name = os.path.basename(str(file_path).rstrip('\\/')) or str(file_path)
+        self.load_errors = [e for e in self.load_errors if e.get('file_path') != file_path]
+        self.load_errors.append({
+            'file_path': file_path, 'file_name': file_name, 'error': message, 'stage': stage,
+        })
+        self.source_file_metadata.append({
+            'original_file_path': file_path, 'error': message,
+            'parser_type': parser_type or 'None', 'data_profile': 'error',
+            'spectral_data_type': 'none', 'sample_period_seconds': None,
+        })
+        logger.error("[LOAD ERROR] %s: %s (%s load): %s", self.name, file_name, stage, message)
+
+    def _error_for(self, file_path: str) -> str:
+        for entry in self.load_errors:
+            if entry.get('file_path') == file_path:
+                return entry.get('error', '')
+        return ''
+
+    def _mark_file_loaded(self, file_path: str) -> None:
+        """A file merged successfully: remember it and clear any earlier failure."""
+        if file_path not in self.loaded_file_paths:
+            self.loaded_file_paths.append(file_path)
+        self.load_errors = [e for e in self.load_errors if e.get('file_path') != file_path]
 
     def _merge_df(self, existing_df: Optional[pd.DataFrame], new_df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
         """Helper to concatenate and de-duplicate DataFrames by Datetime."""
@@ -222,7 +280,10 @@ class PositionData:
         try:
             # Combine, sort by datetime, and remove duplicates, keeping the first entry
             combined_df = pd.concat([existing_df, new_df], ignore_index=True)
-            combined_df = combined_df.sort_values(by='Datetime', ascending=True)
+            # Stable sort so that, for duplicate timestamps, the row from the file
+            # merged first (existing_df comes first in the concat) wins
+            # deterministically under drop_duplicates(keep='first').
+            combined_df = combined_df.sort_values(by='Datetime', ascending=True, kind='stable')
             combined_df = combined_df.drop_duplicates(subset=['Datetime'], keep='first')
             return combined_df.reset_index(drop=True)
         except Exception as e:
@@ -265,12 +326,31 @@ class PositionData:
             period_ref = _GAP_DEFAULT_PERIOD_SECONDS
         if not period_ref or period_ref <= 0:
             period_ref = _GAP_DEFAULT_PERIOD_SECONDS
-        tolerance = max(period_ref * _GAP_TOLERANCE_FRACTION, _GAP_TOLERANCE_FLOOR_SECONDS)
 
         try:
             dt = df['Datetime']
             diffs_seconds = dt.diff().dt.total_seconds().to_numpy()
-            gap_mask = (diffs_seconds > 0) & (np.abs(diffs_seconds - period_ref) > tolerance)
+
+            # Expected period per step = period of the file whose coverage started
+            # most recently at or before the preceding sample; global mode otherwise.
+            period_per_step = np.full(len(df), float(period_ref))
+            segments = sorted(self._gap_segments.get(profile_key) or [], key=lambda s: s[0])
+            if segments:
+                seg_starts = pd.DatetimeIndex([s[0] for s in segments]).asi8
+                seg_periods = np.array([float(s[2]) for s in segments])
+                # shift(1) leaves NaT in row 0; its sentinel value is harmless because
+                # row 0 has no diff and is masked out below.
+                prev_ns = pd.DatetimeIndex(dt.shift(1)).asi8
+                owner = np.searchsorted(seg_starts, prev_ns, side='right') - 1
+                has_owner = owner >= 0
+                period_per_step[has_owner] = seg_periods[owner[has_owner]]
+
+            tolerance = np.maximum(period_per_step * _GAP_TOLERANCE_FRACTION, _GAP_TOLERANCE_FLOOR_SECONDS)
+            # A step that deviates materially from the expected period either way is a
+            # break between separate recordings (spot checks can be closer together
+            # than the nominal period).
+            with np.errstate(invalid='ignore'):
+                gap_mask = (diffs_seconds > 0) & (np.abs(diffs_seconds - period_per_step) > tolerance)
             gap_positions = np.flatnonzero(gap_mask)
             if gap_positions.size == 0:
                 return df
@@ -280,8 +360,8 @@ class PositionData:
             combined = pd.concat([df, marker_df], ignore_index=True, sort=False)
             combined = combined.sort_values(by='Datetime').reset_index(drop=True)
             logger.debug(
-                "Inserted %d gap-break marker(s) for %s [%s] (expected period=%.1fs, tolerance=%.1fs)",
-                gap_positions.size, self.name, profile_key, period_ref, tolerance,
+                "Inserted %d gap-break marker(s) for %s [%s] (fallback period=%.1fs)",
+                gap_positions.size, self.name, profile_key, period_ref,
             )
             return combined
         except Exception as e:
@@ -310,12 +390,60 @@ class PositionData:
         if new_df is None or new_df.empty:
             return existing_df
 
-        if new_period_seconds:
-            self._gap_known_periods.setdefault(profile_key, []).append(new_period_seconds)
+        self._register_gap_info(profile_key, new_df, new_period_seconds)
 
         existing_clean = self._strip_gap_marker_rows(existing_df)
         merged = self._merge_df(existing_clean, new_df)
         return self._insert_gap_break_rows(merged, profile_key)
+
+    def _register_gap_info(self, profile_key: str, new_df: pd.DataFrame,
+                           new_period_seconds: Optional[float]) -> None:
+        """Remember one file's sample period and coverage for the gap pass."""
+        if new_period_seconds:
+            self._gap_known_periods.setdefault(profile_key, []).append(new_period_seconds)
+            if 'Datetime' in new_df.columns and new_df['Datetime'].notna().any():
+                self._gap_segments.setdefault(profile_key, []).append(
+                    (new_df['Datetime'].min(), new_df['Datetime'].max(), float(new_period_seconds))
+                )
+
+    def _merge_many(self, existing_df: Optional[pd.DataFrame], new_dfs: List[pd.DataFrame]) -> Optional[pd.DataFrame]:
+        """One-shot equivalent of calling _merge_df once per frame in order: a single
+        concat, stable sort and first-wins de-duplication instead of one per file."""
+        frames = [f for f in new_dfs if f is not None and not f.empty]
+        if not frames:
+            return existing_df
+        have_existing = existing_df is not None and not existing_df.empty
+        if not have_existing and len(frames) == 1:
+            return frames[0]
+        if any('Datetime' not in f.columns for f in frames) or (have_existing and 'Datetime' not in existing_df.columns):
+            merged = existing_df
+            for f in frames:
+                merged = self._merge_df(merged, f)
+            return merged
+        parts = ([existing_df] if have_existing else []) + frames
+        try:
+            combined = pd.concat(parts, ignore_index=True)
+            combined = combined.sort_values(by='Datetime', ascending=True, kind='stable')
+            combined = combined.drop_duplicates(subset=['Datetime'], keep='first')
+            return combined.reset_index(drop=True)
+        except Exception as e:
+            logger.error(f"Error merging DataFrames for {self.name}: {e}")
+            return existing_df
+
+    def flush_pending_merges(self) -> None:
+        """Merge frames collected by add_parsed_file_data(defer_merge=True)."""
+        pending = getattr(self, '_pending', None)
+        if not pending:
+            return
+        self._pending = {}
+        for attr, frames in pending.items():
+            current = getattr(self, attr)
+            if attr in ('overview_totals', 'log_totals'):
+                key = 'overview' if attr == 'overview_totals' else 'log'
+                merged = self._merge_many(self._strip_gap_marker_rows(current), frames)
+                setattr(self, attr, self._insert_gap_break_rows(merged, key))
+            else:
+                setattr(self, attr, self._merge_many(current, frames))
 
     def _apply_source_options(
         self,
@@ -351,9 +479,12 @@ class PositionData:
         parsed_data_obj.metadata['selected_columns'] = requested
         return parsed_data_obj
 
-    def add_parsed_file_data(self, parsed_data_obj: ParsedData):
+    def add_parsed_file_data(self, parsed_data_obj: ParsedData, defer_merge: bool = False):
         """
         Adds data from a single parsed file (ParsedData object) to this position.
+
+        With defer_merge=True the overview/log frames are only queued; call
+        flush_pending_merges() once afterwards to merge them in a single pass.
         """
         if not isinstance(parsed_data_obj, ParsedData):
             logger.warning(f"Invalid data type passed to add_parsed_file_data for {self.name}")
@@ -390,6 +521,18 @@ class PositionData:
         if parsed_data_obj.spectral_df is not None:
             logger.debug(f"  spectral_df columns: {list(parsed_data_obj.spectral_df.columns)[:10]}")
             logger.debug(f"  spectral_df has 'Datetime' column: {'Datetime' in parsed_data_obj.spectral_df.columns}")
+
+        if defer_merge and profile in ('overview', 'log'):
+            pending = self.__dict__.setdefault('_pending', {})
+            pre = 'overview' if profile == 'overview' else 'log'
+            tdf, sdf = parsed_data_obj.totals_df, parsed_data_obj.spectral_df
+            if tdf is not None:
+                if not tdf.empty:
+                    self._register_gap_info(pre, tdf, parsed_data_obj.sample_period_seconds)
+                    pending.setdefault(f'{pre}_totals', []).append(tdf)
+            if sdf is not None:
+                pending.setdefault(f'{pre}_spectral', []).append(sdf)
+            return
 
         if profile == 'overview': # Typically summary reports
             if parsed_data_obj.totals_df is not None:
@@ -530,7 +673,7 @@ class PositionData:
                     parsed_data = copy.deepcopy(parsed_data)
                     merge_started_at = time.perf_counter()
                     parsed_data = self._apply_source_options(parsed_data, selected_columns, forced_profile)
-                    self.add_parsed_file_data(parsed_data)
+                    self.add_parsed_file_data(parsed_data, defer_merge=True)
                     merge_ms = (time.perf_counter() - merge_started_at) * 1000
                     total_merge_ms += merge_ms
                     logger.info(
@@ -544,6 +687,7 @@ class PositionData:
                     )
                     logger.debug(f"[LAZY LOAD] Loaded {file_path} for {self.name} (cache hit)")
                     loaded_files.append(file_path)
+                    self._mark_file_loaded(file_path)
                     continue
 
                 parser_lookup_started_at = time.perf_counter()
@@ -555,7 +699,7 @@ class PositionData:
                 parser_lookup_ms = (time.perf_counter() - parser_lookup_started_at) * 1000
                 total_parser_lookup_ms += parser_lookup_ms
                 if not parser:
-                    logger.warning(f"[LAZY LOAD] No suitable parser for {file_path}")
+                    self.record_load_error(file_path, 'No suitable parser found for this file', 'lazy')
                     failed_files.append(file_path)
                     continue
 
@@ -564,7 +708,14 @@ class PositionData:
                 parse_ms = (time.perf_counter() - parse_started_at) * 1000
                 total_parse_ms += parse_ms
                 
-                if parsed_data:
+                if parsed_data and parsed_data.metadata.get('error'):
+                    # The parser reports failure through metadata['error'] rather than raising.
+                    # That is a failed file: do not merge it, do not cache it, do not call it loaded.
+                    self.record_load_error(
+                        file_path, parsed_data.metadata['error'], 'lazy', parsed_data.parser_type,
+                    )
+                    failed_files.append(file_path)
+                elif parsed_data:
                     if cache is not None and 'error' not in parsed_data.metadata:
                         cache_put_started_at = time.perf_counter()
                         cache.put(file_path, parsed_data, return_all_cols, timezone=parser.timezone)
@@ -573,7 +724,7 @@ class PositionData:
 
                     merge_started_at = time.perf_counter()
                     parsed_data = self._apply_source_options(parsed_data, selected_columns, forced_profile)
-                    self.add_parsed_file_data(parsed_data)
+                    self.add_parsed_file_data(parsed_data, defer_merge=True)
                     merge_ms = (time.perf_counter() - merge_started_at) * 1000
                     total_merge_ms += merge_ms
 
@@ -591,13 +742,18 @@ class PositionData:
                     )
                     logger.debug(f"[LAZY LOAD] Loaded {file_path} for {self.name}")
                     loaded_files.append(file_path)
+                    self._mark_file_loaded(file_path)
                 else:
-                    logger.warning(f"[LAZY LOAD] Failed to parse {file_path}")
+                    self.record_load_error(file_path, 'Parser returned no data', 'lazy')
                     failed_files.append(file_path)
 
             except Exception as e:
-                logger.error(f"[LAZY LOAD] Error loading {file_path}: {e}")
+                self.record_load_error(file_path, f"{type(e).__name__}: {e}", 'lazy')
                 failed_files.append(file_path)
+
+        merge_started_at = time.perf_counter()
+        self.flush_pending_merges()
+        total_merge_ms += (time.perf_counter() - merge_started_at) * 1000
 
         if not loaded_files:
             # Every file failed. Leave _log_data_loaded unset so the position stays
@@ -610,7 +766,8 @@ class PositionData:
                 len(failed_files),
             )
             status_console.end_phase(
-                f"{self.name}: log load failed ({len(failed_files)} file(s))",
+                f"{self.name}: log load failed ({len(failed_files)} file(s)): "
+                + '; '.join(f"{os.path.basename(path)}: {self._error_for(path)}" for path in failed_files[:3]),
                 category='warn',
             )
             return False
@@ -636,9 +793,10 @@ class PositionData:
             except Exception:
                 span = ""
         source = "from cache" if cache_misses == 0 else f"parsed {cache_misses} file(s)"
+        failed_note = f", {len(failed_files)} file(s) FAILED" if failed_files else ""
         status_console.end_phase(
-            f"{self.name}: log ready, {rows:,} rows{spectral}{span} ({source})",
-            category='ok',
+            f"{self.name}: log ready, {rows:,} rows{spectral}{span} ({source}{failed_note})",
+            category='warn' if failed_files else 'ok',
         )
         logger.info(
             "[LAZY LOAD PERF] position=%s files=%s cache_hits=%s cache_misses=%s cache_lookup_ms=%.1f parser_lookup_ms=%.1f parse_ms=%.1f merge_ms=%.1f cache_put_ms=%.1f total_ms=%.1f",
@@ -748,16 +906,43 @@ class DataManager:
         """Load files sequentially."""
         total = len(parse_tasks)
         for idx, (file_path, position_name, return_all_cols, parser_hint, source_options) in enumerate(parse_tasks, 1):
-            self.add_source_file(file_path, position_name,
-                                parser_type_hint=parser_hint,
-                                return_all_columns=return_all_cols,
-                                selected_columns=source_options.get('selected_columns'),
-                                data_profile=source_options.get('data_profile'),
-                                y_axis_label=source_options.get('y_axis_label'),
-                                y_range=source_options.get('y_range'),
-                                timezone=source_options.get('timezone'))
-            if self.progress_callback:
-                self.progress_callback(idx, total)
+            # One bad file (unreadable, corrupt, vanished share) must not abort the
+            # whole load: record the failure against the position and carry on.
+            try:
+                self.add_source_file(file_path, position_name,
+                                    parser_type_hint=parser_hint,
+                                    return_all_columns=return_all_cols,
+                                    selected_columns=source_options.get('selected_columns'),
+                                    data_profile=source_options.get('data_profile'),
+                                    y_axis_label=source_options.get('y_axis_label'),
+                                    y_range=source_options.get('y_range'),
+                                    timezone=source_options.get('timezone'))
+            except Exception as exc:
+                logger.debug("add_source_file raised for %s", file_path, exc_info=True)
+                self._record_error_for_position(position_name, file_path, f"{type(exc).__name__}: {exc}")
+            finally:
+                if self.progress_callback:
+                    try:
+                        self.progress_callback(idx, total)
+                    except Exception:
+                        logger.debug("progress_callback raised", exc_info=True)
+
+    def _record_error_for_position(self, position_name: str, file_path: str, message: str,
+                                   stage: str = 'eager') -> None:
+        if position_name not in self._positions_data:
+            self._positions_data[position_name] = PositionData(name=position_name)
+            if position_name not in self._position_order:
+                self._position_order.append(position_name)
+        self._positions_data[position_name].record_load_error(file_path, message, stage)
+
+    @property
+    def load_errors(self) -> List[Dict[str, Any]]:
+        """Every file-level load failure across all positions (each entry also has 'position')."""
+        out: List[Dict[str, Any]] = []
+        for name in self.positions():
+            for entry in self._positions_data[name].load_errors:
+                out.append({'position': name, **entry})
+        return out
 
     def add_source_file(self, file_path: str, position_name: str,
                         parser_type_hint: Optional[str] = None,
@@ -796,15 +981,26 @@ class DataManager:
         filename_lower = os.path.basename(file_path).lower()
         is_summary_file = '_summary' in filename_lower
         is_report_file = '_rpt_report' in filename_lower or filename_lower.endswith('_report.txt')
+
+        def _is_big_text_file() -> bool:
+            try:
+                return os.path.getsize(file_path) > 1_000_000  # > 1MB
+            except OSError:
+                return False  # missing/unreadable: reported by the existence check below
+
         is_likely_log_file = not is_summary_file and (
             (not is_report_file and '_log' in filename_lower) or
             'log_' in filename_lower or
             (
                 not is_report_file and
                 filename_lower.endswith(('.csv', '.txt')) and
-                os.path.getsize(file_path) > 1_000_000
-            )  # > 1MB
+                _is_big_text_file()
+            )
         )
+
+        if not os.path.exists(file_path):
+            position_obj.record_load_error(file_path, 'File not found or not reachable', 'eager')
+            return
         
         if skip_log_files and is_likely_log_file:
             # Store file path for lazy loading instead of parsing now
@@ -822,17 +1018,23 @@ class DataManager:
         # Try cache first if enabled
         parsed_data_obj = None
         if self.use_cache:
-            cache = get_parsed_data_cache()
-            if timezone is None:
-                parsed_data_obj = cache.get(file_path, return_all_columns)
-            else:
-                parsed_data_obj = cache.get(file_path, return_all_columns, timezone=timezone)
-            if parsed_data_obj is not None:
-                logger.debug(f"Using cached data for: {os.path.basename(file_path)}")
-                parsed_data_obj = copy.deepcopy(parsed_data_obj)
-                parsed_data_obj = position_obj._apply_source_options(parsed_data_obj, selected_columns, data_profile)
-                position_obj.add_parsed_file_data(parsed_data_obj)
-                return
+            try:
+                cache = get_parsed_data_cache()
+                if timezone is None:
+                    parsed_data_obj = cache.get(file_path, return_all_columns)
+                else:
+                    parsed_data_obj = cache.get(file_path, return_all_columns, timezone=timezone)
+                if parsed_data_obj is not None:
+                    logger.debug(f"Using cached data for: {os.path.basename(file_path)}")
+                    parsed_data_obj = copy.deepcopy(parsed_data_obj)
+                    parsed_data_obj = position_obj._apply_source_options(parsed_data_obj, selected_columns, data_profile)
+                    position_obj.add_parsed_file_data(parsed_data_obj)
+                    position_obj._mark_file_loaded(file_path)
+                    return
+            except Exception as e:
+                # A corrupt/incompatible cache entry must not lose the file: fall through to a fresh parse.
+                logger.warning("Parse cache unusable for %s (%s); re-parsing.", os.path.basename(file_path), e)
+                parsed_data_obj = None
 
         parser = self.parser_factory.get_parser(
             file_path,
@@ -840,18 +1042,22 @@ class DataManager:
             timezone=timezone,
         )
         if not parser:
-            err_msg = f"No suitable parser found for file: {file_path}"
-            logger.error(err_msg)
-            # Store error info in the PositionData's source metadata
-            position_obj.source_file_metadata.append({
-                'original_file_path': file_path, 'error': err_msg,
-                'parser_type': 'None', 'data_profile': 'error',
-                'spectral_data_type': 'none', 'sample_period_seconds': None
-            })
+            position_obj.record_load_error(file_path, 'No suitable parser found for this file', 'eager')
             return
 
         try:
             parsed_data_obj = parser.parse(file_path, return_all_columns=return_all_columns)
+
+            if parsed_data_obj is None:
+                position_obj.record_load_error(file_path, 'Parser returned no data', 'eager', parser.__class__.__name__)
+                return
+            if parsed_data_obj.metadata.get('error'):
+                # Parsers report failure via metadata['error'] instead of raising. Treat it as
+                # a failed file (never merged, never cached) so it is visible and retryable.
+                position_obj.record_load_error(
+                    file_path, parsed_data_obj.metadata['error'], 'eager', parsed_data_obj.parser_type,
+                )
+                return
 
             # Cache the result if enabled and no errors
             if self.use_cache and 'error' not in parsed_data_obj.metadata:
@@ -860,16 +1066,14 @@ class DataManager:
 
             parsed_data_obj = position_obj._apply_source_options(parsed_data_obj, selected_columns, data_profile)
             position_obj.add_parsed_file_data(parsed_data_obj)
+            position_obj._mark_file_loaded(file_path)
 
             logger.debug(f"Successfully processed and added data from '{file_path}' to '{position_name}'.")
         except Exception as e:
-            err_msg = f"Critical error parsing file {file_path} with {parser.__class__.__name__}: {e}"
-            logger.error(err_msg, exc_info=True)
-            position_obj.source_file_metadata.append({
-                'original_file_path': file_path, 'error': err_msg,
-                'parser_type': parser.__class__.__name__, 'data_profile': 'error',
-                'spectral_data_type': 'none', 'sample_period_seconds': None
-            })
+            logger.debug("Critical error parsing %s", file_path, exc_info=True)
+            position_obj.record_load_error(
+                file_path, f"{type(e).__name__}: {e}", 'eager', parser.__class__.__name__,
+            )
 
     # --- Methods for clean access ---
     def positions(self) -> List[str]:

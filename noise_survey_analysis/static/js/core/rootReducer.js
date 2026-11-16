@@ -16,6 +16,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const classificationsFeature = app.features?.classifications || {};
     const regionsFeature = app.features?.regions || {};
     const audioFeature = app.features?.audio || {};
+    const layoutFeature = app.features?.layout || {};
     const annotationPanelFeature = app.features?.annotationPanel || {};
 
     const initialSystemState = {
@@ -82,6 +83,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             classifications: deepClone(classificationsFeature.initialState),
             regions: deepClone(regionsFeature.initialState),
             audio: deepClone(audioFeature.initialState),
+            layout: deepClone(layoutFeature.initialState || {}),
             annotationPanel: deepClone(annotationPanelFeature.initialState || {}),
             system: deepClone(initialSystemState)
         };
@@ -124,6 +126,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     ).regions }
                     : baseState.regions,
                 audio: providedState.audio ? { ...baseState.audio, ...providedState.audio } : baseState.audio,
+                layout: providedState.layout ? { ...baseState.layout, ...providedState.layout } : baseState.layout,
                 annotationPanel: {
                     ...baseState.annotationPanel,
                     ...(providedState.annotationPanel || {}),
@@ -165,6 +168,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const nextAudio = typeof audioFeature.audioReducer === 'function'
             ? audioFeature.audioReducer(previousState.audio, action)
             : previousState.audio;
+        const nextLayout = typeof layoutFeature.layoutReducer === 'function'
+            ? layoutFeature.layoutReducer(previousState.layout, action)
+            : previousState.layout;
         const nextAnnotationPanel = typeof annotationPanelFeature.reducer === 'function'
             ? annotationPanelFeature.reducer(previousState.annotationPanel, action)
             : previousState.annotationPanel;
@@ -178,6 +184,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             classifications: nextClassifications,
             regions: nextRegions,
             audio: nextAudio,
+            layout: nextLayout,
             annotationPanel: nextAnnotationPanel,
             system: nextSystem
         };

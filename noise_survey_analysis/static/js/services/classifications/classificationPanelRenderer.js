@@ -218,6 +218,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
+    /**
+     * Classifications are stored in source time; charts show them shifted by the
+     * position's chart offset. Return a copy whose times match what the chart shows.
+     */
+    function toDisplayTime(entry, chartOffsets) {
+        if (!entry) return entry;
+        const offset = Number(chartOffsets?.[entry.positionId]);
+        if (!Number.isFinite(offset) || offset === 0) return entry;
+        return { ...entry, start: Number(entry.start) + offset, end: Number(entry.end) + offset };
+    }
+
     function renderClassificationPanel(panelModels, classificationsState, fullState = null) {
         if (!panelModels || !classificationsState) {
             return;
@@ -237,7 +248,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const selectedId = Number.isFinite(classificationsState.selectedId)
             ? classificationsState.selectedId
             : null;
-        const selectedObjectInState = selectedId !== null ? classificationsState.byId?.[selectedId] : null;
+        const chartOffsets = fullState?.view?.positionChartOffsets;
+        const selectedObjectInState = selectedId !== null
+            ? toDisplayTime(classificationsState.byId?.[selectedId], chartOffsets)
+            : null;
 
         const panelVisible = classificationsState.panelVisible !== false;
         const overlaysVisible = classificationsState.overlaysVisible !== false;
@@ -245,7 +259,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const { selectedClassification } = updateTable(
             panelModels.classificationSource,
             panelModels.classificationTable,
-            visibleList,
+            visibleList.map(entry => toDisplayTime(entry, chartOffsets)),
             selectedId
         );
 

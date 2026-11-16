@@ -150,6 +150,12 @@ def _header_has_spectral_log_columns(columns: List[str]) -> bool:
         re.IGNORECASE
     )
     hz_pattern = re.compile(r'^[0-9]+(?:\.[0-9]+)?\s*hz$', re.IGNORECASE)
+    # NTi XL2 RTA logs: a "Band [Hz]" column followed by bare band centres (6.3, 8.0, ...).
+    stripped_columns = [c.strip().strip('"') for c in columns]
+    if any(c.lower().startswith('band') for c in stripped_columns):
+        numeric_bands = [c for c in stripped_columns if re.fullmatch(r'[0-9]+(?:\.[0-9]+)?k?', c)]
+        if len(numeric_bands) >= 5:
+            return True
     for column in columns:
         stripped = column.strip().strip('"')
         normalized = stripped.replace(' ', '')
@@ -168,11 +174,16 @@ def estimate_log_spectral_threshold_seconds(log_file_paths: list,
     if chart_settings is None:
         chart_settings = CHART_SETTINGS.copy()
 
-    header_columns = _peek_log_file_header_columns(log_file_paths)
-    if not _header_has_spectral_log_columns(header_columns):
+    # A position can have several deferred logs (e.g. NTi broadband _123_Log plus a
+    # separate _RTA_3rd_Log); check each one rather than only the first readable file.
+    spectral_files = [
+        file_info for file_info in (log_file_paths or [])
+        if _header_has_spectral_log_columns(_peek_log_file_header_columns([file_info]))
+    ]
+    if not spectral_files:
         return None
 
-    log_time_step = _peek_log_file_time_step_ms(log_file_paths)
+    log_time_step = _peek_log_file_time_step_ms(spectral_files)
     if log_time_step <= 0:
         return None
 

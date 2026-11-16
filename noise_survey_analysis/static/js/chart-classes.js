@@ -33,6 +33,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const METER_PRESENT = 'present';
     const METER_ABSENT = 'absent';
     const METER_UNCHECKED = 'unchecked';
+    // Agent suggestions: faint, dashed, same category colour (see features/regions/suggestionModel.js).
+    const PROPOSED_REGION_FILL_ALPHA = 0.06;
+    const PROPOSED_SELECTED_REGION_FILL_ALPHA = 0.14;
+    const PROPOSED_REGION_LINE_ALPHA = 0.6;
+    const PROPOSED_REGION_LINE_DASH = [4, 4];
+    const PROPOSED_MARKER_LINE_ALPHA = 0.4;
+    const PROPOSED_SELECTED_MARKER_LINE_ALPHA = 0.8;
+    const PROPOSED_MARKER_LINE_DASH = [4, 4];
     const DEFAULT_MARKER_COLOR = '#fdd835';
     const SELECTED_MARKER_LINE_WIDTH = 3;
     const UNSELECTED_MARKER_LINE_WIDTH = 2;
@@ -157,6 +165,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
          * @param {number} selectedMarkerId - The ID of the currently selected marker.
          */
         syncMarkers(markers, areMarkersEnabled, selectedMarkerId) {
+            this._lastOverlaySync = { ...this._lastOverlaySync, markers: [markers, areMarkersEnabled, selectedMarkerId] };
+            this._watchYRange();
             const overlay = this._ensureMarkerOverlay();
             if (!overlay) {
                 console.error('[Chart.syncMarkers] Failed to initialize marker overlay.');
@@ -169,6 +179,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             source.data = nextData;
             renderer.visible = areMarkersEnabled && nextData.x0.length > 0;
+            this._syncProposedMarkers(markerList, areMarkersEnabled, selectedMarkerId);
 
             if (typeof this.model?.request_render === 'function') {
                 this.model.request_render();
@@ -280,8 +291,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             };
         }
 
-        _buildMarkerOverlayData(markerList, selectedMarkerId) {
+        _buildMarkerOverlayData(markerList, selectedMarkerId, options = {}) {
             const data = this._emptyMarkerOverlayData();
+            if (options.proposedOnly) {
+                data.note = []; data.conf_str = []; data.agent_str = [];
+            }
             const yRange = this.model?.y_range;
             const yStart = Number(yRange?.start);
             const yEnd = Number(yRange?.end);
@@ -295,6 +309,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     return;
                 }
 
+                // Agent suggestions draw on their own faint dashed overlay; rejected ones are not drawn.
+                if (marker?.status === 'rejected') return;
+                if ((marker?.status === 'proposed') !== (options.proposedOnly === true)) return;
+
                 const markerId = marker?.id;
                 const markerColor = normalizeMarkerColor(marker?.color);
                 const isSelected = Number.isFinite(selectedMarkerId) && markerId === selectedMarkerId;
@@ -304,16 +322,53 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 data.x1.push(timestamp);
                 data.y1.push(y1);
                 data.line_color.push(markerColor);
-                data.line_alpha.push(isSelected ? SELECTED_MARKER_LINE_ALPHA : UNSELECTED_MARKER_LINE_ALPHA);
+                data.line_alpha.push(options.proposedOnly
+                    ? (isSelected ? PROPOSED_SELECTED_MARKER_LINE_ALPHA : PROPOSED_MARKER_LINE_ALPHA)
+                    : (isSelected ? SELECTED_MARKER_LINE_ALPHA : UNSELECTED_MARKER_LINE_ALPHA));
                 data.line_width.push(isSelected ? SELECTED_MARKER_LINE_WIDTH : UNSELECTED_MARKER_LINE_WIDTH);
                 data.marker_id.push(markerId);
+                if (options.proposedOnly) {
+                    data.note.push(marker?.note || '');
+                    data.conf_str.push(Number.isFinite(marker?.confidence) ? marker.confidence.toFixed(2) : 'n/a');
+                    data.agent_str.push(marker?.agent?.name || 'agent');
+                }
             });
 
             return data;
         }
 
+        /**
+         * Marker, region and classification overlays size themselves from the figure's y_range at
+         * sync time. Remember the last arguments of each sync and redo them when y_range start/end
+         * change (for example after a y auto-fit), so overlays never keep the old height.
+         */
+        _watchYRange() {
+            if (this._yRangeWatchAttached) return;
+            const yRange = this.model?.y_range;
+            const change = yRange?.change;
+            if (!change || typeof change.connect !== 'function') return;
+            this._yRangeWatchAttached = true;
+            this._lastSyncedYRange = [yRange.start, yRange.end];
+            change.connect(() => {
+                const start = yRange.start;
+                const end = yRange.end;
+                if (start === this._lastSyncedYRange[0] && end === this._lastSyncedYRange[1]) return;
+                this._lastSyncedYRange = [start, end];
+                this._resyncOverlaysForYRange();
+            });
+        }
+
+        _resyncOverlaysForYRange() {
+            const last = this._lastOverlaySync || {};
+            if (last.markers) this.syncMarkers(...last.markers);
+            if (last.regions) this.syncRegions(...last.regions);
+            if (last.classifications) this.syncClassifications(...last.classifications);
+        }
+
         syncRegions(regionList, selectedId, options = {}) {
             if (!Array.isArray(regionList)) return;
+            this._lastOverlaySync = { ...this._lastOverlaySync, regions: [regionList, selectedId, options] };
+            this._watchYRange();
             let changed = false;
             // Separate sources keep the ghost dash a scalar Bokeh property.
             // Every row retains annotation/meter/area identity for inspection.
@@ -340,12 +395,103 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 }
             });
 
+            if (this._syncProposedRegions(regionList, selectedId, options)) changed = true;
+
             if (!changed) return;
             if (typeof this.model?.request_render === 'function') {
                 this.model.request_render();
             } else if (this.model?.change?.emit) {
                 this.model.change.emit();
             }
+        }
+
+        /**
+         * Agent suggestions get a third, faint dashed overlay with hover text (note, confidence).
+         * Built with client-side models like the classification overlay. Returns true if anything changed.
+         */
+        _syncProposedRegions(regionList, selectedId, options) {
+            const overlay = this._ensureProposedOverlay('regionProposedOverlay', 'Quad', 'region_proposed', {
+                left: { field: 'left' }, right: { field: 'right' }, bottom: { field: 'bottom' }, top: { field: 'top' },
+                fill_color: { field: 'fill_color' }, fill_alpha: { field: 'fill_alpha' },
+                line_color: { field: 'line_color' }, line_alpha: { field: 'line_alpha' },
+                line_width: { field: 'line_width' }, line_dash: PROPOSED_REGION_LINE_DASH
+            }, this._emptyProposedRegionData(), [
+                ['AI suggestion', '@agent_str'], ['Note', '@note'], ['Confidence', '@conf_str'], ['Why', '@rationale']
+            ]);
+            if (!overlay) return false;
+            const nextData = this._buildRegionOverlayData(regionList, selectedId, { ...options, proposedOnly: true });
+            const previous = overlay.source.data;
+            const equal = Object.keys(nextData).every(key => {
+                const before = previous?.[key];
+                const after = nextData[key];
+                return before?.length === after.length && after.every((value, index) => value === before[index]);
+            });
+            let changed = false;
+            if (!equal) { overlay.source.data = nextData; changed = true; }
+            const visible = nextData.left.length > 0;
+            if (overlay.renderer.visible !== visible) { overlay.renderer.visible = visible; changed = true; }
+            return changed;
+        }
+
+        _emptyProposedRegionData() {
+            return { ...this._emptyRegionOverlayData(), note: [], conf_str: [], agent_str: [], rationale: [] };
+        }
+
+        _syncProposedMarkers(markerList, areMarkersEnabled, selectedMarkerId) {
+            const overlay = this._ensureProposedOverlay('markerProposedOverlay', 'Segment', 'marker_proposed', {
+                x0: { field: 'x0' }, y0: { field: 'y0' }, x1: { field: 'x1' }, y1: { field: 'y1' },
+                line_color: { field: 'line_color' }, line_alpha: { field: 'line_alpha' },
+                line_width: { field: 'line_width' }, line_dash: PROPOSED_MARKER_LINE_DASH
+            }, { ...this._emptyMarkerOverlayData(), note: [], conf_str: [], agent_str: [] }, [
+                ['AI suggestion', '@agent_str'], ['Note', '@note'], ['Confidence', '@conf_str']
+            ]);
+            if (!overlay) return;
+            const nextData = this._buildMarkerOverlayData(markerList, selectedMarkerId, { proposedOnly: true });
+            overlay.source.data = nextData;
+            overlay.renderer.visible = areMarkersEnabled && nextData.x0.length > 0;
+        }
+
+        /** Create (once) a client-side glyph overlay plus a hover tool restricted to it. */
+        _ensureProposedOverlay(key, glyphName, baseName, glyphProps, initialData, tooltips) {
+            if (this[key]?.source && this[key]?.renderer) return this[key];
+            if (!window.Bokeh || !window.Bokeh.Models) return null;
+            const ColumnDataSource = Bokeh.Models.get('ColumnDataSource');
+            const Glyph = Bokeh.Models.get(glyphName);
+            const GlyphRenderer = Bokeh.Models.get('GlyphRenderer');
+            const HoverTool = Bokeh.Models.get('HoverTool');
+            if (!ColumnDataSource || !Glyph || !GlyphRenderer) return null;
+
+            const source = new ColumnDataSource({ data: initialData, name: `${baseName}_overlay_source_${this.name}` });
+            const glyph = new Glyph(glyphProps);
+            let renderer = null;
+            if (typeof this.model?.add_glyph === 'function') {
+                try { renderer = this.model.add_glyph(glyph, source) || null; } catch (error) {
+                    console.warn(`[Chart._ensureProposedOverlay] add_glyph failed for ${baseName}.`, error);
+                }
+            }
+            if (!renderer) {
+                renderer = new GlyphRenderer({ data_source: source, glyph, level: 'underlay', visible: false });
+                if (typeof this.model?.add_renderers === 'function') this.model.add_renderers(renderer);
+                else if (Array.isArray(this.model?.renderers)) this.model.renderers.push(renderer);
+            }
+            renderer.level = 'underlay';
+            renderer.visible = false;
+            try { renderer.name = `${baseName}_overlay_renderer_${this.name}`; } catch (error) { /* name is optional */ }
+
+            if (HoverTool && typeof this.model?.add_tools === 'function') {
+                try {
+                    const tool = new HoverTool({
+                        renderers: [renderer], tooltips, attachment: 'above', show_arrow: false,
+                        name: `${baseName}_hover_tool_${this.name}`
+                    });
+                    this.model.add_tools(tool);
+                    this[`${key}HoverTool`] = tool;
+                } catch (error) {
+                    console.warn(`[Chart._ensureProposedOverlay] hover tool unavailable for ${baseName}.`, error);
+                }
+            }
+            this[key] = { source, renderer };
+            return this[key];
         }
 
         _ensureRegionOverlay(isGhost = false) {
@@ -459,7 +605,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         _buildRegionOverlayData(regionList, selectedId, options = {}) {
-            const data = this._emptyRegionOverlayData();
+            const data = options.proposedOnly ? this._emptyProposedRegionData() : this._emptyRegionOverlayData();
             const yRange = this.model?.y_range;
             const yStart = Number(yRange?.start);
             const yEnd = Number(yRange?.end);
@@ -469,9 +615,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
             regionList.forEach(region => {
                 if (!region) return;
+                // Rejected suggestions are not drawn. Proposed ones appear only on the faint dashed overlay.
+                if (region.status === 'rejected') return;
+                if ((region.status === 'proposed') !== (options.proposedOnly === true)) return;
                 const meterState = region.positionId === this.positionId ? METER_PRESENT
                     : ([METER_PRESENT, METER_ABSENT].includes(region.meterStates?.[this.positionId])
                         ? region.meterStates[this.positionId] : METER_UNCHECKED);
+                // A suggestion is shown only where it was marked present (no ghost or absent band).
+                if (options.proposedOnly && meterState !== METER_PRESENT) return;
                 const ghostOnly = options.ghostOnly === true;
                 const ghostMode = options.ghostMode || 'selected';
                 if (ghostOnly !== (meterState === METER_UNCHECKED)) return;
@@ -500,29 +651,45 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     data.bottom.push(bottom);
                     data.top.push(top);
                     data.fill_color.push(bandColor);
-                    data.fill_alpha.push(ghostOnly ? UNCHECKED_REGION_FILL_ALPHA
+                    data.fill_alpha.push(options.proposedOnly
+                        ? (isSelected ? PROPOSED_SELECTED_REGION_FILL_ALPHA : PROPOSED_REGION_FILL_ALPHA)
+                        : ghostOnly ? UNCHECKED_REGION_FILL_ALPHA
                         : meterState === METER_ABSENT ? (isSelected ? SELECTED_ABSENT_REGION_FILL_ALPHA : ABSENT_REGION_FILL_ALPHA)
                             : (isSelected ? SELECTED_REGION_FILL_ALPHA : DEFAULT_REGION_FILL_ALPHA));
                     data.line_color.push(bandColor);
-                    data.line_alpha.push(ghostOnly ? UNCHECKED_REGION_LINE_ALPHA : DEFAULT_REGION_LINE_ALPHA);
+                    data.line_alpha.push(options.proposedOnly ? PROPOSED_REGION_LINE_ALPHA
+                        : ghostOnly ? UNCHECKED_REGION_LINE_ALPHA : DEFAULT_REGION_LINE_ALPHA);
                     data.line_width.push(isSelected ? SELECTED_REGION_LINE_WIDTH : DEFAULT_REGION_LINE_WIDTH);
                     data.region_id.push(region.id);
                     data.area_index.push(index);
                     data.meter_id.push(this.positionId);
                     data.state.push(meterState);
+                    if (options.proposedOnly) {
+                        data.note.push(region.note || '');
+                        data.conf_str.push(Number.isFinite(region.confidence) ? region.confidence.toFixed(2) : 'n/a');
+                        data.agent_str.push(region.agent?.name || 'agent');
+                        // The panel shows the full text; the hover tooltip only needs the gist.
+                        const why = region.rationale || '';
+                        data.rationale.push(why.length > 200 ? `${why.slice(0, 197)}...` : why);
+                    }
                 });
             });
 
             return data;
         }
 
-        syncClassifications(classificationList, areClassificationsVisible, selectedId) {
+        syncClassifications(classificationList, areClassificationsVisible, selectedId, chartOffsets) {
+            this._lastOverlaySync = {
+                ...this._lastOverlaySync,
+                classifications: [classificationList, areClassificationsVisible, selectedId, chartOffsets]
+            };
+            this._watchYRange();
             const overlay = this._ensureClassificationOverlay();
             if (!overlay) {
                 return;
             }
             const { source, renderer } = overlay;
-            const nextData = this._buildClassificationOverlayData(classificationList, selectedId);
+            const nextData = this._buildClassificationOverlayData(classificationList, selectedId, chartOffsets);
 
             source.__suppressSelectionDispatch = true;
             source.data = nextData;
@@ -763,8 +930,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             };
         }
 
-        _buildClassificationOverlayData(classificationList, selectedId) {
+        /**
+         * Chart offset (ms) for this chart's position. Classifications are stored in
+         * source time; chart data is shifted by the per-position chart offset, so the
+         * bands must be shifted the same way. `chartOffsets` is optional; without it the
+         * current store state is read.
+         */
+        _getClassificationChartOffsetMs(chartOffsets) {
+            let offsets = chartOffsets;
+            if (!offsets || typeof offsets !== 'object') {
+                try {
+                    offsets = window.NoiseSurveyApp?.store?.getState?.()?.view?.positionChartOffsets;
+                } catch (e) {
+                    offsets = null;
+                }
+            }
+            const raw = Number(offsets?.[this.positionId]);
+            return Number.isFinite(raw) ? raw : 0;
+        }
+
+        _buildClassificationOverlayData(classificationList, selectedId, chartOffsets) {
             const data = this._emptyClassificationOverlayData();
+            const chartOffsetMs = this._getClassificationChartOffsetMs(chartOffsets);
             const entries = (Array.isArray(classificationList) ? classificationList : [])
                 .filter(entry => entry && entry.positionId === this.positionId);
             if (!entries.length) {
@@ -787,11 +974,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const getShadedColorForScore = utils?.getShadedColorForScore;
 
             entries.forEach(entry => {
-                const start = Number(entry.start);
-                const end = Number(entry.end);
-                if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
+                const sourceStart = Number(entry.start);
+                const sourceEnd = Number(entry.end);
+                if (!Number.isFinite(sourceStart) || !Number.isFinite(sourceEnd) || sourceStart >= sourceEnd) {
                     return;
                 }
+                const start = sourceStart + chartOffsetMs;
+                const end = sourceEnd + chartOffsetMs;
                 const sourceKey = entry.sourceId || entry.sourceLabel || 'source';
                 const laneIndex = Math.max(0, sources.indexOf(sourceKey));
                 const lanePadding = laneHeight * CLASSIFICATION_LANE_TOP_PADDING_RATIO;

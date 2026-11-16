@@ -259,6 +259,32 @@ describe('regionPanelRenderer.renderRegionPanel', () => {
         });
     });
 
+    it('badges and dims coarse-resolution measurements with the reason as tooltip', () => {
+        const panelModels = createPanelModels();
+        const region = { id: 1, positionId: 'P1', areas: [{ start: 0, end: 20000 }], color: '#1e88e5' };
+        const metricsFor = coarse => ({
+            dataResolution: 'overview', laeq: 44.1, lafmax: coarse ? null : 60, la90: 44.1, sampleIntervalS: 300,
+            coarseResolution: coarse,
+            coarseResolutionReason: '5-min data longer than the event; values are for the whole interval',
+            spectrum: { labels: [], values: [] }
+        });
+        const state = {
+            regions: { byId: { 1: region }, allIds: [1], selectedId: 1, addAreaTargetId: null, isMergeModeActive: false, panelVisible: true, overlaysVisible: true },
+            interaction: {}, view: { availablePositions: ['P1'] }
+        };
+        window.NoiseSurveyApp.dataCache = { activeLineData: { P1: { dataViewType: 'overview' } } };
+        window.NoiseSurveyApp.regions.getRegionMetrics = vi.fn(() => metricsFor(true));
+        renderRegionPanel(panelModels, [region], 1, state, { panelVisible: true, overlaysVisible: true, positionCount: 1 });
+        expect(panelModels.metricsDiv.text).toContain('coarse-badge');
+        expect(panelModels.metricsDiv.text).toContain('5 min');
+        expect(panelModels.metricsDiv.text).toContain('values are for the whole interval');
+        expect(panelModels.metricsDiv.text).toContain('class="metric-coarse"');
+
+        window.NoiseSurveyApp.regions.getRegionMetrics = vi.fn(() => metricsFor(false));
+        renderRegionPanel(panelModels, [region], 1, state, { panelVisible: true, overlaysVisible: true, positionCount: 1 });
+        expect(panelModels.metricsDiv.text).not.toContain('class="coarse-badge"');
+    });
+
     it('shows the note save status only while a region is selected', () => {
         const panelModels = createPanelModels();
         const region = { id: 1, positionId: 'P1', start: 0, end: 1000, areas: [{ start: 0, end: 1000 }], note: 'n' };

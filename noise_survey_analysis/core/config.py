@@ -96,11 +96,14 @@ CHART_SETTINGS = {
 
     # Defines the frequency range for the detailed data table.
     'freq_table_freq_range_hz': [20, 10000],
-    'low_freq_height': 360,
+    # Initial figure heights. With "Fit rows to window" on, static/js/services/layout/layoutRenderer.js
+    # resizes the time series and spectrograms to fill the browser window; these are the starting
+    # values (and, with the fit off, the fixed heights).
+    'low_freq_height': 150,
     'low_freq_width': 1600,
-    'high_freq_height': 360,
+    'high_freq_height': 170,
     'high_freq_width': 1600,
-    'spectrogram_height': 360,
+    'spectrogram_height': 124,
     'spectrogram_width': 1600,
     'spectrogram_log_window_min_step_ms': 100,
     'spectrogram_log_window_min_ms': 15 * 60 * 1000,
@@ -113,7 +116,7 @@ CHART_SETTINGS = {
     'colormap': 'Turbo256',
     'active_drag': 'xpan',
     'range_selector_width': 1600,
-    'range_selector_height': 150,
+    'range_selector_height': 44,
     'y_range': (0, 100),
     'auto_y_range': False,
     # Set the y-axis range for timeseries charts.
@@ -121,9 +124,33 @@ CHART_SETTINGS = {
     # Example: [20, 100]
     'timeseries_y_range': [20, 100],
     'frequency_log_scale': False,
-    'frequency_bar_height': 360,
-    'frequency_bar_width': 1600,
+    'frequency_bar_height': 170,
+    'frequency_bar_width': 352,  # docked in the sidebar column; the figure stretches to the dock
     'default_spectral_param': 'LZeq',  # Default parameter to show for spectrograms
+}
+
+# Plot-frame borders shared by every time-domain figure (time series, spectrogram, range selector)
+# and the frequency figure. Bokeh's min_border_* is only a minimum, so these are guaranteed to
+# exceed the width of the y-axis tick labels (8pt, no axis label); the frame left and right edges
+# are therefore identical in all figures and the time axes line up vertically. Do not use
+# frame_width, it fights stretch_width. Tested in tests/test_wp1_layout.py.
+FRAME_BORDER_LEFT = 56
+FRAME_BORDER_RIGHT = 12
+
+# Compact layout metrics (px). The JS fit (layoutRenderer.js / layoutMath.js) mirrors the
+# minimums; STRIP_HEIGHT is the collapsed spectrogram.
+LAYOUT_SETTINGS = {
+    'toolbar_height': 48,
+    'range_selector_height': 44,
+    'position_header_height': 24,
+    'spectrogram_strip_height': 26,
+    'timeseries_min_height': 110,
+    'spectrogram_min_height': 80,
+    'fixed_timeseries_height': 220,   # used when the rows cannot fit the window (4+ positions)
+    'fixed_spectrogram_height': 160,
+    'timeseries_share': 0.55,
+    'frequency_dock_chart_height': 170,
+    'axis_font_size': '8pt',
 }
 
 # Visualization settings
@@ -228,6 +255,38 @@ GENERAL_SETTINGS = {
     # TODO: Add other general settings like logging level, default theme, etc.
     # "log_level": "INFO", # Example: DEBUG, INFO, WARNING, ERROR
 }
+
+# --- Audio playback backend ---
+# 'vlc'     server-side playback through python-vlc (default for the live dashboard).
+# 'browser' the dashboard fetches 60 s PCM clips from the localhost media server
+#           (core/media_server.py) and plays them in the page (real gain, instant
+#           position switching). Static HTML always plays clips in the browser.
+# The Audio backend toggle next to the Boost button changes this per tab at run time;
+# NOISE_SURVEY_AUDIO_BACKEND sets the starting value.
+AUDIO_BACKENDS = ('vlc', 'browser')
+
+
+def _resolve_audio_backend(raw):
+    value = str(raw or '').strip().lower()
+    return value if value in AUDIO_BACKENDS else 'vlc'
+
+
+AUDIO_BACKEND = _resolve_audio_backend(_get_env_text('NOISE_SURVEY_AUDIO_BACKEND', 'vlc'))
+# Length of one browser-playback chunk, and how long a refreshed or closed tab keeps its
+# session (data copies, VLC, workers) before the server releases it.
+AUDIO_CLIP_SECONDS = 60.0
+
+
+def _env_seconds(name, default):
+    try:
+        return max(0.0, float(_get_env_text(name, str(default))))
+    except ValueError:
+        return float(default)
+
+
+# A session whose browser has been gone this long is released (its data copy, VLC player and
+# workers), instead of lingering for Bokeh's 5-minute unused-session lifetime. 0 disables.
+STALE_SESSION_RELEASE_SECONDS = _env_seconds('NOISE_SURVEY_STALE_SESSION_RELEASE_SECONDS', 20.0)
 
 # --- Audio anchoring settings ---
 AUDIO_ANCHORING_SETTINGS = {

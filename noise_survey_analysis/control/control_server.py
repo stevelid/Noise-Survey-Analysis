@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from .annotation_validation import ANNOTATION_COMMANDS
 from .commands import ALLOWED_COMMANDS, ControlCommand, ControlResult, MAX_PAYLOAD_BYTES
 from .session_bridge import SessionBridge
 from .validation import validate_command_payload
@@ -122,7 +123,12 @@ class _ControlHandler(BaseHTTPRequestHandler):
 
         # --- Validate payload ---
         try:
-            validated_payload = validate_command_payload(cmd.command, cmd.payload or {})
+            validated_payload = validate_command_payload(
+                cmd.command,
+                cmd.payload or {},
+                positions=self.bridge.get_context("positions", None),
+                time_range=self.bridge.get_context("time_range", None),
+            )
         except (ValueError, TypeError) as exc:
             # A malformed payload is the client's problem, not a server error:
             # answer with 400 rather than letting the handler die mid-response.
@@ -207,6 +213,9 @@ def _dispatch(
 
         if command == "export_annotations":
             return bridge.export_annotations(payload=payload, request_id=request_id)
+
+        if command in ANNOTATION_COMMANDS:
+            return bridge.annotation_command(command, payload, request_id=request_id)
 
         return ControlResult.error(
             f"command {command!r} is not yet implemented", request_id=request_id

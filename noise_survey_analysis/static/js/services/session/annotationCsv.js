@@ -6,19 +6,37 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const EXPORT_MODE_FULL = 'full';
     const REGION_FIELDS = ['id', 'category', 'category_label', 'category_ids', 'note', 'colour', 'start', 'end', 'duration_s', 'origin_meter', 'areas', 'merge_sources', 'merge_categories'];
     const PROVENANCE_FIELDS = ['chart_offset_ms', 'source_start', 'source_end', 'source_areas', 'data_resolution', 'sample_interval_s', 'coverage', 'LAeq_dB', 'LAFmax_dB',
-        'start_local', 'end_local', 'source_start_local', 'source_end_local'];
+        'start_local', 'end_local', 'source_start_local', 'source_end_local', 'start_utc', 'end_utc', 'timezone',
+        'source', 'status', 'confidence', 'rationale', 'agent', 'agent_run_id'];
     const DEFAULT_TIMEZONE = 'Europe/London';
     const OVERALL_FIELDS = ['region_id', 'category', 'meter', 'state', 'data_resolution', 'sample_interval_s', 'coverage',
         'LAeq_dB', 'LAFmax_dB', 'LAF90_dB', 'background_dB', 'background_LA90_dB', 'background_LAeq_dB',
         'diff_from_background_dB', 'context_duration_s', 'percentile_method', 'missing_reasons'];
     const SPECTRAL_FIELDS = ['region_id', 'category', 'meter', 'state', 'parameter', 'data_resolution', 'sample_interval_s', 'coverage', 'missing_reasons'];
-    const MARKER_FIELDS = ['id', 'timestamp', 'note', 'colour', 'metrics'];
+    const MARKER_FIELDS = ['id', 'timestamp', 'note', 'colour', 'metrics', 'timestamp_utc', 'timezone', 'position',
+        'source', 'status', 'confidence', 'rationale', 'agent', 'agent_run_id'];
+    /** Suggestion provenance as CSV cells; blank for ordinary user annotations. */
+    const provenanceCells = item => ({
+        source: item?.source || '', status: item?.status || '', confidence: item?.confidence ?? '', rationale: item?.rationale || '',
+        agent: item?.agent?.name || '', agent_run_id: item?.agent?.runId || ''
+    });
+    /** Inverse of provenanceCells for imported rows; pickReviewMeta drops anything invalid. */
+    const provenanceFromCells = record => app.annotationModel.pickReviewMeta({
+        source: record.source || undefined, status: record.status || undefined, rationale: record.rationale || undefined,
+        confidence: record.confidence !== undefined && record.confidence !== '' && Number.isFinite(Number(record.confidence)) ? Number(record.confidence) : undefined,
+        agent: record.agent ? { name: record.agent, runId: record.agent_run_id || null } : undefined
+    });
+    /** Proposed and rejected suggestions are not real events: leave them out unless includeProposed (rejected are always left out). */
+    const isExported = (item, includeProposed) => item?.status !== 'rejected' && (item?.status !== 'proposed' || includeProposed);
     const escape = value => {
         const text = value === null || value === undefined ? '' : String(value);
         return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     };
     const timestamp = value => Number.isFinite(Number(value)) && value != null
         ? new Date(Number(value)).toISOString().replace('T', ' ').replace('Z', '') : '';
+    /** True UTC instant as ISO-8601 with a Z suffix, matching the Python exporter's *_utc columns. */
+    const utcIso = value => Number.isFinite(Number(value)) && value != null
+        ? new Date(Number(value)).toISOString() : '';
 
     /** Naive wall-clock time in `zone` (what Svantek/NTi logs record), same text format as `timestamp`. */
     function localTimestamp(value, zone) {
@@ -74,6 +92,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const mode = options.mode ?? EXPORT_MODE_ANNOTATIONS;
         if (![EXPORT_MODE_ANNOTATIONS, EXPORT_MODE_FULL].includes(mode)) throw new Error(`Unknown annotation export mode: ${mode}`);
         const includeAnalysis = mode === EXPORT_MODE_FULL;
+        const includeProposed = !!(options.include_proposed ?? options.includeProposed);
+        markers = (markers || []).filter(marker => isExported(marker, includeProposed));
+        regions = (regions || []).filter(region => isExported(region, includeProposed));
         const models = options.models || app.registry?.models || {};
         const engine = app.annotationMetrics;
         if (includeAnalysis && !engine) throw new Error('The annotation metrics engine is not loaded.');
@@ -131,7 +152,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 source_areas: JSON.stringify(origin.sourceAreas), data_resolution: origin.dataResolution,
                 sample_interval_s: origin.sampleIntervalS, coverage: origin.coverage, LAeq_dB: origin.laeq, LAFmax_dB: origin.lafmax,
                 start_local: localTimestamp(normalized.start, zone), end_local: localTimestamp(normalized.end, zone),
-                source_start_local: localTimestamp(origin.sourceAreas[0]?.start, zone), source_end_local: localTimestamp(origin.sourceAreas.at(-1)?.end, zone)
+                source_start_local: localTimestamp(origin.sourceAreas[0]?.start, zone), source_end_local: localTimestamp(origin.sourceAreas.at(-1)?.end, zone),
+                start_utc: utcIso(normalized.start), end_utc: utcIso(normalized.end), timezone: zone,
+                ...provenanceCells(normalized)
             });
             if (!includeAnalysis) return;
             positions.forEach(meter => {
@@ -168,7 +191,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             section('SPECTRAL', [...SPECTRAL_FIELDS, ...[...bands].sort((a, b) => frequency(a) - frequency(b))], spectralRows);
         }
         section('MARKERS', MARKER_FIELDS, markers.map(marker => ({ id: marker.id, timestamp: timestamp(marker.timestamp), note: marker.note,
-            colour: marker.color, metrics: JSON.stringify(marker.metrics || marker.metricsSnapshot || {}) })));
+            colour: marker.color, metrics: JSON.stringify(marker.metrics || marker.metricsSnapshot || {}),
+            timestamp_utc: utcIso(marker.timestamp), timezone: zone, position: marker.positionId || '', ...provenanceCells(marker) })));
         section('NOTES', ['key', 'value'], Object.entries({
             exported, export_mode: mode, time_zone: 'UTC', local_time_zone: zone,
             time_basis: `start/end/source_start/source_end are true UTC. start_local/end_local/source_start_local/source_end_local are naive ${zone} wall-clock time (BST in summer) and match the instrument _log.csv/_summary.csv time basis; use source_*_local to look up rows in the survey files (the source_* columns remove any chart alignment offset). All metrics are calculated for the UTC instants; data_resolution gives the resolution they came from (log or overview).`,
@@ -208,10 +232,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 categoryIds: record.category_ids ? JSON.parse(record.category_ids) : undefined,
                 mergeSources: record.merge_sources ? JSON.parse(record.merge_sources) : undefined,
                 mergeCategories: record.merge_categories ? JSON.parse(record.merge_categories) : undefined,
-                meterStates: Object.fromEntries(positions.map(id => [id, record[id] || 'unchecked'])) }, positions);
+                meterStates: Object.fromEntries(positions.map(id => [id, record[id] || 'unchecked'])),
+                ...provenanceFromCells(record) }, positions);
         }).filter(Boolean);
         const markers = readSection(rows, 'MARKERS').map(record => ({ id: Number(record.id), timestamp: parseTimestamp(record.timestamp),
-            note: record.note || '', color: record.colour || '#fdd835', metrics: JSON.parse(record.metrics || record.metrics_json || '{}') }))
+            note: record.note || '', color: record.colour || '#fdd835', metrics: JSON.parse(record.metrics || record.metrics_json || '{}'),
+            ...(record.position ? { positionId: record.position } : {}), ...provenanceFromCells(record) }))
             .filter(marker => Number.isFinite(marker.timestamp));
         const categories = app.annotationModel.normalizeCatalog(metadata.categories || [
             ...app.annotationModel.DEFAULT_CATEGORIES,

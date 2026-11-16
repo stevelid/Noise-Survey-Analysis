@@ -5,6 +5,7 @@ param(
     [string]$Config,
     [string]$Output,
     [switch]$IncludeAllResolutions,
+    [switch]$IncludeProposed,
     [ValidateRange(0.001, 86400)][double]$BackgroundWindowSeconds = 300,
     [ValidateRange(0, 172800)][double]$MinimumContextSeconds = 60
 )
@@ -51,6 +52,7 @@ try {
     if ($Config) { $arguments += @('--config', $Config) }
     if ($Output) { $arguments += @('--output', $Output) }
     if ($IncludeAllResolutions) { $arguments += '--include-all-resolutions' }
+    if ($IncludeProposed) { $arguments += '--include-proposed' }
     $culture = [Globalization.CultureInfo]::InvariantCulture
     $arguments += @('--background-window-s', $BackgroundWindowSeconds.ToString($culture), '--min-context-s', $MinimumContextSeconds.ToString($culture))
     Push-Location $application

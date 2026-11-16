@@ -92,7 +92,7 @@ def scan_directory_for_sources(base_dir: str, probe_time_spans: bool = True) -> 
             # --- Config File Handling ---
             if file.startswith("noise_survey_config_") and file.endswith(".json"):
                 try:
-                    with open(file_path, 'r') as f:
+                    with open(file_path, 'r', encoding='utf-8-sig') as f:
                         config_data = json.load(f)
 
                     sources = config_data.get("sources")

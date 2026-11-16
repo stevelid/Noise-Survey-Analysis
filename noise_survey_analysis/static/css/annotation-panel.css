@@ -103,3 +103,18 @@
 .nsa-shortcut-group dl > div { display: grid; grid-template-columns: minmax(88px, 1fr) minmax(0, 1.5fr); gap: 7px; padding: 3px 0; border-bottom: 1px solid var(--nsa-border, #e2e8f0); }
 .nsa-shortcut-group dt, .nsa-shortcut-group dd { margin: 0; }
 .nsa-shortcut-group kbd { font: inherit; font-weight: 600; white-space: normal; }
+/* Agent suggestions: faint rows, AI badge, review bar, rejected group. */
+.nsa-ai-badge { display: inline-block; flex: 0 0 auto; padding: 1px 5px; border-radius: 9px; background: #ede9fe; color: #5b21b6; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.nsa-region-row.is-suggestion, .nsa-marker-row.is-suggestion { opacity: .72; border-left: 2px dashed #a78bfa; }
+.nsa-region-row.is-suggestion.is-selected, .nsa-marker-row.is-suggestion.is-selected { opacity: 1; }
+.nsa-region-row.is-rejected, .nsa-marker-row.is-rejected { opacity: .55; text-decoration: line-through; }
+.nsa-region-row.is-rejected button, .nsa-marker-row.is-rejected button { text-decoration: none; }
+.nsa-review-bar { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.nsa-review-bar button { padding: 3px 7px; font-size: 11px; border-radius: 11px; }
+.nsa-review-bar button[aria-pressed="true"] { background: var(--nsa-accent-soft, #eff6ff); border-color: var(--nsa-accent, #2563eb); font-weight: 600; }
+.nsa-suggestion-card { border: 1px dashed #a78bfa; border-radius: 4px; background: #faf5ff; padding: 6px 8px; margin: 6px 0; }
+.nsa-suggestion-card .nsa-suggestion-head { margin: 0 0 3px; display: flex; align-items: center; gap: 6px; }
+.nsa-suggestion-card .nsa-rationale { margin: 3px 0; padding: 4px 6px; background: #fff; border-left: 3px solid #a78bfa; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--nsa-text-secondary, #334155); user-select: text; }
+.nsa-suggestion-card .nsa-buttons { margin: 4px 0 0; }
+.nsa-suggestion--rejected { background: #f8fafc; border-color: #cbd5e1; }
+.nsa-rejected { margin-top: 6px; }

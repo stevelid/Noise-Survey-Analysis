@@ -25,7 +25,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return { ...initialState, ...panel, filters: { ...initialState.filters, ...panel.filters } };
     }
     function selectPositions(state) {
-        return (state?.view?.availablePositions || []).filter(id => typeof id === 'string');
+        const ids = (state?.view?.availablePositions || []).filter(id => typeof id === 'string');
+        // Displayed chart order, so the meter strip matches the 1-9 keys and what the user sees.
+        const ordered = app.features?.layout?.selectors?.selectOrderedPositions;
+        return typeof ordered === 'function' ? ordered(state, ids) : ids;
     }
     function selectMeterTitle(state, id) { return state?.view?.positionDisplayTitles?.[id] || id; }
     function selectPanelData(state) {

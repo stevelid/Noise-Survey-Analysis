@@ -46,6 +46,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
+    // Agent-suggestion provenance (source, status, rationale, confidence, agent, createdAt, reviewedAt).
+    function reviewMeta(value) {
+        return app.annotationModel?.pickReviewMeta ? app.annotationModel.pickReviewMeta(value) : {};
+    }
+
     function sortIdsByTimestamp(byId, ids) {
         return ids.slice().sort((a, b) => {
             const markerA = byId[a];
@@ -95,7 +100,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             note: normalizeNote(payload?.note),
             color: normalizeColor(payload?.color),
             metrics: cloneMetrics(payload?.metrics),
-            positionId: normalizePositionId(payload?.positionId)
+            positionId: normalizePositionId(payload?.positionId),
+            ...reviewMeta(payload)
         };
 
         const nextById = { ...state.byId, [id]: marker };
@@ -195,6 +201,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             delete updates.metrics;
         }
 
+        const incomingMeta = reviewMeta(updates);
+        ['source', 'status', 'rationale', 'confidence', 'agent', 'createdAt', 'reviewedAt'].forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(incomingMeta, key)
+                && JSON.stringify(incomingMeta[key]) !== JSON.stringify(existing[key])) {
+                nextMarker[key] = incomingMeta[key];
+                mutated = true;
+            }
+            delete updates[key];
+        });
+
         const remainingKeys = Object.keys(updates);
         remainingKeys.forEach(key => {
             nextMarker[key] = updates[key];
@@ -265,7 +281,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 note: normalizeNote(rawMarker?.note),
                 color: normalizeColor(rawMarker?.color),
                 metrics: cloneMetrics(rawMarker?.metrics),
-                positionId: normalizePositionId(rawMarker?.positionId)
+                positionId: normalizePositionId(rawMarker?.positionId),
+                ...reviewMeta(rawMarker)
             };
             nextById[id] = marker;
             nextAllIds.push(id);

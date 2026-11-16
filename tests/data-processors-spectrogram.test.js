@@ -102,6 +102,28 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
     expect(details.reason).toBe(' (Log Data)');
   });
 
+  it('reports no spectral log honestly instead of loading when the server flags none', () => {
+    const buildCase = (hasSpectral) => {
+      const viewState = { globalViewType: 'log', availablePositions: ['P1'], selectedParameter: 'LAeq', viewport: { min: 0, max: 60 } };
+      const dataState = { activeSpectralData: {}, _spectrogramCanvasBuffers: {} };
+      const overview = buildSpectralPrepared(6, 4, 1, 3);
+      const models = {
+        preparedGlyphData: { P1: { overview: { prepared_params: { LAeq: overview } }, log: { prepared_params: {} } } },
+        positionHasLogData: { P1: true },
+        positionHasLogSpectral: { P1: hasSpectral },
+        config: { spectrogram_freq_range_hz: [100, 400] },
+      };
+      return dataProcessors.updateActiveSpectralData('P1', viewState, dataState, models);
+    };
+    const none = buildCase(false);
+    expect(none.statusCode).toBe('no_spectral_log');
+    expect(none.isLoading).toBe(false);
+    expect(none.statusLabel).toBe('No 1 s spectral log for this position');
+    const expected = buildCase(true);
+    expect(expected.statusCode).toBe('loading_log');
+    expect(expected.isLoading).toBe(true);
+  });
+
   it('zoomed out: falls back to overview with reason and initial glyph image', () => {
     const position = 'P1';
     const viewState = {
@@ -124,7 +146,7 @@ describe('NoiseSurveyApp.data_processors.updateActiveSpectralData (spectrogram p
 
     const details = dataProcessors.updateActiveSpectralData(position, viewState, dataState, models);
     const rep = dataState.activeSpectralData[position].source_replacement;
-    expect(details.reason).toBe(' - Overview - zoom in for Log');
+    expect(details.reason).toBe(' (Overview - Zoom in for Log Data)');
     expect(details.type).toBe('overview');
     // Overview fallback extracts from backing levels_flat_transposed via getPreparedSpectrogramChunk
     // Image size is n_freqs * n_times (full overview), not n_freqs * chunk_time_length

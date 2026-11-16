@@ -385,7 +385,16 @@ def build_startup_summary(app_data, config_path=None, job_number=None, cache_hit
             continue
 
         parsers = "/".join(sorted(position.parser_types_used or {"?"}))
-        lines.append(f"{name}   [{parsers}]")
+        load_status = getattr(position, "load_status", "ok") or "ok"
+        status_tag = f"   [{load_status.upper()}]" if load_status != "ok" else ""
+        lines.append(f"{name}   [{parsers}]{status_tag}")
+        for error in getattr(position, "load_errors", None) or []:
+            if isinstance(error, dict):
+                file_name = os.path.basename(str(error.get("file_path") or error.get("file") or "?"))
+                message = error.get("error") or error.get("message") or ""
+            else:
+                file_name, message = "?", str(error)
+            lines.append(f"    ERROR    {file_name}: {message}")
 
         if position.has_overview_totals:
             total_files += 1

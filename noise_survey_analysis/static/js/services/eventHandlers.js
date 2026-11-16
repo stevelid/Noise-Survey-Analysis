@@ -460,6 +460,19 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
 
     function handleKeyPress(e) {
+        // Ctrl/Cmd+S works inside text fields too (otherwise the browser's Save Page dialog opens):
+        // leave the field so a note is committed, then run the save binding.
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && typeof e.key === 'string'
+            && e.key.toLowerCase() === 's' && app.keymap && typeof app.keymap.match === 'function') {
+            const saveBinding = app.keymap.match(e);
+            if (saveBinding && saveBinding.id === 'saveWorkspaceNow' && typeof saveBinding.run === 'function') {
+                if (typeof e.preventDefault === 'function') e.preventDefault();
+                const editable = app.utils && typeof app.utils.isEditableEvent === 'function' && app.utils.isEditableEvent(e);
+                if (editable && e.target && typeof e.target.blur === 'function') e.target.blur();
+                saveBinding.run(e, { dispatch: app.store?.dispatch, getState: () => app.store?.getState?.() });
+                return;
+            }
+        }
         // Ignore keyboard events from editable elements
         if (app.utils && typeof app.utils.isEditableEvent === 'function') {
             if (app.utils.isEditableEvent(e)) {
@@ -490,81 +503,74 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         const rawKey = typeof e.key === 'string' ? e.key : '';
-        const normalizedKey = rawKey.toLowerCase();
         const code = typeof e.code === 'string' ? e.code : '';
 
-        const isCtrlOrMeta = Boolean(e.ctrlKey) || Boolean(e.metaKey);
-
-        // Undo/redo: handle before the general key filter
-        if (isCtrlOrMeta && normalizedKey === 'z' && !e.shiftKey) {
-            if (typeof e.preventDefault === 'function') e.preventDefault();
-            const undoRedoThunk = app.thunks && app.thunks.handleUndoRedoIntent;
-            if (typeof undoRedoThunk === 'function') {
-                dispatch(undoRedoThunk({ direction: 'undo' }));
-            }
-            return;
-        }
-        if (isCtrlOrMeta && (normalizedKey === 'y' || (normalizedKey === 'z' && e.shiftKey))) {
-            if (typeof e.preventDefault === 'function') e.preventDefault();
-            const undoRedoThunk = app.thunks && app.thunks.handleUndoRedoIntent;
-            if (typeof undoRedoThunk === 'function') {
-                dispatch(undoRedoThunk({ direction: 'redo' }));
-            }
+        // Which keys do what is declared in core/keymap.js; this function only routes the match.
+        const binding = app.keymap && typeof app.keymap.match === 'function' ? app.keymap.match(e) : null;
+        if (!binding) {
             return;
         }
 
-        const isSpace = code === 'Space' || rawKey === ' ' || rawKey === 'Spacebar';
-        const isEscape = rawKey === 'Escape';
-        const isMarkerKey = normalizedKey === 'm';
-        const isRegionKey = normalizedKey === 'r';
-        const isNoteKey = normalizedKey === 'n' && !isCtrlOrMeta && !e.altKey;
-        const isBackKey = normalizedKey === 'b' && !isCtrlOrMeta && !e.altKey;
-        const isRegionStepKey = (rawKey === '[' || rawKey === ']') && !isCtrlOrMeta && !e.altKey;
-        const isPreviewKey = normalizedKey === 'p';
-        const isArrowKey = rawKey === 'ArrowLeft' || rawKey === 'ArrowRight';
-        const isDeleteKey = rawKey === 'Delete' || rawKey === 'Backspace';
-        const isMeterKey = /^[1-9]$/.test(rawKey) && !isCtrlOrMeta && !e.altKey && !e.shiftKey && !e.repeat;
+        // Bindings added by other modules carry their own handler.
+        if (typeof binding.run === 'function') {
+            if (binding.preventDefault !== false && typeof e.preventDefault === 'function') e.preventDefault();
+            binding.run(e, { dispatch, getState: () => app.store.getState() });
+            return;
+        }
 
-        // Metric shortcuts: Shift+1/2/3 would clash with meter keys, so use E / X / L.
-        const metricPatterns = { e: /eq$/i, x: /fmax$/i, l: /f?90$/i };
-        if (!isCtrlOrMeta && !e.altKey && !e.shiftKey && !e.repeat && metricPatterns[normalizedKey]) {
-            const select = app.registry?.models?.paramSelect;
-            const options = (select?.options || []).map(o => (Array.isArray(o) ? o[0] : o));
-            const currentWeighting = String(select?.value || '').charAt(1);
-            const matches = options.filter(o => metricPatterns[normalizedKey].test(o));
-            const target = matches.find(o => o.charAt(1) === currentWeighting) || matches[0];
-            if (target) {
+        switch (binding.route) {
+            case 'undo':
+            case 'redo': {
                 if (typeof e.preventDefault === 'function') e.preventDefault();
-                if (select.value !== target) select.value = target;
+                const undoRedoThunk = app.thunks && app.thunks.handleUndoRedoIntent;
+                if (typeof undoRedoThunk === 'function') {
+                    dispatch(undoRedoThunk({ direction: binding.route }));
+                }
                 return;
             }
-        }
 
-        if (isPreviewKey && !isCtrlOrMeta) {
-            if (typeof e.preventDefault === 'function') e.preventDefault();
-            const previewThunk = app.features?.classifications?.thunks?.previewSelectedClassificationIntent;
-            if (typeof previewThunk === 'function') {
-                dispatch(previewThunk());
+            case 'metric': {
+                // Metric shortcuts: Shift+1/2/3 would clash with meter keys, so use E / X / L.
+                const pattern = new RegExp(binding.metricPattern, 'i');
+                const select = app.registry?.models?.paramSelect;
+                const options = (select?.options || []).map(o => (Array.isArray(o) ? o[0] : o));
+                const currentWeighting = String(select?.value || '').charAt(1);
+                const matches = options.filter(o => pattern.test(o));
+                const target = matches.find(o => o.charAt(1) === currentWeighting) || matches[0];
+                if (target) {
+                    if (typeof e.preventDefault === 'function') e.preventDefault();
+                    if (select.value !== target) select.value = target;
+                }
+                return;
             }
-            return;
-        }
 
-        const isShortcutKey = isSpace || isEscape || isMarkerKey || isRegionKey || isNoteKey
-            || isBackKey || isRegionStepKey || isArrowKey || isDeleteKey || isMeterKey;
-        if (!isShortcutKey) {
-            return;
-        }
-        if (typeof e.preventDefault === 'function') {
-            e.preventDefault();
-        }
+            case 'preview': {
+                if (typeof e.preventDefault === 'function') e.preventDefault();
+                const previewThunk = app.features?.classifications?.thunks?.previewSelectedClassificationIntent;
+                if (typeof previewThunk === 'function') {
+                    dispatch(previewThunk());
+                }
+                return;
+            }
 
-        dispatch(thunkCreator({
-            key: rawKey,
-            code,
-            ctrlKey: Boolean(e.ctrlKey),
-            altKey: Boolean(e.altKey),
-            ...(isMeterKey ? { metaKey: Boolean(e.metaKey), shiftKey: Boolean(e.shiftKey), repeat: Boolean(e.repeat) } : {})
-        }));
+            case 'shortcutThunk': {
+                if (typeof e.preventDefault === 'function') {
+                    e.preventDefault();
+                }
+                const isMeterKey = binding.id === 'cycleMeterState';
+                dispatch(thunkCreator({
+                    key: rawKey,
+                    code,
+                    ctrlKey: Boolean(e.ctrlKey),
+                    altKey: Boolean(e.altKey),
+                    ...(isMeterKey ? { metaKey: Boolean(e.metaKey), shiftKey: Boolean(e.shiftKey), repeat: Boolean(e.repeat) } : {})
+                }));
+                return;
+            }
+
+            default:
+                return;
+        }
     }
 
 

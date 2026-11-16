@@ -1008,7 +1008,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (controllers?.chartsByName) {
                 controllers.chartsByName.forEach(chart => {
                     if (typeof chart.syncClassifications === 'function') {
-                        chart.syncClassifications(classificationsForCharts, overlaysVisible, selectedId);
+                        chart.syncClassifications(classificationsForCharts, overlaysVisible, selectedId,
+                            state.view?.positionChartOffsets);
                     }
                 });
             }

@@ -25,7 +25,9 @@ class SummaryTableComponent:
         self.summary_div = Div(
             text = initial_html,
             name = "summary_table_div",
-            width=self.settings.get('low_freq_width', 1200) # Match the width of the charts
+            sizing_mode="stretch_width",  # lives in the sidebar dock, so it follows the dock width
+            margin=0,
+            styles={"min-width": "0"},
         )
 
         logger.info(f"SummaryTableComponent initialized with {len(parameters)} parameters, compact={compact}.")
@@ -33,13 +35,13 @@ class SummaryTableComponent:
     def _create_initial_html(self) -> str:
         """Generates the initial HTML for the table with a placeholder message."""
         # Responsive styling based on compact mode
-        font_size = "0.8em" if self.compact else "0.9em"
-        padding = "4px" if self.compact else "8px"
-        margin_bottom = "10px" if self.compact else "20px"
+        font_size = "0.78em" if self.compact else "0.9em"
+        padding = "2px" if self.compact else "8px"
+        margin_bottom = "2px" if self.compact else "20px"
         
         style = f"""
         <style>
-            .summary-html-table {{ border-collapse: collapse; width: 100%; font-size: {font_size}; table-layout: fixed; margin-top: 10px; margin-bottom: {margin_bottom};}}
+            .summary-html-table {{ border-collapse: collapse; width: 100%; font-size: {font_size}; table-layout: fixed; margin-top: 2px; margin-bottom: {margin_bottom};}}
             .summary-html-table th, .summary-html-table td {{ border: 1px solid #e2e8f0; padding: {padding}; text-align: center; }}
             .summary-html-table th {{ background-color: #f2f2f2; font-weight: bold; }}
             .summary-html-table .position-header {{ text-align: left; font-weight: bold; }}

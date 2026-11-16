@@ -272,6 +272,20 @@ def parse_single_broadband_report(path: Path) -> tuple[list[str], list[str], lis
     return common_prefix, header_rows, data_row[1:5], measurement
 
 
+# Same pattern as noise_survey_analysis.core.data_parsers.NTI_LOG_FILENAME_RE (this script is
+# standalone, so it carries its own copy): `_Log.txt` and split parts `_Log_00.txt`, `_Log_01.txt`...
+_NTI_LOG_RE = re.compile(r"_log(?:_\d+)?\.txt$", re.IGNORECASE)
+
+
+def _nti_log_files(folder: Path, pattern: str) -> list[Path]:
+    """Log files (including split parts) matching ``pattern``, in part order."""
+    def key(path: Path):
+        m = re.search(r"_log(?:_(\d+))?\.txt$", path.name, re.IGNORECASE)
+        return (path.name[: m.start()].lower(), int(m.group(1)) if m and m.group(1) is not None else -1)
+
+    return sorted((p for p in folder.glob(pattern) if _NTI_LOG_RE.search(p.name)), key=key)
+
+
 def parse_broadband_log(path: Path) -> tuple[list[tuple[str, str]], list[str], list[str], list[list[str]]]:
     lines = _load_text(path)
     config_rows = _extract_config_rows(lines)
@@ -570,8 +584,8 @@ def build_overview_workbook(
     _write_overview_sheet(
         wb,
         "Log",
-        build_broadband_log_block(folder.glob("*_123_Log.txt")),
-        build_rta_log_block(folder.glob("*_RTA_*_Log.txt")),
+        build_broadband_log_block(_nti_log_files(folder, "*_123_Log*.txt")),
+        build_rta_log_block(_nti_log_files(folder, "*_RTA_*_Log*.txt")),
     )
     _write_overview_sheet(
         wb,

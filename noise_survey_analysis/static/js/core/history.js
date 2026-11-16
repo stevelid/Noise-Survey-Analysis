@@ -16,6 +16,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // within a single module load. Tests use reset() to clear between runs.
     let past = [];
     let future = [];
+    // While a batch is open, only the first undoable change records a snapshot, so one undo reverts the whole batch.
+    let batchDepth = 0;
+    let batchRecorded = false;
 
     // These are set lazily once actionTypes are available.
     const UNDOABLE_ACTION_TYPES = new Set([
@@ -181,7 +184,10 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             // Push to history only for undoable actions that actually changed relevant state
             if (isUndoableAction(action)) {
                 if (next !== prev && hasRelevantChange(prev || {}, next)) {
-                    past = [...past, captureSlices(prev)].slice(-HISTORY_LIMIT);
+                    if (batchDepth === 0 || !batchRecorded) {
+                        past = [...past, captureSlices(prev)].slice(-HISTORY_LIMIT);
+                    }
+                    if (batchDepth > 0) batchRecorded = true;
                     future = []; // clear redo stack on new undoable action
                 }
             }
@@ -193,6 +199,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function reset() {
         past = [];
         future = [];
+        batchDepth = 0;
+        batchRecorded = false;
+    }
+
+    /** Runs `fn`; every undoable dispatch inside it shares one undo step (one Ctrl+Z reverts them all). */
+    function batch(fn) {
+        if (batchDepth === 0) batchRecorded = false;
+        batchDepth += 1;
+        try {
+            return fn();
+        } finally {
+            batchDepth -= 1;
+            if (batchDepth === 0) batchRecorded = false;
+        }
     }
 
     function _debug() {
@@ -203,6 +223,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         withHistory,
         isUndoableAction,
         reset,
+        batch,
         _debug,
     };
 

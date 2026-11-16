@@ -162,8 +162,18 @@ class TestValidateWorkspacePayload(unittest.TestCase):
         self.assertIn("appState", result)
 
     def test_dict_with_source_configs(self):
-        result = validate_workspace_payload({"sourceConfigs": []})
-        self.assertIn("sourceConfigs", result)
+        # workspaceMigration.js rejects a payload without appState, so Python must too.
+        with self.assertRaises(ValueError):
+            validate_workspace_payload({"sourceConfigs": []})
+
+    def test_unsupported_version_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_workspace_payload({"appState": {}, "version": 99})
+        self.assertEqual(validate_workspace_payload({"appState": {}, "version": 2})["version"], 2)
+
+    def test_app_state_must_be_object(self):
+        with self.assertRaises(ValueError):
+            validate_workspace_payload({"appState": []})
 
     def test_dict_with_both_keys(self):
         payload = {"appState": {}, "sourceConfigs": []}

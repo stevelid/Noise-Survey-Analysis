@@ -43,7 +43,8 @@ from noise_survey_analysis.core.config import (
     UI_LAYOUT_SETTINGS,
     LOG_VIEW_MAX_VIEWPORT_SECONDS,
 )
-from noise_survey_analysis.js.loader import load_js_file
+from noise_survey_analysis.js.manifest import JS_LOAD_ORDER
+from noise_survey_analysis.visualization import static_payload
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,26 @@ def load_js_file(file_name):
     file_path = os.path.join(static_js_dir, file_name)
     with open(file_path, 'r', encoding='utf-8') as f:
         return f.read()
+
+def apply_saved_position_order(names, saved_workspace_state):
+    """Orders position names by a saved workspace's ``layout.positionOrder``.
+
+    Accepts the payload with or without its ``appState`` wrapper. Unknown ids in the saved order are
+    ignored and positions it does not mention keep their original order after the listed ones.
+    """
+    names = list(names)
+    saved = saved_workspace_state if isinstance(saved_workspace_state, dict) else {}
+    app_state = saved.get('appState') if isinstance(saved.get('appState'), dict) else saved
+    layout = app_state.get('layout') if isinstance(app_state, dict) else None
+    order = layout.get('positionOrder') if isinstance(layout, dict) else None
+    if not isinstance(order, list) or not order:
+        return names
+    known = []
+    for item in order:
+        if isinstance(item, str) and item in names and item not in known:
+            known.append(item)
+    return known + [name for name in names if name not in known]
+
 
 class DashBuilder:
   
@@ -243,70 +264,17 @@ class DashBuilder:
         if loaded_positions:
             logger.info("Static mode: loaded deferred log data for %d position(s).", loaded_positions)
 
+    # The payload helpers live in static_payload.py; these wrappers keep the old method names.
     @staticmethod
     def _to_list(value: Any) -> list:
-        if value is None:
-            return []
-        if hasattr(value, 'tolist'):
-            value = value.tolist()
-        if isinstance(value, list):
-            return value
-        if isinstance(value, tuple):
-            return list(value)
-        return [value]
+        return static_payload.to_list(value)
 
     def _build_static_spectrogram_log_source_data(
         self,
         position_glyph_data: Dict[str, Any],
         preferred_param: str,
     ) -> Optional[Dict[str, list]]:
-        log_mode_data = position_glyph_data.get('log') if isinstance(position_glyph_data, dict) else None
-        prepared_params = log_mode_data.get('prepared_params', {}) if isinstance(log_mode_data, dict) else {}
-        if not prepared_params:
-            return None
-
-        param_to_use = preferred_param if preferred_param in prepared_params else next(iter(prepared_params.keys()), None)
-        if not param_to_use:
-            return None
-
-        prepared = prepared_params.get(param_to_use)
-        if not isinstance(prepared, dict):
-            return None
-
-        initial_glyph_data = prepared.get('initial_glyph_data') or {}
-        image_values = initial_glyph_data.get('image') or []
-        if not image_values:
-            return None
-
-        image_matrix = image_values[0]
-        image_matrix_list = self._to_list(image_matrix)
-        levels_flat_list = self._to_list(prepared.get('levels_flat_transposed'))
-
-        return {
-            'levels_flat_transposed': [levels_flat_list],
-            'times_ms': [self._to_list(prepared.get('times_ms'))],
-            # A static export embeds the complete prepared log dataset.  Mark it
-            # with the same reservoir contract used by the live server so the
-            # browser treats the full time range as locally available instead of
-            # mistaking it for one display-sized streamed chunk.
-            'parameter': [param_to_use],
-            'frequency_labels': [self._to_list(prepared.get('frequency_labels'))],
-            'frequencies_hz': [self._to_list(prepared.get('frequencies_hz'))],
-            'n_times': [int(prepared.get('n_times', 0))],
-            'n_freqs': [int(prepared.get('n_freqs', 0))],
-            'chunk_time_length': [int(prepared.get('chunk_time_length', 0))],
-            'time_step': [prepared.get('time_step', 0)],
-            'min_val': [prepared.get('min_val', 0)],
-            'max_val': [prepared.get('max_val', 100)],
-            'min_time': [prepared.get('min_time', 0)],
-            'max_time': [prepared.get('max_time', 0)],
-            'initial_glyph_data_x': [self._to_list(initial_glyph_data.get('x'))],
-            'initial_glyph_data_y': [self._to_list(initial_glyph_data.get('y'))],
-            'initial_glyph_data_dw': [self._to_list(initial_glyph_data.get('dw'))],
-            'initial_glyph_data_dh': [self._to_list(initial_glyph_data.get('dh'))],
-            'initial_glyph_data_image': [image_matrix_list],
-            'is_reservoir_payload': [True],
-        }
+        return static_payload.build_static_spectrogram_log_source_data(position_glyph_data, preferred_param)
 
     def _populate_static_log_sources(
         self,
@@ -320,6 +288,10 @@ class DashBuilder:
             return
 
         spectrogram_component.log_source.data = data
+        # Remember which parameter is embedded here so preparedGlyphData does not carry it twice.
+        if not hasattr(self, '_static_shared_params'):
+            self._static_shared_params = {}
+        self._static_shared_params[position_name] = (data.get('parameter') or [preferred_param])[0]
         logger.debug(
             "Static mode: pre-populated spectrogram log source for %s with keys=%s",
             position_name,
@@ -374,6 +346,9 @@ class DashBuilder:
                     position_glyph_data=position_specific_glyph_data,
                     preferred_param=initial_param_spectrogram,
                 )
+                # Narrow the 1 s line data (float32 levels) -- it dominates the line-chart payload.
+                ts_component.log_source.data = static_payload.compact_timeseries_data(
+                    dict(ts_component.log_source.data))
 
             # Create position title and offset controls for all positions
             # (Audio playback buttons are now global)
@@ -383,6 +358,7 @@ class DashBuilder:
                 display_title=position_name,  # Could use custom titles from config if available
                 chart_offset_seconds=_saved.get('chart_offset_seconds', 0.0),
                 audio_offset_seconds=_saved.get('audio_offset_seconds', 0.0),
+                hover_div=spec_component.hover_div,
             )
 
             self.components[position_name] = {
@@ -527,42 +503,49 @@ class DashBuilder:
         """Step 4: Gets the .layout() from each component and assembles the final page."""
         logger.info("DashboardBuilder: Assembling final Bokeh layout...")
 
-        position_layouts = []
+        position_layouts = {}
         for position_name, comp_dict in self.components.items():
-            # Add position title and offset controls above the timeseries
             ts_layout = comp_dict['timeseries'].layout()
             spec_layout = comp_dict['spectrogram'].layout()
-            ts_layout_with_controls = column(
-                comp_dict['position_controls']['layout'],
-                ts_layout
-            )
+            header = comp_dict['position_controls']
             # Fixed 1600 px figures formerly pushed the sidebar off screen.
             # Stretch the chart column while preserving each plot's height.
             for chart in (comp_dict['timeseries'].figure, comp_dict['spectrogram'].figure):
                 chart.width = None
                 chart.sizing_mode = 'stretch_width'
                 chart.min_width = 300
-            for layout in (ts_layout, spec_layout, ts_layout_with_controls, comp_dict['position_controls']['layout']):
+            for layout in (ts_layout, spec_layout, header['layout']):
                 layout.sizing_mode = 'stretch_width'
+                layout.margin = 0
                 layout.styles = {**layout.styles, 'min-width': '0', 'overflow': 'visible'}
 
+            # Header, time series, spectrogram. The loading banner is absolutely positioned over the
+            # charts (position: relative on the box), so it takes no height.
             pos_layout = column(
-                ts_layout_with_controls,
+                header['layout'],
+                ts_layout,
                 spec_layout,
+                header['banner_div'],
                 name=f"layout_{position_name}",
                 styles={
                     "border": "1px solid #e2e8f0",
-                    "border-radius": "10px",
-                    "padding": "8px 10px",
-                    "margin-bottom": "10px",
+                    "border-radius": "8px",
+                    "padding": "0",
+                    "margin-bottom": "4px",
                     "background-color": "#ffffff",
                     "box-shadow": "0 1px 3px rgba(15, 23, 42, 0.08)",
+                    "position": "relative",
                 }
             )
             pos_layout.sizing_mode = 'stretch_width'
+            pos_layout.margin = (0, 0, 4, 0)
             pos_layout.styles = {**pos_layout.styles, 'min-width': '0', 'overflow': 'visible'}
-            position_layouts.append(pos_layout)
-        
+            position_layouts[position_name] = pos_layout
+
+        self.shared_components['position_layouts'] = position_layouts
+        ordered_names = apply_saved_position_order(
+            list(position_layouts), getattr(self, 'saved_workspace_state', None))
+
         # Create the JS initialization trigger Div
         self.js_init_trigger = Div(
             text="", width=0, height=0, visible=False, name="js_init_trigger"
@@ -579,9 +562,11 @@ class DashBuilder:
         comparison_frequency_layout.visible = False
         self.shared_components['comparison_frequency_layout'] = comparison_frequency_layout
 
-        charts_stack_layout = column(*position_layouts, name="charts_stack_layout")
+        charts_stack_layout = column(*[position_layouts[name] for name in ordered_names], name="charts_stack_layout")
         charts_stack_layout.sizing_mode = 'stretch_width'
+        charts_stack_layout.margin = 0
         charts_stack_layout.styles = {'min-width': '0', 'overflow': 'visible'}
+        self.shared_components['charts_stack_layout'] = charts_stack_layout
 
         panel_toggle = Button(tags=[SIDE_PANEL_WIDTH + 32], label="‹", name="annotation_panel_toggle", width=28, height=32, margin=0, visible=False)
         panel_toggle.js_on_click(CustomJS(code="""
@@ -591,9 +576,27 @@ class DashBuilder:
         panel_body = self.shared_components['html_side_panel'].layout()
         panel_inner = column(panel_toggle, panel_body, sizing_mode='stretch_width',
                              css_classes=['nsa-annotation-inner'],
-                             styles={'position': 'sticky', 'top': '12px', 'min-width': '0'})
+                             styles={'position': 'sticky', 'top': '52px', 'min-width': '0'})
+        summary_layout = self.shared_components['summary_table'].layout()
+        summary_layout.width = None
+        summary_layout.sizing_mode = 'stretch_width'
+
+        # The dock holds the tap-value summary and the frequency slice (or the comparison spectrum;
+        # renderers.js shows one of the two). Toggled with F; the summary stays visible.
+        frequency_dock_inner = column(
+            freq_bar_layout, comparison_frequency_layout,
+            name="frequency_dock_inner", sizing_mode='stretch_width', margin=0,
+            styles={'min-width': '0'})
+        frequency_dock_layout = column(
+            summary_layout, frequency_dock_inner,
+            name="frequency_dock_layout", css_classes=['nsa-dock'], sizing_mode='stretch_width', margin=0,
+            styles={'min-width': '0', 'padding': '4px 0 0 0', 'border-top': '1px solid #e2e8f0'})
+        self.shared_components['frequency_dock_layout'] = frequency_dock_layout
+        self.shared_components['frequency_dock_inner'] = frequency_dock_inner
+
         side_panel_container = column(
             panel_inner,
+            frequency_dock_layout,
             name="side_panel_container",
             css_classes=["nsa-annotation-sidebar"],
             sizing_mode="stretch_height",
@@ -613,13 +616,12 @@ class DashBuilder:
         for layout in (controls_layout, range_selector_layout, freq_bar_layout, comparison_frequency_layout):
             layout.sizing_mode = 'stretch_width'
             layout.styles = {**layout.styles, 'overflow': 'visible', 'min-width': '0'}
+        # The position boxes have a 1 px border; give the selector the same so frames line up exactly.
+        range_selector_layout.margin = (0, 0, 4, 0)
+        range_selector_layout.styles = {**range_selector_layout.styles, 'border': '1px solid transparent'}
         self.shared_components['side_panel_container'] = side_panel_container
 
-        summary_layout = self.shared_components['summary_table'].layout()
-        summary_layout.width = None
-        summary_layout.sizing_mode = 'stretch_width'
-        charts_page = column(range_selector_layout, charts_stack_layout, freq_bar_layout,
-                             comparison_frequency_layout, summary_layout,
+        charts_page = column(range_selector_layout, charts_stack_layout,
                              name="charts_page", sizing_mode='stretch_width',
                              styles={'min-width': '0', 'overflow': 'visible'})
         chart_content_row = row(
@@ -652,70 +654,8 @@ class DashBuilder:
 
     def _load_all_js_files(self):
         """Loads all JavaScript files in the correct order."""
-        # Define the order in which JS files should be loaded
-        # This order is critical for dependencies to be met before they are used.
-        js_files_order = [
-                # 1. State Management Core (in dependency order)
-                'core/actions.js',
-                'features/regions/annotationModel.js',
-                'services/session/workspaceMigration.js',
-                'features/view/viewResolution.js',
-                'features/view/viewReducer.js',
-                'features/view/viewSelectors.js',
-                'features/view/viewThunks.js',
-                'features/interaction/interactionReducer.js',
-                'features/markers/markersReducer.js',
-                'features/markers/markersSelectors.js',
-                'features/markers/markersThunks.js',
-                'features/classifications/classificationReducer.js',
-                'features/classifications/classificationSelectors.js',
-                'features/classifications/classificationUtils.js',
-                'features/classifications/classificationThunks.js',
-                'features/regions/regionReducer.js',
-                'features/regions/regionSelectors.js',
-                'features/regions/annotationMetrics.js',
-                'features/regions/regionUtils.js',
-                'features/regions/regionThunks.js',
-                'features/annotations/panelSelectors.js',
-                'features/annotations/panelThunks.js',
-                'features/interaction/interactionThunks.js',
-                'features/audio/audioReducer.js',
-                'features/audio/audioThunks.js',
-                'core/rootReducer.js',
-                'core/history.js',
-                'store.js',           # Creates the store, needs rootReducer
-                'init.js',            # Creates app.init and reInitializeStore, needs store
-
-                # 2. Core setup and utilities
-                'utils.js',
-                'comparison-metrics.js',
-                'thunks.js',
-
-                # 3. Application modules
-                'chart-classes.js',   # Defines Chart classes, needed by registry
-                'registry.js',        # Defines the model/controller registry
-                'processors/common.js',
-                'processors/line.js',
-                'processors/spectral.js',
-                'processors/frequency.js',
-                'data-processors.js', # Public orchestration facade, after feature processors
-                # Compatibility helpers for external/fake-model integrations;
-                # the dashboard creates only the HTML annotation panel.
-                'services/markers/markerPanelRenderer.js',
-                'services/regions/regionPanelRenderer.js',
-                'services/classifications/classificationPanelRenderer.js',
-                'services/renderers/controlWidgetsRenderer.js',
-                'services/panels/htmlPanelEvents.js',
-                'services/panels/htmlPanelRenderer.js',
-                'services/renderers.js',
-                'services/session/annotationCsv.js',
-                'services/session/sessionManager.js',
-                'services/eventHandlers/viewEventHandlers.js',
-                'services/eventHandlers.js',
-
-                # 4. Main application entry point (loads last)
-                'app.js'              # Wires everything together, attaches app.init.initialize
-            ]
+        # The order lives in js/manifest.py (JS_LOAD_ORDER); it is critical for dependencies.
+        js_files_order = JS_LOAD_ORDER
 
         all_js_code = []
         for file_name in js_files_order:
@@ -730,6 +670,11 @@ class DashBuilder:
 
         # This method builds the "bridge dictionary" of Python models
         js_models_for_args = self._assemble_js_bridge_dictionary()
+        # No server behind this document (static export): annotations persist in the browser instead.
+        if isinstance(js_models_for_args.get('config'), dict):
+            js_models_for_args['config']['static_document'] = doc.session_context is None
+            # Set by the static exporter when the 1 s spectrogram was averaged ("Log 5 s").
+            js_models_for_args['config']['static_log_step_s'] = getattr(self, 'static_log_step_s', None)
         app_js_code = self._load_all_js_files() #the full app.js code
 
         init_js_code = f"""
@@ -744,6 +689,10 @@ class DashBuilder:
 
                 if (window.NoiseSurveyApp && window.NoiseSurveyApp.init && typeof window.NoiseSurveyApp.init.initialize === 'function') {{
                     console.log('DEBUG: Found NoiseSurveyApp, calling init...');
+                    // Static exports embed quantised spectra; decode before the first render.
+                    if (window.NoiseSurveyApp.session && typeof window.NoiseSurveyApp.session.decodeStaticPayload === 'function') {{
+                        window.NoiseSurveyApp.session.decodeStaticPayload(models);
+                    }}
                     window.NoiseSurveyApp.init.initialize(models);
                 }} else {{
                     console.error('CRITICAL ERROR: NoiseSurveyApp.init not found. Check that app.js is loaded correctly.');
@@ -760,22 +709,20 @@ class DashBuilder:
             # Attach the callback to DocumentReady AND use a timeout as fallback
             logger.debug("Initializing JS for LIVE SERVER using DocumentReady + nextTick fallback.")
             
-            # Primary: DocumentReady event (works when loading from workspace)
-            doc.js_on_event(DocumentReady, CustomJS(args=js_args, code=f"""
+            # One CustomJS model (so the ~850 KB bundle is serialised once) is attached to both
+            # triggers. Whichever fires first runs it; the guard makes the second a no-op.
+            init_callback = CustomJS(args=js_args, code=f"""
                 if (!window.__bokeh_app_initialized) {{
                     window.__bokeh_app_initialized = true;
                     {init_js_code}
                 }}
-            """))
-            
-            # Fallback: Direct execution on nextTick (works for fresh loads)
+            """)
 
-            self.js_init_trigger.js_on_change('visible', CustomJS(args=js_args, code=f"""
-                if (!window.__bokeh_app_initialized) {{
-                    window.__bokeh_app_initialized = true;
-                    {init_js_code}
-                }}
-            """))
+            # Primary: DocumentReady event (works when loading from workspace)
+            doc.js_on_event(DocumentReady, init_callback)
+
+            # Fallback: Direct execution on nextTick (works for fresh loads)
+            self.js_init_trigger.js_on_change('visible', init_callback)
             doc.add_next_tick_callback(lambda: setattr(self.js_init_trigger, 'visible', True))
         else:
             # For static HTML, DocumentReady is the correct and only trigger
@@ -795,7 +742,11 @@ class DashBuilder:
             'chartsSources': [],
             'timeSeriesSources': {},
             'spectrogramSources': {},
-            'preparedGlyphData': self.prepared_glyph_data,
+            'preparedGlyphData': (
+                self.prepared_glyph_data if getattr(self, 'server_mode', False)
+                else static_payload.compact_prepared_glyph_data(
+                    self.prepared_glyph_data, getattr(self, '_static_shared_params', {}))
+            ),
             'config': {
                 'spectrogram_freq_range_hz': CHART_SETTINGS.get('spectrogram_freq_range_hz'),
                 'freq_bar_freq_range_hz': CHART_SETTINGS.get('freq_bar_freq_range_hz'),
@@ -849,6 +800,13 @@ class DashBuilder:
             'comparisonFrequencyFigure': self.shared_components['comparison_frequency'].figure,
             'comparisonFrequencyTable': self.shared_components['comparison_frequency'].table_div,
             'comparisonFrequencyPalette': self.shared_components['comparison_frequency'].palette,
+            # Layout and navigation (WP1)
+            'chartsStackLayout': self.shared_components.get('charts_stack_layout'),
+            'positionLayouts': self.shared_components.get('position_layouts', {}),
+            'rangeSelectorFigure': self.shared_components['range_selector'].figure,
+            'frequencyDockLayout': self.shared_components.get('frequency_dock_layout'),
+            'frequencyDockInner': self.shared_components.get('frequency_dock_inner'),
+            'layoutControls': self.shared_components['controls'].layout_controls,
         }
 
         # Populate position-specific models

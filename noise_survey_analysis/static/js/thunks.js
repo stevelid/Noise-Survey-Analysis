@@ -14,6 +14,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const viewThunks = app.features?.view?.thunks || {};
     const markerThunks = app.features?.markers?.thunks || {};
     const classificationThunks = app.features?.classifications?.thunks || {};
+    const layoutThunks = app.features?.layout?.thunks || {};
 
     function handleUndoRedoIntent({ direction }) {
         return (dispatch) => {
@@ -29,6 +30,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         ...interactionThunks,
         ...audioThunks,
         ...viewThunks,
+        ...layoutThunks,
         handleUndoRedoIntent,
     };
 })(window.NoiseSurveyApp);

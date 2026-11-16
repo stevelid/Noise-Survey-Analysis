@@ -205,9 +205,10 @@ def iter_source_windows(path: str | Path, windows, *, options: dict | None = Non
             # Preserve per-file period when one meter combines 100 ms and 1 s
             # logs; selecting only windows must not turn intervening gaps into
             # a falsely inferred sample period later in the metric engine.
-            selected["__sample_interval_s"] = float(nominal)
-            for column in frame.columns:
-                if column != "Datetime" and not column.startswith("__"):
-                    selected[f"__sample_interval_s:{column}"] = float(nominal)
+            # One concat rather than a column insert per band (avoids fragmentation on wide 1/3-octave frames).
+            periods = {"__sample_interval_s": float(nominal)}
+            periods.update({f"__sample_interval_s:{column}": float(nominal) for column in frame.columns
+                            if column != "Datetime" and not column.startswith("__")})
+            selected = pd.concat([selected, pd.DataFrame(periods, index=selected.index)], axis=1)
             selected.attrs["sample_interval_s"] = float(nominal)
             yield WindowChunk(selected, profile, float(nominal), str(path))

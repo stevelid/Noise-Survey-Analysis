@@ -10,13 +10,22 @@ import pandas as pd
 from pathlib import Path
 import tempfile
 import threading
+from html import escape as html_escape
 
 # --- Project Root Setup ---
 current_file = Path(__file__)
 project_root = current_file.parent.parent
 sys.path.insert(0, str(project_root))
 
-from noise_survey_analysis.core.config import AUDIO_ANCHORING_SETTINGS, CHART_SETTINGS, STREAMING_ENABLED
+from noise_survey_analysis.core.config import (
+    AUDIO_ANCHORING_SETTINGS,
+    AUDIO_BACKEND,
+    AUDIO_CLIP_SECONDS,
+    CHART_SETTINGS,
+    STREAMING_ENABLED,
+)
+from noise_survey_analysis.core.media_server import build_file_index, get_media_server
+from noise_survey_analysis.ui.component_parts.audio import create_audio_backend_toggle
 from noise_survey_analysis.core.annotation_workspace import migrate_workspace
 from noise_survey_analysis.core.audio_alignment_cache import (
     AudioAlignmentCache,
@@ -29,6 +38,8 @@ from noise_survey_analysis.core.data_manager import DataManager
 from noise_survey_analysis.core.audio_processor import AudioDataProcessor
 from noise_survey_analysis.core.app_setup import load_config_and_prepare_sources, load_config_extras
 from noise_survey_analysis.core.config_io import save_config_from_selected_sources, save_state_to_config
+from noise_survey_analysis.core.workspace_autosave import WorkspaceAutosave, read_workspace_autosave
+from noise_survey_analysis.visualization.static_payload import STATIC_DETAIL_CHOICES
 from noise_survey_analysis.export.static_export import generate_static_html
 from noise_survey_analysis.core.audio_handler import AudioPlaybackHandler
 from noise_survey_analysis.core.app_callbacks import AppCallbacks, session_destroyed
@@ -257,17 +268,26 @@ _data_manager_cache = DataManagerCache()
 _audio_alignment_cache = AudioAlignmentCache()
 
 
-def _load_logs_needed_for_audio_alignment(app_data):
-    """Load deferred logger data only for positions that contain audio."""
-    for position_name in app_data.positions():
+def _load_logs_needed_for_audio_alignment(app_data, progress=None):
+    """Load deferred logger data only for positions that contain audio.
+
+    ``progress`` is an optional ``callable(text)`` told which position is being read; it runs on
+    the calling (worker) thread, so it must be thread-safe.
+    """
+    pending = [
+        position_name for position_name in app_data.positions()
+        if getattr(app_data[position_name], 'has_audio_files', False)
+        and (getattr(app_data[position_name], 'log_file_paths', None) or [])
+        and not getattr(app_data[position_name], '_log_data_loaded', False)
+    ]
+    for number, position_name in enumerate(pending, start=1):
         position_data = app_data[position_name]
-        if not getattr(position_data, 'has_audio_files', False):
-            continue
-        log_paths = getattr(position_data, 'log_file_paths', None) or []
-        already_loaded = bool(getattr(position_data, '_log_data_loaded', False))
-        if not log_paths or already_loaded:
-            continue
         try:
+            if progress is not None:
+                try:
+                    progress(f"Reading 1 s logger data for audio alignment: {position_name} ({number}/{len(pending)})")
+                except Exception:
+                    pass
             logger.info("Loading deferred log data for audio alignment: %s", position_name)
             position_data.load_log_data_lazy(app_data.parser_factory, app_data.use_cache)
         except Exception as exc:
@@ -304,6 +324,69 @@ def _build_audio_availability_data(app_data):
             data[field_name].append(float(value) if value is not None and not pd.isna(value) else float('nan'))
     return data
 
+
+def _register_browser_audio(audio_handler):
+    """Register this session's audio file index with the localhost media server.
+
+    Returns ``(audio_backend_source, token)``. The source tells ``clipPlayer.js`` the starting
+    backend, the server address and the session token; with no indexed audio the server is not
+    started and ``base_url``/``token`` stay empty (the page then has nothing to fetch).
+    """
+    index = build_file_index(getattr(audio_handler, 'file_info_by_position', {}) or {})
+    base_url, token = '', ''
+    if index:
+        try:
+            media = get_media_server()
+            token = media.register_session(index)
+            base_url = media.base_url
+        except Exception as exc:
+            logger.warning("Browser audio unavailable (media server did not start): %s", exc)
+            token = ''
+    source = ColumnDataSource(
+        data={
+            'backend': [AUDIO_BACKEND],
+            'base_url': [base_url],
+            'token': [token],
+            'clip_seconds': [float(AUDIO_CLIP_SECONDS)],
+        },
+        name='audio_backend_source',
+    )
+    return source, (token or None)
+
+
+def _insert_audio_backend_toggle(doc, toggle):
+    """Put the Audio backend toggle right after Boost in the global audio controls row."""
+    row = doc.get_model_by_name('global_audio_controls')
+    if row is None:
+        return False
+    children = list(row.children)
+    boost = doc.get_model_by_name('global_volume_boost')
+    at = children.index(boost) + 1 if boost in children else len(children)
+    children.insert(at, toggle)
+    row.children = children
+    return True
+
+
+def _survey_time_range_ms(app_data):
+    """Overall (start_ms, end_ms) epoch range across all positions, or None if no data has times."""
+    from noise_survey_analysis.core.utils import to_bokeh_ms
+    low, high = None, None
+    for position_name in app_data.positions():
+        position = app_data[position_name]
+        for attr in ('overview_totals', 'log_totals', 'overview_spectral'):
+            frame = getattr(position, attr, None)
+            if frame is None or len(frame) == 0 or 'Datetime' not in frame.columns:
+                continue
+            try:
+                times = to_bokeh_ms(frame['Datetime'])
+                first, last = float(times.min()), float(times.max())
+            except Exception:
+                continue
+            low = first if low is None else min(low, first)
+            high = last if high is None else max(high, last)
+    return (low, high) if low is not None and high is not None else None
+
+
 def _get_cache_key(source_configs):
     """Generate a cache key from source configurations."""
     try:
@@ -320,11 +403,14 @@ def _get_cache_key(source_configs):
 
 
 def create_app(doc, config_path=None, state_path=None, create_static=False,
-               startup_overrides=None):
+               startup_overrides=None, restore=True):
     """
     This function is the entry point for the LIVE Bokeh server application.
 
     Args:
+        restore: When True (default) and no explicit ``state_path`` is given, the job's autosave
+            (``<config_stem>.workspace.json`` beside the config) is restored. ``--no-restore`` or
+            ``?fresh=1`` pass False.
         startup_overrides: Optional dict with validated deep-link overrides.
             Supported keys: ``start`` (float), ``end`` (float),
             ``param`` (str), ``view`` (str).  These override workspace/default
@@ -362,7 +448,7 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
     if state_path:
         logger.info(f"Attempting to load workspace state file: {state_path}")
         try:
-            with open(state_path, 'r', encoding='utf-8') as state_file:
+            with open(state_path, 'r', encoding='utf-8-sig') as state_file:
                 workspace_payload = json.load(state_file)
 
             if not isinstance(workspace_payload, dict):
@@ -391,6 +477,38 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
         except Exception as exc:
             logger.error(f"Failed to parse workspace state file '{state_path}': {exc}", exc_info=True)
 
+    # Autosave beside the config. Restore takes appState only: the sources always come from the
+    # config, so a regenerated config wins over whatever source list the autosave once held.
+    restored_from_autosave = False
+    workspace_autosave = AppCallbacks.read_autosave_in_order(_extras_path) if _extras_path else None
+    if initial_saved_workspace_state is None and not state_path and _extras_path:
+        if not restore:
+            logger.info("Autosave restore skipped (--no-restore / ?fresh=1); nothing is written until the "
+                        "first edit, and the old autosave is then kept under a timestamped name.")
+            status_console.event('info', 'Starting fresh: autosaved annotations were not restored')
+        else:
+            autosaved = workspace_autosave.last_payload if workspace_autosave else None
+            if autosaved:
+                try:
+                    autosaved, _merged = migrate_workspace(dict(autosaved))
+                    app_state = autosaved.get('appState')
+                    if isinstance(app_state, dict):
+                        initial_saved_workspace_state = app_state
+                        restored_from_autosave = True
+                        header = autosaved.get('autosave') or {}
+                        logger.info("Restored autosaved workspace (rev %s, saved %s).",
+                                    header.get('rev'), header.get('savedAt'))
+                        status_console.event('ok', f"Restored autosaved annotations (saved {header.get('savedAt', 'earlier')})")
+                except Exception as exc:
+                    logger.error("Could not restore the autosaved workspace: %s", exc, exc_info=True)
+    if workspace_autosave is not None and not restored_from_autosave:
+        # This session starts from something other than the autosave, so its first write must not
+        # replace the good file: it is moved aside as <stem>.workspace.<timestamp>.json first.
+        workspace_autosave.preserve_existing = True
+
+    # Set when Bokeh destroys this session, so a worker finishing later does not build for it.
+    session_state = {'destroyed': False}
+
     def on_data_sources_selected(source_configs, skip_static_export=False, job_number=None):
         """Callback when data sources are selected from the selector.
         
@@ -414,7 +532,20 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
             styles={'margin': 'auto', 'padding-top': '100px'}
         )
         doc.add_root(apply_theme(loading_div))
-        
+
+        def _set_loading_message(text):
+            """Progress line under the loading headline; safe to call from a worker thread."""
+            def apply():
+                if loading_div.document is not None:
+                    loading_div.text = (
+                        "<h1 style='text-align:center; color:#334155; font-weight:600;'>Loading Survey Data...</h1>"
+                        f"<p style='text-align:center; color:#64748b;'>{html_escape(str(text))}</p>"
+                    )
+            try:
+                doc.add_next_tick_callback(apply)
+            except Exception:
+                pass
+
         # Save a config derived from the user's selection and kick off static export in background
         # Only create static HTML if explicitly requested via --create-static flag
         if create_static and not skip_static_export:
@@ -480,20 +611,59 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
             alignment_snapshot = _audio_alignment_cache.get(alignment_cache_key)
             if alignment_snapshot is not None and restore_audio_alignment(app_data, alignment_snapshot):
                 logger.info("Audio alignment cache HIT; reusing anchored audio metadata.")
-            else:
-                logger.info("Audio alignment cache MISS; computing alignment once.")
-                # The live dashboard normally defers large log files until the user
-                # zooms in. Audio alignment is the exception: its bounded envelope
-                # check needs the same meter's 1-second broadband log.
-                status_console.start_phase('audio', 'Anchoring audio to survey clock')
-                _load_logs_needed_for_audio_alignment(app_data)
-                audio_processor = AudioDataProcessor()
-                audio_processor.anchor_audio_files(app_data)
-                _audio_alignment_cache.put(
-                    alignment_cache_key,
-                    capture_audio_alignment(app_data),
-                )
-                status_console.end_phase('Audio anchored', category='ok')
+                finish_build(app_data, cache_hit)
+                return
+
+            logger.info("Audio alignment cache MISS; computing alignment once, off the event loop.")
+            # The live dashboard normally defers large log files until the user zooms in. Audio
+            # alignment is the exception: its bounded envelope check needs the same meter's
+            # 1-second broadband log. Parsing multi-day logs and anchoring take many seconds, so
+            # they run on a worker thread (the IOLoop keeps serving every other session and this
+            # one's status polling) and the build resumes on the next tick.
+            status_console.start_phase('audio', 'Anchoring audio to survey clock')
+            _set_loading_message("Anchoring audio to the survey clock (reading the logger data first)...")
+
+            def align_on_worker():
+                failure = None
+                try:
+                    _load_logs_needed_for_audio_alignment(
+                        app_data,
+                        progress=lambda text: (
+                            status_console.event('audio', text),
+                            _set_loading_message(text),
+                        ),
+                    )
+                    _set_loading_message("Anchoring audio files to the survey clock...")
+                    AudioDataProcessor().anchor_audio_files(app_data)
+                    _audio_alignment_cache.put(
+                        alignment_cache_key,
+                        capture_audio_alignment(app_data),
+                    )
+                except Exception as exc:  # keep the dashboard usable, just without anchored audio
+                    failure = exc
+                    logger.error("Audio alignment failed: %s", exc, exc_info=True)
+
+                def resume_build():
+                    if session_state['destroyed']:
+                        logger.info("Session ended while aligning audio; not building its dashboard.")
+                        status_console.end_phase('Audio alignment abandoned (tab closed)', category='info')
+                        return
+                    if failure is None:
+                        status_console.end_phase('Audio anchored', category='ok')
+                    else:
+                        status_console.end_phase(f'Audio alignment failed: {failure}', category='warn')
+                    finish_build(app_data, cache_hit)
+
+                try:
+                    doc.add_next_tick_callback(resume_build)
+                except Exception as exc:
+                    logger.info("Could not resume the dashboard build (session gone): %s", exc)
+
+            threading.Thread(target=align_on_worker, name='nsa-audio-align', daemon=True).start()
+
+        def finish_build(app_data, cache_hit):
+            """Second half of the dashboard build, once audio alignment is known."""
+            nonlocal initial_saved_workspace_state
 
             status_console.write_block(
                 status_console.build_startup_summary(
@@ -547,11 +717,15 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
                 },
                 name='automation_result_source'
             )
+            # Browser audio backend: the media server serves this session's clips by token.
+            audio_backend_source, media_token = _register_browser_audio(audio_handler)
 
             def handle_static_export_request(payload=None, request_id=None):
                 logger.info(f"Session static export requested (request_id={request_id})")
                 try:
-                    cfg_path = save_config_from_selected_sources(source_configs)
+                    # Export from the config this session was opened with when there is one (so
+                    # offsets and view defaults come from it); otherwise derive one from the sources.
+                    cfg_path = _extras_path if _extras_path and os.path.exists(_extras_path) else save_config_from_selected_sources(source_configs)
                     if not cfg_path:
                         return {
                             'success': False,
@@ -559,7 +733,11 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
                             'output_path': '',
                         }
 
-                    output_path = generate_static_html(config_path=str(cfg_path), resources='INLINE')
+                    # The browser sends its current annotations/layout/offsets, so the file carries
+                    # exactly what is on screen (not just what was last saved).
+                    workspace = payload.get('workspace') if isinstance(payload, dict) else None
+                    output_path = generate_static_html(
+                        config_path=str(cfg_path), resources='INLINE', workspace=workspace)
                     if output_path:
                         output_path_str = str(output_path)
                         return {
@@ -644,7 +822,23 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
                 session_status_source=session_status_source,
                 static_export_request_handler=handle_static_export_request,
                 save_setup_request_handler=handle_save_setup_request,
+                workspace_autosave=workspace_autosave,
+                media_token=media_token,
             )
+            # A tab gone for STALE_SESSION_RELEASE_SECONDS is released early; drop its bridge entry too.
+            app_callbacks.release_hooks.append(lambda: _session_bridge.unregister(doc=doc))
+            if restored_from_autosave and isinstance(initial_saved_workspace_state, dict):
+                # The sources come from the (possibly regenerated) config, so make the restored
+                # state describe the positions that are actually loaded now.
+                _view = initial_saved_workspace_state.get('view')
+                if isinstance(_view, dict):
+                    _current_positions = list(app_data.positions())
+                    _view['availablePositions'] = _current_positions
+                    for _key in ('positionChartOffsets', 'positionAudioOffsets',
+                                 'positionEffectiveOffsets', 'positionDisplayTitles', 'chartVisibility'):
+                        _block = _view.get(_key)
+                        if isinstance(_block, dict) and _key != 'chartVisibility':
+                            _view[_key] = {k: v for k, v in _block.items() if k in _current_positions}
             doc.clear() # Clear the loading message
             dash_builder = DashBuilder(
                 audio_control_source,
@@ -673,6 +867,9 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
             doc.add_root(control_state_source)
             doc.add_root(automation_command_source)
             doc.add_root(automation_result_source)
+            doc.add_root(audio_backend_source)
+            if media_token or AUDIO_BACKEND == 'browser':
+                _insert_audio_backend_toggle(doc, create_audio_backend_toggle(AUDIO_BACKEND))
             if STREAMING_ENABLED:
                 server_data_handler = ServerDataHandler(doc, app_data, CHART_SETTINGS)
                 app_callbacks.set_server_data_handler(server_data_handler)
@@ -696,6 +893,9 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
                     control_state_source=control_state_source,
                     automation_command_source=automation_command_source,
                     automation_result_source=automation_result_source,
+                    positions=list(app_data.positions()),
+                    config_path=_extras_path,
+                    time_range=_survey_time_range_ms(app_data),
                 )
 
                 def _handle_automation_result(attr, old, new):
@@ -770,7 +970,7 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
 
             # Check if this is actually a workspace file (contains both sourceConfigs and appState)
             try:
-                with open(config_path, 'r', encoding='utf-8') as f:
+                with open(config_path, 'r', encoding='utf-8-sig') as f:
                     file_content = json.load(f)
 
                 # If it has both sourceConfigs and appState, treat it as a workspace file
@@ -814,8 +1014,12 @@ def create_app(doc, config_path=None, state_path=None, create_static=False,
         _session_destroyed=session_destroyed,
         _bridge=_session_bridge,
     ):
+        session_state['destroyed'] = True
         _session_destroyed(session_context)
-        _bridge.unregister()
+        # Only clear the bridge if it still points at THIS document; after a
+        # browser refresh the old session is destroyed later than the new one
+        # registers, and must not wipe the new registration.
+        _bridge.unregister(doc=doc)
 
     doc.on_session_destroyed(_on_session_destroyed)
 
@@ -836,14 +1040,57 @@ def main():
         metavar="CONFIG_PATH",
         help="Generate a static HTML report from the specified JSON configuration file."
     )
+    parser.add_argument(
+        "--output",
+        type=str,
+        metavar="PATH",
+        help="With --generate-static: HTML file (or folder) to write. Default: beside the config."
+    )
+    parser.add_argument(
+        "--state",
+        type=str,
+        metavar="WORKSPACE_JSON",
+        help="With --generate-static: workspace JSON whose regions/markers/layout/offsets are baked "
+             "into the HTML. Default: the config's autosave (<config_stem>.workspace.json) if present."
+    )
+    parser.add_argument(
+        "--static-detail",
+        choices=list(STATIC_DETAIL_CHOICES),
+        default="auto",
+        help="With --generate-static: how much 1 s log data to embed. auto = full when the estimated "
+             "size is under the threshold, else regions; full; regions = 1 s detail only around "
+             "regions/markers; overview = none."
+    )
+    parser.add_argument(
+        "--audio-clips",
+        action="store_true",
+        help="With --generate-static: also write 16 kHz mono WAV clips for regions of 60 s or less "
+             "into <name>_clips/ beside the HTML (20 MB cap)."
+    )
+    parser.add_argument(
+        "--resources",
+        choices=["INLINE", "CDN"],
+        default="INLINE",
+        help="With --generate-static: embed BokehJS (INLINE) or load it from the CDN."
+    )
     # Note: --config for the live server is handled via Bokeh's `--args` mechanism.
+    # Live-server flag (documented here so --help shows it): --no-restore skips the autosave restore.
 
     # This check prevents argparse from running when script is used by Bokeh server
     if "bokeh" not in " ".join(sys.argv):
         args = parser.parse_args()
         if args.generate_static:
             if os.path.exists(args.generate_static):
-                generate_static_html(config_path=args.generate_static)
+                result = generate_static_html(
+                    config_path=args.generate_static,
+                    resources=args.resources,
+                    output_path=args.output,
+                    state_path=args.state,
+                    detail=args.static_detail,
+                    audio_clips=args.audio_clips,
+                )
+                if result is None:
+                    sys.exit(1)
             else:
                 logger.error(f"Configuration file not found: {args.generate_static}")
                 sys.exit(1)
@@ -900,12 +1147,20 @@ if doc.session_context:
             except Exception as _cs_exc:
                 logger.error("Failed to start control server: %s", _cs_exc)
 
+    # --no-restore / ?fresh=1: open the job without restoring its autosaved annotations.
+    _fresh_param = _extract_request_argument(request_arguments, 'fresh')
+    _restore_autosave = not (
+        '--no-restore' in sys.argv
+        or (_fresh_param is not None and str(_fresh_param).strip().lower() not in ('0', 'false', 'no', ''))
+    )
+
     create_app(
         doc,
         config_path=config_file_path,
         state_path=state_file_path,
         create_static=create_static,
         startup_overrides=_deep_link_overrides,
+        restore=_restore_autosave,
     )
 else:
     # No session context, so we're running as a standalone script.

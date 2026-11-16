@@ -311,6 +311,28 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     // Starts at -Infinity so the first error is always reported: seeding it with 0
     // swallowed everything thrown in the first 5s after page load, which is exactly
     // the initial-render window worth seeing.
+    // Extra renderers registered by other modules (see registerRenderHook below).
+    const renderHooks = [];
+
+    /**
+     * Registers a renderer that runs at the end of every onStateChange, after the built-in
+     * renderers, inside the same error guard. Registering an existing name replaces it.
+     * `fn(state, info)`; info = { prev, isInitialLoad, isHeavyUpdate, dataCache, models, controllers,
+     * displayDetailsUpdates, ...renderContext }. Compare `state.x !== info.prev.x` to render only on change.
+     * A file that calls this must load after app.js (add it at the end of js/manifest.py).
+     */
+    function registerRenderHook(name, fn) {
+        if (typeof name !== 'string' || !name || typeof fn !== 'function') {
+            throw new Error('registerRenderHook requires a name and a function.');
+        }
+        const existing = renderHooks.findIndex(hook => hook.name === name);
+        if (existing >= 0) {
+            renderHooks[existing] = { name, fn };
+        } else {
+            renderHooks.push({ name, fn });
+        }
+    }
+
     let _renderErrorCooldown = -Infinity;
     const RENDER_ERROR_COOLDOWN_MS = 5000;
 
@@ -536,7 +558,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }, renderContext);
         }
 
-        if (isInitialLoad || didClassificationsChange) {
+        if (isInitialLoad || didClassificationsChange || didChartOffsetsChange) {
             _guardedRender('renderClassifications', () => {
                 app.renderers.renderClassifications(state);
             }, renderContext);
@@ -566,6 +588,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }, renderContext);
         }
 
+        renderHooks.forEach(hook => {
+            _guardedRender(`renderHook:${hook.name}`, () => {
+                hook.fn(state, {
+                    ...renderContext,
+                    prev,
+                    isInitialLoad,
+                    dataCache,
+                    models,
+                    controllers,
+                    displayDetailsUpdates
+                });
+            }, renderContext);
+        });
+
         // --- C. HANDLE SIDE EFFECTS ---
         // These are tasks that interact with the outside world (e.g., Bokeh backend)
         handleAudioSideEffects(state, previousStateForAudio, models);
@@ -576,92 +612,29 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
      * This function is the single point of contact with the audio_control_source.
      */
     function handleAudioSideEffects(current, previous, models) {
-        if (!models.audio_control_source) {
+        // The store change -> command mapping lives in services/audio/audioCommands.js so the
+        // VLC backend (server, via audio_control_source) and the browser backend (clipPlayer)
+        // receive exactly the same command and the same offset-adjusted audio time.
+        const clipPlayer = app.services?.audio?.clipPlayer;
+        const useBrowserPlayer = Boolean(clipPlayer && clipPlayer.isBrowserBackend());
+
+        if (!useBrowserPlayer && !models.audio_control_source) {
             return; // Do nothing if the audio control model isn't present
         }
+        if (!current?.system?.lastAction) return;
 
-        const { actionTypes } = app;
-        const lastAction = current.system.lastAction;
-        if (!lastAction) return;
-    
-        // --- A. Handle User-Initiated Playback (Tap, KeyNav, or Play Button) ---
-        const audioWasPlayingPreviously = Boolean(previous?.audio?.isPlaying);
-        const wasTapPlayback = lastAction.type === actionTypes.TAP && audioWasPlayingPreviously;
-        const wasKeyNavPlayback = lastAction.type === actionTypes.KEY_NAV && audioWasPlayingPreviously;
-        const wasPlayToggleRequest = lastAction.type === actionTypes.AUDIO_PLAY_PAUSE_TOGGLE && lastAction.payload.isActive;
-        const shouldSendPlayCommand = wasTapPlayback || wasKeyNavPlayback || wasPlayToggleRequest;
+        const command = app.services?.audio?.deriveAudioCommand?.(current, previous);
+        if (!command) return;
 
-        if (shouldSendPlayCommand) {
-            // A tap, key nav, or "play" button press is an explicit intent to hear audio.
-            // We always send a 'play' command.
-            const tapState = current?.interaction?.tap || {};
-            const position = wasPlayToggleRequest
-                ? lastAction.payload.positionId
-                : tapState.position || current.audio.activePositionId || previous?.audio?.activePositionId;
-
-            let timestamp = Number(tapState.timestamp);
-            if (!Number.isFinite(timestamp)) {
-                timestamp = Number(previous?.interaction?.tap?.timestamp);
-            }
-
-            if (!position || !Number.isFinite(timestamp)) {
-                console.warn('[Side Effect] Skipping play command due to missing context.', { position, timestamp });
-                return;
-            }
-
-            const offsetMs = Number(current?.view?.positionEffectiveOffsets?.[position]) || 0;
-            const actualTimestamp = Math.round(timestamp - offsetMs);
-            if (!Number.isFinite(actualTimestamp)) {
-                console.warn('[Side Effect] Skipping play command due to invalid adjusted timestamp.', {
-                    position,
-                    timestamp,
-                    offsetMs
-                });
-                return;
-            }
-
-            console.log(`[Side Effect] Sending 'play' command for ${position} @ ${new Date(timestamp).toLocaleTimeString()} (actual ${new Date(actualTimestamp).toLocaleTimeString()})`);
-            models.audio_control_source.data = {
-                command: ['play'],
-                position_id: [position],
-                value: [actualTimestamp]
-            };
-            return; // This was the primary action, no other audio commands needed.
-        }
-        
-        // --- B. Handle Pause Button ---
-        if (lastAction.type === actionTypes.AUDIO_PLAY_PAUSE_TOGGLE && !lastAction.payload.isActive) {
-            console.log(`[Side Effect] Sending 'pause' command for ${lastAction.payload.positionId}`);
-            models.audio_control_source.data = {
-                command: ['pause'],
-                position_id: [lastAction.payload.positionId],
-                value: [null] // Value not needed for pause
-            };
+        if (useBrowserPlayer) {
+            clipPlayer.execute(command, current);
             return;
         }
-    
-        // --- C. Handle Secondary Audio Control Changes (Rate, Boost) ---
-        // These actions only modify the currently playing stream, they don't start it.
-
-        // Did the playback rate change due to a user request?
-        if (current.audio.playbackRate !== previous.audio.playbackRate && lastAction.type === actionTypes.AUDIO_RATE_CHANGE_REQUEST) {
-            console.log(`[Side Effect] Sending 'set_rate' command: ${current.audio.playbackRate}`);
-            models.audio_control_source.data = {
-                command: ['set_rate'],
-                position_id: [current.audio.activePositionId],
-                value: [current.audio.playbackRate]
-            };
-        }
-
-        // Did the volume boost state change due to a user request?
-        if (current.audio.volumeBoost !== previous.audio.volumeBoost && lastAction.type === actionTypes.AUDIO_BOOST_TOGGLE_REQUEST) {
-            console.log(`[Side Effect] Sending 'toggle_boost' command: ${current.audio.volumeBoost}`);
-            models.audio_control_source.data = {
-                command: ['toggle_boost'],
-                position_id: [current.audio.activePositionId],
-                value: [current.audio.volumeBoost]
-            };
-        }
+        models.audio_control_source.data = {
+            command: [command.command],
+            position_id: [command.position_id],
+            value: [command.value]
+        };
     }
 
     function normalizeTitleUpdates(titles) {
@@ -704,6 +677,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.setPositionDisplayTitles = setPositionDisplayTitles;
     app.setPositionDisplayTitle = setPositionDisplayTitle;
     app.disposeAnnotationPanel = disposeAnnotationPanel;
+    app.registerRenderHook = registerRenderHook;
 
 
     // Attach the public initialization function (legacy path)

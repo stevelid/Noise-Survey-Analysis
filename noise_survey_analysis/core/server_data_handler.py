@@ -87,6 +87,10 @@ class ServerDataHandler:
         self.position_models = self._collect_position_models()
         self._buffer_bounds = {}  # Track buffer bounds per position for edge detection
         self._spectrogram_chunk_bounds = {}
+        # position_id -> spectral parameter held by that position's streamed reservoir.
+        # Coverage alone cannot tell that the reservoir holds LZeq after the user
+        # switched to LAFmax, so handle_range_update compares this to selected_parameter.
+        self._spectrogram_chunk_params: Dict[str, str] = {}
         # position_id -> manual chart-offset (ms) reported by the chart_offset_spinner.
         # Populated via set_position_chart_offset(); see the comment in
         # handle_range_update() for why the buffered/streamed window has to be
@@ -271,7 +275,11 @@ class ServerDataHandler:
             # fixed display chunk — the browser extracts the display chunk from
             # the wider reservoir client-side.
             reservoir_coverage = self._spectrogram_chunk_coverage_ratio(position_id, pos_start_ms, pos_end_ms)
-            if position_data.has_log_spectral and reservoir_coverage < 0.98:
+            reservoir_param = self._spectrogram_chunk_params.get(position_id)
+            reservoir_param_stale = (
+                reservoir_param is not None and reservoir_param != self.selected_parameter
+            )
+            if position_data.has_log_spectral and (reservoir_coverage < 0.98 or reservoir_param_stale):
                 buffer_start, buffer_end = self._buffer_bounds[position_id]
                 logger.debug(
                     "[RANGE] request=%s position=%s action=refresh_reservoir viewport=(%s, %s) offset_ms=%s effective_viewport=(%s, %s) buffer=(%s, %s) reservoir_bounds=%s reservoir_coverage=%.3f",
@@ -900,6 +908,7 @@ class ServerDataHandler:
             spectrogram_source.data = new_data
             if position_id is not None:
                 self._spectrogram_chunk_bounds[position_id] = (float(reservoir_times[0]), float(reservoir_times[-1]))
+                self._spectrogram_chunk_params[position_id] = param
             push_ms = (time.perf_counter() - push_started_at) * 1000
             logger.debug(
                 "[SPEC PERF] param=%s rows=%s bands=%s chunk_time_length=%s reservoir_n_times=%s levels_len=%s subset_ms=%.1f slice_ms=%.1f prepare_ms=%.1f build_ms=%.1f push_ms=%.1f total_ms=%.1f",

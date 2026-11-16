@@ -11,6 +11,9 @@ Usage examples::
     nsa-ctl fit-full-range
     nsa-ctl center-on --timestamp 1710000900000
     nsa-ctl center-on --timestamp 1710000900000 --half-width-ms 3600000
+    nsa-ctl annotations --config noise_survey_config_6645.json      # offline, from the autosave file
+    nsa-ctl call add_regions --payload-file suggestions.json        # live: propose regions
+    nsa-ctl show --region-id 12 --message "Check this one"
 
 The CLI discovers the server port and token automatically from the temp file
 written by the server on startup.  You can also supply them explicitly via
@@ -23,6 +26,7 @@ import json
 import os
 import sys
 import tempfile
+import uuid
 import urllib.request
 import urllib.error
 from typing import Any, Optional
@@ -43,7 +47,7 @@ def _discover_server() -> tuple[int, str]:
     path = os.path.join(tempfile.gettempdir(), _TOKEN_FILE_SUFFIX)
     if os.path.isfile(path):
         try:
-            with open(path, "r", encoding="utf-8") as fh:
+            with open(path, "r", encoding="utf-8-sig") as fh:
                 data = json.load(fh)
             port = int(data.get("port", _DEFAULT_PORT))
             token = str(data.get("token", ""))
@@ -60,6 +64,10 @@ def _discover_server() -> tuple[int, str]:
 def _post(port: int, token: str, body: dict) -> dict[str, Any]:
     """POST ``body`` to the control server and return the parsed JSON response."""
     url = f"http://127.0.0.1:{port}/control"
+    # A fresh id per invocation: the browser ignores a command whose request_id
+    # repeats the previous one, so a constant id made every second run a no-op.
+    body = dict(body)
+    body["request_id"] = f"{body.get('request_id') or 'cli'}-{uuid.uuid4().hex[:8]}"
     raw = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -258,6 +266,44 @@ def build_parser() -> argparse.ArgumentParser:
     annotations.add_argument("--min-context-s", type=float, default=60,
                              help="Minimum usable pooled context (seconds; default 60)")
 
+    # annotations (offline: reads the autosaved workspace file)
+    ann = sub.add_parser(
+        "annotations",
+        help="Print regions and markers as JSON from <config_stem>.workspace.json (no browser needed)",
+    )
+    ann.add_argument("--config", help="Job config JSON; reads the .workspace.json file beside it")
+    ann.add_argument("--workspace", help="Read this workspace file instead of the config's sibling")
+    ann.add_argument("--kind", choices=["region", "marker"], help="Only regions or only markers")
+    ann.add_argument("--status", choices=["proposed", "accepted", "rejected"], help="Only this review status")
+    ann.add_argument("--source", choices=["user", "agent"], help="Only user or agent annotations")
+    ann.add_argument("--start", help="Only items ending after this time (epoch ms or ISO-8601 with offset)")
+    ann.add_argument("--end", help="Only items starting before this time (epoch ms or ISO-8601 with offset)")
+    ann.add_argument("--time-basis", choices=["source", "display"], default="source",
+                     help="Time basis of --start/--end: source (true time in the data files, default) or display (chart axis)")
+
+    # call (live: any control command with a JSON payload)
+    call = sub.add_parser(
+        "call",
+        help="Send any control command with a JSON payload, e.g. add_regions, list_annotations, show",
+    )
+    call.add_argument("command", help="Command name, e.g. add_regions")
+    call_grp = call.add_mutually_exclusive_group()
+    call_grp.add_argument("--payload", help="Inline JSON payload")
+    call_grp.add_argument("--payload-file", help="Path to a JSON file holding the payload ('-' for stdin)")
+
+    # show (live)
+    show = sub.add_parser("show", help="Scroll the dashboard to a region, marker or time window")
+    show_grp = show.add_mutually_exclusive_group(required=True)
+    show_grp.add_argument("--region-id", type=int)
+    show_grp.add_argument("--marker-id", type=int)
+    show_grp.add_argument("--start", help="Window start (epoch ms or ISO-8601 with offset); needs --end")
+    show.add_argument("--end", help="Window end (epoch ms or ISO-8601 with offset)")
+    show.add_argument("--position", help="Position to scroll to")
+    show.add_argument("--time-basis", choices=["source", "display"], default=None,
+                      help="Time basis of --start/--end: source (default) or display (chart axis)")
+    show.add_argument("--message", help="Toast text shown in the dashboard")
+    show.add_argument("--no-select", action="store_true", help="Do not select the region or marker")
+
     # fit-full-range
     sub.add_parser("fit-full-range", help="Reset the viewport to the full data range")
 
@@ -287,7 +333,96 @@ def _cmd_export_annotations(args: argparse.Namespace, port: int, token: str) -> 
     return 0 if result.get("success") else 1
 
 
+def _time_arg(text: Optional[str]) -> Any:
+    """Command-line time: a bare number is epoch ms, anything else is passed on as ISO-8601."""
+    if text is None:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return text
+
+
+def _control_module(name: str):
+    """Import ``control.<name>`` whether this file runs as a module or as a plain script."""
+    import importlib
+
+    if __package__:
+        return importlib.import_module(f".control.{name}", __package__)
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    return importlib.import_module(f"noise_survey_analysis.control.{name}")
+
+
+def _cmd_annotations(args: argparse.Namespace, port: int, token: str) -> int:
+    load_annotations = _control_module("annotation_file").load_annotations
+    parse_time_ms = _control_module("annotation_validation").parse_time_ms
+
+    if not args.config and not args.workspace:
+        print("Error: --config or --workspace is required", file=sys.stderr)
+        return 2
+    try:
+        filters: dict[str, Any] = {"kind": args.kind, "status": args.status, "source": args.source,
+                                   "time_basis": getattr(args, "time_basis", "source")}
+        if args.start is not None:
+            filters["start"] = parse_time_ms(_time_arg(args.start), "--start")
+        if args.end is not None:
+            filters["end"] = parse_time_ms(_time_arg(args.end), "--end")
+        result = load_annotations(config_path=args.config, workspace_path=args.workspace, **filters)
+    except (OSError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def _cmd_call(args: argparse.Namespace, port: int, token: str) -> int:
+    payload: Any = {}
+    try:
+        if args.payload_file:
+            text = sys.stdin.read() if args.payload_file == "-" else open(
+                args.payload_file, "r", encoding="utf-8-sig").read()
+            payload = json.loads(text)
+        elif args.payload:
+            payload = json.loads(args.payload)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Error: could not read the payload: {exc}", file=sys.stderr)
+        return 2
+    result = _post(port, token, {"command": args.command, "request_id": f"cli-{args.command}", "payload": payload})
+    _print_result(result)
+    return 0 if result.get("success") else 1
+
+
+def _cmd_show(args: argparse.Namespace, port: int, token: str) -> int:
+    payload: dict[str, Any] = {}
+    if args.region_id is not None:
+        payload["region_id"] = args.region_id
+    elif args.marker_id is not None:
+        payload["marker_id"] = args.marker_id
+    else:
+        if args.end is None:
+            print("Error: --start needs --end", file=sys.stderr)
+            return 2
+        payload["start"] = _time_arg(args.start)
+        payload["end"] = _time_arg(args.end)
+        if getattr(args, "time_basis", None):
+            payload["time_basis"] = args.time_basis
+    if args.position:
+        payload["position"] = args.position
+    if args.message:
+        payload["message"] = args.message
+    if args.no_select:
+        payload["select"] = False
+    result = _post(port, token, {"command": "show", "request_id": "cli-show", "payload": payload})
+    _print_result(result)
+    return 0 if result.get("success") else 1
+
+
 _HANDLERS = {
+    "annotations": _cmd_annotations,
+    "call": _cmd_call,
+    "show": _cmd_show,
     "status": _cmd_status,
     "set-viewport": _cmd_set_viewport,
     "set-parameter": _cmd_set_parameter,

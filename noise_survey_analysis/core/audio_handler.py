@@ -48,6 +48,55 @@ from noise_survey_analysis.core import status_console
 _live_handlers = weakref.WeakSet()
 _live_handlers_lock = threading.RLock()
 
+# Auto-advance tuning. VLC reports Ended at the true end of a file; the position check
+# is a backstop for builds that go quiet without ever reporting it.
+ROLLOVER_MARGIN_MS = 150
+# Consecutive recordings are usually back to back (or a few ms apart). A bigger gap
+# means the meter was not recording, so carrying on would play unrelated audio.
+MAX_ROLLOVER_GAP_SECONDS = 2.0
+# VLC's equalizer preamp is limited to +/-20 dB.
+MAX_EQUALIZER_PREAMP_DB = 20.0
+
+
+def decide_file_rollover(file_start, file_duration, position, vlc_ended, next_file,
+                         max_gap_seconds=MAX_ROLLOVER_GAP_SECONDS,
+                         margin_ms=ROLLOVER_MARGIN_MS):
+    """
+    Decide what the playback monitor should do for the file that is currently open.
+
+    Pure so it can be tested without VLC.
+
+    Args:
+        file_start: timezone-aware start of the open file.
+        file_duration: its duration in seconds.
+        position: current playback datetime, or None if VLC has no position.
+        vlc_ended: True when VLC reports the media Ended (or Stopped at its end).
+        next_file: ``(path, start, duration)`` of the next recording, or None.
+
+    Returns:
+        ``(action, next_file, offset_seconds)`` where action is ``'continue'`` (still
+        inside the file), ``'next'`` (open ``next_file`` at ``offset_seconds``) or
+        ``'stop'`` (end of the audio: stop cleanly).
+    """
+    file_end = file_start + datetime.timedelta(seconds=file_duration)
+    at_end = bool(vlc_ended)
+    if not at_end and position is not None:
+        at_end = position >= file_end - datetime.timedelta(milliseconds=margin_ms)
+    if not at_end:
+        return 'continue', None, 0.0
+    if next_file is None:
+        return 'stop', None, 0.0
+    _, next_start, next_duration = next_file
+    gap_seconds = (next_start - file_end).total_seconds()
+    if gap_seconds > max_gap_seconds:
+        return 'stop', None, 0.0
+    # Recordings that overlap slightly: carry on from where the previous one ended.
+    offset = max(0.0, -gap_seconds)
+    if next_duration is not None and offset >= next_duration:
+        return 'stop', None, 0.0
+    return 'next', next_file, offset
+
+
 class AudioPlaybackHandler:
     """
     Handles audio playback from audio files based on timestamp selection.
@@ -72,6 +121,10 @@ class AudioPlaybackHandler:
         self.file_info_by_position = {}
         self.current_position = None
         self.current_amplification = 0
+        self._playback_rate = 1.0
+        self._equalizer = None
+        # Serialises transport changes (user commands vs. the monitor's file rollover).
+        self._transport_lock = threading.RLock()
 
         # Core playback state (initialised regardless of VLC availability)
         self.vlc_instance = None
@@ -238,6 +291,10 @@ class AudioPlaybackHandler:
         Returns:
         bool: True if playback was successfully initiated, False if an error occurred.
         """
+        with self._transport_lock:
+            return self._play_impl(timestamp, position_callback)
+
+    def _play_impl(self, timestamp: Optional[datetime.datetime], position_callback: Optional[Callable] = None) -> bool:
         logger.debug(f"Play call proceeding. Timestamp: {timestamp}")
 
         if not self.audio_available or not self.player or not self.vlc_instance:
@@ -302,6 +359,16 @@ class AudioPlaybackHandler:
             f"{os.path.basename(filepath)} +{offset_seconds:.1f}s",
         )
 
+        return self._open_and_play(filepath, offset_seconds, file_start_time, file_duration, position_callback)
+
+    def _open_and_play(self, filepath, offset_seconds, file_start_time, file_duration,
+                       position_callback=None) -> bool:
+        """
+        Open ``filepath`` and start it ``offset_seconds`` in, then start the monitor.
+
+        The caller has already stopped any previous transport. Shared by play() and the
+        monitor's file rollover.
+        """
         # Store current state
         self.current_file = filepath
         self.media_start_time = file_start_time
@@ -315,32 +382,29 @@ class AudioPlaybackHandler:
                 logger.error(f"VLC failed to create media for: {filepath}")
                 self._is_playing = False
                 return False
+            if offset_seconds and offset_seconds > 0:
+                # Starting at the offset inside VLC avoids the audible blip from the
+                # file's first moments and the unreliable play(); sleep; set_time() dance.
+                media.add_option(f":start-time={offset_seconds:.3f}")
             self.player.set_media(media)
             media.release()
 
-            # Start playback
+            # A new media resets the gain stage and playback rate in VLC; restore both.
+            self._apply_gain()
+
             play_result = self.player.play()
             if play_result == -1:
                 logger.error("VLC failed to play media.")
                 self._is_playing = False
                 return False
 
-            # Wait briefly for state update
-            time.sleep(0.05)
+            self._reapply_playback_rate()
+            self._verify_start_position(offset_seconds)
+            self._reapply_playback_rate()
 
-            # Set the time position (in milliseconds) after starting play
-            set_time_result = self.player.set_time(int(offset_seconds * 1000))
-            if set_time_result == -1:
-                logger.warning(f"VLC failed to set time to {int(offset_seconds * 1000)}ms.")
-                # Playback might continue from beginning, but consider it 'initiated'
-
-            # Short pause for VLC processing
-            time.sleep(0.05)
             final_state = self.player.get_state()
             if final_state not in [vlc.State.Playing, vlc.State.Buffering]:
                     logger.warning(f"VLC player not in Playing/Buffering state after play/seek (State: {final_state}).")
-                    # Decide if this constitutes a failure
-                    # return False # Optional: Treat this as failure
 
         except Exception as e:
             logger.error(f"Error during VLC media setup/play/seek: {e}", exc_info=True)
@@ -351,7 +415,38 @@ class AudioPlaybackHandler:
         self._restart_playback_monitor()
 
         return True # Indicate successful initiation
-        # --- End of Original Core Play Logic ---
+
+    # How long to wait for VLC to report a position after play() before giving up.
+    START_VERIFY_TIMEOUT_SECONDS = 0.5
+    # A start position further than this from the request is treated as ignored.
+    START_VERIFY_TOLERANCE_MS = 2000
+
+    def _verify_start_position(self, offset_seconds: float) -> None:
+        """
+        Fall back to set_time() if VLC ignored ``:start-time`` and began near zero.
+
+        Only matters for non-trivial offsets; polls rather than sleeping a fixed time so
+        a normal start costs a few milliseconds.
+        """
+        if not offset_seconds or offset_seconds <= 1.0:
+            return
+        target_ms = int(offset_seconds * 1000)
+        deadline = time.monotonic() + self.START_VERIFY_TIMEOUT_SECONDS
+        current_ms = -1
+        while time.monotonic() < deadline:
+            try:
+                current_ms = self.player.get_time()
+            except Exception:
+                current_ms = -1
+            if isinstance(current_ms, (int, float)) and current_ms >= 0:
+                break
+            time.sleep(0.02)
+        if isinstance(current_ms, (int, float)) and current_ms >= 0 \
+                and abs(current_ms - target_ms) <= self.START_VERIFY_TOLERANCE_MS:
+            return
+        logger.debug("Start position %sms not honoured (VLC at %sms); seeking explicitly.", target_ms, current_ms)
+        if self.player.set_time(target_ms) == -1:
+            logger.warning(f"VLC failed to set time to {target_ms}ms.")
 
     def _claim_exclusive_playback(self):
         """Pause every other live handler so only this one is audible."""
@@ -403,9 +498,11 @@ class AudioPlaybackHandler:
 
     def _ensure_playback_monitor(self):
         """Start the monitor only if it is not already running (in-place seek path)."""
-        if self.playback_monitor and self.playback_monitor.is_alive():
+        monitor = self.playback_monitor
+        if monitor and monitor.is_alive() and monitor is not threading.current_thread():
             self.stop_monitor = False
             return
+        # No monitor, or the caller *is* the monitor (about to exit its loop): start fresh.
         self._restart_playback_monitor()
 
     def pause(self):
@@ -544,18 +641,130 @@ class AudioPlaybackHandler:
             logger.error(f"Error releasing VLC resources: {e}", exc_info=True)
             # Don't re-raise - we want to continue cleanup even if release fails
 
+    def _next_file_after(self, filepath):
+        """The recording that follows ``filepath`` in the current position, or None."""
+        files = self.file_info_by_position.get(self.current_position) or []
+        for index, entry in enumerate(files):
+            if entry[0] == filepath:
+                for candidate in files[index + 1:]:
+                    if candidate[2] and candidate[2] > 0:
+                        return candidate
+                return None
+        return None
+
+    def _advance_to_next_file(self, from_file, next_file, offset_seconds):
+        """
+        Roll playback over to ``next_file`` from the monitor thread.
+
+        Returns True when the next file is playing, False when playback was stopped,
+        and None when a user command currently owns the transport (try again).
+        """
+        if not self._transport_lock.acquire(blocking=False):
+            return None
+        try:
+            if self.current_file != from_file or self.stop_monitor:
+                # The user moved on while we were deciding; their command wins.
+                return True
+            path, start, duration = next_file
+            self._perform_stop_actions()
+            status_console.event(
+                'audio',
+                f"next file  {os.path.basename(path)} +{offset_seconds:.1f}s",
+            )
+            if self._open_and_play(path, offset_seconds, start, duration, self.position_callback):
+                return True
+            logger.warning("Monitor: could not start the next audio file; stopping playback.")
+            self._is_playing = False
+            return False
+        finally:
+            self._transport_lock.release()
+
+    def _finish_playback(self):
+        """Stop at the end of the available audio so the UI sees is_playing=False."""
+        self._is_playing = False
+        try:
+            self.player.stop()
+        except Exception as e:
+            logger.error(f"Error stopping VLC player at end of audio: {e}")
+        status_console.event('audio', 'end of audio')
+
+    def _reapply_playback_rate(self):
+        """Restore the user's playback rate after VLC resets it on a media change."""
+        if abs(self._playback_rate - 1.0) < 0.0001:
+            return
+        try:
+            self.player.set_rate(self._playback_rate)
+        except Exception as e:
+            logger.error(f"Error re-applying playback rate: {e}")
+
+    def _apply_gain(self):
+        """
+        Apply ``current_amplification`` (dB) to the player.
+
+        VLC's volume control is linear amplitude (200% is only +6 dB), so real gain
+        comes from the audio equalizer's preamp, which is in dB (capped at +20). The
+        software volume stays at 100% so the boost does not stack on top and clip.
+        Anything above the preamp cap is made up with the volume control. If the
+        equalizer is unavailable, fall back to the volume-only mapping.
+        """
+        if not self.audio_available or not self.player:
+            return False
+        db = float(self.current_amplification or 0)
+        eq_class = getattr(vlc, 'AudioEqualizer', None)
+
+        if db <= 0:
+            if self._equalizer is not None:
+                self._set_equalizer(None)
+            self.player.audio_set_volume(100)
+            return True
+
+        if eq_class is not None:
+            try:
+                preamp = min(db, MAX_EQUALIZER_PREAMP_DB)
+                equalizer = eq_class()
+                equalizer.set_preamp(preamp)
+                if self.player.set_equalizer(equalizer) == 0:
+                    self._equalizer = equalizer  # keep a reference alive
+                    extra_db = db - preamp
+                    volume = int(round(100 * (10 ** (extra_db / 20.0)))) if extra_db > 0 else 100
+                    self.player.audio_set_volume(min(volume, 400))
+                    return True
+                logger.warning("VLC rejected the equalizer; falling back to volume-based boost.")
+            except Exception as e:
+                logger.warning(f"VLC equalizer unavailable ({e}); falling back to volume-based boost.")
+        else:
+            logger.warning("python-vlc has no AudioEqualizer; falling back to volume-based boost (about +6 dB).")
+
+        self._equalizer = None
+        volume_map = {0: 100, 20: 200, 40: 400}
+        return self.player.audio_set_volume(volume_map.get(int(db), 100)) == 0
+
+    def _set_equalizer(self, equalizer):
+        """Attach (or with None, detach) an equalizer, ignoring builds that lack support."""
+        if getattr(vlc, 'AudioEqualizer', None) is None and equalizer is not None:
+            return False
+        try:
+            result = self.player.set_equalizer(equalizer)
+            self._equalizer = equalizer
+            return result == 0
+        except Exception as e:
+            logger.debug(f"Could not change VLC equalizer: {e}")
+            return False
+
     def _monitor_playback(self):
         if not self.audio_available or not self.player:
             return
 
         last_file = None
+        last_pos = None
         while not self.stop_monitor and self.player.get_media():
             current_state = self.player.get_state()
-            if current_state in [vlc.State.Ended, vlc.State.Stopped, vlc.State.Error]:
-                logger.debug(f"Monitor: Playback ended/stopped/errored (State: {current_state}). Stopping monitor.")
+            if current_state == vlc.State.Error:
+                logger.debug("Monitor: Playback errored. Stopping monitor.")
                 self._is_playing = False
                 break
-            if current_state not in [vlc.State.Playing, vlc.State.Paused, vlc.State.Buffering]:
+            vlc_finished = current_state in [vlc.State.Ended, vlc.State.Stopped]
+            if not vlc_finished and current_state not in [vlc.State.Playing, vlc.State.Paused, vlc.State.Buffering]:
                  logger.debug(f"Monitor: Player in unexpected state: {current_state}")
 
             if last_file is None or self.current_file != last_file:
@@ -563,23 +772,49 @@ class AudioPlaybackHandler:
                 last_file = self.current_file
 
             current_pos = self.get_current_position()
-            
+            if current_pos:
+                last_pos = current_pos
+
+            # A paused transport must not roll over just because it is parked near the end.
+            if (self._is_playing or vlc_finished) and self.media_start_time and self.current_file_duration:
+                current_file = self.current_file
+                try:
+                    action, next_file, offset = decide_file_rollover(
+                        self.media_start_time,
+                        self.current_file_duration,
+                        current_pos or (last_pos if vlc_finished else None),
+                        current_state == vlc.State.Ended,
+                        self._next_file_after(current_file),
+                    )
+                except (TypeError, AttributeError) as e:
+                    logger.error(f"Monitor: Error comparing datetimes for file end check: {e}.")
+                    action, next_file, offset = 'continue', None, 0.0
+
+                if action == 'next':
+                    logger.debug(f"Monitor: Reached end of {os.path.basename(current_file)}; advancing to {os.path.basename(next_file[0])}.")
+                    result = self._advance_to_next_file(current_file, next_file, offset)
+                    if result is None:
+                        # A user command holds the transport; look again shortly.
+                        time.sleep(0.1)
+                        continue
+                    break  # a fresh monitor was started on success; otherwise playback stopped
+                if action == 'stop' and (vlc_finished or current_pos is not None):
+                    logger.info("Monitor: end of available audio reached; stopping playback.")
+                    self._finish_playback()
+                    break
+                if vlc_finished:
+                    # Stopped/Ended without us asking and not at a file end: nothing to wait for.
+                    logger.debug(f"Monitor: Playback ended/stopped (State: {current_state}). Stopping monitor.")
+                    self._is_playing = False
+                    break
+            elif vlc_finished:
+                logger.debug(f"Monitor: Playback ended/stopped (State: {current_state}). Stopping monitor.")
+                self._is_playing = False
+                break
+
             if not current_pos:
                 time.sleep(0.1)
                 continue
-            try:    
-                file_end_time = self.media_start_time + datetime.timedelta(seconds=self.current_file_duration)
-                #check if we are within 200ms of the end
-                if current_pos >= (file_end_time - datetime.timedelta(milliseconds=200)):
-                     logger.debug(f"Monitor: Reached end of file duration for {os.path.basename(self.current_file)}. Attempting to play next part.")
-                     next_timestamp = current_pos + datetime.timedelta(milliseconds=100)
-                     # Call the main play method (which includes the lockout)
-                     if not self.play(next_timestamp, self.position_callback):
-                          logger.warning("Monitor: Lockout prevented automatic transition to next file.")
-                     # Exit this monitor thread regardless, play starts a new one if successful
-                     break
-            except (TypeError, AttributeError) as e:
-                 logger.error(f"Monitor: Error comparing datetimes for file end check: {e}.")
 
             if self.position_callback:
                 try:
@@ -595,11 +830,13 @@ class AudioPlaybackHandler:
             logger.warning("Cannot change playback rate: Audio playback is unavailable.")
             return False
 
-        if not self.player.get_media():
-            logger.warning("Cannot change playback rate: No media loaded")
-            return False
         if rate <= 0:
             logger.warning(f"Invalid playback rate: {rate}. Must be positive.")
+            return False
+        # Remember the rate so it survives the next media load (VLC resets it).
+        self._playback_rate = float(rate)
+        if not self.player.get_media():
+            logger.warning("No media loaded; playback rate will apply when playback starts.")
             return False
         try:
             self.player.set_rate(rate)
@@ -609,41 +846,30 @@ class AudioPlaybackHandler:
             return False
 
     def get_playback_rate(self) -> float:
+        """The rate the user asked for (kept across media reloads)."""
         if not self.audio_available or not self.player:
             return 1.0
-
-        if not self.player.get_media():
-            return 1.0
-        try:
-            return self.player.get_rate()
-        except:
-            return 1.0
+        return self._playback_rate
 
     def set_amplification(self, db_level: int) -> bool:
         """
-        Sets the audio player's volume based on a dB gain level.
-        A simple mapping is used: 0dB -> 100%, +20dB -> 200%, +40dB -> 400%.
-        Note: This requires the VLC software volume to be enabled.
+        Apply a real gain of ``db_level`` dB (0 = off, 20 = the Boost toggle).
 
-        Args:
-            db_level (int): The desired amplification in dB (0, 20, or 40).
+        Uses the VLC equalizer preamp (true dB, capped at +20 dB) and keeps software
+        volume at 100%; see _apply_gain. The setting is re-applied whenever new media
+        is opened. Falls back to the old volume-based boost if the equalizer is
+        unavailable.
 
         Returns:
-            bool: True if the volume was set successfully, False otherwise.
+            bool: True if the gain was applied, False otherwise.
         """
         if not self.audio_available or not self.player:
             logger.warning("Cannot set amplification: Audio playback is unavailable.")
             return False
 
-        # Simple mapping from dB gain to a percentage for VLC's set_volume
-        volume_map = {0: 100, 20: 200, 40: 400}
-        volume_percent = volume_map.get(db_level, 100) # Default to 100% (0dB)
-
-        logger.info(f"Setting amplification to +{db_level}dB (VLC Volume: {volume_percent}%)")
-        if self.player.audio_set_volume(volume_percent) == 0:
-            self.current_amplification = db_level
-            return True
-        return False
+        self.current_amplification = db_level
+        logger.info(f"Setting amplification to +{db_level}dB")
+        return bool(self._apply_gain())
 
     def get_time(self):
         if not self.audio_available or not self.player:

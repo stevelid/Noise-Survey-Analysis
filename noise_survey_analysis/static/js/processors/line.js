@@ -5,6 +5,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.processing = app.processing || {};
     const { calculateSharedLogDisplayThreshold, cloneDataColumns, applyDatetimeOffset, createDisplayMetadata } = app.processing;
 
+    // Longest the line chart may be held on overview waiting for its spectrogram log.
+    const LINE_SPECTRAL_SYNC_MAX_WAIT_MS = 2500;
+
     function updateActiveLineChartData(position, viewState, dataCache, models, positionOffsetMs = 0, spectralDetails = null) {
         try {
             if (!dataCache.activeLineData) {
@@ -34,7 +37,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const effectiveMax = Number.isFinite(viewportMax) ? viewportMax - positionOffsetMs : viewportMax;
 
             let nextActiveLine = null;
-            const shouldSyncLineToSpectrogramOverview = viewType === 'log'
+            // The sync exists so the line and spectrogram do not flicker between log and
+            // overview while a spectral reservoir is being (re)streamed after a
+            // zoom or parameter change. It is only valid while a spectral log is genuinely
+            // expected for this position AND only for a short bounded wait: a position with
+            // no 1 s spectral log (server flag positionHasLogSpectral === false), or a
+            // spectrogram that never arrives, must not hold the line on overview.
+            const spectralLogExpected = models.positionHasLogSpectral?.[position] !== false;
+            const spectralLoadingNow = viewType === 'log'
+                && spectralLogExpected
                 && spectralDetails
                 && spectralDetails.requestedViewType === 'log'
                 && spectralDetails.type === 'overview'
@@ -43,6 +54,20 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     || spectralDetails.statusCode === 'edge_guard'
                     || spectralDetails.statusCode === 'parameter_sync'
                 );
+            if (!dataCache.lineSpectralSyncSince) {
+                dataCache.lineSpectralSyncSince = {};
+            }
+            let shouldSyncLineToSpectrogramOverview = false;
+            if (spectralLoadingNow) {
+                const now = Date.now();
+                if (dataCache.lineSpectralSyncSince[position] === undefined) {
+                    dataCache.lineSpectralSyncSince[position] = now;
+                }
+                shouldSyncLineToSpectrogramOverview =
+                    (now - dataCache.lineSpectralSyncSince[position]) < LINE_SPECTRAL_SYNC_MAX_WAIT_MS;
+            } else {
+                delete dataCache.lineSpectralSyncSince[position];
+            }
 
             if (viewType === 'log') {
                 if (shouldSyncLineToSpectrogramOverview) {
@@ -77,7 +102,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         nextActiveLine = overviewClone;
                         displayDetails = createDisplayMetadata({
                             type: 'overview',
-                            reason: ' - Overview - zoom in for Log',
+                            reason: ' (Overview - Zoom in for Log Data)',
                             statusCode: 'zoom_required',
                             statusLabel: 'Zoom in for log data',
                             requestedViewType: viewType,
@@ -145,7 +170,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     const pendingBecauseViewportTooLarge = logDataExists && viewportTooLarge;
                     displayDetails = createDisplayMetadata({
                         type: 'overview',
-                        reason: logDataExists ? ' (Overview - Zoom in for Log Data)' : ' (Overview)',
+                        reason: pendingBecauseViewportTooLarge
+                            ? ' (Overview - Zoom in for Log Data)'
+                            : (logDataExists ? ' (Overview - Streaming Log Data...)' : ' (Overview)'),
                         statusCode: pendingBecauseViewportTooLarge ? 'zoom_required' : (logDataExists ? 'loading_log' : 'overview_only'),
                         statusLabel: pendingBecauseViewportTooLarge ? 'Zoom in for log data' : (logDataExists ? 'Waiting for log data' : 'Overview data only'),
                         requestedViewType: viewType,

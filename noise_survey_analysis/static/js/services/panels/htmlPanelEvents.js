@@ -112,10 +112,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     }
     function dispatchControl(session, control, value, draft) {
         const data = control.dataset;
-        const payload = { id: data.id, meter: data.meter, category: data.category, source: data.source, field: data.field, value };
+        const payload = { id: data.id, meter: data.meter, category: data.category, source: data.source, field: data.field, kind: data.kind, value };
         if (draft) payload.draft = draft;
         if (data.action === 'merge-region') payload.id = value;
         if (data.key) session.drafts.delete(data.key);
+        const review = app.features.review;
+        if (review?.PANEL_COMMANDS.includes(data.action)) {
+            // Save a pending note first (an edit never accepts), then run the review command.
+            if (draft) app.store.dispatch(app.features.annotationPanel.thunks.panelCommandIntent('commit-note-draft', { draft }));
+            app.store.dispatch(review.thunks.panelSuggestionIntent(data.action, payload));
+            return;
+        }
         app.store.dispatch(app.features.annotationPanel.thunks.panelCommandIntent(data.action, payload));
     }
     function flushDeferredPanel(session) {

@@ -6,6 +6,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     const COVERAGE_TOLERANCE = 1e-6;
     const DEFAULT_BACKGROUND_WINDOW_S = 300;
     const DEFAULT_MIN_CONTEXT_S = 60;
+    const COARSE_FRACTION = 1 / 3;
+    const COARSE_MIN_INTERVAL_S = 60;
+    const LOGGED_L90_COLUMNS = ['LAF90', 'LA90'];
+    function formatInterval(seconds) {
+        return seconds >= 60 && Math.abs(seconds / 60 - Math.round(seconds / 60)) < 1e-6
+            ? `${Math.round(seconds / 60)}-min` : `${Number(seconds.toPrecision(12))}-s`;
+    }
     const finite = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
     const number = value => finite(value) ? Number(value) : NaN;
     const geometryCache = new WeakMap();
@@ -171,22 +178,44 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const eq = series('LAeq');
         const max = series('LAFmax');
         const percentileCandidates = ['LAF', 'LAFp', 'LAeq', 'LAF90'];
-        const percentileColumn = percentileCandidates.find(name => weights(series(name), sourceAreas).some(value => value > 0))
+        const resolution = options.resolution || 'log';
+        const hasWeight = name => weights(series(name), sourceAreas).some(value => value > 0);
+        // Overview rows are 5-minute aggregates: the p10 of their LAeq is not an L90,
+        // so prefer the logged per-interval L90 column when present.
+        const loggedL90Column = resolution === 'overview' ? LOGGED_L90_COLUMNS.find(hasWeight) : undefined;
+        const percentileColumn = loggedL90Column
+            || percentileCandidates.find(hasWeight)
             || percentileCandidates.find(name => series(name).rows.length);
         const pct = percentileColumn ? series(percentileColumn) : { rows: [], ends: [], interval: 0 };
         const values = (geom, field) => geom.rows.map(row => number(data?.[field]?.[row.index]));
         const eqWeights = weights(eq, sourceAreas);
-        const resolution = options.resolution || 'log';
+        // Pooled L90 cannot be rebuilt from interval L90s. The duration-weighted median is
+        // used because it is not dragged up by an occasional event-contaminated interval.
+        const l90Quantile = loggedL90Column ? 0.5 : 0.1;
         const indicative = resolution !== 'log' || pct.interval >= MS_PER_SECOND || !['LAF', 'LAFp'].includes(percentileColumn);
         const result = {
             dataResolution: resolution, sampleIntervalS: eq.interval / MS_PER_SECOND || null,
             coverage: duration ? Math.min(1, eqWeights.reduce((a, b) => a + b, 0) / duration) : 0,
             laeq: energy(values(eq, 'LAeq'), eqWeights), lafmax: maximum(values(max, 'LAFmax'), weights(max, sourceAreas)),
-            la90: percentileColumn ? percentile(values(pct, percentileColumn), weights(pct, sourceAreas)) : null,
+            la90: percentileColumn ? percentile(values(pct, percentileColumn), weights(pct, sourceAreas), l90Quantile) : null,
             backgroundLA90: null, backgroundLAeq: null, diffFromBackground: null, contextDurationS: 0,
-            percentileMethod: percentileColumn ? `duration-weighted inverse-CDF p10 of ${percentileColumn}${indicative ? '; indicative' : ''}` : 'unavailable',
+            percentileMethod: !percentileColumn ? 'unavailable'
+                : loggedL90Column ? `duration-weighted median of logged ${percentileColumn} (overview intervals); indicative`
+                    : `duration-weighted inverse-CDF p10 of ${percentileColumn}${indicative ? '; indicative' : ''}`,
+            coarseResolution: false, coarseResolutionReason: null,
             missingReasons: [], durationMs: duration * MS_PER_SECOND, chartOffsetMs: offset, sourceAreas,
         };
+        const coarseFraction = options.coarseFraction === undefined ? COARSE_FRACTION : options.coarseFraction;
+        // Same interval basis as Python: explicit nominal, else the frame's median cadence.
+        const coarseIntervalS = (nominal > 0 ? nominal : geometry(data?.Datetime).interval) / MS_PER_SECOND;
+        if (coarseFraction !== null && duration > 0 && coarseIntervalS
+            && (coarseIntervalS > duration || (coarseIntervalS >= COARSE_MIN_INTERVAL_S && coarseIntervalS > duration * coarseFraction))) {
+            // One sample spans (most of) the region: its LAeq/L90 describe the whole
+            // interval and its max is not an event maximum.
+            result.coarseResolution = true;
+            result.coarseResolutionReason = `${formatInterval(coarseIntervalS)} data longer than the event; values are for the whole interval`;
+            result.lafmax = null;
+        }
         result.lafmaxAvailable = result.lafmax !== null;
         result.la90Available = resolution === 'log' && result.la90 !== null;
         if (sourceContext.length && percentileColumn) {
@@ -198,13 +227,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             result.contextDurationS = usable.reduce((sum, area) => sum + (area.end - area.start) / MS_PER_SECOND, 0);
             const minimum = options.minContextS ?? DEFAULT_MIN_CONTEXT_S;
             if (result.contextDurationS + COVERAGE_TOLERANCE >= minimum) {
-                result.backgroundLA90 = percentile(values(pct, percentileColumn), weights(pct, usable));
+                result.backgroundLA90 = percentile(values(pct, percentileColumn), weights(pct, usable), l90Quantile);
                 result.backgroundLAeq = energy(values(eq, 'LAeq'), weights(eq, usable));
             } else result.missingReasons.push(`Background context below ${minimum} usable seconds`);
         }
         if (result.laeq !== null && result.backgroundLA90 !== null) result.diffFromBackground = result.laeq - result.backgroundLA90;
         if (result.laeq === null) result.missingReasons.push('LAeq column unavailable or contains no finite region samples');
-        if (result.lafmax === null) result.missingReasons.push('Genuine LAFmax column unavailable');
+        if (result.lafmax === null && !result.coarseResolution) result.missingReasons.push('Genuine LAFmax column unavailable');
         if (result.coverage < 1 - COVERAGE_TOLERANCE) result.missingReasons.push('Requested area has incomplete timestamp coverage');
         return result;
     }

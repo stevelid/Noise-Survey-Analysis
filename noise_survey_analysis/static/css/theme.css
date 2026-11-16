@@ -175,3 +175,58 @@ input[type='radio'] {
 .bk-divider {
   background-color: #e2e8f0;
 }
+
+/* ---- Compact layout (WP1) ------------------------------------------------ */
+
+/* Position header buttons: small square buttons that fit the 24 px strip */
+:host(.nsa-pos-btn) .bk-btn {
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 20px;
+  min-height: 0;
+}
+
+:host(.nsa-pos-header) {
+  transition: box-shadow 0.12s ease;
+}
+
+/* The position the keys act on (Up / Down / S / O) */
+:host(.nsa-focused) {
+  box-shadow: inset 3px 0 0 #2563eb;
+  background-color: #eaf1fb !important;
+}
+
+/* Dropdown menus: one line per item, wide enough for the longest entry; scroll if the window is short */
+.bk-menu {
+  min-width: 280px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.bk-menu > :not(.bk-divider) {
+  white-space: nowrap;
+}
+
+/* Toolbar: stay on one row, ellipsis instead of wrapping */
+:host(.nsa-dashboard-controls) {
+  white-space: nowrap;
+}
+
+/* Frequency copy/paste table inside the sidebar dock: two rows, scrolls sideways */
+.freq-html-table {
+  table-layout: auto !important;
+  width: max-content !important;
+  font-size: 10px !important;
+}
+
+.freq-html-table th,
+.freq-html-table td {
+  padding: 2px 6px !important;
+}
+
+/* The annotation panel fills the window minus the toolbar and the frequency dock. --nsa-dock-h is set
+   from layoutRenderer.js (measured dock height). */
+.nsa-panel-scroll {
+  height: calc(100vh - 120px - var(--nsa-dock-h, 0px)) !important;
+  max-height: calc(100vh - 120px - var(--nsa-dock-h, 0px)) !important;
+}

@@ -18,6 +18,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     let automationAttachRetryCount = 0;
     let lastSessionStatusUpdateAt = null;
     let lastAutomationRequestId = null;
+    let lastTriggeredRequestId = null;
     let toastContainer = null;
     const AUTOMATION_ATTACH_RETRY_DELAY_MS = 150;
     const AUTOMATION_ATTACH_MAX_RETRIES = 40;
@@ -819,6 +820,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const savedKey = canonicalizeConfigs(savedConfigs);
         if (currentKey && savedKey && currentKey !== savedKey) {
             console.warn('[Session] Saved workspace references different source files than the ones currently loaded. Reload the matching data sources to ensure results are accurate before continuing.');
+            showToast('This workspace was saved for different source files than the ones loaded. Regions may not line up with the data; reload the matching data sources.', 'warning', 8000);
         }
     }
 
@@ -842,21 +844,26 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const filename = `workspace-${timestamp}.json`;
         const jsonText = JSON.stringify(payload, null, 2);
         triggerJsonDownload(filename, jsonText);
+        // A named snapshot is a deliberate save: make sure the autosave copy is current too.
+        if (autosaveScheduler && autosaveArmed) { autosaveScheduler.cancel(); flushAutosave(); }
     }
 
     function applyWorkspaceState(payload) {
         if (!payload || typeof payload !== 'object') {
             console.error('[Session] Invalid workspace payload.');
+            showToast('Workspace file is not a valid workspace.', 'error', 6000);
             return false;
         }
 
         if (!app.store || typeof app.store.dispatch !== 'function') {
             console.error('[Session] Store not available; cannot apply workspace.');
+            showToast('Cannot load workspace: the dashboard is not ready yet.', 'error', 6000);
             return false;
         }
 
         if (!app.actions || typeof app.actions.rehydrateState !== 'function') {
             console.error('[Session] Rehydrate action is not available.');
+            showToast('Cannot load workspace: the dashboard is not ready yet.', 'error', 6000);
             return false;
         }
 
@@ -870,6 +877,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const nextState = migrated.payload.appState;
         if (!nextState || typeof nextState !== 'object') {
             console.error('[Session] Workspace payload missing appState.');
+            showToast('Workspace file has no appState to restore.', 'error', 6000);
             return false;
         }
 
@@ -920,7 +928,12 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     }
                 } catch (error) {
                     console.error('[Session] Failed to parse workspace file:', error);
+                    showToast(`Could not read workspace file: ${error?.message || error}`, 'error', 6000);
                 }
+            };
+            reader.onerror = () => {
+                console.error('[Session] Failed to read workspace file:', reader.error);
+                showToast('Could not read the workspace file.', 'error', 6000);
             };
             reader.readAsText(file);
         });
@@ -971,6 +984,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const done = Boolean(sourceData.done?.[0]);
         const message = typeof sourceData.message?.[0] === 'string' ? sourceData.message[0] : '';
         if (!message) {
+            return;
+        }
+
+        const statusRequestId = sourceData.request_id?.[0];
+        const statusTag = sourceData.output_path?.[0];
+        if (handleAutosaveStatus(statusRequestId, level, message, statusTag)) {
+            // Routine autosave results only update the small indicator; problems also toast.
+            if (done) showToast(message, level, level === 'error' ? 5500 : 6000);
             return;
         }
 
@@ -1030,51 +1051,72 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
+    // Automation commands sent by the Python control bridge (control/session_bridge.py).
+    // Each handler is `(payload, { dispatch, getState }) => ({ success?, message?, data? })` and may
+    // throw; a throw (or `success: false`) is reported back as a failed result. Add commands from
+    // other files with `app.session.registerAutomationCommand(name, handler)`.
+    const automationCommands = new Map();
+
+    function registerAutomationCommand(name, handler) {
+        if (typeof name !== 'string' || !name || typeof handler !== 'function') {
+            throw new Error('registerAutomationCommand requires a command name and a handler function.');
+        }
+        automationCommands.set(name, handler);
+    }
+
+    registerAutomationCommand('set_parameter', (payload) => {
+        const value = typeof payload?.value === 'string' ? payload.value : null;
+        if (!value) {
+            throw new Error('set_parameter requires a value.');
+        }
+        const handler = app.services?.eventHandlers?.view?.handleParameterChange;
+        if (typeof handler !== 'function') {
+            throw new Error('Parameter change handler is unavailable.');
+        }
+        handler(value);
+        return { success: true, message: `Parameter updated to ${value}.` };
+    });
+
+    registerAutomationCommand('set_view_mode', (payload) => {
+        const value = typeof payload?.value === 'string' ? payload.value : null;
+        if (value !== 'log' && value !== 'overview') {
+            throw new Error("set_view_mode requires 'log' or 'overview'.");
+        }
+        const handler = app.services?.eventHandlers?.view?.handleViewToggle;
+        if (typeof handler !== 'function') {
+            throw new Error('View toggle handler is unavailable.');
+        }
+        handler(value === 'log');
+        return { success: true, message: `View mode updated to ${value}.` };
+    });
+
+    registerAutomationCommand('export_annotations', (payload) => {
+        if (!handleExportFullResolution(payload || {})) throw new Error('Full-resolution export could not be started.');
+        return { success: true, message: 'Full-resolution annotation export started.' };
+    });
+
+    registerAutomationCommand('apply_workspace', (payload) => {
+        const workspacePayload = payload?.payload;
+        if (!workspacePayload || typeof workspacePayload !== 'object') {
+            throw new Error('apply_workspace requires a workspace payload.');
+        }
+        const applied = applyWorkspaceState(workspacePayload);
+        if (!applied) {
+            throw new Error('Workspace payload could not be applied.');
+        }
+        return { success: true, message: 'Workspace applied.' };
+    });
+
     function executeAutomationCommand(command, payload) {
-        if (command === 'set_parameter') {
-            const value = typeof payload?.value === 'string' ? payload.value : null;
-            if (!value) {
-                throw new Error('set_parameter requires a value.');
-            }
-            const handler = app.services?.eventHandlers?.view?.handleParameterChange;
-            if (typeof handler !== 'function') {
-                throw new Error('Parameter change handler is unavailable.');
-            }
-            handler(value);
-            return { message: `Parameter updated to ${value}.` };
+        const handler = automationCommands.get(command);
+        if (typeof handler !== 'function') {
+            throw new Error(`Unsupported automation command '${command}'.`);
         }
-
-        if (command === 'set_view_mode') {
-            const value = typeof payload?.value === 'string' ? payload.value : null;
-            if (value !== 'log' && value !== 'overview') {
-                throw new Error("set_view_mode requires 'log' or 'overview'.");
-            }
-            const handler = app.services?.eventHandlers?.view?.handleViewToggle;
-            if (typeof handler !== 'function') {
-                throw new Error('View toggle handler is unavailable.');
-            }
-            handler(value === 'log');
-            return { message: `View mode updated to ${value}.` };
-        }
-
-        if (command === 'export_annotations') {
-            if (!handleExportFullResolution(payload || {})) throw new Error('Full-resolution export could not be started.');
-            return { message: 'Full-resolution annotation export started.' };
-        }
-
-        if (command === 'apply_workspace') {
-            const workspacePayload = payload?.payload;
-            if (!workspacePayload || typeof workspacePayload !== 'object') {
-                throw new Error('apply_workspace requires a workspace payload.');
-            }
-            const applied = applyWorkspaceState(workspacePayload);
-            if (!applied) {
-                throw new Error('Workspace payload could not be applied.');
-            }
-            return { message: 'Workspace applied.' };
-        }
-
-        throw new Error(`Unsupported automation command '${command}'.`);
+        const context = {
+            dispatch: (...args) => app.store.dispatch(...args),
+            getState: () => app.store.getState()
+        };
+        return handler(payload, context) || {};
     }
 
     function handleAutomationCommand(sourceData) {
@@ -1098,7 +1140,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 payload = rawPayload;
             }
             const result = executeAutomationCommand(command, payload);
-            publishAutomationResult(requestId, true, result?.message || 'OK', result?.data ?? null);
+            publishAutomationResult(requestId, result?.success !== false, result?.message || 'OK', result?.data ?? null);
         } catch (error) {
             console.error('[Session] Automation command failed:', error);
             publishAutomationResult(requestId, false, error?.message || String(error));
@@ -1136,6 +1178,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         const requestId = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+        lastTriggeredRequestId = requestId;
         // Assign `data` as a whole rather than mutating its columns in place.
         // Bokeh only emits a document patch when the property itself is set, so
         // an in-place mutation plus change.emit() notifies BokehJS listeners but
@@ -1155,7 +1198,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
 
         ensureSessionStatusListener();
-        const sent = triggerServerSessionAction('generate_static_html', null);
+        // Send what is on screen so the file carries current annotations, layout and offsets.
+        const currentState = app.store?.getState?.();
+        const sent = triggerServerSessionAction('generate_static_html', {
+            workspace: currentState ? buildWorkspacePayload(selectPersistableState(currentState)) : null
+        });
         if (!sent) {
             showToast('Static HTML export is unavailable in this session.', 'error', 5000);
             console.error('[Session] Session action source is unavailable.');
@@ -1176,6 +1223,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const sent = triggerServerSessionAction('export_annotations', {
             workspace: buildWorkspacePayload(state),
             output_path: options.output_path,
+            include_proposed: Boolean(options.include_proposed ?? options.includeProposed ?? false),
             include_all_resolutions: Boolean(options.include_all_resolutions ?? options.includeAllResolutions ?? state.annotationPanel?.includeAllResolutions),
             background_window_s: options.background_window_s ?? state.annotationPanel?.backgroundWindowS ?? 300,
             min_context_s: options.min_context_s ?? state.annotationPanel?.minContextS ?? 60
@@ -1286,16 +1334,70 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!Array.isArray(entries) || !entries.length) {
             throw new Error('No classifier intervals found in file.');
         }
-        if (!app.actions?.classificationsReplaceAll || typeof app.store?.dispatch !== 'function') {
+        if (!app.actions?.classificationsAdded || !app.actions?.classificationsReplaceAll
+            || typeof app.store?.dispatch !== 'function') {
             throw new Error('Classification store actions are unavailable.');
         }
-        app.store.dispatch(app.actions.classificationsReplaceAll(entries));
-        const state = app.store.getState();
-        const count = Array.isArray(state?.classifications?.allIds) ? state.classifications.allIds.length : 0;
-        if (!count) {
+        const existing = app.store.getState()?.classifications || {};
+        const existingIds = Array.isArray(existing.allIds) ? existing.allIds : [];
+
+        // One CSV is imported per target sound, so the default is to ADD to what
+        // is already loaded. Replacing needs an explicit choice.
+        let replace = false;
+        if (existingIds.length && typeof window.confirm === 'function') {
+            const addToExisting = window.confirm(
+                `${existingIds.length} classifier interval(s) are already loaded.\n\n`
+                + 'OK = add the imported intervals to the existing ones.\n'
+                + 'Cancel = replace all existing intervals with the imported ones.'
+            );
+            replace = !addToExisting;
+        }
+
+        if (replace) {
+            app.store.dispatch(app.actions.classificationsReplaceAll(entries));
+            const count = app.store.getState()?.classifications?.allIds?.length || 0;
+            if (!count) {
+                throw new Error('No valid classifier intervals were imported.');
+            }
+            return { added: count, skipped: 0, total: count, replaced: true };
+        }
+
+        // Mirrors the reducer's normalisation (source id defaults to 'source').
+        const keyOf = entry => [
+            entry?.positionId ?? entry?.position_id ?? entry?.position ?? '',
+            String(entry?.sourceId ?? entry?.source_id ?? entry?.source ?? '').trim() || 'source',
+            Math.min(Number(entry?.start ?? entry?.startMs ?? entry?.start_ms),
+                Number(entry?.end ?? entry?.endMs ?? entry?.end_ms)),
+        ].map(part => String(part).trim()).join('|');
+        const seen = new Set(existingIds.map(id => keyOf(existing.byId?.[id])));
+        const fresh = [];
+        entries.forEach(entry => {
+            const key = keyOf(entry);
+            if (seen.has(key)) return;
+            seen.add(key);
+            fresh.push(entry);
+        });
+        const skipped = entries.length - fresh.length;
+        if (!fresh.length) {
+            if (!existingIds.length) {
+                throw new Error('No valid classifier intervals were imported.');
+            }
+            return { added: 0, skipped, total: existingIds.length, replaced: false };
+        }
+
+        const previousSelectedId = existing.selectedId ?? null;
+        app.store.dispatch(app.actions.classificationsAdded(fresh));
+        const after = app.store.getState()?.classifications || {};
+        const total = Array.isArray(after.allIds) ? after.allIds.length : 0;
+        const added = total - existingIds.length;
+        if (added <= 0 && !existingIds.length) {
             throw new Error('No valid classifier intervals were imported.');
         }
-        return count;
+        // The reducer selects the last imported row; keep the user's selection.
+        if (previousSelectedId !== null && typeof app.actions.classificationSelect === 'function') {
+            app.store.dispatch(app.actions.classificationSelect(previousSelectedId));
+        }
+        return { added: Math.max(added, 0), skipped, total, replaced: false };
     }
 
     function handleImportClassifications() {
@@ -1322,9 +1424,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     const entries = treatAsJson
                         ? (typeof utils.parseClassificationsJson === 'function' ? utils.parseClassificationsJson(fileText) : [])
                         : (typeof utils.parseClassificationsCsv === 'function' ? utils.parseClassificationsCsv(fileText) : []);
-                    const count = importClassificationEntries(entries);
-                    console.info(`[Session] Imported ${count} classifier interval(s).`);
-                    showToast(`Imported ${count} classifier interval(s).`, 'info', 3000);
+                    const outcome = importClassificationEntries(entries);
+                    const message = outcome.replaced
+                        ? `Replaced classifications with ${outcome.added} interval(s).`
+                        : `Added ${outcome.added} classifier interval(s)`
+                            + (outcome.skipped ? ` (${outcome.skipped} duplicate(s) skipped)` : '')
+                            + `; ${outcome.total} total.`;
+                    console.info(`[Session] ${message}`);
+                    showToast(message, 'info', 3500);
                 } catch (error) {
                     console.error('[Session] Failed to import classifications:', error);
                     showToast(error?.message || 'Failed to import classifications.', 'error', 5000);
@@ -1407,12 +1514,328 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         fileInput.click();
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Autosave (live: server writes <config>.workspace.json; static: browser localStorage)
+    // ------------------------------------------------------------------------------------------
+    const AUTOSAVE_DELAY_MS = 2000;
+    const AUTOSAVE_MAX_WAIT_MS = 15000;
+    const STATIC_STORAGE_PREFIX = 'nsa.static.workspace.v1.';
+    const TRANSIENT_VIEW_KEYS = ['regionJumpHistory', 'lastRegionJumpViewport', 'regionNoteFocusRequestId',
+        'regionNoteStatus', 'notice'];
+    const TRANSIENT_REGION_KEYS = ['addAreaTargetId', 'isMergeModeActive', 'metricsRevision'];
+
+    let autosaveStarted = false;
+    let autosaveRev = 0;
+    let autosaveSessionId = null;
+    let autosaveScheduler = null;
+    let autosaveIndicator = null;
+    let autosaveLastRefs = null;
+    let autosaveArmed = false;
+    let staticBaseSignature = 'none';
+    const pendingAutosaveRequests = new Set();
+
+    function isStaticDocument() {
+        // Only the exporter marks a page static. A live page whose session-action source attaches
+        // late must still save to the server, not to localStorage.
+        return app.registry?.models?.config?.static_document === true;
+    }
+
+    /** Content hash the static exporter bakes into the page (<meta name="nsa-export-id">), or ''. */
+    function staticExportId() {
+        try {
+            return document.querySelector('meta[name="nsa-export-id"]')?.getAttribute('content') || '';
+        } catch (error) {
+            return '';
+        }
+    }
+
+    /** The slices worth keeping: no hover/tap, audio transport, undo history or one-shot UI signals. */
+    function selectPersistableState(state) {
+        if (!state || typeof state !== 'object') return {};
+        const omit = (source, keys) => {
+            const copy = { ...(source || {}) };
+            keys.forEach(key => { delete copy[key]; });
+            return copy;
+        };
+        const persisted = {
+            view: omit(state.view, TRANSIENT_VIEW_KEYS),
+            markers: state.markers,
+            classifications: state.classifications,
+            regions: omit(state.regions, TRANSIENT_REGION_KEYS),
+            layout: state.layout,
+        };
+        if (state.annotationPanel) persisted.annotationPanel = omit(state.annotationPanel, ['clearMarkersPending']);
+        Object.keys(persisted).forEach(key => { if (persisted[key] === undefined) delete persisted[key]; });
+        return persisted;
+    }
+
+    /** References whose change means "something worth saving happened". */
+    function autosaveWatchedRefs(state) {
+        const s = state || {};
+        return [s.regions?.byId, s.regions?.allIds, s.regions?.categories, s.markers?.byId, s.markers?.allIds,
+            s.layout, s.view?.positionChartOffsets, s.view?.positionAudioOffsets, s.view?.positionDisplayTitles,
+            s.classifications?.byId];
+    }
+
+    function refsDiffer(a, b) {
+        if (!a || !b || a.length !== b.length) return true;
+        for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return true;
+        return false;
+    }
+
+    /** Debounce with a maximum wait: `notify()` on every change; `flush` runs 2 s after the last one
+     *  and never more than 15 s after the first unsaved one. Timers are injectable for tests. */
+    function createAutosaveScheduler(options) {
+        const delayMs = options.delayMs ?? AUTOSAVE_DELAY_MS;
+        const maxWaitMs = options.maxWaitMs ?? AUTOSAVE_MAX_WAIT_MS;
+        const setTimer = options.setTimer || ((fn, ms) => window.setTimeout(fn, ms));
+        const clearTimer = options.clearTimer || (id => window.clearTimeout(id));
+        const now = options.now || (() => Date.now());
+        let timer = null;
+        let firstPendingAt = null;
+        function run() {
+            if (timer !== null) clearTimer(timer);
+            timer = null;
+            firstPendingAt = null;
+            options.flush();
+        }
+        return {
+            notify() {
+                const t = now();
+                if (firstPendingAt === null) firstPendingAt = t;
+                if (timer !== null) clearTimer(timer);
+                timer = setTimer(run, Math.max(0, Math.min(delayMs, firstPendingAt + maxWaitMs - t)));
+            },
+            flushNow() { if (firstPendingAt !== null) run(); },
+            cancel() { if (timer !== null) clearTimer(timer); timer = null; firstPendingAt = null; },
+            get pending() { return firstPendingAt !== null; },
+        };
+    }
+
+    function ensureAutosaveIndicator() {
+        if (autosaveIndicator && document.body?.contains(autosaveIndicator)) return autosaveIndicator;
+        if (!document?.body) return null;
+        const el = document.createElement('div');
+        el.id = 'nsa-autosave-indicator';
+        el.style.cssText = 'position:fixed;right:10px;bottom:6px;z-index:9000;font:11px/1.2 sans-serif;'
+            + 'color:#475467;background:rgba(255,255,255,0.8);padding:2px 6px;border-radius:4px;'
+            + 'pointer-events:none;opacity:0.75;';
+        document.body.appendChild(el);
+        autosaveIndicator = el;
+        return el;
+    }
+
+    function setAutosaveIndicator(text, tone) {
+        const el = ensureAutosaveIndicator();
+        if (!el) return;
+        el.textContent = text;
+        el.style.color = tone === 'error' ? '#b42318' : (tone === 'warning' ? '#b54708' : '#475467');
+    }
+
+    function clockText(iso) {
+        const date = iso ? new Date(iso) : new Date();
+        const valid = Number.isFinite(date.getTime()) ? date : new Date();
+        return `${String(valid.getHours()).padStart(2, '0')}:${String(valid.getMinutes()).padStart(2, '0')}`;
+    }
+
+    function staticStorageKey() {
+        const job = app.registry?.models?.jobNumber;
+        // Keyed on the export too, so edits made on an older export never shadow a newer one.
+        const exportId = staticExportId();
+        return STATIC_STORAGE_PREFIX + (job || (window.location?.pathname || 'page')) + (exportId ? `:${exportId}` : '');
+    }
+
+    function stateSignature(appState) {
+        const regions = appState?.regions || {};
+        const markers = appState?.markers || {};
+        return `${Object.keys(regions.byId || {}).length}:${Object.keys(markers.byId || {}).length}:`
+            + `${regions.counter ?? 0}:${markers.counter ?? 0}`;
+    }
+
+    function readStaticLocalState() {
+        try {
+            const raw = window.localStorage.getItem(staticStorageKey());
+            if (!raw) return null;
+            const stored = JSON.parse(raw);
+            // Edits made on top of a different exported snapshot would shadow a newer export.
+            if (stored && stored.baseSignature === staticBaseSignature && stored.appState) return stored.appState;
+        } catch (error) { /* storage blocked or corrupt: ignore */ }
+        return null;
+    }
+
+    function writeStaticLocalState(appState) {
+        try {
+            window.localStorage.setItem(staticStorageKey(), JSON.stringify({
+                baseSignature: staticBaseSignature, savedAt: new Date().toISOString(), appState }));
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /** " | Log 5 s" when the exporter averaged the 1 s spectrogram to keep the file small. */
+    function staticStepNote() {
+        const step = Number(app.registry?.models?.config?.static_log_step_s);
+        return Number.isFinite(step) && step > 0 ? ` | Spectrogram: Log ${step} s` : '';
+    }
+
+    function flushAutosave(options) {
+        if (!app.store?.getState) return false;
+        const persistable = selectPersistableState(app.store.getState());
+        if (isStaticDocument()) {
+            const ok = writeStaticLocalState(persistable);
+            setAutosaveIndicator(ok ? `Saved in this browser ${clockText()}${staticStepNote()}` : 'Browser storage unavailable',
+                ok ? 'info' : 'warning');
+            return ok;
+        }
+        autosaveRev += 1;
+        const payload = { ...buildWorkspacePayload(persistable), sessionId: autosaveSessionId, rev: autosaveRev };
+        // The pagehide flush is this tab's last word: a tab opened by a reload may adopt it.
+        if (options && options.final === true) payload.final = true;
+        const sent = triggerServerSessionAction('autosave_workspace', payload);
+        if (sent) {
+            pendingAutosaveRequests.add(lastTriggeredRequestId);
+            setAutosaveIndicator('Saving...', 'info');
+        }
+        return sent;
+    }
+
+    /** Called from the session status listener. Returns true when the status was an autosave one. */
+    function handleAutosaveStatus(requestId, level, message, tag) {
+        if (typeof tag !== 'string' || !tag.startsWith('autosave:')) return false;
+        pendingAutosaveRequests.delete(requestId);
+        const parts = tag.split(':');
+        const status = parts[1];
+        const savedAt = parts.slice(3).join(':');
+        if (status === 'ok') setAutosaveIndicator(`Saved ${clockText(savedAt)}`, 'info');
+        else if (status === 'unavailable') setAutosaveIndicator('Autosave off (no config)', 'warning');
+        else if (status === 'conflict') setAutosaveIndicator('Not saved: newer copy open elsewhere', 'warning');
+        else setAutosaveIndicator('Autosave failed', 'error');
+        return true;
+    }
+
+    const LAYOUT_REF_INDEX = 5;  // position of `layout` in autosaveWatchedRefs
+    const AUTOSAVE_SETTLE_MS = 3000;
+
+    /** True when the change between two watched-ref snapshots came from the user. Init/rehydration
+     *  never counts; a layout-only change counts only for a layout action after the page has settled. */
+    function isUserAutosaveChange(previousRefs, nextRefs, actionType, sinceStartMs) {
+        // The startup restore runs before autosave starts, so a rehydration seen here is a deliberate
+        // "Load workspace" / apply_workspace and counts as a user change.
+        const { INITIALIZE_STATE } = app.actionTypes || {};
+        if (actionType === '@@INIT' || actionType === INITIALIZE_STATE) return false;
+        const annotationChanged = nextRefs.some((ref, i) => i !== LAYOUT_REF_INDEX && ref !== previousRefs[i]);
+        if (annotationChanged) return true;
+        return typeof actionType === 'string' && actionType.startsWith('layout/') && sinceStartMs > AUTOSAVE_SETTLE_MS;
+    }
+
+    function startAutosave() {
+        if (autosaveStarted || !app.store?.subscribe) return false;
+        autosaveStarted = true;
+        autosaveSessionId = `${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
+        autosaveLastRefs = autosaveWatchedRefs(app.store.getState());
+        autosaveScheduler = createAutosaveScheduler({ flush: flushAutosave });
+        const startedAt = Date.now();
+        app.store.subscribe(() => {
+            const state = app.store.getState();
+            const refs = autosaveWatchedRefs(state);
+            if (!refsDiffer(refs, autosaveLastRefs)) return;
+            const previous = autosaveLastRefs;
+            autosaveLastRefs = refs;
+            // Nothing is written until the user has changed something: init, rehydration and layout
+            // set-up after load must never replace a good autosave with a blank or default state.
+            if (!autosaveArmed) {
+                if (!isUserAutosaveChange(previous, refs, state.system?.lastAction?.type, Date.now() - startedAt)) return;
+                autosaveArmed = true;
+            }
+            autosaveScheduler.notify();
+        });
+        const flushNow = () => autosaveScheduler.flushNow();
+        window.addEventListener('pagehide', () => {
+            if (autosaveScheduler.pending) { autosaveScheduler.cancel(); flushAutosave({ final: true }); }
+        });
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushNow(); });
+        if (app.keymap?.registerKeyBindings) {
+            app.keymap.registerKeyBindings([{
+                id: 'saveWorkspaceNow', keys: ['s'], ctrl: true, alt: false, shift: false, intent: 'saveWorkspaceNow',
+                group: 'Edit', label: 'Ctrl+S', description: 'Save annotations now (autosave also runs by itself)',
+                run: () => { autosaveScheduler.cancel(); flushAutosave(); }
+            }]);
+        }
+        setAutosaveIndicator(isStaticDocument() ? `Edits kept in this browser${staticStepNote()}` : 'Autosave on', 'info');
+        return true;
+    }
+
+    // Quantised static spectra (see visualization/static_payload.py) are decoded before first render.
+    function decodeQuantizedLevels(codes, offset, step) {
+        const integral = Number.isInteger(offset) && Number.isInteger(step);
+        const out = integral ? new Int16Array(codes.length) : new Float32Array(codes.length);
+        for (let i = 0; i < codes.length; i += 1) out[i] = codes[i] * step + offset;
+        return out;
+    }
+
+    function isCodeArray(value) {
+        return value && ArrayBuffer.isView(value) && value.BYTES_PER_ELEMENT === 1;
+    }
+
+    function decodeStaticPayload(models) {
+        const spectrogramSources = models?.spectrogramSources || {};
+        Object.keys(spectrogramSources).forEach(position => {
+            const data = spectrogramSources[position]?.log?.data;
+            const column = data?.levels_flat_transposed;
+            if (!data?.quant_step_db || !column || !isCodeArray(column[0])) return;
+            column[0] = decodeQuantizedLevels(column[0], Number(data.quant_offset_db?.[0]) || 0, Number(data.quant_step_db[0]) || 1);
+        });
+        const prepared = models?.preparedGlyphData || {};
+        Object.keys(prepared).forEach(position => {
+            const params = prepared[position]?.log?.prepared_params || {};
+            Object.keys(params).forEach(param => {
+                const entry = params[param];
+                if (!entry || typeof entry !== 'object') return;
+                if (entry.shared_with_log_source) {
+                    const data = spectrogramSources[position]?.log?.data;
+                    if (data?.parameter?.[0] === param) {
+                        entry.levels_flat_transposed = data.levels_flat_transposed?.[0];
+                        entry.times_ms = data.times_ms?.[0];
+                    }
+                } else if (entry.quant_step_db != null && isCodeArray(entry.levels_flat_transposed)) {
+                    const codes = entry.levels_flat_transposed;
+                    const offset = Number(entry.quant_offset_db) || 0;
+                    const step = Number(entry.quant_step_db) || 1;
+                    let decoded = null;
+                    // Decode on first use: only the parameters actually viewed cost memory.
+                    Object.defineProperty(entry, 'levels_flat_transposed', {
+                        configurable: true, enumerable: true,
+                        get() { if (!decoded) decoded = decodeQuantizedLevels(codes, offset, step); return decoded; },
+                        set(value) { decoded = value; },
+                    });
+                }
+            });
+        });
+        return models;
+    }
+
     function applyInitialWorkspaceState() {
+        try {
+            return applyInitialWorkspaceStateInner();
+        } finally {
+            // Autosave starts only after the saved state is restored, so the restore itself is the
+            // baseline and an empty fresh state is never written over a good autosave.
+            try { startAutosave(); } catch (error) { console.error('[Session] Autosave could not start:', error); }
+        }
+    }
+
+    function applyInitialWorkspaceStateInner() {
         ensureSessionStatusListener();
         if (initialStateApplied) {
             return false;
         }
-        const savedState = app.registry?.models?.savedWorkspaceState;
+        let savedState = app.registry?.models?.savedWorkspaceState;
+        if (isStaticDocument()) {
+            staticBaseSignature = stateSignature(savedState);
+            const local = readStaticLocalState();
+            if (local) savedState = local;
+        }
         if (!savedState || typeof savedState !== 'object') {
             return false;
         }
@@ -1436,7 +1859,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         CSV_HEADER: CSV_HEADER.slice(),
         METRIC_COLUMNS: METRIC_COLUMNS.slice(),
         PROVENANCE_COLUMNS: PROVENANCE_COLUMNS.slice(),
-        importClassificationEntries
+        importClassificationEntries,
+        selectPersistableState,
+        createAutosaveScheduler,
+        autosaveWatchedRefs,
+        isUserAutosaveChange,
+        decodeQuantizedLevels,
+        handleAutosaveStatus,
+        flushAutosave,
+        startAutosave
     };
 
     app.session = {
@@ -1445,6 +1876,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleMenuAction,
         applyWorkspaceState,
         applyInitialWorkspaceState,
+        selectPersistableState,
+        decodeStaticPayload,
+        flushAutosave,
         handleExportCsv,
         handleExportFullResolution,
         handleImportCsv,
@@ -1454,6 +1888,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         handleImportAnnotations: handleImportCsv,
         ensureSessionStatusListener,
         ensureAutomationBridge,
+        registerAutomationCommand,
         showToast,
         __testHelpers: testHelpers,
     };

@@ -293,7 +293,8 @@ describe('NoiseSurveyApp.session extra flows', () => {
 
         expect(app.registry.models.sessionStatusSource.change.connect).toHaveBeenCalledTimes(1);
         expect(app.registry.models.sessionActionSource.data.command).toEqual(['generate_static_html']);
-        expect(app.registry.models.sessionActionSource.data.payload).toEqual([null]);
+        // The browser now sends its current annotations/layout/offsets with the request.
+        expect(app.registry.models.sessionActionSource.data.payload[0]).toHaveProperty('workspace');
         expect(app.registry.models.sessionActionSource.data.request_id[0]).toMatch(/^\d+-[0-9a-f]+$/);
         // Replacing ColumnDataSource.data is itself the Bokeh property change. An
         // extra change.emit() would notify local listeners but does not create the
@@ -348,6 +349,96 @@ describe('NoiseSurveyApp.session extra flows', () => {
             payload: migratedState
         });
         expect(console.info).toHaveBeenCalledWith('[Session] Workspace restored successfully.');
+    });
+
+    const toastTexts = () => Array.from(document.querySelectorAll('#session-toast-container > div')).map(el => el.textContent);
+
+    it('shows a toast when a workspace file is not valid JSON', () => {
+        const { inputs } = interceptFilePicker();
+        session.loadWorkspace();
+        inputs[0].triggerChange({ target: { files: [{ name: 'bad.json', contents: '{not json' }] } });
+
+        expect(app.store.dispatch).not.toHaveBeenCalled();
+        expect(toastTexts().some(text => text.startsWith('Could not read workspace file'))).toBe(true);
+    });
+
+    it('shows a toast when a workspace has only sourceConfigs, and when sources differ', () => {
+        expect(session.applyWorkspaceState({ sourceConfigs: [{ file_path: 'a.csv' }] })).toBe(false);
+        expect(toastTexts().some(text => text.includes('appState'))).toBe(true);
+
+        app.registry.models.sourceConfigs = [{ file_path: 'current.csv' }];
+        app.store.getState.mockReturnValue({ regions: { byId: {}, allIds: [] } });
+        session.applyWorkspaceState({ appState: {}, sourceConfigs: [{ file_path: 'saved.csv' }] });
+        expect(toastTexts().some(text => text.includes('different source files'))).toBe(true);
+    });
+
+    describe('classification import', () => {
+        let classifications;
+        let parsed;
+
+        function setUpClassifications(existing) {
+            classifications = { byId: {}, allIds: [], selectedId: null };
+            existing.forEach((entry, i) => {
+                classifications.byId[i + 1] = { id: i + 1, ...entry };
+                classifications.allIds.push(i + 1);
+            });
+            classifications.selectedId = existing.length ? 1 : null;
+            app.actions.classificationsAdded = vi.fn(entries => ({ type: 'add', entries }));
+            app.actions.classificationsReplaceAll = vi.fn(entries => ({ type: 'replace', entries }));
+            app.actions.classificationSelect = vi.fn(id => ({ type: 'select', id }));
+            app.store.getState.mockImplementation(() => ({ classifications }));
+            app.store.dispatch.mockImplementation(action => {
+                if (action.type === 'add') {
+                    action.entries.forEach(entry => {
+                        const id = classifications.allIds.length + 1;
+                        classifications.byId[id] = { id, ...entry };
+                        classifications.allIds.push(id);
+                        classifications.selectedId = id;
+                    });
+                } else if (action.type === 'replace') {
+                    classifications = { byId: {}, allIds: [], selectedId: null };
+                    action.entries.forEach((entry, i) => {
+                        classifications.byId[i + 1] = { id: i + 1, ...entry };
+                        classifications.allIds.push(i + 1);
+                    });
+                }
+            });
+            app.features.classifications = { utils: { parseClassificationsCsv: vi.fn(() => parsed) } };
+        }
+
+        function runImport() {
+            const { inputs } = interceptFilePicker();
+            session.handleMenuAction('import_classifications');
+            inputs[0].triggerChange({ target: { files: [{ name: 'dog.csv', contents: 'x' }] } });
+        }
+
+        it('adds to existing classifications, skips duplicates and keeps the selection', () => {
+            setUpClassifications([{ positionId: 'P1', sourceId: 'motorcycle', start: 1000, end: 2000 }]);
+            parsed = [
+                { positionId: 'P1', sourceId: 'motorcycle', start: 1000, end: 2000 },
+                { positionId: 'P1', sourceId: 'dog', start: 1000, end: 2000 }
+            ];
+            window.confirm = vi.fn(() => true);
+
+            runImport();
+
+            expect(app.actions.classificationsReplaceAll).not.toHaveBeenCalled();
+            expect(app.actions.classificationsAdded).toHaveBeenCalledWith([parsed[1]]);
+            expect(classifications.allIds).toHaveLength(2);
+            expect(app.actions.classificationSelect).toHaveBeenCalledWith(1);
+            expect(toastTexts().some(text => text.includes('1 duplicate'))).toBe(true);
+        });
+
+        it('replaces only when the user declines to add', () => {
+            setUpClassifications([{ positionId: 'P1', sourceId: 'motorcycle', start: 1000, end: 2000 }]);
+            parsed = [{ positionId: 'P1', sourceId: 'dog', start: 5000, end: 6000 }];
+            window.confirm = vi.fn(() => false);
+
+            runImport();
+
+            expect(app.actions.classificationsReplaceAll).toHaveBeenCalledWith(parsed);
+            expect(classifications.allIds).toHaveLength(1);
+        });
     });
 
     it('imports JSON annotations and CSV annotations through the file picker', () => {

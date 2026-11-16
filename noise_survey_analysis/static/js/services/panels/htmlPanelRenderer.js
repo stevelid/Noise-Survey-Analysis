@@ -26,7 +26,32 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         'copy-marker': 'Copy the selected marker’s saved measurements to the clipboard.',
         'delete-marker': 'Delete the selected marker. Undo can restore it.',
         'clear-markers': 'Remove every marker after confirmation. Undo can restore them.',
+        'suggestion-accept': 'Accept this suggestion so it becomes an ordinary annotation (key A).',
+        'suggestion-reject': 'Reject this suggestion. It stays under Rejected so it is not proposed again (key D).',
+        'suggestion-restore': 'Move this rejected suggestion back to the review queue.',
+        'suggestion-accept-all': 'Accept every proposed region in the list below. One Ctrl+Z reverses it.',
+        'suggestion-purge': 'Delete all rejected suggestions for good. Ctrl+Z restores them.',
+        'suggestion-filter': 'Choose which regions the list shows.',
+        'promote-classifications': 'Turn the classification bands currently shown into proposed regions to review.',
     };
+    const review = () => app.features.review;
+    const AI_TITLE = 'Suggested by an automated reviewer. Accept or reject it; editing it does not accept it.';
+    function aiBadge(item) {
+        const text = review().helpers.badgeText(item);
+        return text ? `<span class="nsa-ai-badge" title="${e(AI_TITLE)}">${e(text)}</span>` : '';
+    }
+    function suggestionCard(item, kind) {
+        if (!review().helpers.isAgent(item) && !item.status) return '';
+        const status = review().helpers.statusOf(item);
+        const agent = item.agent?.name ? ` · ${e(item.agent.name)}` : '';
+        const actions = status === 'proposed'
+            ? `${button('suggestion-accept', 'Accept (A)', `data-kind="${kind}" data-id="${e(item.id)}"`)}${button('suggestion-reject', 'Reject (D)', `data-kind="${kind}" data-id="${e(item.id)}"`)}`
+            : status === 'rejected' ? button('suggestion-restore', 'Restore to review', `data-kind="${kind}" data-id="${e(item.id)}"`) : '';
+        return `<div class="nsa-suggestion-card nsa-suggestion--${status}" data-key="suggestion-card:${kind}:${e(item.id)}">
+            <p class="nsa-suggestion-head">${aiBadge(item) || '<span class="nsa-ai-badge">AI</span>'} <strong>${e(status)}</strong>${agent}</p>
+            ${item.rationale ? `<p class="nsa-rationale" title="Read-only. Edit the note below instead.">${e(item.rationale)}</p>` : ''}
+            ${actions ? `<div class="nsa-buttons">${actions}</div>` : ''}</div>`;
+    }
     const e = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
     const checked = value => value ? ' checked' : '';
     const disabled = value => value ? ' disabled' : '';
@@ -162,28 +187,41 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const label = item => item.name?.trim() || item.note?.trim() || `${timestamp(item.start)} · ${duration(item)}`;
         const checkedIds = data.checkedRegions.map(item => item.id);
         const canMerge = checkedIds.length > 1 && data.checkedRegions.every(item => item.positionId === data.checkedRegions[0].positionId);
-        const list = data.regions.map(item => {
+        const reviewList = review().selectors.selectReviewList(state);
+        const rowHtml = (item, rejected = false) => {
             const categoryIds = item.categoryIds || [item.categoryId];
             const categoryBadges = categoryIds.slice(0, 2).map(id => {
                 const category = data.categories.byId[id];
                 return `<span class="nsa-category-badge" title="Category: ${e(category?.label || id)}" style="border-color:${e(color(category?.color))}"><span class="nsa-category-dot" style="background:${e(color(category?.color))}"></span>${e(category?.label || id)}</span>`;
             }).join('');
-            return `<article class="nsa-region-row${region?.id === item.id ? ' is-selected' : ''}">
+            const proposed = review().helpers.isProposed(item);
+            return `<article class="nsa-region-row${region?.id === item.id ? ' is-selected' : ''}${proposed ? ' is-suggestion' : ''}${rejected ? ' is-rejected' : ''}" data-status="${e(review().helpers.statusOf(item))}">
                 <input type="checkbox" data-key="check-region:${e(item.id)}" data-action="check-region" data-id="${e(item.id)}" aria-label="Select ${e(label(item))} for merge" title="${e(HELP['check-region'])}" aria-description="${e(HELP['check-region'])}"${checked(checkedIds.includes(item.id))}>
                 ${button('select-region', label(item), `data-id="${e(item.id)}" class="nsa-row-button" title="${e(label(item))} · ${e(timestamp(item.start))} · ${e(duration(item))}" aria-pressed="${region?.id === item.id}"`)}
-                <span class="nsa-origin-badge" title="Origin meter: ${e(meterTitle(item.positionId))}">${e(meterTitle(item.positionId))}</span>
+                ${aiBadge(item)}<span class="nsa-origin-badge" title="Origin meter: ${e(meterTitle(item.positionId))}">${e(meterTitle(item.positionId))}</span>
                 ${categoryBadges}${categoryIds.length > 2 ? `<span title="${e(categoryIds.map(id => data.categories.byId[id]?.label || id).join(', '))}">+${categoryIds.length - 2}</span>` : ''}
+                ${rejected ? button('suggestion-restore', 'Restore', `data-kind="region" data-id="${e(item.id)}"`) : ''}
             </article>`;
-        }).join('');
+        };
+        const list = reviewList.shown.map(item => rowHtml(item)).join('');
+        const counts = reviewList.counts;
+        const chip = (value, text, count) => button('suggestion-filter', `${text} (${count})`, `data-value="${value}" aria-pressed="${reviewList.filter === value}"`);
+        const proposedShown = reviewList.shown.filter(review().helpers.isProposed).length;
+        const reviewBar = (counts.review || counts.rejected || reviewList.filter !== 'all') ? `<div class="nsa-review-bar" role="group" aria-label="Review filter">
+            ${chip('all', 'All', counts.all)}${chip('review', 'To review', counts.review)}${chip('mine', 'Mine', counts.mine)}
+            ${proposedShown ? button('suggestion-accept-all', `Accept all shown (${proposedShown})`) : ''}</div>` : '';
+        const rejectedGroup = reviewList.rejected.length ? `<details class="nsa-rejected" data-key="rejected-regions"><summary title="Kept so an agent does not propose them again.">Rejected (${reviewList.rejected.length})</summary>
+            <div class="nsa-annotation-list" data-scroll-key="rejected-list">${reviewList.rejected.map(item => rowHtml(item, true)).join('')}</div>
+            ${button('suggestion-purge', `Delete ${reviewList.rejected.length} rejected`, 'class="nsa-danger"')}</details>` : '';
         const filters = data.ui.filters;
-        const listSection = `<section class="nsa-region-list-section"><h3>Regions <small>${data.regions.length} / ${data.allRegions.length}</small></h3>
+        const listSection = `<section class="nsa-region-list-section"><h3>Regions <small>${reviewList.shown.length} / ${data.allRegions.length - reviewList.rejected.length}</small></h3>${reviewBar}
             <details class="nsa-region-filters" data-key="region-filters"><summary>Filters${Object.values(filters).some(Boolean) ? ' · active' : ''}</summary><div class="nsa-filters">
             <label>Category<select data-key="filter-category" data-action="filter" data-field="categoryId">${option('', 'All categories', filters.categoryId)}${data.categories.allIds.map(id => option(id, data.categories.byId[id].label, filters.categoryId)).join('')}</select></label>
             <label>Present at<select data-key="filter-meter" data-action="filter" data-field="presentAt">${option('', 'Any meter', filters.presentAt)}${data.positions.map(id => option(id, meterTitle(id), filters.presentAt)).join('')}</select></label>
             <label class="nsa-check"><input type="checkbox" data-action="filter" data-field="onlyOneMeter"${checked(filters.onlyOneMeter)}>Present at one meter only</label>
             <label class="nsa-check"><input type="checkbox" data-action="filter" data-field="hasUnchecked"${checked(filters.hasUnchecked)}>Has unchecked meters</label>
             </div></details>
-            <div class="nsa-annotation-list" data-scroll-key="region-list">${list || '<p class="nsa-help">No regions match these filters.</p>'}</div>
+            <div class="nsa-annotation-list" data-scroll-key="region-list">${list || '<p class="nsa-help">No regions match these filters.</p>'}</div>${rejectedGroup}
             ${checkedIds.length ? `<div class="nsa-buttons">${button('merge-checked', `Merge selected (${checkedIds.length})`, disabled(!canMerge))}${button('clear-region-checks', 'Clear selection')}</div><p class="nsa-help">${canMerge ? 'Keeps the active region’s category; combines notes. Originals are retained for Unmerge.' : 'Choose at least two regions from the same origin meter.'} ${checkedIds.length - data.regions.filter(item => checkedIds.includes(item.id)).length ? 'Selection includes regions hidden by filters.' : ''}</p>` : ''}</section>`;
         let selectedHtml = '<p class="nsa-help">Select a region from the list or a chart. Shift+drag creates a region; R twice marks its bounds.</p>';
         if (region) {
@@ -196,6 +234,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             selectedHtml = `<section class="nsa-selected" data-key="selected-region:${e(region.id)}">
                 <h3>Selected region <span class="nsa-origin-badge">${e(meterTitle(region.positionId))}</span></h3>
                 <p class="nsa-help">${e(timestamp(region.start))} · ${e(duration(region))}${region.areas.length > 1 ? ` · ${region.areas.length} areas` : ''}</p>
+                ${suggestionCard(region, 'region')}
                 <label>Notes<textarea rows="2" data-key="region-note:${e(region.id)}" data-action="region-note" data-id="${e(region.id)}" placeholder="What can you hear?">${e(region.note)}</textarea></label>
                 <p class="nsa-help">Save on leaving the field or Ctrl+Enter; Esc cancels.</p>
                 <div class="nsa-category-chips" role="group" aria-label="Categories for selected region">${data.categories.allIds.map(id => button('region-category', data.categories.byId[id].label, `data-id="${e(region.id)}" data-key="category-chip:${e(id)}" data-value="${e(id)}" aria-pressed="${(region.categoryIds || [region.categoryId]).includes(id)}" style="--category-color:${e(color(data.categories.byId[id].color))}"`)).join('')}</div>
@@ -222,14 +261,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const marker = data.marker;
         const rows = marker?.metrics?.broadband || [];
         const spectral = marker?.metrics?.spectral || [];
-        const list = `<section class="nsa-marker-list-section"><h3>Markers <small>${data.markers.length}</small></h3>
-            <div class="nsa-annotation-list" data-scroll-key="marker-list">${data.markers.map(item => `<article class="nsa-marker-row${item.id === marker?.id ? ' is-selected' : ''}">
+        const liveMarkers = data.markers.filter(item => !review().helpers.isRejected(item));
+        const rejectedMarkers = data.markers.filter(review().helpers.isRejected);
+        const markerRow = (item, rejected = false) => `<article class="nsa-marker-row${item.id === marker?.id ? ' is-selected' : ''}${review().helpers.isProposed(item) ? ' is-suggestion' : ''}${rejected ? ' is-rejected' : ''}">
             <span class="nsa-swatch" style="background:${e(color(item.color))}" aria-hidden="true"></span>
-            <span class="nsa-marker-time">${e(timestamp(item.timestamp))}</span>
-            ${button('select-marker', item.note?.trim() || 'Marker', `data-id="${e(item.id)}" class="nsa-row-button" title="${e(timestamp(item.timestamp))} · ${e(item.note?.trim() || 'Marker')}" aria-pressed="${item.id === marker?.id}"`)}</article>`).join('') || '<p class="nsa-help">No markers yet.</p>'}</div></section>`;
+            <span class="nsa-marker-time">${e(timestamp(item.timestamp))}</span>${aiBadge(item)}
+            ${button('select-marker', item.note?.trim() || 'Marker', `data-id="${e(item.id)}" class="nsa-row-button" title="${e(timestamp(item.timestamp))} · ${e(item.note?.trim() || 'Marker')}" aria-pressed="${item.id === marker?.id}"`)}${rejected ? button('suggestion-restore', 'Restore', `data-kind="marker" data-id="${e(item.id)}"`) : ''}</article>`;
+        const list = `<section class="nsa-marker-list-section"><h3>Markers <small>${liveMarkers.length}</small></h3>
+            <div class="nsa-annotation-list" data-scroll-key="marker-list">${liveMarkers.map(item => markerRow(item)).join('') || '<p class="nsa-help">No markers yet.</p>'}</div>${rejectedMarkers.length ? `<details class="nsa-rejected" data-key="rejected-markers"><summary>Rejected (${rejectedMarkers.length})</summary><div class="nsa-annotation-list" data-scroll-key="rejected-marker-list">${rejectedMarkers.map(item => markerRow(item, true)).join('')}</div></details>` : ''}</section>`;
         const detail = marker ? `<section class="nsa-selected nsa-selected-marker" data-key="selected-marker:${e(marker.id)}">
             <h3>Selected marker</h3>
             <p class="nsa-help">${e(timestamp(marker.timestamp))}</p>
+            ${suggestionCard(marker, 'marker')}
             <label>Notes<textarea rows="2" data-action="marker-note" data-id="${e(marker.id)}" data-key="marker-note:${e(marker.id)}" placeholder="What can you hear?">${e(marker.note)}</textarea>
             </label>
             <p class="nsa-help">Save on leaving the field or Ctrl+Enter; Esc cancels.</p>
@@ -264,15 +307,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const entry = data.classification;
         const visible = entry && data.classifications.some(item => item.id === entry.id);
         const filters = data.classificationFilters;
+        // Classifications are stored in source time; the charts (and regions) use display time.
+        const offsetOf = positionId => Number(state.view?.positionChartOffsets?.[positionId]) || 0;
         const detail = entry ? `<section>
             <h3>${e(entry.sourceLabel || entry.sourceId)}</h3>
-            <p>${e(timestamp(entry.start))} – ${e(timestamp(entry.end))}</p>
+            <p>${e(timestamp(entry.start + offsetOf(entry.positionId)))} – ${e(timestamp(entry.end + offsetOf(entry.positionId)))}</p>
             <p>${e(app.features.annotationPanel.selectors.selectMeterTitle(state, entry.positionId))} · Score ${Number.isFinite(entry.confidence) ? entry.confidence.toFixed(2) : 'unscored'} · ${e(entry.state || '')}</p>
             <p>${e(entry.description)}</p>${!visible ? '<p role="status">Selected classification is hidden by current filters.</p>' : ''}<div class="nsa-buttons">${button('preview-classification', 'Preview (P)')}
                 ${button('elevate-classification', 'Elevate to Region')}</div>
             </section>` : '<p class="nsa-help">Selecting a classification leaves the cursor, viewport and audio unchanged. P explicitly previews it.</p>';
         return `${detail}<h3>Classifications <small>Showing ${data.classifications.length} of ${data.classificationCounts.total}</small>
             </h3>
+            <div class="nsa-buttons">${button('promote-classifications', `Promote shown to suggestions (${data.classifications.length})`, disabled(!data.classifications.length))}</div>
             <label>Minimum score <output>${Number(filters.minimumScore || 0).toFixed(2)}</output>
             <input type="range" min="0" max="1" step="0.01" value="${Number(filters.minimumScore || 0)}" data-key="classification-score" data-action="classification-score">
             </label>
@@ -289,7 +335,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             </div>` : ''}<label>Sort<select data-action="classification-sort" data-key="classification-sort">${[['start', 'Start'], ['score', 'Score (highest first)'], ['source', 'Source'], ['state', 'State'], ['meter', 'Meter']].map(([value, label]) => option(value, label, data.ui.classificationSort)).join('')}</select>
             </label>
             <div class="nsa-annotation-list" data-scroll-key="classification-list">${data.classifications.map(item => `<article class="nsa-classification-row${entry?.id === item.id ? ' is-selected' : ''}">
-            <span class="nsa-swatch" style="background:${e(color(item.color))}"></span>${button('select-classification', `${item.sourceLabel || item.sourceId} · ${timestamp(item.start)} · ${Number.isFinite(item.confidence) ? item.confidence.toFixed(2) : 'unscored'} · ${item.state || ''}`, `data-id="${e(item.id)}" class="nsa-row-button"`)}</article>`).join('') || '<p class="nsa-help">No classifications match these filters.</p>'}</div>`;
+            <span class="nsa-swatch" style="background:${e(color(item.color))}"></span>${button('select-classification', `${item.sourceLabel || item.sourceId} · ${timestamp(item.start + offsetOf(item.positionId))} · ${Number.isFinite(item.confidence) ? item.confidence.toFixed(2) : 'unscored'} · ${item.state || ''}`, `data-id="${e(item.id)}" class="nsa-row-button"`)}</article>`).join('') || '<p class="nsa-help">No classifications match these filters.</p>'}</div>`;
     }
 
     function comparisonPanel(data, state, models, cache) {
@@ -317,30 +363,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         </details>`;
     }
     function keyboardHelp() {
-        const groups = [
-            ['Explore and listen', [
-                ['← / →', 'Move the chart cursor'],
-                ['Space', 'Play or pause audio'],
-                ['M', 'Add a marker at the cursor'],
-                ['P', 'Preview the selected classification'],
-            ]],
-            ['Regions', [
-                ['R, then R', 'Set the start and end at the cursor'],
-                ['Esc', 'Cancel a region in progress'],
-                ['[ / ]', 'Select the previous or next region'],
-                ['B', 'Return to the previous chart view'],
-                ['N', 'Edit the selected region’s note'],
-                ['1–9', 'Cycle the selected region’s state at that meter'],
-                ['Ctrl / Alt + ← / →', 'Adjust the selected region’s start / end'],
-            ]],
-            ['Markers and editing', [
-                ['Ctrl + ← / →', 'Move the selected marker'],
-                ['Delete', 'Delete the selected marker or region'],
-                ['Ctrl + Z / Y', 'Undo / redo'],
-                ['Ctrl + Enter', 'Save a note'],
-                ['Esc', 'Cancel a note draft'],
-            ]],
-        ];
+        // Generated from the live keymap so the list cannot drift from the shortcuts that actually work.
+        const rows = app.keymap?.getKeyBindingsForHelp?.() || [];
+        const grouped = new Map();
+        rows.forEach(row => {
+            if (!grouped.has(row.group)) grouped.set(row.group, []);
+            grouped.get(row.group).push([row.keys, row.description]);
+        });
+        // Typing-field keys are handled by the note editor, not the keymap.
+        grouped.set('Editing a note', [['Ctrl + Enter', 'Save a note'], ['Esc', 'Cancel a note draft']]);
+        const groups = [...grouped.entries()];
         return `<details class="nsa-keyboard-help" data-key="keyboard-help"><summary title="Show keyboard controls for charts and annotations.">Keyboard shortcuts</summary>
             <p class="nsa-help">Use these when you are not typing in a field.</p>
             ${groups.map(([heading, items]) => `<div class="nsa-shortcut-group"><h4>${e(heading)}</h4><dl>${items.map(([keys, description]) => `<div><dt><kbd>${e(keys)}</kbd></dt><dd>${e(description)}</dd></div>`).join('')}</dl></div>`).join('')}

@@ -26,6 +26,10 @@ def export_workspace_request(payload: dict[str, Any]) -> dict[str, Any]:
         output = folder / f"annotations-{stamp}.full-resolution.csv"
     path = export_annotations(workspace, output_path=output,
                               include_all_resolutions=options["include_all_resolutions"],
-                              background_window_s=options["background_window_s"], min_context_s=options["min_context_s"])
-    return {"success": True, "output_path": str(path),
+                              background_window_s=options["background_window_s"], min_context_s=options["min_context_s"],
+                              include_proposed=bool(payload.get("include_proposed", options.get("include_proposed", False))))
+    from noise_survey_analysis.export.annotations import annotations_json_path
+
+    json_path = annotations_json_path(path)
+    return {"success": True, "output_path": str(path), "json_path": str(json_path) if json_path.exists() else None,
             "message": f"Full-resolution annotations exported: {path}"}

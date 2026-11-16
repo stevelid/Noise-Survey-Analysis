@@ -1057,3 +1057,61 @@ _____________________________________________
 - [ ] No copy-to-meter selector or Add Marker at Tap button remains. Shift+drag, R twice, M and double-click still provide the quick annotation routes.
 - [ ] Collapsed Annotation visibility settings hide region bands, marker lines and classification bands independently; annotations remain in their lists and reappear when enabled.
 
+
+
+---
+
+## 20. November 2026 review release (branch `review/2026-11-dashboard-fixes`)
+
+### 20.1 Data loading 🔴
+- [ ] Open a job with NTi split logs (`_RTA_3rd_Log_00/_01`, e.g. 6645-4): the overview line is continuous and zooming in shows the 1 s spectrogram.
+- [ ] Point a config at a missing or corrupt file: the status pane shows `[LOAD ERROR]` naming the file and the other files still load.
+- [ ] Re-run `generate_job_config` on a job with saved offsets: `positions` and `default_view` survive and the console lists what changed.
+- [ ] A position with no 1 s spectral log switches the line to log data and the spectrogram says "No 1 s spectral log for this position".
+- [ ] With a zoomed spectrogram, switch LZeq to LAFmax: the spectrogram re-streams without panning.
+- [ ] A 20 s region on overview-only data shows a "5 min" badge, dimmed values and LAFmax blank; a 2 s event on 1 s data keeps its LAFmax.
+
+### 20.2 Layout and navigation 🟡
+- [ ] 3 positions at 1920x1000: no page scroll; time axes line up across all charts and the overview strip.
+- [ ] Wheel zooms over a chart when the page fits; with Fit rows off the wheel scrolls the page; Ctrl+wheel zooms (not the browser); Shift+wheel pans; W locks zoom.
+- [ ] S collapses the focused spectrogram to a visible strip; Shift+S does all; header "Spec" cycles.
+- [ ] Up/Down move focus; Alt+Up/Down or header arrows reorder; reload keeps the order. Keys 1-9 follow the displayed order.
+- [ ] Y cycles auto/shared/locked; F toggles the dock (a closed dock stays closed after reload); O solos and restores, also after a reload; Z zooms to the selected region and B returns; + - 0 Shift+arrows zoom/pan.
+- [ ] ? opens the help overlay listing all keys (including A/D and { }); keys do nothing while it is open; Esc closes it.
+- [ ] Menu/Plots items do not wrap and Esc closes the dropdowns. Header "Offsets" reveals both spinners; a non-zero offset shows an amber chip.
+- [ ] Zooming into slow 1 s data shows a "Loading 1 s data" banner over that position.
+
+### 20.3 Agent suggestions and control API 🔴
+- [ ] `nsa-ctl call add_regions` adds faint dashed regions; hover shows note, confidence and (truncated) rationale; the list shows an AI badge and "To review (n)".
+- [ ] A/D accept/reject and select the next; { } step; Ctrl+Z undoes; "Accept all shown" is one undo step; one Ctrl+Z undoes a whole agent command including new categories.
+- [ ] Rejected group purge works; editing a note does not accept the suggestion.
+- [ ] `add_regions` with `time_basis: source` and a BST time converted to UTC lands on the right data row; `show` scrolls to the position and toasts.
+- [ ] Run `nsa-ctl apply-workspace` twice in one session: both apply. With no tab open the CLI reports an error and exits 1.
+- [ ] Refresh the browser, wait over 5 min, `nsa-ctl status`: still active.
+- [ ] Quick CSV export excludes proposed/rejected suggestions; re-import keeps status/source.
+- [ ] Import two classification CSVs in turn: both sets show, duplicates are skipped, Cancel in the dialog replaces. "Promote shown to suggestions" creates proposed regions once.
+
+### 20.4 Autosave and workspace 🔴
+- [ ] Open a job, add a region, wait 3 s: "Saved hh:mm" appears and `<config>.workspace.json` exists. Reload: the region is back. `?fresh=1`: not restored and the file is untouched until you edit.
+- [ ] Two tabs on one job: the second shows "not saved: newer copy open elsewhere"; a plain reload never leaves a tab in permanent conflict.
+- [ ] Ctrl+S saves immediately, including inside a note field, with no browser Save dialog.
+- [ ] Timestamped `.workspace.<ts>.bak.json` backups appear (newest 10 kept).
+- [ ] Load a corrupt workspace JSON, a sourceConfigs-only file and a workspace for other sources: each shows a toast.
+
+### 20.5 Static HTML 🟢
+- [ ] `--generate-static` prints the estimate and chosen detail (full / lines with a spectrogram step / regions); regions, notes, offsets and layout come from the autosave.
+- [ ] In `lines` mode a random time far from any region shows 1 s lines and the "Log N s" spectrogram.
+- [ ] Edit a note in the static page and reload: the edit persists; a newer export of the same job does not show stale edits.
+- [ ] `--audio-clips`: a tap inside a region with a clip plays it (browser player).
+
+### 20.6 Audio 🔴
+- [ ] Audio toggle "Audio: VLC / Browser". Browser: tap, Play, cursor advances; switching position while playing continues at the same instant.
+- [ ] Boost is clearly louder (+20 dB) without harsh clipping, in both backends; 2x stays 2x after a file or position change.
+- [ ] VLC: playing across a WAV boundary continues into the next file; a gap over 2 s stops cleanly and the UI shows stopped.
+- [ ] Fast arrow-key taps play only the last position and the cursor does not jump back.
+- [ ] With a non-zero chart offset, classification bands line up with events; Preview and "Elevate to region" land on them.
+- [ ] Opening a job with no alignment cache shows progress while other tabs and the control API stay responsive. Closing a tab frees server memory after about 20 s; a reconnect within 20 s still works.
+
+### 20.7 LLM export 🔴
+- [ ] Full-resolution export writes `<name>.csv` and `<name>.json`; `[README]` is the first block and `[EVENTS]` has one row per region with per-meter levels; markers carry position and levels.
+- [ ] Quick CSV opens in Excel with `start_utc`, `end_utc`, `timezone` and marker `position`; re-import restores the marker position.

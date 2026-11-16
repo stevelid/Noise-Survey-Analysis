@@ -94,7 +94,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const categoryIds = [...new Set((Array.isArray(region.categoryIds) ? region.categoryIds : [region.categoryId])
             .filter(id => typeof id === 'string' && id && id !== DEFAULT_CATEGORY_ID))];
         if (!categoryIds.length) categoryIds.push(DEFAULT_CATEGORY_ID);
-        return {
+        const normalized = {
             ...region,
             areas,
             start: areas[0].start,
@@ -104,6 +104,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             color: normalizeColor(region.color),
             meterStates: normalizeMeterStates(region, positions)
         };
+        // Suggestion provenance: keep valid fields only (an unknown status must not hide a region).
+        ['source', 'status', 'rationale', 'confidence', 'agent', 'createdAt', 'reviewedAt'].forEach(key => {
+            if (key in normalized) delete normalized[key];
+        });
+        return Object.assign(normalized, pickReviewMeta(region));
     }
 
     function effectiveColor(region, catalog) {
@@ -160,7 +165,39 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return { regions: groups.map(group => group.region), mergedCount };
     }
 
+    // Agent-suggestion provenance shared by regions and markers (see features/regions/suggestionModel.js).
+    const REVIEW_SOURCES = ['user', 'agent'];
+    const REVIEW_STATUSES = ['proposed', 'accepted', 'rejected'];
+
+    function sanitizeAgent(value) {
+        if (!value || typeof value !== 'object') return null;
+        const name = typeof value.name === 'string' ? value.name.slice(0, 200) : '';
+        if (!name) return null;
+        const runId = value.runId ?? value.run_id;
+        return { name, runId: typeof runId === 'string' ? runId.slice(0, 200) : null };
+    }
+
+    /** Valid provenance fields present in `value`: source, status, rationale, confidence, agent, createdAt, reviewedAt. */
+    function pickReviewMeta(value) {
+        const out = {};
+        if (!value || typeof value !== 'object') return out;
+        if (REVIEW_SOURCES.includes(value.source)) out.source = value.source;
+        if (REVIEW_STATUSES.includes(value.status)) out.status = value.status;
+        if (typeof value.rationale === 'string') out.rationale = value.rationale.slice(0, 2000);
+        if (value.confidence === null) out.confidence = null;
+        else if (Number.isFinite(value.confidence) && value.confidence >= 0 && value.confidence <= 1) out.confidence = value.confidence;
+        if (Object.prototype.hasOwnProperty.call(value, 'agent')) {
+            const agent = sanitizeAgent(value.agent);
+            if (agent) out.agent = agent;
+        }
+        ['createdAt', 'reviewedAt'].forEach(key => {
+            if (typeof value[key] === 'string' && value[key]) out[key] = value[key].slice(0, 40);
+        });
+        return out;
+    }
+
     app.annotationModel = {
+        pickReviewMeta, sanitizeAgent,
         METER_PRESENT, METER_ABSENT, METER_UNCHECKED,
         DEFAULT_CATEGORY_ID, DEFAULT_REGION_COLOR, DEFAULT_CATEGORIES,
         LEGACY_AREA_TOLERANCE_MS, normalizeColor, normalizeCatalog,

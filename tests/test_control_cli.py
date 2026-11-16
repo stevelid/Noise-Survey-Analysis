@@ -201,6 +201,25 @@ class TestMainSubcommands(unittest.TestCase):
             {"success": True, "message": "apply_workspace command scheduled"},
         )
 
+    def test_each_invocation_sends_a_fresh_request_id(self):
+        from noise_survey_analysis import control_cli
+        sent = []
+
+        def fake_urlopen(req, timeout=None):
+            sent.append(json.loads(req.data.decode("utf-8")))
+            resp = MagicMock()
+            resp.read.return_value = b'{"success": true, "message": "ok"}'
+            resp.__enter__.return_value = resp
+            return resp
+
+        with patch("noise_survey_analysis.control_cli.urllib.request.urlopen", side_effect=fake_urlopen), \
+                patch("builtins.print"):
+            for _ in range(2):
+                control_cli.main(["--port", "1", "--token", "t", "apply-workspace", "--inline", '{"appState": {}}'])
+        ids = [body["request_id"] for body in sent]
+        self.assertEqual(len(set(ids)), 2)
+        self.assertTrue(all(i.startswith("cli-apply-workspace-") for i in ids))
+
     def test_apply_workspace_inline_invalid_json_returns_2(self):
         with patch("noise_survey_analysis.control_cli.urllib.request.urlopen"):
             result = main(

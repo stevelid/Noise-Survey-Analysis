@@ -398,10 +398,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
         const globalAudioControls = models.globalAudioControls;
         if (globalAudioControls) {
+            // Live: always. Static HTML: only when regions carry exported audio clips (--audio-clips),
+            // which the in-page clip player plays.
+            const hasStaticClips = !isServerMode
+                && Boolean(app.services?.audio?.clipPlayer?.hasStaticClips?.(state));
+            const showAudioControls = isServerMode || hasStaticClips;
             if (globalAudioControls.layout) {
-                globalAudioControls.layout.visible = isServerMode;
+                globalAudioControls.layout.visible = showAudioControls;
             }
-            if (isServerMode) {
+            if (showAudioControls) {
                 if (globalAudioControls.play_toggle) {
                     if (globalAudioControls.play_toggle.active !== isPlaying) {
                         globalAudioControls.play_toggle.active = isPlaying;
@@ -424,7 +429,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
                 if (globalAudioControls.active_position_display) {
                     const positionHasAudio = resolvePositionHasAudio(models, availablePositions);
-                    const anyAudioAvailable = Object.values(positionHasAudio).some(Boolean);
+                    const anyAudioAvailable = hasStaticClips || Object.values(positionHasAudio).some(Boolean);
                     let displayText = "<span style='font-size: 11px; color: #666;'>Audio not available</span>";
                     if (isPlaying && activePositionId) {
                         const displayName = typeof displayTitles[activePositionId] === 'string' && displayTitles[activePositionId].trim()
@@ -515,7 +520,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                     const tsDetails = displayDetailsByPosition?.[pos]?.line?.reason
                         || tsChart?.lastDisplayDetails?.reason
                         || '';
-                    tsChart.model.title.text = `${displayName} - Time Series${tsDetails}`;
+                    if (tsChart.model.title) tsChart.model.title.text = `${displayName} - Time Series${tsDetails}`;
                     tsChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
                     if (displayDetailsByPosition?.[pos]?.line?.reason) {
                         tsChart.lastDisplayDetails = displayDetailsByPosition[pos].line;
@@ -526,7 +531,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                         || displayDetailsByPosition?.[pos]?.spectrogram?.reason
                         || specChart?.lastDisplayDetails?.reason
                         || '';
-                    specChart.model.title.text = `${displayName} - Spectrogram${specDetails}`;
+                    if (specChart.model.title) specChart.model.title.text = `${displayName} - Spectrogram${specDetails}`;
                     specChart.model.background_fill_color = isThisPositionActive ? PLAYING_BACKGROUND_COLOR : DEFAULT_BACKGROUND_COLOR;
                     if (displayDetailsByPosition?.[pos]?.spec?.reason) {
                         specChart.lastDisplayDetails = displayDetailsByPosition[pos].spec;
@@ -559,14 +564,22 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (positionControls.effective_offset_display) {
                 const effectiveSeconds = (Number(positionEffectiveOffsets[pos]) || 0) / 1000;
                 const sign = effectiveSeconds >= 0 ? '+' : '-';
-                positionControls.effective_offset_display.text = `Effective offset: ${sign}${Math.abs(effectiveSeconds).toFixed(2)} s`;
+                const chipText = `Offset ${sign}${Math.abs(effectiveSeconds).toFixed(2)} s`;
+                const hasOffset = Math.abs(effectiveSeconds) >= 0.005;
+                if (positionControls.effective_offset_display.text !== chipText) {
+                    positionControls.effective_offset_display.text = chipText;
+                }
+                if (positionControls.effective_offset_display.visible !== hasOffset) {
+                    positionControls.effective_offset_display.visible = hasOffset;
+                }
             }
 
             if (positionControls.display_title_div) {
                 const title = typeof displayTitles[pos] === 'string' && displayTitles[pos].trim()
                     ? displayTitles[pos]
                     : pos;
-                const html = `<b style="font-size:11px;">${title}</b>`;
+                const specParam = selectedParameter ? ` &middot; ${escapeInlineText(selectedParameter)} Hz` : '';
+                const html = `<b>${escapeInlineText(title)}</b> <span style="color:#64748b;font-size:10px;">dB${specParam}</span>`;
                 if (positionControls.display_title_div.text !== html) {
                     positionControls.display_title_div.text = html;
                 }

@@ -184,6 +184,33 @@ describe('Classification UI Feature Suite', () => {
         expect(audioAction.payload.positionId).toBe('P1');
     });
 
+    it('preview seeks and centres the view in display time (source + chart offset)', () => {
+        const dispatched = runPreview({
+            view: { viewport: { min: 0, max: 300000 }, positionChartOffsets: { P1: 5000 } },
+            audio: { isPlaying: false }
+        });
+        // start 100000 + 5000 offset - 1000 pre-roll
+        expect(dispatched.find(a => a.type === actionTypes.TAP).payload.timestamp).toBe(104000);
+        const viewport = dispatched.find(a => a.type === actionTypes.VIEWPORT_CHANGE);
+        // midpoint 110000 -> [80000, 140000]
+        expect(viewport.payload.min).toBe(80000);
+    });
+
+    it('elevate creates the region in display time', () => {
+        let classificationsState = reducer(undefined, { type: '@@INIT' });
+        classificationsState = reducer(classificationsState, actions.classificationsAdded([
+            { id: 1, positionId: 'P1', sourceId: 'motorcycle', start: 100000, end: 110000, confidence: 0.85 }
+        ]));
+        const state = { classifications: classificationsState, view: { positionChartOffsets: { P1: -3000 } }, regions: { counter: 1 } };
+        const dispatched = [];
+        const dispatch = (a) => { if (typeof a !== 'function') dispatched.push(a); };
+        thunks.elevateClassificationToRegionIntent(1)(dispatch, () => state);
+        const added = dispatched.find(a => a.type === actionTypes.REGIONS_ADDED);
+        expect(added.payload.regions[0].start).toBe(97000);
+        expect(added.payload.regions[0].end).toBe(107000);
+        expect(added.payload.regions[0].areas).toEqual([{ start: 97000, end: 107000 }]);
+    });
+
     it('preview is a no-op when nothing is selected', () => {
         const mockState = {
             classifications: reducer(undefined, { type: '@@INIT' }),

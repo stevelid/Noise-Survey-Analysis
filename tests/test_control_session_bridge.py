@@ -79,6 +79,16 @@ class TestSessionBridgeRegistration(unittest.TestCase):
         bridge.unregister()
         self.assertFalse(bridge.is_active)
 
+    def test_stale_session_unregister_does_not_clear_new_session(self):
+        bridge = SessionBridge()
+        old_doc, new_doc = _ImmediateDoc(), _ImmediateDoc()
+        bridge.register(old_doc)
+        bridge.register(new_doc)  # browser refresh: new session registers first
+        bridge.unregister(doc=old_doc)  # old session destroyed later
+        self.assertTrue(bridge.is_active)
+        bridge.unregister(doc=new_doc)
+        self.assertFalse(bridge.is_active)
+
 
 class TestSessionBridgeStatus(unittest.TestCase):
     def test_status_no_session(self):
@@ -267,7 +277,11 @@ class TestSessionBridgeApplyWorkspace(unittest.TestCase):
             tmp_path = fh.name
         try:
             result = bridge.apply_workspace(path=tmp_path, request_id="r3", timeout=0.0)
-            self.assertTrue(result.success)
+            # No browser acknowledged: a mutating command must not report success.
+            self.assertFalse(result.success)
+            self.assertIn("did not acknowledge", result.message)
+            self.assertTrue(result.request_id.startswith("r3-"))
+            self.assertEqual(cmd_source.data["request_id"], [result.request_id])
         finally:
             os.unlink(tmp_path)
 
@@ -278,7 +292,40 @@ class TestSessionBridgeApplyWorkspace(unittest.TestCase):
         result = bridge.apply_workspace(
             payload={"appState": {"zoom": 1}}, request_id="r4", timeout=0.0
         )
-        self.assertTrue(result.success)
+        self.assertFalse(result.success)
+
+    def test_apply_workspace_rejects_source_configs_only(self):
+        bridge = SessionBridge()
+        bridge.register(_ImmediateDoc(), automation_command_source=_FakeCmdSource())
+        result = bridge.apply_workspace(payload={"sourceConfigs": []}, timeout=0.0)
+        self.assertFalse(result.success)
+        self.assertIn("appState", result.message)
+
+    def test_apply_workspace_reads_bom_file(self):
+        bridge = SessionBridge()
+        cmd_source = _FakeCmdSource()
+        bridge.register(_ImmediateDoc(), automation_command_source=cmd_source)
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".json", delete=False) as fh:
+            fh.write(b"\xef\xbb\xbf" + json.dumps({"appState": {"folder": "Café"}}).encode("utf-8"))
+            tmp_path = fh.name
+        try:
+            bridge.apply_workspace(path=tmp_path, timeout=0.0)
+            sent = json.loads(cmd_source.data["payload"][0])
+            self.assertEqual(sent["payload"]["appState"]["folder"], "Café")
+        finally:
+            os.unlink(tmp_path)
+
+    def test_repeated_and_empty_request_ids_are_made_unique(self):
+        bridge = SessionBridge()
+        cmd_source = _FakeCmdSource()
+        bridge.register(_ImmediateDoc(), automation_command_source=cmd_source)
+        ids = []
+        for supplied in ("cli-apply-workspace", "cli-apply-workspace", "", ""):
+            bridge.apply_workspace(payload={"appState": {}}, request_id=supplied, timeout=0.0)
+            ids.append(cmd_source.data["request_id"][0])
+        self.assertEqual(len(set(ids)), 4)
+        self.assertTrue(all(ids))
+        self.assertTrue(ids[0].startswith("cli-apply-workspace-"))
 
 
 class TestSessionBridgeJsAcknowledgement(unittest.TestCase):
@@ -294,6 +341,7 @@ class TestSessionBridgeJsAcknowledgement(unittest.TestCase):
             def add_next_tick_callback(self_, cb):
                 # Don't call immediately; store it
                 call_events.append(cb)
+                cb()  # publish the command; the ack still arrives later
                 return None
 
             def get_model_by_name(self_, name):
@@ -318,7 +366,7 @@ class TestSessionBridgeJsAcknowledgement(unittest.TestCase):
         import time; time.sleep(0.05)
         # Simulate the JS sending back an ack
         bridge.record_js_result({
-            "request_id": "ack-test",
+            "request_id": cmd_source.data["request_id"][0],
             "success": True,
             "message": "Parameter updated",
         })
@@ -333,6 +381,7 @@ class TestSessionBridgeJsAcknowledgement(unittest.TestCase):
 
         class _DelayedDoc:
             def add_next_tick_callback(self_, cb):
+                cb()
                 return None
             def get_model_by_name(self_, n):
                 return None
@@ -352,7 +401,7 @@ class TestSessionBridgeJsAcknowledgement(unittest.TestCase):
         t.start()
         import time; time.sleep(0.05)
         bridge.record_js_result({
-            "request_id": "fail-ack",
+            "request_id": cmd_source.data["request_id"][0],
             "success": False,
             "message": "Parameter not found",
         })
@@ -378,7 +427,7 @@ class TestSessionBridgeExportStaticHtml(unittest.TestCase):
         result = bridge.export_static_html(request_id="exp-1")
         self.assertTrue(result.success)
         self.assertEqual(action_source.data["command"], ["generate_static_html"])
-        self.assertEqual(action_source.data["request_id"], ["exp-1"])
+        self.assertTrue(action_source.data["request_id"][0].startswith("exp-1-"))
 
 
 if __name__ == "__main__":

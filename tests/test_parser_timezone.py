@@ -101,13 +101,15 @@ class TestParserTimezoneDst(unittest.TestCase):
             ],
         )
 
-    def test_nonexistent_spring_forward_hour_shifts_to_valid_time(self):
+    def test_nonexistent_spring_forward_hour_is_treated_as_standard_time(self):
+        """A reading inside the skipped hour means the meter clock had not changed yet:
+        it is kept as standard time (+1 h shift) so a run of them stays distinct."""
         parser = _ConcreteParser()
         df = pd.DataFrame({
             'Datetime': [
                 '2024-03-31 00:30:00',
-                '2024-03-31 01:30:00',
-                '2024-03-31 02:30:00',
+                '2024-03-31 01:15:00',
+                '2024-03-31 01:45:00',
             ]
         })
 
@@ -117,10 +119,42 @@ class TestParserTimezoneDst(unittest.TestCase):
             list(result['Datetime']),
             [
                 pd.Timestamp('2024-03-31 00:30:00', tz='UTC'),
-                pd.Timestamp('2024-03-31 01:00:00', tz='UTC'),
-                pd.Timestamp('2024-03-31 01:30:00', tz='UTC'),
+                pd.Timestamp('2024-03-31 01:15:00', tz='UTC'),
+                pd.Timestamp('2024-03-31 01:45:00', tz='UTC'),
             ],
         )
+
+    def _autumn_df(self, times):
+        return pd.DataFrame({'Datetime': times, 'LAeq': range(len(times))})
+
+    def test_autumn_two_passes_unsorted_inference_fallback_keeps_all_rows(self):
+        """1 s rows through 2026-10-25 01:00-02:00 London, two passes: pandas 'infer'
+        fails when the repeated hour has gaps; the order-based fallback must keep every row."""
+        parser = _ConcreteParser()
+        first = list(pd.date_range('2026-10-25 00:59:50', '2026-10-25 01:00:10', freq='s'))
+        # drop a few rows so 'infer' cannot pair the passes up
+        first = first[:5] + first[8:]
+        second = list(pd.date_range('2026-10-25 01:00:00', '2026-10-25 01:00:20', freq='s'))
+        second = second[2:]
+        times = [t.strftime('%Y-%m-%d %H:%M:%S') for t in first + second]
+        result = parser._normalize_datetime_column(self._autumn_df(times), ['Datetime'])
+        self.assertEqual(len(result), len(times))
+        self.assertTrue(result['Datetime'].is_monotonic_increasing)
+        self.assertEqual(result['Datetime'].duplicated().sum(), 0)
+
+    def test_autumn_single_pass_file_starting_before_hour_is_dst(self):
+        parser = _ConcreteParser()
+        times = ['2026-10-25 00:30:00', '2026-10-25 01:15:00', '2026-10-25 01:45:00']
+        result = parser._normalize_datetime_column(self._autumn_df(times), ['Datetime'])
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result['Datetime'].iloc[1], pd.Timestamp('2026-10-25 00:15:00', tz='UTC'))
+
+    def test_autumn_single_pass_file_starting_inside_hour_and_continuing_is_standard(self):
+        parser = _ConcreteParser()
+        times = ['2026-10-25 01:15:00', '2026-10-25 01:45:00', '2026-10-25 02:30:00']
+        result = parser._normalize_datetime_column(self._autumn_df(times), ['Datetime'])
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result['Datetime'].iloc[0], pd.Timestamp('2026-10-25 01:15:00', tz='UTC'))
 
 
 class TestParserTimezoneInvalid(unittest.TestCase):

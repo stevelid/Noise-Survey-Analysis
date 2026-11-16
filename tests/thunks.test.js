@@ -650,6 +650,42 @@ describe('NoiseSurveyApp thunks', () => {
             expect(state.interaction.tap.timestamp).toBe(1700000000000);
         });
 
+        it('handleAudioStatusUpdateIntent ignores stale status from the old position after a switch', () => {
+            thunks.resetStatusGuard();
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            store.dispatch(actions.tap(1700000005000, 'P2', 'figure_P2_timeseries')); // user switches to P2 while playing
+            thunks.handleAudioStatusUpdateIntent({
+                is_playing: [true], active_position_id: ['P1'], current_time: [1700000001000]
+            })(store.dispatch, store.getState);
+            let state = store.getState();
+            expect(state.interaction.tap.position).toBe('P2');
+            expect(state.interaction.tap.timestamp).toBe(1700000005000);
+            expect(state.audio.activePositionId).toBe('P2');
+
+            // Once the server reports the new position it is accepted.
+            thunks.handleAudioStatusUpdateIntent({
+                is_playing: [true], active_position_id: ['P2'], current_time: [1700000005200]
+            })(store.dispatch, store.getState);
+            state = store.getState();
+            expect(state.interaction.tap.timestamp).toBe(1700000005200);
+        });
+
+        it('handleAudioStatusUpdateIntent trusts the server again after the grace period', () => {
+            thunks.resetStatusGuard();
+            const spy = vi.spyOn(Date, 'now');
+            spy.mockReturnValue(1000);
+            store.dispatch(actions.audioPlayPauseToggle('P1', true));
+            store.dispatch(actions.tap(5000, 'P2', 'figure_P2_timeseries'));
+            const status = { is_playing: [true], active_position_id: ['P1'], current_time: [3000] };
+            thunks.handleAudioStatusUpdateIntent(status)(store.dispatch, store.getState);
+            expect(store.getState().audio.activePositionId).toBe('P2');
+            spy.mockReturnValue(1000 + thunks.STALE_STATUS_TIMEOUT_MS + 1);
+            thunks.handleAudioStatusUpdateIntent(status)(store.dispatch, store.getState);
+            expect(store.getState().audio.activePositionId).toBe('P1');
+            spy.mockRestore();
+            thunks.resetStatusGuard();
+        });
+
         it('toggleVolumeBoostIntent dispatches when toggling boost', () => {
             store.dispatch(actions.audioPlayPauseToggle('P1', true));
             const thunk = thunks.toggleVolumeBoostIntent({ positionId: 'P1', isBoostActive: true });

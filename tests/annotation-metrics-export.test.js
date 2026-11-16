@@ -69,6 +69,50 @@ describe('shared authoritative metric contract', () => {
         expect(js.contextDurationS).toBeCloseTo(python.context_duration_s, 6);
     });
 
+    it('flags coarse resolution, drops LAFmax and matches Python for overview data', () => {
+        const data = { Datetime: [0, 300000, 600000, 900000], LAeq: [44.1, 50, 52, 60],
+            LAFmax: [70, 75, 76, 80], LAF90: [40, 41, 42, 55] };
+        const small = [{ start: 10000, end: 30000 }];
+        const coarse = engine.computeSamples(data, small, { resolution: 'overview', sampleIntervalS: 300 });
+        expect(coarse.coarseResolution).toBe(true);
+        expect(coarse.coarseResolutionReason).toContain('5-min data longer than the event');
+        expect(coarse.lafmax).toBeNull();
+        expect(coarse.missingReasons.join(';')).not.toContain('LAFmax');
+        const wide = [{ start: 0, end: 1200000 }];
+        const js = engine.computeSamples(data, wide, { resolution: 'overview', sampleIntervalS: 300 });
+        expect(js.coarseResolution).toBe(false);
+        expect(js.la90).toBe(41);
+        expect(js.percentileMethod).toContain('median of logged LAF90');
+        const script = `import json,sys,pandas as pd
+from dataclasses import asdict
+from noise_survey_analysis.core.annotation_metrics import compute_region_metrics
+p=json.load(sys.stdin)
+f=pd.DataFrame(p['data'])
+f['Datetime']=pd.to_datetime(f['Datetime'],unit='ms',utc=True)
+out=[asdict(compute_region_metrics(f,a,resolution='overview',sample_interval_s=300)) for a in (p['small'],p['wide'])]
+print(json.dumps(out))`;
+        const [pyCoarse, pyWide] = JSON.parse(execFileSync('python', ['-c', script], {
+            input: JSON.stringify({ data, small, wide }), encoding: 'utf8', cwd: process.cwd() }));
+        expect(pyCoarse.coarse_resolution).toBe(true);
+        expect(pyCoarse.LAFmax_dB).toBeNull();
+        expect(pyCoarse.coarse_resolution_reason).toBe(coarse.coarseResolutionReason);
+        expect(pyWide.LAF90_dB).toBe(js.la90);
+        expect(pyWide.percentile_method).toBe(js.percentileMethod);
+    });
+
+    it('applies the same coarse rule as Python: 1 s keeps LAFmax; 300 s is coarse below 30 min', () => {
+        const fast = { Datetime: Array.from({ length: 20 }, (_, i) => i * 1000), LAeq: Array(20).fill(50), LAFmax: Array.from({ length: 20 }, (_, i) => 60 + i) };
+        const short = engine.computeSamples(fast, [{ start: 5000, end: 7000 }], { sampleIntervalS: 1 });
+        expect(short.coarseResolution).toBe(false);
+        expect(short.lafmax).toBe(66);
+        const slow = { Datetime: Array.from({ length: 10 }, (_, i) => i * 300000), LAeq: Array(10).fill(50), LAFmax: Array(10).fill(60) };
+        [[20000, true], [600000, true], [1800000, false]].forEach(([end, expected]) => {
+            const r = engine.computeSamples(slow, [{ start: 0, end }], { resolution: 'overview', sampleIntervalS: 300 });
+            expect(r.coarseResolution).toBe(expected);
+            expect(r.lafmax === null).toBe(expected);
+        });
+    });
+
     it('does not stretch fast-level samples across gaps or silently accept a partial log buffer', () => {
         const region = { positionId: 'P1', areas: [{ start: 0, end: 4000 }] };
         const models = { timeSeriesSources: { P1: {
@@ -148,6 +192,27 @@ describe('sectioned analysis CSV', () => {
             expect(restored.markers).toEqual(markers);
             expect(compute).not.toHaveBeenCalled();
         } finally { compute.mockRestore(); }
+    });
+
+    it('leaves proposed and rejected suggestions out by default and keeps provenance on the rest', () => {
+        const agent = { name: 'yamnet', runId: 'r1' };
+        const make = (id, status, extra = {}) => app.annotationModel.normalizeRegion({ id, positionId: 'P1',
+            areas: [{ start: id * 10000, end: id * 10000 + 1000 }], source: 'agent', status, agent, rationale: 'because, "yes"', confidence: 0.8, ...extra }, ['P1']);
+        const regions = [make(1, 'accepted'), make(2, 'proposed'), make(3, 'rejected'),
+            app.annotationModel.normalizeRegion({ id: 4, positionId: 'P1', areas: [{ start: 50000, end: 51000 }] }, ['P1'])];
+        const markers = [{ id: 1, timestamp: 1000, status: 'accepted', source: 'agent', agent }, { id: 2, timestamp: 2000, status: 'proposed', source: 'agent', agent }, { id: 3, timestamp: 3000, status: 'rejected', source: 'agent' }];
+        const state = { view: { availablePositions: ['P1'] } };
+        const csv = app.annotationCsv.buildAnnotationsCsv(markers, regions, state);
+        const rows = app.annotationCsv.parseCsvRows(csv);
+        expect(app.annotationCsv.readSection(rows, 'REGIONS').map(row => row.id)).toEqual(['1', '4']);
+        expect(app.annotationCsv.readSection(rows, 'MARKERS').map(row => row.id)).toEqual(['1']);
+        const restored = app.annotationCsv.parseAnnotationsCsv(csv);
+        expect(restored.regions[0]).toMatchObject({ source: 'agent', status: 'accepted', confidence: 0.8, rationale: 'because, "yes"', agent });
+        expect(restored.regions[1].status).toBeUndefined();
+        expect(restored.markers[0]).toMatchObject({ source: 'agent', status: 'accepted', agent });
+        const withProposed = app.annotationCsv.parseAnnotationsCsv(app.annotationCsv.buildAnnotationsCsv(markers, regions, state, { include_proposed: true }));
+        expect(withProposed.regions.map(region => [region.id, region.status])).toEqual([[1, 'accepted'], [2, 'proposed'], [4, undefined]]);
+        expect(withProposed.markers.map(marker => marker.status)).toEqual(['accepted', 'proposed']);
     });
 
     it('quick export works without a loaded metrics engine', () => {
@@ -282,6 +347,33 @@ describe('local time basis and resolution labelling in the region export', () =>
         expect(row.start_local).toBe('2026-09-02 10:57:00.000');
         expect(row.end_local).toBe('2026-09-02 10:58:00.000');
         expect(row.source_start_local).toBe(row.start_local);
+    });
+
+    it('adds ISO start_utc/end_utc/timezone to regions and timestamp_utc/position to markers without disturbing old columns', () => {
+        const start = Date.UTC(2026, 8, 2, 9, 57, 0);
+        const region = { id: 1, positionId: 'P1', areas: [{ start, end: start + 60000 }] };
+        const marker = { id: 4, timestamp: start + 5000, note: 'Siren', color: '#fdd835', positionId: 'P1', metrics: { P1: { LAeq: 70 } } };
+        const csv = app.annotationCsv.buildAnnotationsCsv([marker, { id: 5, timestamp: start, note: '' }], [region],
+            { view: { availablePositions: ['P1'] } }, { models: {} });
+        const rows = app.annotationCsv.parseCsvRows(csv);
+        const row = app.annotationCsv.readSection(rows, 'REGIONS')[0];
+        expect(row.start_utc).toBe('2026-09-02T09:57:00.000Z');
+        expect(row.end_utc).toBe('2026-09-02T09:58:00.000Z');
+        expect(row.timezone).toBe('Europe/London');
+        expect(row.start).toBe('2026-09-02 09:57:00.000');
+        expect(row.start_local).toBe('2026-09-02 10:57:00.000');
+        expect(row).toHaveProperty('data_resolution');
+        expect(row).toHaveProperty('source_start_local');
+        const markers = app.annotationCsv.readSection(rows, 'MARKERS');
+        expect(markers[0]).toMatchObject({ id: '4', timestamp: '2026-09-02 09:57:05.000', timestamp_utc: '2026-09-02T09:57:05.000Z',
+            timezone: 'Europe/London', position: 'P1', note: 'Siren' });
+        expect(JSON.parse(markers[0].metrics)).toEqual({ P1: { LAeq: 70 } });
+        expect(markers[1].position).toBe('');
+        const restored = app.annotationCsv.parseAnnotationsCsv(csv);
+        expect(restored.markers[0].positionId).toBe('P1');
+        expect(restored.markers[1]).not.toHaveProperty('positionId');
+        expect(restored.regions).toHaveLength(1);
+        expect(restored.regions[0].meterStates).toEqual({ P1: 'present' });
     });
 
     it('uses GMT in winter, the configured timezone, and subtracts chart offset for source_*_local', () => {

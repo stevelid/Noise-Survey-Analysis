@@ -26,6 +26,13 @@ class _FakeRange:
         pass
 
 
+class _Sink:
+    """Stub for the automation command ColumnDataSource."""
+
+    def __init__(self):
+        self.data = {}
+
+
 class _ImmediateDoc:
     def __init__(self):
         self._models: dict = {}
@@ -254,6 +261,35 @@ class TestControlServerCommands(unittest.TestCase):
     def test_fit_full_range_command(self):
         result = self._post({"command": "fit_full_range"})
         self.assertTrue(result["success"])
+
+    def test_apply_workspace_unacknowledged_is_an_error(self):
+        """An unacknowledged mutating command must not be reported as success."""
+        self.bridge.register(_ImmediateDoc(), automation_command_source=_Sink())
+        original = self.bridge.apply_workspace
+        self.bridge.apply_workspace = lambda **kw: original(timeout=0.05, **kw)
+        result = self._post({
+            "command": "apply_workspace",
+            "request_id": "same",
+            "payload": {"payload": {"appState": {}}},
+        })
+        self.assertFalse(result["success"])
+        self.assertIn("did not acknowledge", result["message"])
+        self.assertTrue(result["request_id"].startswith("same-"))
+
+    def test_repeated_request_id_gets_fresh_id_each_time(self):
+        sink = _Sink()
+        self.bridge.register(_ImmediateDoc(), automation_command_source=sink)
+        original = self.bridge.apply_workspace
+        self.bridge.apply_workspace = lambda **kw: original(timeout=0.05, **kw)
+        seen = []
+        for _ in range(2):
+            self._post({
+                "command": "apply_workspace",
+                "request_id": "cli-apply-workspace",
+                "payload": {"payload": {"appState": {}}},
+            })
+            seen.append(sink.data["request_id"][0])
+        self.assertNotEqual(seen[0], seen[1])
 
     def test_unknown_command_rejected(self):
         result = self._post({"command": "eval_js", "payload": {}})

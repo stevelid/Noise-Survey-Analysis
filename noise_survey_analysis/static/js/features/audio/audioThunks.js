@@ -129,12 +129,64 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         };
     }
 
-    function handleAudioStatusUpdateIntent(statusPayload) {
+    // After the user switches position, the server keeps reporting the old position
+    // until it has processed the play command (typically well under a second). Those
+    // stale statuses must not drag the tap cursor / active position back.
+    const STALE_STATUS_TIMEOUT_MS = 1500;
+    let positionMismatchSince = null;
+
+    function resetStatusGuard() {
+        positionMismatchSince = null;
+    }
+
+    /**
+     * True when a status describes a different position from the one the user last
+     * asked for and the grace period has not run out. The requested position is
+     * state.audio.activePositionId, which only the UI (tap / play toggle) moves ahead
+     * of the server.
+     */
+    function isStaleStatus(state, statusPositionId) {
+        const requested = state?.audio?.activePositionId;
+        if (!requested || !statusPositionId || requested === statusPositionId) {
+            positionMismatchSince = null;
+            return false;
+        }
+        const now = Date.now();
+        if (positionMismatchSince === null) {
+            positionMismatchSince = now;
+        }
+        if (now - positionMismatchSince < STALE_STATUS_TIMEOUT_MS) {
+            return true;
+        }
+        // The server never caught up (e.g. no audio at that time): trust it again.
+        positionMismatchSince = null;
+        return false;
+    }
+
+    /**
+     * @param {object} statusPayload Column-style status ({is_playing: [..], current_time: [..], ...}).
+     * @param {{fromBrowser?: boolean}} [options] fromBrowser marks a report from the in-page
+     *        clip player. While the browser audio backend is selected the server's own status
+     *        patches (an idle VLC) are ignored so they cannot overwrite the player's.
+     */
+    function handleAudioStatusUpdateIntent(statusPayload, options) {
         return function (dispatch, getState) {
             if (!actions || typeof dispatch !== 'function') return;
 
+            const clipPlayer = app.services?.audio?.clipPlayer;
+            if (!options?.fromBrowser && clipPlayer?.isBrowserBackend?.()) {
+                return;
+            }
+
             const state = typeof getState === 'function' ? getState() : null;
             const offsets = state?.view?.positionEffectiveOffsets || {};
+
+            const reportedPosition = Array.isArray(statusPayload?.active_position_id)
+                ? statusPayload.active_position_id[0]
+                : null;
+            if (isStaleStatus(state, reportedPosition)) {
+                return;
+            }
 
             const nextStatus = {};
             if (statusPayload && typeof statusPayload === 'object') {
@@ -250,6 +302,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         togglePlaybackFromKeyboardIntent,
         handleAudioStatusUpdateIntent,
         changePlaybackRateIntent,
-        toggleVolumeBoostIntent
+        toggleVolumeBoostIntent,
+        resetStatusGuard,
+        STALE_STATUS_TIMEOUT_MS
     };
 })(window.NoiseSurveyApp);

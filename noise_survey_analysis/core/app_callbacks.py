@@ -8,11 +8,11 @@ from copy import deepcopy
 from bokeh.plotting import curdoc
 from bokeh.models import ColumnDataSource, Button, Select, Div, CustomJS
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional
 
 # Assuming AudioPlaybackHandler has been updated with set_amplification
 from .audio_handler import AudioPlaybackHandler
-from .config import STREAMING_DEBOUNCE_MS, STREAMING_ENABLED
+from .config import STALE_SESSION_RELEASE_SECONDS, STREAMING_DEBOUNCE_MS, STREAMING_ENABLED
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,21 @@ def session_destroyed(session_context):
         callback_manager.cleanup()
     else:
         logger.warning(f"Session {session_context.id} destroyed, but no AppCallback manager found in session context.")
+
+# JS -> Python session actions (sent with triggerServerSessionAction on the JS side).
+# name -> fn(callbacks: AppCallbacks, payload, request_id). The handler reports through
+# callbacks._publish_session_status(level, message, done=..., output_path=..., request_id=...)
+# and must not clear the command; the dispatcher clears it once after the handler returns.
+# A handler that raises is reported to the user as an error status.
+_SESSION_ACTIONS: Dict[str, Callable] = {}
+
+
+def register_session_action(name: str, fn: Callable) -> None:
+    """Register (or replace) the handler for session action ``name``."""
+    if not isinstance(name, str) or not name or not callable(fn):
+        raise ValueError("register_session_action requires a non-empty name and a callable")
+    _SESSION_ACTIONS[name] = fn
+
 
 class AppCallbacks:
     """
@@ -41,6 +56,9 @@ class AppCallbacks:
     # and Bokeh only destroys that session after --unused-session-lifetime, so without
     # this the old player keeps playing for minutes.
     DISCONNECTED_PAUSE_TICKS = 5
+    # Seconds a built session may sit with no browser before it is released (see
+    # _release_if_stale). Bokeh itself would keep it for --unused-session-lifetime (5 minutes).
+    STALE_RELEASE_SECONDS = STALE_SESSION_RELEASE_SECONDS
 
     def __init__(
         self,
@@ -52,11 +70,20 @@ class AppCallbacks:
         session_status_source: Optional[ColumnDataSource] = None,
         static_export_request_handler: Optional[Callable[..., dict]] = None,
         save_setup_request_handler: Optional[Callable[..., dict]] = None,
+        workspace_autosave=None,
         server_data_handler=None,
         streaming_enabled: bool = STREAMING_ENABLED,
         streaming_debounce_ms: int = STREAMING_DEBOUNCE_MS,
+        media_token: Optional[str] = None,
     ):
         self.doc = doc
+        # Session token registered with the localhost media server (browser audio backend).
+        self.media_token = media_token
+        # Callables run once when a stale session is released (e.g. unregistering from the bridge).
+        self.release_hooks: list = []
+        self._disconnected_since: Optional[float] = None
+        self._session_released = False
+        self._cleaned_up = False
         self.audio_handler = audio_handler
         self.audio_control_source = audio_control_source
         self.audio_status_source = audio_status_source
@@ -64,6 +91,8 @@ class AppCallbacks:
         self.session_status_source = session_status_source
         self.static_export_request_handler = static_export_request_handler
         self.save_setup_request_handler = save_setup_request_handler
+        # core.workspace_autosave.WorkspaceAutosave for this session (None = autosave off).
+        self.workspace_autosave = workspace_autosave
         self.server_data_handler = server_data_handler
         self.streaming_enabled = streaming_enabled
         self.streaming_debounce_ms = streaming_debounce_ms
@@ -84,6 +113,7 @@ class AppCallbacks:
         )
         self._audio_commands_lock = threading.Lock()
         self._pending_audio_commands = set()
+        self._transport_seq = 0
         self._audio_shutdown = False
         self._audio_release_lock = threading.Lock()
         self._audio_released = False
@@ -101,9 +131,10 @@ class AppCallbacks:
         if self.audio_handler and getattr(self.audio_handler, 'audio_available', False):
             logger.debug(f"[AppCallbacks.attach] Attaching audio control callback to source id: {id(self.audio_control_source)}")
             self.audio_control_source.on_change('data', self._handle_audio_control_command)
-            self._start_periodic_update()
         else:
             logger.warning("Audio callbacks not attached: Audio handler missing or audio unavailable.")
+        # The tick also watches for a vanished browser, so it runs with or without VLC.
+        self._start_periodic_update()
 
         if self.session_action_source is not None:
             self.session_action_source.on_change('data', self._handle_session_action_command)
@@ -126,7 +157,20 @@ class AppCallbacks:
         # document callbacks on a single IOLoop, so doing that here freezes the whole
         # dashboard - streaming, rendering and status ticks alike - for the duration.
         # Hand it to a single worker so commands still apply in order.
-        self._submit_audio_task(command, self._execute_audio_control_command, command, position_id, value)
+        # Rapid arrow-key taps or position switches queue many play/seek commands behind
+        # a slow one. Only the newest matters, so number them and let superseded ones
+        # skip themselves when the worker reaches them.
+        transport_seq = None
+        if command in self._COALESCED_AUDIO_COMMANDS:
+            with self._audio_commands_lock:
+                self._transport_seq += 1
+                transport_seq = self._transport_seq
+        self._submit_audio_task(
+            command, self._execute_audio_control_command, command, position_id, value, transport_seq
+        )
+
+    # Commands where only the most recent pending one needs to run.
+    _COALESCED_AUDIO_COMMANDS = ('play', 'seek')
 
     def _submit_audio_task(self, label, fn, *args):
         """Queue work that touches VLC on the single audio worker, unless shut down."""
@@ -142,10 +186,13 @@ class AppCallbacks:
         with self._audio_commands_lock:
             self._pending_audio_commands.discard(future)
 
-    def _execute_audio_control_command(self, command, position_id, value):
+    def _execute_audio_control_command(self, command, position_id, value, transport_seq=None):
         if self._audio_shutdown:
             # Queued behind a command that outlived the session; VLC may already be gone.
             logger.debug("Skipping audio control command after shutdown: %s", command)
+            return
+        if transport_seq is not None and transport_seq != self._transport_seq:
+            logger.debug("Skipping superseded audio command: %s (%s)", command, transport_seq)
             return
         try:
             logger.info(f"Received audio control command: {command}, position_id: {position_id}, value: {value}")
@@ -243,44 +290,50 @@ class AppCallbacks:
 
         logger.info(f"Received session action command: {command} (request_id={request_id})")
 
-        if command == 'export_annotations':
-            self._handle_annotation_export(payload, request_id)
-            self._clear_session_action_command()
-            return
-
-        if command == 'save_setup_to_config':
-            # Cheap and synchronous -- a small JSON rewrite, no need to thread it.
-            if not callable(self.save_setup_request_handler):
-                self._publish_session_status(
-                    'error',
-                    'Saving setup to config is unavailable in this session.',
-                    done=True,
-                    request_id=request_id,
-                )
-            else:
-                result = self.save_setup_request_handler(payload=payload, request_id=request_id)
-                success = bool(result.get('success')) if isinstance(result, dict) else bool(result)
-                message = result.get('message', '') if isinstance(result, dict) else ''
-                self._publish_session_status(
-                    'info' if success else 'error',
-                    message or ('Setup saved.' if success else 'Saving setup failed.'),
-                    done=True,
-                    output_path=result.get('output_path', '') if isinstance(result, dict) else '',
-                    request_id=request_id,
-                )
-            self._clear_session_action_command()
-            return
-
-        if command != 'generate_static_html':
+        handler = _SESSION_ACTIONS.get(command)
+        if handler is None:
             self._publish_session_status(
                 'warning',
                 f"Unhandled session action '{command}'.",
                 done=True,
                 request_id=request_id,
             )
-            self._clear_session_action_command()
-            return
+        else:
+            try:
+                handler(self, payload, request_id)
+            except Exception as exc:
+                logger.error(f"Session action '{command}' failed: {exc}", exc_info=True)
+                self._publish_session_status(
+                    'error',
+                    f"Session action '{command}' failed: {exc}",
+                    done=True,
+                    request_id=request_id,
+                )
+        # The handler never clears the command itself; it is cleared exactly once here.
+        self._clear_session_action_command()
 
+    def _session_action_save_setup(self, payload, request_id):
+        # Cheap and synchronous -- a small JSON rewrite, no need to thread it.
+        if not callable(self.save_setup_request_handler):
+            self._publish_session_status(
+                'error',
+                'Saving setup to config is unavailable in this session.',
+                done=True,
+                request_id=request_id,
+            )
+            return
+        result = self.save_setup_request_handler(payload=payload, request_id=request_id)
+        success = bool(result.get('success')) if isinstance(result, dict) else bool(result)
+        message = result.get('message', '') if isinstance(result, dict) else ''
+        self._publish_session_status(
+            'info' if success else 'error',
+            message or ('Setup saved.' if success else 'Saving setup failed.'),
+            done=True,
+            output_path=result.get('output_path', '') if isinstance(result, dict) else '',
+            request_id=request_id,
+        )
+
+    def _session_action_generate_static_html(self, payload, request_id):
         if self._static_export_in_progress:
             self._publish_session_status(
                 'warning',
@@ -288,7 +341,6 @@ class AppCallbacks:
                 done=True,
                 request_id=request_id,
             )
-            self._clear_session_action_command()
             return
 
         if not callable(self.static_export_request_handler):
@@ -298,7 +350,6 @@ class AppCallbacks:
                 done=True,
                 request_id=request_id,
             )
-            self._clear_session_action_command()
             return
 
         self._static_export_in_progress = True
@@ -308,7 +359,6 @@ class AppCallbacks:
             done=False,
             request_id=request_id,
         )
-        self._clear_session_action_command()
 
         def run_export():
             try:
@@ -351,6 +401,49 @@ class AppCallbacks:
 
         threading.Thread(target=run_export, daemon=True).start()
 
+    # One writer thread: autosaves from a session stay in order and never block the Bokeh loop
+    # (the write can retry for a second or two while Google Drive holds the file).
+    _autosave_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='nsa-autosave')
+
+    @classmethod
+    def read_autosave_in_order(cls, config_path, timeout=15.0):
+        """Open ``config_path``'s autosave behind every write already queued on the writer thread,
+        so a reload never restores the file before the old tab's pagehide flush has landed."""
+        from .workspace_autosave import WorkspaceAutosave
+        try:
+            return cls._autosave_executor.submit(WorkspaceAutosave.for_config, config_path).result(timeout=timeout)
+        except Exception as exc:  # timeout / executor shut down: fall back to a plain (locked) read
+            logger.warning("Ordered autosave read failed (%s); reading directly.", exc)
+            return WorkspaceAutosave.for_config(config_path)
+
+    def _session_action_autosave_workspace(self, payload, request_id):
+        """Write the browser's workspace beside the config. Replies with an ``autosave:`` status
+        (``output_path`` = ``autosave:<status>:<rev>:<saved_at>``) that the browser consumes
+        silently; only conflicts and errors surface as toasts (``done=True``)."""
+        autosave = self.workspace_autosave
+        if autosave is None or not getattr(autosave, 'available', False):
+            self._publish_session_status(
+                'info', 'Autosave is off: no config file is attached to this session.',
+                done=False, output_path='autosave:unavailable:0:', request_id=request_id)
+            return
+        snapshot = deepcopy(payload)
+
+        def run_save():
+            result = autosave.save(snapshot)
+            tag = f"autosave:{result.status}:{result.rev}:{result.saved_at}"
+            if result.ok:
+                self._publish_session_status('info', result.message, done=False,
+                                             output_path=tag, request_id=request_id)
+            else:
+                self._publish_session_status('warning' if result.status == 'conflict' else 'error',
+                                             result.message, done=True, output_path=tag,
+                                             request_id=request_id)
+
+        try:
+            self._autosave_executor.submit(run_save)
+        except RuntimeError as exc:  # executor shut down during interpreter exit
+            logger.warning("Autosave could not be scheduled: %s", exc)
+
     def _handle_annotation_export(self, payload, request_id):
         if self._annotation_export_in_progress:
             self._publish_session_status('warning', 'An annotation export is already running.',
@@ -386,6 +479,8 @@ class AppCallbacks:
 
     def _periodic_update_audio_status(self):
         """Periodically updates the audio status source with current playback information."""
+        if self._release_if_stale():
+            return
         if not self.audio_handler or not getattr(self.audio_handler, 'audio_available', False):
             return
 
@@ -439,6 +534,77 @@ class AppCallbacks:
         if self._disconnected_ticks == self.DISCONNECTED_PAUSE_TICKS and self.audio_handler.is_playing():
             logger.info("No browser connected to session; pausing audio.")
             self._submit_audio_task('pause (disconnected)', self.audio_handler.pause)
+
+    def _release_if_stale(self, now: Optional[float] = None) -> bool:
+        """
+        Release this session once its browser has been gone for STALE_RELEASE_SECONDS.
+
+        A refreshed or closed tab never comes back to its old session, but Bokeh only
+        destroys that session after --unused-session-lifetime, and until then it holds a full
+        DataManager copy, the 1 s logs, a VLC instance and the lazy-load executor. A tab that
+        reconnects inside the grace period resets the clock, so a network blip is harmless.
+
+        Returns True once the session has been released (the tick then does nothing more).
+        """
+        if self._session_released:
+            return True
+        seconds = self.STALE_RELEASE_SECONDS
+        if not seconds or seconds <= 0:
+            return False
+        count = self._browser_connection_count()
+        if count is None or count > 0:
+            self._disconnected_since = None
+            return False
+        now = time.monotonic() if now is None else now
+        if self._disconnected_since is None:
+            self._disconnected_since = now
+            return False
+        if now - self._disconnected_since < seconds:
+            return False
+        self._release_stale_session()
+        return True
+
+    def _release_stale_session(self):
+        """Free everything a disconnected session holds. Idempotent; session_destroyed later is a no-op."""
+        if self._session_released:
+            return
+        self._session_released = True
+        logger.info("No browser for %.0f s; releasing the session's data, audio and workers.",
+                    self.STALE_RELEASE_SECONDS)
+        try:
+            from . import status_console
+            status_console.event('info', 'Released a closed tab\'s session (data, audio, workers)')
+        except Exception:  # pragma: no cover - console is cosmetic
+            pass
+        try:
+            self.cleanup()
+        except Exception as exc:
+            logger.warning("Error cleaning up stale session: %s", exc)
+        for hook in list(self.release_hooks):
+            try:
+                hook()
+            except Exception as exc:
+                logger.warning("Stale-session release hook failed: %s", exc)
+        self.release_hooks.clear()
+        # Drop references to the data. The handlers below close over the DataManager.
+        self.server_data_handler = None
+        self.static_export_request_handler = None
+        self.save_setup_request_handler = None
+        try:
+            self.doc.clear()
+            self.doc.add_root(Div(
+                text="<h2 style='font-family:sans-serif;color:#334155;margin:40px;'>This session was released "
+                     "after the browser disconnected. Reload the page to continue.</h2>",
+            ))
+        except Exception as exc:
+            logger.warning("Could not clear the released session's document: %s", exc)
+        # The DataManager copy sits in reference cycles (models <-> callbacks); collect now so the
+        # memory comes back promptly rather than at the next automatic collection.
+        try:
+            import gc
+            gc.collect()
+        except Exception:  # pragma: no cover
+            pass
 
     def _start_periodic_update(self):
         """Starts the periodic callback for audio status updates."""
@@ -543,8 +709,21 @@ class AppCallbacks:
             future.add_done_callback(on_done)
 
     def cleanup(self):
-        """Cleans up resources when the session is destroyed."""
+        """Cleans up resources when the session is destroyed (a second call is a no-op)."""
+        if getattr(self, '_cleaned_up', False):
+            return
+        self._cleaned_up = True
         self._stop_periodic_update()
+        if self.media_token:
+            try:
+                from .media_server import unregister_session
+                unregister_session(self.media_token)
+            except Exception as e:
+                logger.debug(f"Could not unregister from the media server: {e}")
+            self.media_token = None
+        ending = getattr(self.workspace_autosave, 'end', None)
+        if callable(ending):
+            ending()  # a newer tab may adopt whatever this session last flushed
         # Must precede any release below: a command still on the worker owns VLC.
         outstanding = self._shutdown_audio_commands()
         if self.server_data_handler is not None and hasattr(self.server_data_handler, 'cleanup'):
@@ -669,3 +848,10 @@ class AppCallbacks:
 
     def attach_js_callbacks(self):
         pass
+
+
+# Built-in session actions. Other modules call register_session_action() the same way.
+register_session_action("export_annotations", lambda cb, payload, request_id: cb._handle_annotation_export(payload, request_id))
+register_session_action("save_setup_to_config", AppCallbacks._session_action_save_setup)
+register_session_action("generate_static_html", AppCallbacks._session_action_generate_static_html)
+register_session_action("autosave_workspace", AppCallbacks._session_action_autosave_workspace)

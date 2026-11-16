@@ -16,6 +16,12 @@ import numpy as np
 import pandas as pd
 
 TIME_MS_PER_SECOND = 1000.0
+# A region is "coarse" when one sample is longer than the region, or when the interval is
+# at least COARSE_MIN_INTERVAL_S and exceeds this fraction of the region duration. Fast
+# (1 s) log data keeps its genuine per-second LAFmax for short events.
+COARSE_FRACTION = 1 / 3
+COARSE_MIN_INTERVAL_S = 60.0
+LOGGED_L90_COLUMNS = ("LAF90", "LA90")
 SPECTRAL_COLUMN = re.compile(r"^(L[A-Z][A-Za-z0-9]*)_([0-9.]+)(k)?(?:Hz)?$", re.I)
 
 
@@ -115,6 +121,10 @@ class MetricResult:
     diff_from_background_dB: float | None = None
     context_duration_s: float = 0.0
     percentile_method: str = "unavailable"
+    # True when one source sample is longer than (or more than COARSE_FRACTION of) the
+    # region: the "region" values are then really whole-interval values.
+    coarse_resolution: bool = False
+    coarse_resolution_reason: str | None = None
     missing_reasons: list[str] = field(default_factory=list)
     spectra: dict[str, dict[float, float | None]] = field(default_factory=dict)
 
@@ -224,7 +234,7 @@ def prepare_meter_data(frame: pd.DataFrame | None,
     columns = {}
     common_ends: dict[float, np.ndarray] = {}
     for name in frame:
-        if name not in ("LAeq", "LAFmax", "LAF", "LAFp", "LAF90") and not SPECTRAL_COLUMN.match(str(name)):
+        if name not in ("LAeq", "LAFmax", "LAF", "LAFp", "LAF90", "LA90") and not SPECTRAL_COLUMN.match(str(name)):
             continue
         values = pd.to_numeric(frame[name], errors="coerce").to_numpy(dtype=float, copy=True)
         finite = np.isfinite(values)
@@ -275,10 +285,17 @@ def spectral_provenance(data: PreparedMeterData, parameter: str, areas,
     return min(coverages, default=0.0), max(periods, default=None)
 
 
+def _format_interval(seconds: float) -> str:
+    if seconds >= 60 and abs(seconds / 60 - round(seconds / 60)) < 1e-6:
+        return f"{int(round(seconds / 60))}-min"
+    return f"{seconds:g}-s"
+
+
 def compute_region_metrics(frame: pd.DataFrame | PreparedMeterData, areas, *, meter: str = "",
                            chart_offset_ms: float = 0, resolution: str = "log",
                            sample_interval_s: float | None = None,
-                           context_areas=None, min_context_s: float = 60) -> MetricResult:
+                           context_areas=None, min_context_s: float = 60,
+                           coarse_fraction: float | None = COARSE_FRACTION) -> MetricResult:
     result = MetricResult(data_resolution=resolution)
     intervals = union_intervals(areas)
     source_areas = [(start - chart_offset_ms, end - chart_offset_ms) for start, end in intervals]
@@ -322,18 +339,46 @@ def compute_region_metrics(frame: pd.DataFrame | PreparedMeterData, areas, *, me
     maxima, _, _, maximum_weights = column_geometry("LAFmax")
     valid = np.isfinite(maxima) & (maximum_weights > 0)
     result.LAFmax_dB = float(maxima[valid].max()) if valid.any() else None
+    if (coarse_fraction is not None and requested_s > 0 and nominal
+            and (nominal > requested_s
+                 or (nominal >= COARSE_MIN_INTERVAL_S and nominal > requested_s * coarse_fraction))):
+        # The sample covering the region is the whole interval (e.g. 5 min), so its
+        # LAeq/L90 describe that interval and its max is not an event maximum.
+        result.coarse_resolution = True
+        result.coarse_resolution_reason = (
+            f"{_format_interval(nominal)} data longer than the event; "
+            "values are for the whole interval")
+        result.LAFmax_dB = None
     # Real fast-level samples take precedence; interval statistics remain useful
     # estimates but are explicitly distinguished in exported provenance.
     candidates = ("LAF", "LAFp", "LAeq", "LAF90")
-    percentile_column = next((name for name in candidates
-                              if column_geometry(name)[3].sum() > 0), None)
+    percentile_column = None
+    if resolution == "overview":
+        # Overview rows are 5-minute aggregates. The 10th percentile of their LAeq
+        # values is not an L90, so use the logged per-interval L90 when present.
+        percentile_column = next((name for name in LOGGED_L90_COLUMNS
+                                  if column_geometry(name)[3].sum() > 0), None)
+    logged_l90 = percentile_column is not None
+    if percentile_column is None:
+        percentile_column = next((name for name in candidates
+                                  if column_geometry(name)[3].sum() > 0), None)
     if percentile_column is None:
         percentile_column = next((name for name in candidates if len(column_geometry(name)[0])), None)
+
+    def percentile(values, weights):
+        # Pooled L90 cannot be rebuilt from interval L90s. The duration-weighted
+        # median is used because it is not dragged up by the occasional interval
+        # contaminated by an event, which the arithmetic mean would be.
+        return weighted_quantile(values, weights, .5 if logged_l90 else .1)
+
     if percentile_column:
         percentile_values, percentile_times, percentile_ends, percentile_weights = column_geometry(percentile_column)
-        result.LAF90_dB = weighted_quantile(percentile_values, percentile_weights)
-        indicative = resolution != "log" or (nominal or 0) >= 1 or percentile_column not in ("LAF", "LAFp")
-        result.percentile_method = f"duration-weighted inverse-CDF p10 of {percentile_column}" + ("; indicative" if indicative else "")
+        result.LAF90_dB = percentile(percentile_values, percentile_weights)
+        if logged_l90:
+            result.percentile_method = f"duration-weighted median of logged {percentile_column} (overview intervals); indicative"
+        else:
+            indicative = resolution != "log" or (nominal or 0) >= 1 or percentile_column not in ("LAF", "LAFp")
+            result.percentile_method = f"duration-weighted inverse-CDF p10 of {percentile_column}" + ("; indicative" if indicative else "")
     if context_areas:
         context = [(start - chart_offset_ms, end - chart_offset_ms) for start, end in union_intervals(context_areas)]
         if percentile_column:
@@ -343,7 +388,7 @@ def compute_region_metrics(frame: pd.DataFrame | PreparedMeterData, areas, *, me
             common_context = []
         result.context_duration_s = sum(end - start for start, end in common_context) / 1000
         if result.context_duration_s + 1e-6 >= min_context_s and percentile_column:
-            result.background_LA90_dB = weighted_quantile(percentile_values, _weights(percentile_times, percentile_ends, common_context))
+            result.background_LA90_dB = percentile(percentile_values, _weights(percentile_times, percentile_ends, common_context))
             result.background_LAeq_dB = weighted_energy(energy_values, _weights(energy_times, energy_ends, common_context))
         else:
             result.missing_reasons.append(f"Background context below {min_context_s:g} usable seconds")
@@ -366,7 +411,7 @@ def compute_region_metrics(frame: pd.DataFrame | PreparedMeterData, areas, *, me
         result.spectra.setdefault(parameter, {})[frequency_hz] = level
     if result.LAeq_dB is None:
         result.missing_reasons.append("LAeq column unavailable or contains no finite region samples")
-    if result.LAFmax_dB is None:
+    if result.LAFmax_dB is None and not result.coarse_resolution:
         result.missing_reasons.append("Genuine LAFmax column unavailable")
     if result.coverage < 1 - 1e-6:
         result.missing_reasons.append("Requested area has incomplete timestamp coverage")

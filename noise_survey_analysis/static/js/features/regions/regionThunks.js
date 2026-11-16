@@ -967,8 +967,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             if (typeof getState !== 'function') return;
             const step = direction < 0 ? -1 : 1;
             const state = getState();
-            const regions = regionSelectors.selectAllRegions
-                ? regionSelectors.selectAllRegions(state) : [];
+            // Rejected suggestions stay in state but are skipped when stepping.
+            const regions = (regionSelectors.selectAllRegions
+                ? regionSelectors.selectAllRegions(state) : []).filter(region => region.status !== 'rejected');
             if (!regions.length) {
                 dispatch(actions.noticeShown('No regions yet. Drag on a chart to draw one.'));
                 return;

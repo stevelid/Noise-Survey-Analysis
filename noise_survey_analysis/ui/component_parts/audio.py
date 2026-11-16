@@ -12,6 +12,36 @@ from bokeh.layouts import Row
 from .shared import logger
 
 
+def create_audio_backend_toggle(backend: str = 'vlc') -> Toggle:
+    """The Audio backend switch next to the Boost button: VLC (server) or the browser clip player.
+
+    The page-side module (``services/audio/clipPlayer.js``) owns the behaviour and keeps the
+    label in step; this widget only reports clicks to it.
+    """
+    active = str(backend).lower() == 'browser'
+    toggle = Toggle(
+        label="Audio: Browser" if active else "Audio: VLC",
+        active=active,
+        button_type="light",
+        width=110,
+        height=30,
+        name="global_audio_backend_toggle",
+    )
+    toggle.js_on_change('active', CustomJS(
+        args=dict(button=toggle),
+        code="""
+            const player = window.NoiseSurveyApp && window.NoiseSurveyApp.services
+                && window.NoiseSurveyApp.services.audio && window.NoiseSurveyApp.services.audio.clipPlayer;
+            if (player) {
+                player.setBackend(button.active ? 'browser' : 'vlc');
+            } else {
+                console.error('NoiseSurveyApp.services.audio.clipPlayer not found!');
+            }
+        """
+    ))
+    return toggle
+
+
 def create_audio_controls_for_position(position_id: str) -> dict:
     """
     Creates a dictionary of Bokeh widgets for controlling audio playback for a single position.
@@ -178,141 +208,18 @@ def create_position_title_and_offsets(
     display_title: str = None,
     chart_offset_seconds: float = 0.0,
     audio_offset_seconds: float = 0.0,
+    hover_div=None,
 ) -> dict:
-    """
-    Creates position title display and offset controls (without playback buttons).
-    This is used for all positions to show title and allow offset adjustments.
-    
-    Args:
-        position_id (str): The identifier for the measurement position (e.g., 'SW', 'N').
-        display_title (str): Optional custom display title. If None, uses position_id.
-        chart_offset_seconds (float): Initial chart offset, normally restored from
-            the job config. Set at construction rather than assigned afterwards so
-            the value is part of the document the browser first receives; a later
-            assignment races the JS store initialisation and gets reset to zero.
-        audio_offset_seconds (float): Initial audio offset, same reasoning.
-    
-    Returns:
-        dict: A dictionary containing the Bokeh widgets and their containing 'layout'.
-    """
-    if display_title is None:
-        display_title = position_id
-    
-    # Position title display
-    title_div = Div(
-        text=f"<strong style='font-size: 13px; color: #0f172a; white-space: nowrap;'>{display_title}</strong>",
-        width=220,
-        height=35,
-        name=f"position_title_{position_id}",
-        styles={"display": "flex", "align-items": "center", "justify-content": "flex-start", "flex-shrink": "0"}
-    )
+    """Creates the compact position header (title, status, offset chip, reorder and spectrogram
+    buttons) and the hidden offset-spinner row. Kept under this name for existing callers; the
+    implementation lives in position_header.py. Spinner model names are unchanged
+    (``chart_offset_spinner_{pos}`` / ``audio_offset_spinner_{pos}``)."""
+    from .position_header import create_position_header
 
-    # Chart Offset controls
-    chart_offset_label = Div(
-        text="<span style='font-size: 10px; color: #64748b;'>Chart Offset (s):</span>",
-        width=85,
-        height=35,
-        styles={"display": "flex", "align-items": "center", "padding-left": "8px"},
-        name=f"chart_offset_label_{position_id}"
+    return create_position_header(
+        position_id=position_id,
+        display_title=display_title,
+        chart_offset_seconds=chart_offset_seconds,
+        audio_offset_seconds=audio_offset_seconds,
+        hover_div=hover_div,
     )
-    chart_offset_spinner = Spinner(
-        width=55,
-        height=28,
-        low=-6000,
-        high=6000,
-        step=0.1,
-        value=float(chart_offset_seconds or 0.0),
-        format="0.0",
-        name=f"chart_offset_spinner_{position_id}"
-    )
-    chart_offset_spinner.js_on_change('value', CustomJS(
-        args=dict(position_id=position_id, spinner=chart_offset_spinner),
-        code="""
-            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handlePositionChartOffsetChange) {
-                const offset = typeof spinner.value === 'number' ? spinner.value : Number(spinner.value || 0);
-                window.NoiseSurveyApp.eventHandlers.handlePositionChartOffsetChange({ positionId: position_id, offsetSeconds: offset });
-            } else {
-                console.error('NoiseSurveyApp.eventHandlers.handlePositionChartOffsetChange function not found!');
-            }
-        """
-    ))
-
-    # Audio Offset controls
-    audio_offset_label = Div(
-        text="<span style='font-size: 10px; color: #64748b;'>Audio Offset (s):</span>",
-        width=85,
-        height=35,
-        styles={"display": "flex", "align-items": "center", "padding-left": "8px"},
-        name=f"audio_offset_label_{position_id}"
-    )
-    audio_offset_spinner = Spinner(
-        width=55,
-        height=28,
-        low=-6000,
-        high=6000,
-        step=0.1,
-        value=float(audio_offset_seconds or 0.0),
-        format="0.0",
-        name=f"audio_offset_spinner_{position_id}"
-    )
-    audio_offset_spinner.js_on_change('value', CustomJS(
-        args=dict(position_id=position_id, spinner=audio_offset_spinner),
-        code="""
-            if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handlePositionAudioOffsetChange) {
-                const offset = typeof spinner.value === 'number' ? spinner.value : Number(spinner.value || 0);
-                window.NoiseSurveyApp.eventHandlers.handlePositionAudioOffsetChange({ positionId: position_id, offsetSeconds: offset });
-            } else {
-                console.error('NoiseSurveyApp.eventHandlers.handlePositionAudioOffsetChange function not found!');
-            }
-        """
-    ))
-
-    # Effective offset display (text is overwritten by JS; styles here control its appearance)
-    effective_offset_display = Div(
-        text="Effective offset: +0.00 s",
-        width=135,
-        height=35,
-        name=f"effective_offset_display_{position_id}",
-        styles={
-            "display": "flex",
-            "align-items": "center",
-            "padding-left": "8px",
-            "white-space": "nowrap",
-            "font-size": "10px",
-            "color": "#64748b"
-        }
-    )
-
-    controls_layout = Row(
-        title_div,
-        chart_offset_label,
-        chart_offset_spinner,
-        audio_offset_label,
-        audio_offset_spinner,
-        effective_offset_display,
-        name=f"position_controls_{position_id}",
-        styles={
-            "gap": "6px",
-            "background-color": "#f1f5f9",
-            "border-top": "1px solid #e2e8f0",
-            "border-bottom": "1px solid #e2e8f0",
-            "padding": "4px 12px",
-            "align-items": "center",
-            "justify-content": "space-between",
-            "flex-wrap": "wrap",
-            "row-gap": "4px",
-            "min-height": "38px"
-        }
-    )
-
-    logger.debug(f"Position title and offset controls created for '{position_id}'.")
-    return {
-        "title_div": title_div,
-        "display_title_div": title_div,
-        "chart_offset_label": chart_offset_label,
-        "chart_offset_spinner": chart_offset_spinner,
-        "audio_offset_label": audio_offset_label,
-        "audio_offset_spinner": audio_offset_spinner,
-        "effective_offset_display": effective_offset_display,
-        "layout": controls_layout
-    }

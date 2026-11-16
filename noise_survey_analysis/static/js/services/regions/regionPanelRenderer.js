@@ -20,6 +20,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             .region-detail__header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 4px; }
             .region-detail__meta { color: #555; font-size: 11px; margin-bottom: 6px; }
             .metric-disabled { color: #999; }
+            .metric-coarse { color: #999; font-style: italic; }
+            .coarse-badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: #fff3cd; color: #7a5b00; font-size: 0.85em; font-style: normal; cursor: help; }
             .region-frequency { font-family: 'Segoe UI', sans-serif; font-size: 12px; margin-top: 8px; }
             .region-frequency__header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 4px; }
             .region-frequency__source { font-size: 11px; color: #555; }
@@ -277,7 +279,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const totalDuration = formatDuration(safeMetrics.durationMs ?? sumAreaDurations(areas));
         const dataSourceLabel = safeMetrics.dataResolution === 'log' ? 'Log data'
             : safeMetrics.dataResolution === 'overview' ? 'Overview data' : 'No data';
-        
+        const coarse = Boolean(safeMetrics.coarseResolution);
+        const coarseClass = coarse ? 'metric-coarse' : '';
+        const coarseTitle = escapeHtml(safeMetrics.coarseResolutionReason || 'Coarse data: values are for the whole sample interval');
+        const intervalS = Number(safeMetrics.sampleIntervalS);
+        const coarseBadgeText = Number.isFinite(intervalS) && intervalS >= 60 && Math.abs(intervalS / 60 - Math.round(intervalS / 60)) < 1e-6
+            ? `${Math.round(intervalS / 60)} min` : (Number.isFinite(intervalS) && intervalS > 0 ? `${intervalS} s` : 'coarse');
+        const coarseBadge = coarse
+            ? `<span class="coarse-badge" title="${coarseTitle}">${escapeHtml(coarseBadgeText)}</span>` : '';
+
         const segmentItems = areas.map((area, idx) => {
             const spanMs = Math.max(0, Number(area?.end) - Number(area?.start));
             return `<li>Segment ${idx + 1}: ${formatSegmentRange(area)} (${formatDuration(spanMs)})</li>`;
@@ -291,9 +301,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 ${segmentListHtml}
                 <table>
                     <tr><th>Metric</th><th>Value</th></tr>
-                    <tr><td>LAeq</td><td>${laeq}</td></tr>
-                    <tr><td>LAFmax</td><td>${lafmax}</td></tr>
-                    <tr><td class="${la90Class}">LA90</td><td class="${la90Class}">${la90}</td></tr>
+                    <tr><td>LAeq</td><td class="${coarseClass}">${laeq}${coarseBadge}</td></tr>
+                    <tr><td>LAFmax</td><td class="${coarseClass}">${lafmax}</td></tr>
+                    <tr><td class="${la90Class}">LA90</td><td class="${la90Class || coarseClass}">${la90}</td></tr>
                 </table>
             </div>
         `;

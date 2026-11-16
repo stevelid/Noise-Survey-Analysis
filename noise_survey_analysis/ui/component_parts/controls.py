@@ -34,8 +34,47 @@ class ControlsComponent:
         self.global_audio_controls = self.add_global_audio_controls()
         self.log_threshold_spinner = self.add_log_threshold_spinner()
         self.status_chips = self.add_status_chips()
+        self.layout_controls = self.add_layout_controls()
 
         logger.info("ControlsComponent initialized.")
+
+    def add_layout_controls(self):
+        """Toolbar controls for the layout slice: fit rows, y-axis mode, wheel lock, help.
+
+        The widgets only dispatch intents; layoutRenderer.js writes the layout state back onto them.
+        """
+        def dispatch_js(expression: str) -> str:
+            return f"""
+                const app = window.NoiseSurveyApp;
+                if (app && app.store && app.thunks) {{ app.store.dispatch({expression}); }}
+            """
+
+        fit_toggle = Toggle(label="Fit rows", button_type="default", width=74, height=30,
+                            active=True, name="layout_fit_toggle")
+        fit_toggle.js_on_change("active", CustomJS(
+            code=dispatch_js("app.thunks.setFitToWindowIntent({ enabled: cb_obj.active })")))
+
+        y_button = Button(label="Y: auto", button_type="default", width=70, height=30,
+                          name="layout_y_mode_button")
+        y_button.js_on_click(CustomJS(code=dispatch_js("app.thunks.cycleYAxisModeIntent()")))
+
+        wheel_toggle = Toggle(label="Wheel lock", button_type="default", width=88, height=30,
+                              active=False, name="layout_wheel_lock_toggle")
+        wheel_toggle.js_on_change("active", CustomJS(
+            code=dispatch_js("app.thunks.setWheelZoomLockIntent({ locked: cb_obj.active })")))
+
+        help_button = Button(label="?", button_type="default", width=30, height=30,
+                             name="layout_help_button")
+        help_button.js_on_click(CustomJS(code="""
+            const app = window.NoiseSurveyApp;
+            if (app && app.services && app.services.helpOverlay) { app.services.helpOverlay.toggle(); }
+        """))
+        return {
+            "fit_toggle": fit_toggle,
+            "y_mode_button": y_button,
+            "wheel_toggle": wheel_toggle,
+            "help_button": help_button,
+        }
 
 
     def add_view_type_selector(self):
@@ -58,7 +97,7 @@ class ControlsComponent:
         toggle = Toggle(
             label="Hover Enabled", 
             button_type="success", 
-            width=130,
+            width=120,
             height=30,
             name="global_hover_toggle",
             active=True
@@ -132,7 +171,7 @@ class ControlsComponent:
         # Active position display
         active_position_display = Div(
             text="<span style='font-size: 11px; color: #64748b;'>Audio not available</span>",
-            width=140,
+            width=110,
             height=30,
             name="global_active_position_display",
             styles={"display": "flex", "align-items": "center", "padding-left": "8px"}
@@ -141,10 +180,13 @@ class ControlsComponent:
         # Audio file info display (filename, position in file, file start time)
         audio_file_info_display = Div(
             text="",
-            width=350,
+            sizing_mode="stretch_width",
+            min_width=0,
             height=30,
             name="global_audio_file_info_display",
-            styles={"display": "flex", "align-items": "center", "padding-left": "8px", "font-size": "10px", "color": "#64748b"}
+            styles={"display": "flex", "align-items": "center", "padding-left": "8px", "font-size": "10px",
+                    "color": "#64748b", "white-space": "nowrap", "overflow": "hidden",
+                    "text-overflow": "ellipsis", "min-width": "0"}
         )
 
         controls_layout = Row(
@@ -154,13 +196,17 @@ class ControlsComponent:
             active_position_display,
             audio_file_info_display,
             name="global_audio_controls",
+            sizing_mode="stretch_width",
             styles={
                 "gap": "4px",
-                "padding": "4px 12px",
+                "padding": "2px 8px",
                 "border": "1px solid #cbd5e1",
                 "border-radius": "4px",
                 "background-color": "#f8fafc",
-                "margin-left": "16px"
+                "margin-left": "8px",
+                "min-width": "0",
+                "overflow": "hidden",
+                "align-items": "center"
             }
         )
 
@@ -191,8 +237,8 @@ class ControlsComponent:
             }
         """))
         label = Div(
-            text="Log max window (min):",
-            width=145,
+            text="Log window (min):",
+            width=112,
             height=30,
             styles={'line-height': '30px', 'font-size': '9pt', 'white-space': 'nowrap'}
         )
@@ -203,7 +249,7 @@ class ControlsComponent:
         dropdown = Dropdown(
             label="Plots",
             button_type="default",
-            width=120,
+            width=110,
             height=30,
             name="plot_visibility_dropdown",
             menu=[],
@@ -230,7 +276,7 @@ class ControlsComponent:
     def add_status_chips(self):
         view_status = Div(
             text="<span style='font-size:11px;color:#0f172a;'>View: --</span>",
-            width=170,
+            width=200,
             height=28,
             name="view_status_chip",
             styles={
@@ -244,7 +290,7 @@ class ControlsComponent:
         )
         focus_status = Div(
             text="<span style='font-size:11px;color:#0f172a;'>Focus: none</span>",
-            width=200,
+            width=110,
             height=28,
             name="focus_status_chip",
             styles={
@@ -343,16 +389,21 @@ class ControlsComponent:
             self.view_toggle,
             self.log_threshold_spinner,
             self.hover_toggle,
+            self.layout_controls['fit_toggle'],
+            self.layout_controls['y_mode_button'],
+            self.layout_controls['wheel_toggle'],
+            self.layout_controls['help_button'],
             self.status_chips['layout'],
             name="view_controls_group",
             styles={
-                "gap": "8px",
+                "gap": "6px",
                 "align-items": "center",
-                "padding": "4px 8px",
+                "padding": "2px 8px",
                 "border": "1px solid #cbd5e1",
                 "border-radius": "8px",
                 "background-color": "#ffffff",
-                "flex-wrap": "wrap",
+                "flex-wrap": "nowrap",
+                "flex-shrink": "0",
                 "overflow": "visible"
             }
         )
@@ -364,10 +415,12 @@ class ControlsComponent:
         controls_group = Row(
             *controls_children,
             name="primary_controls_row",
+            sizing_mode="stretch_width",
             styles={
-                "flex-wrap": "wrap",
+                "flex-wrap": "nowrap",
                 "gap": "8px",
-                "align-items": "center"
+                "align-items": "center",
+                "min-width": "0"
             }
         )
 
@@ -376,11 +429,11 @@ class ControlsComponent:
             name="controls_component_layout",
             css_classes=["nsa-dashboard-controls"],
             styles={
-                "gap": "8px",
+                "gap": "0px",
                 "position": "sticky",
                 "top": "0px",
                 "background": "#f1f5f9",
-                "padding": "10px 12px",
+                "padding": "4px 12px",
                 "box-shadow": "0 2px 6px rgba(0, 0, 0, 0.08)",
                 "z-index": "100"
             }

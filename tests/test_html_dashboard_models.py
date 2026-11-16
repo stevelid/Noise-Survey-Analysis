@@ -37,8 +37,10 @@ def test_dashboard_document_contains_html_annotations_without_legacy_widgets():
     assert content.children[1].name == "side_panel_container"
     assert content.children[1].sizing_mode == "stretch_height"
     assert document.get_model_by_name("annotation_panel_toggle") is not None
-    assert document.get_model_by_name("frequency_bar_layout") in page.children
-    assert document.get_model_by_name("summary_table_div") in page.references()
+    # The frequency slice is docked in the sidebar column (WP1), not below the charts.
+    assert document.get_model_by_name("frequency_bar_layout") in content.children[1].references()
+    assert document.get_model_by_name("frequency_bar_layout") not in page.children
+    assert document.get_model_by_name("summary_table_div") in content.children[1].references()
     master = document.get_model_by_name("master_x_range")
     assert master.min_interval == 1000
     assert master.max_interval == master.end - master.start

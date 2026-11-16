@@ -11,6 +11,7 @@ import math
 import os
 from typing import Any, Optional
 
+from .annotation_validation import ANNOTATION_COMMANDS, validate_annotation_command
 from .commands import ALLOWED_COMMANDS, ALLOWED_VIEW_MODES, MAX_PAYLOAD_BYTES, ControlCommand
 
 
@@ -99,7 +100,8 @@ def validate_workspace_payload(payload: Any) -> dict:
     """Return a validated workspace payload dict.
 
     Accepts either a ``str`` (JSON text) or a ``dict``.  The resulting dict
-    must contain at least one of ``appState`` or ``sourceConfigs``.
+    must contain an ``appState`` object and a supported ``version``; this
+    matches ``workspaceMigration.js`` (``sourceConfigs`` alone is rejected there).
     """
     if isinstance(payload, str):
         try:
@@ -108,10 +110,16 @@ def validate_workspace_payload(payload: Any) -> dict:
             raise ValueError(f"workspace payload is not valid JSON: {exc}") from exc
     if not isinstance(payload, dict):
         raise ValueError("workspace payload must be a JSON object")
-    if "appState" not in payload and "sourceConfigs" not in payload:
-        raise ValueError(
-            "workspace payload must contain 'appState' and/or 'sourceConfigs'"
-        )
+    if not isinstance(payload.get("appState"), dict):
+        raise ValueError("workspace payload must contain an 'appState' object")
+    version = payload.get("version")
+    if version is not None:
+        try:
+            supported = float(version) in (1, 2)
+        except (TypeError, ValueError):
+            supported = False
+        if not supported:
+            raise ValueError(f"unsupported workspace version: {version!r}")
     return payload
 
 
@@ -128,8 +136,16 @@ def validate_body_size(body: bytes | str) -> None:
 # Command-level validator
 # ---------------------------------------------------------------------------
 
-def validate_command_payload(command: str, payload: dict[str, Any]) -> dict[str, Any]:
+def validate_command_payload(
+    command: str,
+    payload: dict[str, Any],
+    positions: Optional[list[str]] = None,
+    time_range: Optional[tuple[float, float]] = None,
+) -> dict[str, Any]:
     """Validate the payload for a specific command.
+
+    ``positions`` (the registered position ids) and ``time_range`` (survey start and end in epoch
+    ms) are optional context used by the annotation commands; when absent those checks are skipped.
 
     Returns the (possibly normalised) payload dict on success.
     Raises ``ValueError`` describing the problem on failure.
@@ -197,6 +213,11 @@ def validate_command_payload(command: str, payload: dict[str, Any]) -> dict[str,
         if not isinstance(include_all, bool):
             raise ValueError("include_all_resolutions must be a boolean")
         result["include_all_resolutions"] = include_all
+        if "include_proposed" in payload:
+            include_proposed = payload["include_proposed"]
+            if not isinstance(include_proposed, bool):
+                raise ValueError("include_proposed must be a boolean")
+            result["include_proposed"] = include_proposed
         for name, default, maximum in (("background_window_s", 300, 86400), ("min_context_s", 60, 172800)):
             value = payload.get(name, default)
             try:
@@ -207,6 +228,9 @@ def validate_command_payload(command: str, payload: dict[str, Any]) -> dict[str,
                 raise ValueError(f"Invalid {name}")
             result[name] = number
         return result
+
+    if command in ANNOTATION_COMMANDS:
+        return validate_annotation_command(command, payload, positions, time_range)
 
     # Commands with no required payload: status, fit_full_range, export_static_html
     return {}

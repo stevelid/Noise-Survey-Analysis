@@ -3,7 +3,12 @@
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, Optional
-from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETTINGS
+from noise_survey_analysis.core.config import (
+    CHART_SETTINGS,
+    FRAME_BORDER_LEFT,
+    FRAME_BORDER_RIGHT,
+    VISUALIZATION_SETTINGS,
+)
 from bokeh.models import (
     ColumnDataSource,
     CustomJSTickFormatter,
@@ -16,7 +21,33 @@ from bokeh.layouts import column
 from bokeh.plotting import figure
 
 from .shared import logger
-from .charts import TimeSeriesComponent
+from .charts import TimeSeriesComponent, build_time_axis_formatter, AXIS_FONT_SIZE
+from bokeh.models import NoOverlap
+
+MAX_TRACE_POINTS = 2000
+
+
+def decimate_minmax(x, y, max_points: int = MAX_TRACE_POINTS):
+    """Min/max decimation: keeps each bucket's lowest and highest finite sample (in time order) so
+    peaks survive. Returns (x, y) arrays with at most ``max_points`` points."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    finite = np.isfinite(x) & np.isfinite(y)
+    x, y = x[finite], y[finite]
+    if x.size <= max_points:
+        return x, y
+    buckets = max(1, max_points // 2)
+    edges = np.linspace(0, x.size, buckets + 1).astype(int)
+    xs, ys = [], []
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        if hi <= lo:
+            continue
+        seg = y[lo:hi]
+        i_min, i_max = lo + int(np.argmin(seg)), lo + int(np.argmax(seg))
+        for idx in sorted({i_min, i_max}):
+            xs.append(x[idx])
+            ys.append(y[idx])
+    return np.asarray(xs), np.asarray(ys)
 
 
 class RangeSelectorComponent:
@@ -105,7 +136,7 @@ class RangeSelectorComponent:
         x_range_obj = Range1d(start=x_start, end=x_end)
 
         select_figure = figure(
-            title="Drag handles to select time range",
+            title=None,
             height=self.settings['range_selector_height'],
             width=self.settings['range_selector_width'],
             x_axis_type="datetime",
@@ -114,42 +145,55 @@ class RangeSelectorComponent:
             tools="",
             toolbar_location=None,
             background_fill_color = "#efefef",
+            min_border_left=FRAME_BORDER_LEFT,
+            min_border_right=FRAME_BORDER_RIGHT,
+            min_border_top=2,
+            min_border_bottom=2,
             name=self.name_id
         )
 
-        # Metrics plotting also needs to be robust to empty source
-        metrics_to_plot = []
+        # One decimated LAeq trace on an explicit y range, so the strip is never empty or scaled by
+        # a stray outlier. Falls back to the first numeric column when there is no LAeq.
+        trace_x, trace_y = np.array([]), np.array([])
+        trace_name = None
         if 'Datetime' in source.data and len(source.data['Datetime']) > 0:
-            # Check for other columns that are list-like and have matching length
-            metrics = [
-                col for col in source.data 
-                if col != 'Datetime' and col != 'index' and 
-                isinstance(source.data[col], (list, np.ndarray, pd.Series)) and 
-                len(source.data[col]) == len(source.data['Datetime'])
-            ]
-            if not metrics:
-                 logger.warning("No plottable metrics found in source for range selector.")
-            else:
-                 metrics_to_plot = metrics[:4] 
-
+            for candidate in ('LAeq', 'LAeq_dt', 'LAFmax', 'LAFmax_dt'):
+                if candidate in source.data and len(source.data[candidate]) == len(source.data['Datetime']):
+                    trace_name = candidate
+                    break
+            if trace_name is None:
+                for col in source.data:
+                    if col in ('Datetime', 'index'):
+                        continue
+                    values = source.data[col]
+                    if isinstance(values, (list, np.ndarray, pd.Series)) and len(values) == len(source.data['Datetime']):
+                        trace_name = col
+                        break
+        if trace_name is not None:
+            try:
+                trace_x, trace_y = decimate_minmax(source.data['Datetime'], source.data[trace_name])
+            except (TypeError, ValueError) as exc:
+                logger.warning(f"Range selector trace could not be built: {exc}")
+        if trace_y.size:
+            y_lo, y_hi = float(np.nanmin(trace_y)), float(np.nanmax(trace_y))
+            pad = max(2.0, (y_hi - y_lo) * 0.1)
+            select_figure.y_range = Range1d(y_lo - pad, y_hi + pad)
+        else:
+            select_figure.y_range = Range1d(0, 100)
+        self.trace_source = ColumnDataSource(data={'Datetime': trace_x, 'level': trace_y}, name='range_selector_trace_source')
         colors = VISUALIZATION_SETTINGS['line_colors']
-        for i, metric in enumerate(metrics_to_plot):
-            color = colors.get(metric, "#cccccc") 
-            select_figure.line('Datetime', metric, source=source, line_width=1, color=color, alpha=0.6)
+        select_figure.line('Datetime', 'level', source=self.trace_source, line_width=1,
+                           color=colors.get(trace_name, '#2563eb'), alpha=0.8)
 
         self.range_tool = RangeTool(x_range=self.attached_chart_figure.x_range)
         self.range_tool.overlay.fill_color = "navy"
         self.range_tool.overlay.fill_alpha = 0.2
         select_figure.add_tools(self.range_tool)
 
-        select_figure.xaxis.formatter = CustomJSTickFormatter(code="""
-            const d = new Date(tick);
-            const weekday = d.toLocaleDateString(undefined, { weekday: 'short' });
-            const date = d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' });
-            const time = d.toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            return `${weekday} ${date} ${time}`;
-        """)
+        select_figure.xaxis.formatter = build_time_axis_formatter(select_figure)
         select_figure.xaxis.ticker = DatetimeTicker(desired_num_ticks=8)
+        select_figure.xaxis.major_label_policy = NoOverlap()
+        select_figure.xaxis.major_label_text_font_size = AXIS_FONT_SIZE
         select_figure.grid.grid_line_color = None
         select_figure.yaxis.visible = False
 

@@ -14,6 +14,14 @@ import tempfile
 
 logger = logging.getLogger(__name__)
 
+# Bump whenever parser OUTPUT changes (new columns, timezone/DST handling, merge-relevant
+# fixes) so stale pickles from an older parser are never served. It is part of the cache key.
+PARSER_CACHE_VERSION = 2
+
+# Eviction limits (applied when the cache starts and after writes).
+CACHE_MAX_AGE_SECONDS = 30 * 24 * 3600
+CACHE_MAX_TOTAL_BYTES = 3 * 1024 ** 3
+
 try:
     from .data_parsers import DEFAULT_TIMEZONE, ParsedData
 except ImportError:
@@ -47,7 +55,7 @@ class ParsedDataCache:
             cls._instance = super().__new__(cls)
             cls._instance._cache: Dict[str, CacheEntry] = {}
             cls._instance._ensure_cache_dir()
-            cls._instance._load_from_disk()
+            cls._instance._evict_disk_entries()
         return cls._instance
 
     def _ensure_cache_dir(self):
@@ -69,7 +77,7 @@ class ParsedDataCache:
         # Include parse profile and timezone so parse results are not cross-contaminated.
         profile = 'full' if return_all_columns else 'filtered'
         resolved_timezone = timezone or DEFAULT_TIMEZONE
-        key_string = f"{abs_path}::{profile}::{resolved_timezone}"
+        key_string = f"v{PARSER_CACHE_VERSION}::{abs_path}::{profile}::{resolved_timezone}"
         # Hash for a shorter key
         return hashlib.md5(key_string.encode('utf-8')).hexdigest()
 
@@ -77,38 +85,69 @@ class ParsedDataCache:
         """Get the path to the cache file for a given key."""
         return self._cache_dir / f"{cache_key}.pkl"
 
-    def _load_from_disk(self):
-        """Load all cache entries from disk."""
-        if not self._cache_dir.exists():
-            return
-
-        loaded_count = 0
-        for cache_file in self._cache_dir.glob("*.pkl"):
+    def _load_entry_from_disk(self, cache_key: str) -> Optional[CacheEntry]:
+        """Load one entry from disk on demand (nothing is unpickled at import)."""
+        cache_file = self._get_cache_file_path(cache_key)
+        if not cache_file.exists():
+            return None
+        try:
+            with open(cache_file, 'rb') as f:
+                entry: CacheEntry = pickle.load(f)
             try:
-                with open(cache_file, 'rb') as f:
-                    entry: CacheEntry = pickle.load(f)
-                    cache_key = cache_file.stem
-                    self._cache[cache_key] = entry
-                    loaded_count += 1
-            except Exception as e:
-                logger.debug(f"Failed to load cache entry {cache_file.name}: {e}")
-                # Remove corrupted cache files
-                try:
-                    cache_file.unlink()
-                except:
-                    pass
+                os.utime(cache_file, None)  # touch: mtime doubles as last-used for LRU eviction
+            except OSError:
+                pass
+            return entry
+        except Exception as e:
+            logger.debug(f"Failed to load cache entry {cache_file.name}: {e}")
+            try:
+                cache_file.unlink()  # corrupted/incompatible pickle
+            except OSError:
+                pass
+            return None
 
-        if loaded_count > 0:
-            logger.info(f"Loaded {loaded_count} cached parsed file(s) from disk")
+    def _evict_disk_entries(self):
+        """Drop entries older than 30 days, then least-recently-used until under the size cap."""
+        try:
+            files = []
+            now = datetime.now().timestamp()
+            for cache_file in self._cache_dir.glob("*.pkl"):
+                try:
+                    st = cache_file.stat()
+                except OSError:
+                    continue
+                if now - st.st_mtime > CACHE_MAX_AGE_SECONDS:
+                    self._remove_entry(cache_file.stem)
+                    continue
+                files.append((st.st_mtime, st.st_size, cache_file))
+            total = sum(f[1] for f in files)
+            if total > CACHE_MAX_TOTAL_BYTES:
+                for mtime, size, cache_file in sorted(files, key=lambda f: f[0]):
+                    if total <= CACHE_MAX_TOTAL_BYTES:
+                        break
+                    self._remove_entry(cache_file.stem)
+                    total -= size
+            for stale in self._cache_dir.glob("*.pkl.tmp*"):
+                if now - stale.stat().st_mtime > 3600:
+                    stale.unlink()
+        except Exception as e:
+            logger.debug(f"Cache eviction skipped: {e}")
 
     def _save_entry_to_disk(self, cache_key: str, entry: CacheEntry):
-        """Save a single cache entry to disk."""
+        """Save a single cache entry atomically (temp file + os.replace)."""
+        cache_file = self._get_cache_file_path(cache_key)
+        tmp_file = cache_file.with_name(f"{cache_file.name}.tmp{os.getpid()}")
         try:
-            cache_file = self._get_cache_file_path(cache_key)
-            with open(cache_file, 'wb') as f:
+            with open(tmp_file, 'wb') as f:
                 pickle.dump(entry, f)
+            os.replace(tmp_file, cache_file)
         except Exception as e:
             logger.warning(f"Failed to save cache entry to disk: {e}")
+            try:
+                if tmp_file.exists():
+                    tmp_file.unlink()
+            except OSError:
+                pass
 
     def _is_file_modified(self, file_path: str, cached_mtime: float, cached_size: int) -> bool:
         """Check if a file has been modified since it was cached."""
@@ -138,10 +177,12 @@ class ParsedDataCache:
         """
         cache_key = self._get_cache_key(file_path, return_all_columns, timezone)
 
-        if cache_key not in self._cache:
-            return None
-
-        entry = self._cache[cache_key]
+        entry = self._cache.get(cache_key)
+        if entry is None:
+            entry = self._load_entry_from_disk(cache_key)
+            if entry is None:
+                return None
+            self._cache[cache_key] = entry
 
         # Verify the file hasn't been modified
         if self._is_file_modified(file_path, entry.file_mtime, entry.file_size):
@@ -184,6 +225,7 @@ class ParsedDataCache:
 
             self._cache[cache_key] = entry
             self._save_entry_to_disk(cache_key, entry)
+            self._evict_disk_entries()
             logger.debug(f"Cached: {os.path.basename(file_path)}")
 
         except Exception as e:
@@ -205,9 +247,9 @@ class ParsedDataCache:
         """Clear all cache entries."""
         self._cache.clear()
 
-        # Remove all cache files
+        # Remove all cache files (including leftover temp files)
         if self._cache_dir.exists():
-            for cache_file in self._cache_dir.glob("*.pkl"):
+            for cache_file in list(self._cache_dir.glob("*.pkl")) + list(self._cache_dir.glob("*.pkl.tmp*")):
                 try:
                     cache_file.unlink()
                 except Exception as e:
@@ -233,8 +275,12 @@ class ParsedDataCache:
             if newest_timestamp is None or entry.cache_timestamp > newest_timestamp:
                 newest_timestamp = entry.cache_timestamp
 
+        try:
+            on_disk = {p.stem for p in self._cache_dir.glob("*.pkl")}
+        except OSError:
+            on_disk = set()
         return {
-            'entry_count': len(self._cache),
+            'entry_count': len(on_disk | set(self._cache)),
             'estimated_memory_mb': total_size / (1024 * 1024) if total_size > 0 else 0,
             'cache_dir': str(self._cache_dir),
             'oldest_entry': datetime.fromtimestamp(oldest_timestamp) if oldest_timestamp else None,

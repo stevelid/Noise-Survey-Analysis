@@ -339,7 +339,7 @@ describe('NoiseSurveyApp.data_processors', () => {
 
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
             expect(details?.type).toBe('overview');
-            expect(details?.reason).toBe(' - Overview - zoom in for Log');
+            expect(details?.reason).toBe(' (Overview - Zoom in for Log Data)');
             expect(viewState.displayDetails).toBeUndefined();
         });
 
@@ -435,7 +435,7 @@ describe('NoiseSurveyApp.data_processors', () => {
             const details = dataProcessors.updateActiveLineChartData('P1', viewState, dataCache, models);
 
             expect(details?.type).toBe('overview');
-            expect(details?.reason).toBe(' - Overview - zoom in for Log');
+            expect(details?.reason).toBe(' (Overview - Zoom in for Log Data)');
             expect(dataCache.activeLineData.P1.LAeq).toEqual([55, 65]);
         });
 
@@ -745,6 +745,56 @@ describe('NoiseSurveyApp.data_processors', () => {
             expect(details.statusCode).toBe('edge_guard');
             expect(mockDataCache.activeLineData.P1.dataViewType).toBe('overview');
             expect(mockDataCache.activeLineData.P1.LAeq).toEqual([50, 51, 52]);
+        });
+
+        describe('line log vs spectrogram state', () => {
+            const makeModels = (extra = {}) => ({
+                timeSeriesSources: {
+                    P1: {
+                        overview: { data: { Datetime: [0, 1000, 2000], LAeq: [50, 51, 52] } },
+                        log: { data: { Datetime: [1000, 1100, 1200, 1300, 1400, 1500, 1600], LAeq: [55, 56, 57, 58, 59, 60, 61] } }
+                    }
+                },
+                ...extra
+            });
+            const viewState = { globalViewType: 'log', availablePositions: ['P1'], viewport: { min: 1000, max: 2000 } };
+            const loadingSpectral = {
+                type: 'overview', requestedViewType: 'log', statusCode: 'loading_log',
+                statusLabel: 'Loading log spectrogram', reason: ' (Overview - Streaming Log Data...)', isLoading: true
+            };
+
+            afterEach(() => vi.restoreAllMocks());
+
+            it('shows its own log immediately when the position has no spectral log', () => {
+                const cache = { activeLineData: {} };
+                const models = makeModels({ positionHasLogData: { P1: true }, positionHasLogSpectral: { P1: false } });
+                const details = dataProcessors.updateActiveLineChartData('P1', viewState, cache, models, 0, loadingSpectral);
+                expect(details.type).toBe('log');
+                expect(cache.activeLineData.P1.LAeq).toEqual([55, 56, 57, 58, 59, 60, 61]);
+            });
+
+            it('holds the line on overview only briefly while a spectral log is expected', () => {
+                const cache = { activeLineData: {} };
+                const models = makeModels({ positionHasLogData: { P1: true }, positionHasLogSpectral: { P1: true } });
+                const now = vi.spyOn(Date, 'now');
+                now.mockReturnValue(10000);
+                expect(dataProcessors.updateActiveLineChartData('P1', viewState, cache, models, 0, loadingSpectral).type).toBe('overview');
+                now.mockReturnValue(11000);
+                expect(dataProcessors.updateActiveLineChartData('P1', viewState, cache, models, 0, loadingSpectral).type).toBe('overview');
+                now.mockReturnValue(20000);
+                const details = dataProcessors.updateActiveLineChartData('P1', viewState, cache, models, 0, loadingSpectral);
+                expect(details.type).toBe('log');
+                expect(details.reason).toBe(' (Log Data)');
+            });
+
+            it('shows the log when the spectral log is present and displayed', () => {
+                const cache = { activeLineData: {} };
+                const models = makeModels({ positionHasLogData: { P1: true }, positionHasLogSpectral: { P1: true } });
+                const details = dataProcessors.updateActiveLineChartData('P1', viewState, cache, models, 0, {
+                    type: 'log', requestedViewType: 'log', statusCode: 'log_displayed', isLoading: false
+                });
+                expect(details.type).toBe('log');
+            });
         });
 
         it('should honor the server-provided shared threshold before any spectrogram reservoir has been streamed', () => {

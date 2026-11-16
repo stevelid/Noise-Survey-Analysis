@@ -14,16 +14,68 @@ from bokeh.models import (
     HoverTool,
     Label,
     LinearColorMapper,
+    NoOverlap,
     PanTool,
     Range1d,
     Span,
 )
-from noise_survey_analysis.core.config import CHART_SETTINGS, VISUALIZATION_SETTINGS
+from noise_survey_analysis.core.config import (
+    CHART_SETTINGS,
+    FRAME_BORDER_LEFT,
+    FRAME_BORDER_RIGHT,
+    LAYOUT_SETTINGS,
+    VISUALIZATION_SETTINGS,
+)
 from noise_survey_analysis.core.data_manager import PositionData
 from bokeh.layouts import column
 from bokeh.plotting import figure
 
 from .shared import _datetime_series_to_bokeh_ms, logger
+
+AXIS_FONT_SIZE = LAYOUT_SETTINGS['axis_font_size']
+
+# Two-level time labels: "HH:mm" (":ss" when zoomed in to 15 minutes or less) on every tick, with the
+# date ("Mon 05/10") added on the first tick and at midnight. When every tick is a midnight only the
+# date is printed. Shared by the time series, spectrogram and range selector.
+TIME_AXIS_FORMATTER_JS = """
+    const d = new Date(tick);
+    const pad = (n) => String(n).padStart(2, '0');
+    const weekdayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const isMidnight = (t) => { const x = new Date(t); return x.getHours() === 0 && x.getMinutes() === 0 && x.getSeconds() === 0; };
+    const dateLabel = weekdayNames[d.getDay()] + ' ' + pad(d.getDate()) + '/' + pad(d.getMonth() + 1);
+    const allMidnight = Array.isArray(ticks) && ticks.length > 0 && ticks.every(isMidnight);
+    if (allMidnight) {
+        return dateLabel;
+    }
+    let xstart = NaN, xend = NaN;
+    if (typeof fig !== 'undefined' && fig && fig.x_range) { xstart = fig.x_range.start; xend = fig.x_range.end; }
+    const windowMs = (typeof xstart === 'number' && typeof xend === 'number') ? (xend - xstart) : Number.POSITIVE_INFINITY;
+    const showSeconds = windowMs <= 15 * 60 * 1000;
+    let label = pad(d.getHours()) + ':' + pad(d.getMinutes()) + (showSeconds ? ':' + pad(d.getSeconds()) : '');
+    if (index === 0 || isMidnight(tick)) {
+        label += '\\n' + dateLabel;
+    }
+    return label;
+"""
+
+
+def build_time_axis_formatter(fig=None) -> CustomJSTickFormatter:
+    """Tick formatter shared by every time axis. ``fig`` supplies the x_range for the seconds rule."""
+    args = {"fig": fig} if fig is not None else {}
+    return CustomJSTickFormatter(args=args, code=TIME_AXIS_FORMATTER_JS)
+
+
+def style_time_axis(fig: figure) -> None:
+    """Applies the compact axis styling shared by all time-domain figures."""
+    fig.xaxis.formatter = build_time_axis_formatter(fig)
+    fig.xaxis.ticker = DatetimeTicker(desired_num_ticks=8)
+    fig.xaxis.major_label_policy = NoOverlap()
+    fig.xaxis.major_label_text_font_size = AXIS_FONT_SIZE
+    fig.xaxis.axis_label = None
+    fig.xaxis.minor_tick_line_color = None
+    fig.yaxis.axis_label = None
+    fig.yaxis.major_label_text_font_size = AXIS_FONT_SIZE
+    fig.yaxis.minor_tick_line_color = None
 
 
 class TimeSeriesComponent:
@@ -115,19 +167,22 @@ class TimeSeriesComponent:
             "xzoom_in", "xzoom_out", "reset", "xwheel_zoom",
         ]
         
+        # No toolbar, title or axis labels: the tools stay active, and the position header carries
+        # the name and units. Fixed left/right borders keep every plot frame aligned.
         fig_kwargs = {
             "height": self.chart_settings['low_freq_height'],
             "width": self.chart_settings['low_freq_width'],
             "title": title,
             "x_axis_type": "datetime",
-            "x_axis_label": "Time",
-            "y_axis_label": self.y_axis_label,
             "tools": tools,
+            "toolbar_location": None,
             "active_drag": pan_tool,
             "active_scroll": "xwheel_zoom",
             "name": f"figure_{self.name_id}",
-            "min_border_top": 55,
-            "min_border_bottom": 50,
+            "min_border_left": FRAME_BORDER_LEFT,
+            "min_border_right": FRAME_BORDER_RIGHT,
+            "min_border_top": 4,
+            "min_border_bottom": 4,
         }
 
         # Set y-range if specified in config
@@ -143,7 +198,9 @@ class TimeSeriesComponent:
         p = figure(**fig_kwargs)
         p.toolbar.autohide = True
         p.toolbar.logo = None
-                 
+        # The JS chart classes still write title.text, so keep a Title object but never draw it.
+        p.title.visible = False
+
         return p
 
     def _update_plot_lines(self):
@@ -181,35 +238,25 @@ class TimeSeriesComponent:
 
     def _configure_figure_formatting(self):
         """Configures the formatting for the figure."""
-        self.figure.xaxis.formatter = CustomJSTickFormatter(args={"fig": self.figure}, code="""
-            const d = new Date(tick);
-            const xstart = fig.x_range.start;
-            const xend = fig.x_range.end;
-            const window_ms = (typeof xstart === 'number' && typeof xend === 'number') ? (xend - xstart) : Number.POSITIVE_INFINITY;
-            const showSeconds = window_ms <= 15 * 60 * 1000; // show :ss when zoomed within 15 minutes
-
-            const weekdayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-            const weekday = weekdayNames[d.getDay()];
-            const dd = String(d.getDate()).padStart(2, '0');
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const yy = String(d.getFullYear()).slice(-2);
-            const hh = String(d.getHours()).padStart(2, '0');
-            const min = String(d.getMinutes()).padStart(2, '0');
-            const ss = String(d.getSeconds()).padStart(2, '0');
-            const base = `${weekday} ${dd}/${mm}/${yy} ${hh}:${min}`;
-            return showSeconds ? `${base}:${ss}` : base;
-        """)
-        self.figure.xaxis.ticker = DatetimeTicker(desired_num_ticks=10) # Fewer ticks might be cleaner
-        self.figure.yaxis.axis_label = self.y_axis_label
+        style_time_axis(self.figure)
+        self.figure.yaxis.ticker.desired_num_ticks = 4
 
         self.figure.grid.grid_line_alpha = 0.3  # Set a default grid alpha
         self.figure.ygrid.band_fill_alpha = 0.1
         self.figure.ygrid.band_fill_color = "gray"
 
-        #legend
-        self.figure.legend.location = "top_right"
-        self.figure.legend.click_policy = "hide"
-        self.figure.legend.background_fill_alpha = 0.7
+        #legend: small and horizontal so it covers as little of the plot as possible
+        legend = self.figure.legend
+        legend.location = "top_right"
+        legend.orientation = "horizontal"
+        legend.click_policy = "hide"
+        legend.background_fill_alpha = 0.7
+        legend.label_text_font_size = AXIS_FONT_SIZE
+        legend.glyph_height = 10
+        legend.glyph_width = 16
+        legend.padding = 3
+        legend.spacing = 4
+        legend.margin = 2
 
     def _attach_callbacks(self):
         """Creates and attaches all JS callbacks for this specific component."""
@@ -308,10 +355,14 @@ class SpectrogramComponent:
         self.source: ColumnDataSource = ColumnDataSource(data=dict()) # Holds the [transposed_matrix]
         self.source.name = "source_" + self.name_id
         self.figure: figure = self._create_empty_figure() # Create a blank figure initially
+        # The hover read-out lives in the position header (position_header.py) so it costs no chart height.
         self.hover_div: Div = Div(text="<i>Hover over spectrogram for details</i>",
                                   name=f"{self.position_name}_spectrogram_hover_div",
-                                  width=self.chart_settings['spectrogram_width'], height=40,
-                                  styles={'font-size': '9pt', 'font-weight': 'bold', 'padding-left': '10px', 'text-align': 'center'},
+                                  sizing_mode='stretch_width', height=22, margin=0,
+                                  styles={'font-size': '11px', 'font-weight': '600', 'color': '#475569',
+                                          'white-space': 'nowrap', 'overflow': 'hidden',
+                                          'text-overflow': 'ellipsis', 'text-align': 'right',
+                                          'line-height': '22px', 'min-width': '0'},
                                   visible=False)
         self.image_glyph = None # Store the image glyph renderer
         self.update_plot(position_glyph_data, self._current_display_mode, self._current_param)
@@ -339,35 +390,22 @@ class SpectrogramComponent:
             height=self.chart_settings['spectrogram_height'],
             width=self.chart_settings['spectrogram_width'],
             tools=[pan_tool, box_select_tool, "xzoom_in", "xzoom_out", "reset", "xwheel_zoom"],
+            toolbar_location=None,
             active_drag=pan_tool,
             active_scroll=self.chart_settings['active_scroll'],
             name=f"figure_{self.name_id}",
-            min_border_top=35,
-            min_border_bottom=50,
+            min_border_left=FRAME_BORDER_LEFT,
+            min_border_right=FRAME_BORDER_RIGHT,
+            min_border_top=2,
+            min_border_bottom=2,
         )
         p.toolbar.autohide = True
         p.toolbar.logo = None
-        p.xaxis.formatter = CustomJSTickFormatter(args={"fig": p}, code="""
-            const d = new Date(tick);
-            const xstart = fig.x_range.start;
-            const xend = fig.x_range.end;
-            const window_ms = (typeof xstart === 'number' && typeof xend === 'number') ? (xend - xstart) : Number.POSITIVE_INFINITY;
-            const showSeconds = window_ms <= 15 * 60 * 1000; // show :ss when zoomed within 15 minutes
-
-            const weekdayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-            const weekday = weekdayNames[d.getDay()];
-            const dd = String(d.getDate()).padStart(2, '0');
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const yy = String(d.getFullYear()).slice(-2);
-            const hh = String(d.getHours()).padStart(2, '0');
-            const min = String(d.getMinutes()).padStart(2, '0');
-            const ss = String(d.getSeconds()).padStart(2, '0');
-            const base = `${weekday} ${dd}/${mm}/${yy} ${hh}:${min}`;
-            return showSeconds ? `${base}:${ss}` : base;
-        """)
-        p.xaxis.ticker = DatetimeTicker(desired_num_ticks=10) # Fewer ticks might be cleaner
-        p.yaxis.axis_label = "Frequency (Hz)"
-        p.xaxis.axis_label = "Time"
+        p.title.visible = False  # chart-classes.js still writes title.text; never drawn
+        style_time_axis(p)
+        # The frequency ticks are a FixedTicker over band indices that chart-classes.js resets on
+        # every glyph update; NoOverlap drops labels that would collide at small heights.
+        p.yaxis.major_label_policy = NoOverlap()
         p.xgrid.visible = False
         p.ygrid.visible = False
         p.visible = False
@@ -564,9 +602,9 @@ class SpectrogramComponent:
 
     def layout(self):
         """Returns the Bokeh layout object for this component."""
-        # The figure might be initially hidden if no data, visibility managed by update_plot
+        # The figure might be initially hidden if no data, visibility managed by update_plot.
+        # The hover read-out (self.hover_div) is placed in the position header by DashBuilder.
         return column(
             self.figure,
-            self.hover_div,
             name=f"{self.name_id}_component"
         )

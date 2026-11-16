@@ -30,6 +30,23 @@ class AppSetupTests(unittest.TestCase):
             self.assertEqual(job_number, "1234")
             self.assertEqual(sources, [{"position_name": "P1", "enabled": True, "file_paths": ["a.csv"]}])
 
+    def test_loads_config_with_utf8_bom_and_non_ascii_names(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            config_path.write_bytes(
+                b"\xef\xbb\xbf" + json.dumps(
+                    {
+                        "output_filename": "d.html",
+                        "sourceConfigs": [{"position_name": "Café", "enabled": True, "file_paths": ["a.csv"]}],
+                    },
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            )
+
+            _, sources, _ = load_config_and_prepare_sources(str(config_path))
+
+            self.assertEqual(sources[0]["position_name"], "Café")
+
     def test_groups_relative_sources_by_position_and_preserves_display_title(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

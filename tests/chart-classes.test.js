@@ -574,4 +574,17 @@ describe('NoiseSurveyApp.classes', () => {
     expect(spec.source.data.image[0]).toEqual(srcArray);
     expect(spec.imageRenderer.glyph.x).toBe(0);
   });
+
+  it('classification bands are drawn at source start plus the position chart offset', () => {
+    const chartModel = { name: 'figure_P1_timeseries', title: { text: '' }, x_range: { start: 0, end: 100 }, y_range: { start: 0, end: 1 } };
+    const ts = new classes.TimeSeriesChart(chartModel, { data: {}, change: { emit: vi.fn() } }, {}, {}, 'P1');
+    const list = [{ id: 1, positionId: 'P1', sourceId: 's', start: 10000, end: 20000, confidence: 0.5 }];
+
+    const shifted = ts._buildClassificationOverlayData(list, null, { P1: 2500 });
+    expect(shifted.left).toEqual([12500]);
+    expect(shifted.right).toEqual([22500]);
+
+    const plain = ts._buildClassificationOverlayData(list, null, { P2: 9999 });
+    expect(plain.left).toEqual([10000]);
+  });
 });

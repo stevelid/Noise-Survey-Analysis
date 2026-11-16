@@ -179,7 +179,7 @@ describe('HTML annotation panel', () => {
         expect(help).not.toBeNull();
         expect(help.open).toBe(false);
         expect(help.textContent).toContain('Ctrl + Enter');
-        expect(help.textContent).toContain('Move the selected marker');
+        expect(help.textContent).toContain('Ctrl moves the selected marker');
         help.querySelector('summary').click();
         app.store.dispatch(app.actions.setActiveSidePanelTab(1));
         await tick();

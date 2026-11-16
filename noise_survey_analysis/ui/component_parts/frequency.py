@@ -7,7 +7,7 @@ from typing import (
     List,
     Optional,
 )
-from noise_survey_analysis.core.config import CHART_SETTINGS
+from noise_survey_analysis.core.config import CHART_SETTINGS, FRAME_BORDER_LEFT, FRAME_BORDER_RIGHT
 from bokeh.palettes import Category10
 from bokeh.models import (
     ColumnDataSource,
@@ -57,9 +57,13 @@ class FrequencyBarComponent:
         self.x_range: FactorRange = FactorRange(factors=initial_data['frequency_labels'])
         
         # Add a Div component to hold the HTML table for copying data
+        # Copy/paste table: two rows, scrolls sideways inside the dock (see theme.css .freq-html-table).
         self.table_div = Div(
             name="frequency_table_div",
-            width=self.settings['frequency_bar_width']
+            sizing_mode="stretch_width",
+            height=58,
+            margin=0,
+            styles={"overflow-x": "auto", "overflow-y": "hidden", "min-width": "0", "font-size": "10px"},
         )
         
         self.figure: figure = self._create_figure()
@@ -77,11 +81,14 @@ class FrequencyBarComponent:
             height=self.settings['high_freq_height'],
             width=self.settings['frequency_bar_width'], # Initial width, sizing_mode handles final
             x_range=self.x_range, # Use the FactorRange instance
-            x_axis_label='Frequency Band', # Suffix (Hz) implied by labels
-            y_axis_label='Level (dB)',
             tools="pan,wheel_zoom,box_zoom,reset", # Standard tools
-            name="frequency_bar_chart" # For identification
+            name="frequency_bar_chart", # For identification
+            min_border_left=FRAME_BORDER_LEFT,
+            min_border_right=FRAME_BORDER_RIGHT,
+            min_border_top=2,
+            min_border_bottom=2,
         )
+        p.title.text_font_size = "9pt"
         p.toolbar.autohide = True
         p.toolbar.logo = None
 
@@ -132,8 +139,7 @@ class FrequencyBarComponent:
         p.xaxis.major_label_orientation = 0.8
         p.xaxis.major_label_text_font_size = "8pt" # Smaller for potentially many labels
         p.grid.grid_line_alpha = 0.3
-        p.xaxis.axis_label_text_font_size = "10pt"
-        p.yaxis.axis_label_text_font_size = "10pt"
+        p.yaxis.major_label_text_font_size = "8pt"
         
         # Hide the default legend if only one series, or customize
         p.legend.visible = False 
@@ -228,13 +234,16 @@ class ComparisonFrequencyBarComponent:
         self.figure = self._create_figure(chart_width)
         self.table_div = Div(
             text=self._empty_table_html(),
-            width=chart_width,
+            sizing_mode="stretch_width",
             name="comparison_frequency_table",
             styles={
                 "border": "1px solid #cbd5e1",
-                "padding": "12px",
+                "padding": "6px",
                 "background-color": "#f1f5f9",
-                "margin-top": "8px"
+                "margin-top": "4px",
+                "max-height": "120px",
+                "overflow": "auto",
+                "min-width": "0"
             }
         )
 
@@ -270,10 +279,12 @@ class ComparisonFrequencyBarComponent:
             height=CHART_SETTINGS.get('high_freq_height', 300),
             width=chart_width,
             x_range=self.x_range,
-            x_axis_label='Frequency Band',
-            y_axis_label='Level (dB)',
             tools="pan,wheel_zoom,box_zoom,reset",
-            name="comparison_frequency_chart"
+            name="comparison_frequency_chart",
+            min_border_left=FRAME_BORDER_LEFT,
+            min_border_right=FRAME_BORDER_RIGHT,
+            min_border_top=2,
+            min_border_bottom=2,
         )
 
         if chart_width is not None:
@@ -282,6 +293,8 @@ class ComparisonFrequencyBarComponent:
         p = figure(**figure_kwargs)
         p.toolbar.autohide = True
         p.toolbar.logo = None
+        p.title.text_font_size = "9pt"
+        p.yaxis.major_label_text_font_size = "8pt"
 
         p.vbar(
             x='x',

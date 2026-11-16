@@ -362,7 +362,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             allIds.push(candidateId);
         });
 
-        const selectedId = byId[state.selectedId] ? state.selectedId : (allIds[0] ?? null);
+        // Keep the user's selection; replacing the list (accept all, purge, delete) must not invent one.
+        const selectedId = byId[state.selectedId] ? state.selectedId : null;
 
         return {
             ...state,

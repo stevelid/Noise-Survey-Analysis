@@ -15,6 +15,15 @@ ALLOWED_COMMANDS: frozenset[str] = frozenset({
     "apply_workspace",
     "export_static_html",
     "export_annotations",
+    # Annotation commands (regions, markers, review); validated in annotation_validation.py.
+    "list_annotations",
+    "add_regions",
+    "update_region",
+    "delete_regions",
+    "add_markers",
+    "update_marker",
+    "delete_markers",
+    "show",
 })
 
 # Valid view mode values.

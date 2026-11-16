@@ -12,14 +12,26 @@ Usage:
     launch_noise_survey.bat
     launch_noise_survey.ps1 -ConfigPath "…\noise_survey_config_1234.json"
     launch_noise_survey.ps1 -Repair          (force a rebuild, then start)
+    launch_noise_survey.bat 6645             (open job 6645: finds the job folder, generates the
+                                              config if missing, reuses a running dashboard for
+                                              that config, opens the browser at it)
+    launch_noise_survey.ps1 -JobNumber 6645 [-Restart] [-Fresh] [-JobsFolder "G:\Shared drives\Venta\Jobs"]
+
+Annotations are autosaved beside the config (<config>.workspace.json) and restored on the next
+open; -Fresh opens without restoring them. -Restart stops a running dashboard and starts a new one
+(the default is to leave a healthy one running and just open the config in it).
 #>
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $false, Position = 0)][string]$JobNumber,
+    [Parameter(Mandatory = $false)][string]$JobsFolder = 'G:\Shared drives\Venta\Jobs',
     [Parameter(Mandatory = $false)][string]$ConfigPath,
     [Parameter(Mandatory = $false)][string]$StatePath,
     [Parameter(Mandatory = $false)][int]$ControlPort = 0,
     [switch]$Repair,
+    [switch]$Restart,
+    [switch]$Fresh,
     [switch]$NoBrowser
 )
 
@@ -97,6 +109,34 @@ function Get-NsaFreePort {
     return $Preferred
 }
 
+function Find-NsaJobSurveyFolder {
+    <# Job folder under $Root whose name starts with the job number; prefers "<job> Surveys" inside it. #>
+    param([string]$Root, [string]$Job)
+    if (-not (Test-Path -LiteralPath $Root)) { throw "Jobs folder not found: $Root" }
+    $jobDir = Get-ChildItem -LiteralPath $Root -Directory -Filter "$Job*" -ErrorAction SilentlyContinue |
+        Sort-Object Name | Select-Object -First 1
+    if (-not $jobDir) { throw "No job folder starting with '$Job' under $Root" }
+    $surveys = Get-ChildItem -LiteralPath $jobDir.FullName -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ieq "$Job surveys" } | Select-Object -First 1
+    if ($surveys) { return $surveys.FullName }
+    return $jobDir.FullName
+}
+
+function Get-NsaRunningServer {
+    <# Port of a healthy dashboard started by this launcher, or 0. Never touches foreign processes. #>
+    param([string]$PidFile, [string]$PortFile, [string]$PythonExe)
+    if (-not ((Test-Path $PidFile) -and (Test-Path $PortFile))) { return 0 }
+    $pidText = try { Get-Content -Path $PidFile -ErrorAction Stop | Select-Object -First 1 } catch { $null }
+    $portText = try { Get-Content -Path $PortFile -ErrorAction Stop | Select-Object -First 1 } catch { $null }
+    if (-not (($pidText -match '^\d+$') -and ($portText -match '^\d+$'))) { return 0 }
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$pidText)" -ErrorAction SilentlyContinue
+    if (-not $process -or -not $process.ExecutablePath -or ($process.ExecutablePath -ine $PythonExe)) { return 0 }
+    try {
+        $null = Invoke-WebRequest -Uri "http://127.0.0.1:$portText/noise_survey_analysis" -UseBasicParsing -TimeoutSec 8
+        return [int]$portText
+    } catch { return 0 }
+}
+
 function Format-NsaArgument {
     param([string]$Value)
     if ($Value -match '[\s"]') { return '"' + ($Value -replace '"', '""') + '"' }
@@ -125,8 +165,60 @@ try {
         throw "The application files are missing from $appDir. Check that Google Drive has finished syncing."
     }
 
+    # --- "Open job 6645": find the folder, make the config if it is missing ----
+    if ($JobNumber -and (($JobNumber -match '\.json$') -or (Test-Path -LiteralPath $JobNumber -PathType Leaf))) {
+        # A config path given positionally (drag and drop onto the .bat).
+        $ConfigPath = $JobNumber
+        $JobNumber = $null
+    }
+    if ($JobNumber -and -not $ConfigPath) {
+        $JobNumber = $JobNumber.Trim()
+        if ($JobNumber -notmatch '^\d{3,6}$') { throw "'$JobNumber' is not a job number (expected digits, for example 6645)." }
+        $scanDir = Find-NsaJobSurveyFolder -Root $JobsFolder -Job $JobNumber
+        $jobConfig = Join-Path $scanDir "noise_survey_config_$JobNumber.json"
+        if (Test-Path -LiteralPath $jobConfig) {
+            Write-NsaInfo "Using existing config: $jobConfig"
+        } else {
+            Write-NsaInfo "No config for job $JobNumber yet - scanning $scanDir ..."
+            $generator = Join-Path $paths.App 'generate_job_config.py'
+            if (-not (Test-Path $generator)) { throw "generate_job_config.py not found at $generator" }
+            Push-Location $paths.App
+            try {
+                & $paths.VenvPython $generator $JobNumber $JobsFolder 2>&1 | ForEach-Object { Write-NsaLine "  $_" }
+                $generatorCode = $LASTEXITCODE
+            } finally { Pop-Location }
+            if ($generatorCode -ne 0 -or -not (Test-Path -LiteralPath $jobConfig)) {
+                throw "Could not generate a config for job $JobNumber in $scanDir (no recognised survey files?)."
+            }
+        }
+        $ConfigPath = $jobConfig
+    }
+
+    # --- Reuse a healthy dashboard instead of killing it ------------------------
+    $portFile = $paths.PidFile + '.port'
+    if (-not $Restart -and -not $Repair) {
+        $livePort = Get-NsaRunningServer -PidFile $paths.PidFile -PortFile $portFile -PythonExe $paths.VenvPython
+        if ($livePort -gt 0) {
+            $url = "http://localhost:$livePort/noise_survey_analysis"
+            $query = @()
+            if ($ConfigPath) {
+                $resolvedForUrl = (Resolve-Path -LiteralPath $ConfigPath -ErrorAction Stop).ProviderPath
+                $query += 'config=' + [uri]::EscapeDataString($resolvedForUrl)
+            }
+            if ($StatePath) { $query += 'state=' + [uri]::EscapeDataString((Resolve-Path -LiteralPath $StatePath).ProviderPath) }
+            if ($Fresh) { $query += 'fresh=1' }
+            if ($query.Count) { $url += '?' + ($query -join '&') }
+            Write-NsaOk "A dashboard is already running on port $livePort - opening this config in it."
+            Write-NsaInfo $url
+            Write-NsaInfo 'Use -Restart to stop it and start a new one instead.'
+            if (-not $NoBrowser) { Start-Process $url }
+            exit 0
+        }
+    }
+
     # --- Build the Bokeh command line ---------------------------------------
     Stop-NsaExistingServer -PidFile $paths.PidFile -PythonExe $paths.VenvPython
+    Remove-Item -Path $portFile -Force -ErrorAction SilentlyContinue
     $port = Get-NsaFreePort -Preferred 5006
     if ($port -ne 5006) {
         Write-NsaInfo "Port 5006 is in use by something else, so this dashboard will use port $port."
@@ -153,6 +245,7 @@ try {
         $appArgs += @('--state', $resolvedState)
         Write-NsaInfo "Workspace: $resolvedState"
     }
+    if ($Fresh) { $appArgs += '--no-restore' }
     if ($ControlPort -gt 0) { $appArgs += @('--control-port', "$ControlPort") }
     if ($appArgs.Count -gt 0) { $serveArgs += @('--args') + $appArgs }
 
@@ -178,10 +271,12 @@ try {
     $exitCode = 0
     try {
         Set-Content -Path $paths.PidFile -Value $process.Id -Encoding ASCII
+        Set-Content -Path $portFile -Value $port -Encoding ASCII
         $process.WaitForExit()
         $exitCode = $process.ExitCode
     } finally {
         Remove-Item -Path $paths.PidFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $portFile -Force -ErrorAction SilentlyContinue
     }
 
     if ($exitCode -ne 0) {

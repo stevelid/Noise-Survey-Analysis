@@ -13,6 +13,8 @@ from datetime import datetime
 from collections import defaultdict
 
 from noise_survey_analysis.core.config import DEFAULT_BASE_JOB_DIR
+from noise_survey_analysis.core.data_parsers import is_nti_log_filename
+from noise_survey_analysis.core.config_io import merge_config_with_existing, read_config_json
 
 
 def find_job_directory(base_dir, job_number):
@@ -30,9 +32,15 @@ def find_job_directory(base_dir, job_number):
 
 def get_scan_directory(job_dir, job_number):
     """Determine which directory to scan (surveys subdir or job root)."""
-    surveys_dir = os.path.join(job_dir, f"{job_number} surveys")
-    if os.path.exists(surveys_dir) and os.path.isdir(surveys_dir):
-        return surveys_dir
+    # Case-insensitive match ("6645 Surveys" / "6645 surveys"); keep the on-disk casing
+    # so the written config_base_path matches what is really there.
+    wanted = f"{job_number} surveys".lower()
+    try:
+        for entry in sorted(os.listdir(job_dir)):
+            if entry.lower() == wanted and os.path.isdir(os.path.join(job_dir, entry)):
+                return os.path.join(job_dir, entry)
+    except OSError:
+        pass
     return job_dir
 
 
@@ -79,14 +87,28 @@ def detect_source_type(filename):
     if lower.endswith('.txt') and (
         '_123_' in lower or '_rta_3rd_' in lower
     ) and (
-        lower.endswith('_log.txt') or lower.endswith('_rpt_report.txt')
+        is_nti_log_filename(lower) or lower.endswith('_rpt_report.txt')
     ):
         return "NTi", "nti"
 
     return None, None
 
 
-def scan_survey_directory(scan_dir):
+def _describe_skip(filename):
+    """Reason a file in the scan folder was not turned into a source (None = not worth listing)."""
+    lower = filename.lower()
+    if lower.startswith('noise_survey_config_') or lower.endswith(('.json', '.xl2', '.html', '.pdf', '.xlsx', '.xls', '.docx')):
+        return None
+    if lower.endswith('.txt') and ('_123_' in lower or '_rta_' in lower):
+        return "NTi file type not used (only _Log / _Log_NN and _Rpt_Report are loaded)"
+    if lower.endswith(('.csv', '.svl')):
+        return "unrecognised CSV name (expected *_log.csv / *_summary.csv)"
+    if lower.endswith('.txt'):
+        return "unrecognised .txt name"
+    return None
+
+
+def scan_survey_directory(scan_dir, skipped=None):
     """
     Scan directory and organize files by position.
     Returns: dict with positions as keys, containing lists of files and audio info.
@@ -112,11 +134,19 @@ def scan_survey_directory(scan_dir):
 
         source_type, parser_type = detect_source_type(filename)
         if not source_type:
+            reason = _describe_skip(filename)
+            if reason and skipped is not None:
+                skipped.append((filename, reason))
             continue
 
-        # Extract position
+        # Extract position. NTi names carry no position, so a file sitting directly in
+        # the scan folder takes the folder's name (e.g. scanning ".../6645-4").
         position = extract_position_from_filename(filename)
+        if not position and source_type == "NTi":
+            position = os.path.basename(os.path.normpath(scan_dir))
         if not position:
+            if skipped is not None:
+                skipped.append((filename, "could not work out a position from the filename"))
             continue
 
         positions[position]['sources'].append({
@@ -144,13 +174,18 @@ def scan_survey_directory(scan_dir):
                         'type': source_type,
                         'parser_type': parser_type,
                     })
+                elif skipped is not None and os.path.isfile(os.path.join(item_path, subfile)):
+                    reason = _describe_skip(subfile)
+                    if reason:
+                        skipped.append((os.path.join(item, subfile), reason))
 
     return positions, audio_files
 
 
 def generate_config_file(job_number, scan_dir, config_name=None):
     """Generate a config file for the requested scan directory."""
-    positions, root_audio_files = scan_survey_directory(scan_dir)
+    skipped = []
+    positions, root_audio_files = scan_survey_directory(scan_dir, skipped)
 
     if not positions and not root_audio_files:
         print(f"No valid data files found in {scan_dir}")
@@ -205,8 +240,19 @@ def generate_config_file(job_number, scan_dir, config_name=None):
     config_filename = config_name or f"noise_survey_config_{job_number}.json"
     config_path = os.path.join(scan_dir, config_filename)
 
-    with open(config_path, 'w', encoding='utf-8') as f:
+    # Regenerating must not wipe saved setup (positions offsets, default_view, per-source
+    # timezone/columns/profile/y_range/display_title): merge into the existing config.
+    changes = []
+    if os.path.exists(config_path):
+        try:
+            config_data, changes = merge_config_with_existing(read_config_json(config_path), config_data)
+        except (OSError, ValueError) as exc:
+            print(f"[WARN] Existing config could not be read ({exc}); writing a fresh one.")
+
+    tmp_path = config_path + '.tmp'
+    with open(tmp_path, 'w', encoding='utf-8') as f:
         json.dump(config_data, f, indent=2)
+    os.replace(tmp_path, config_path)
 
     print(f"[OK] Config file created: {config_path}")
     print(f"[OK] Found {len(positions)} position(s)")
@@ -215,6 +261,14 @@ def generate_config_file(job_number, scan_dir, config_name=None):
     print(f"\nSources included:")
     for source in config_data["sources"]:
         print(f"  - {source['position']}: {source['path']} ({source['type']})")
+    if changes:
+        print("\n" + "Changes vs the existing config:")
+        for line in changes:
+            print(f"  * {line}")
+    if skipped:
+        print("\n" + "Skipped files:")
+        for name, reason in skipped:
+            print(f"  - {name}: {reason}")
 
     return config_path
 

@@ -137,6 +137,61 @@ def test_gaps_are_not_filled_by_preceding_sample():
     assert any("incomplete" in reason for reason in result.missing_reasons)
 
 
+def overview_frame(**columns):
+    n = len(next(iter(columns.values())))
+    return pd.DataFrame({"Datetime": pd.to_datetime(BASE + np.arange(n) * 300_000, unit="ms", utc=True), **columns})
+
+
+def test_coarse_resolution_flags_event_shorter_than_sample_and_drops_lafmax():
+    data = overview_frame(LAeq=[44.1, 50.0], LAFmax=[70.0, 75.0], LAF90=[40.0, 41.0])
+    result = compute_region_metrics(data, areas(10, 30), resolution="overview", sample_interval_s=300)
+    assert result.coarse_resolution is True
+    assert "5-min data longer than the event" in result.coarse_resolution_reason
+    assert result.LAFmax_dB is None
+    assert result.LAeq_dB == pytest.approx(44.1)
+    assert not any("LAFmax" in reason for reason in result.missing_reasons)
+    assert result.as_dict()["coarse_resolution"] is True
+
+
+def test_coarse_resolution_threshold_is_a_third_of_region_duration():
+    data = frame(list(range(60, 120)), LAFmax=list(range(70, 130)))
+    # 1 s log data: a 2 s event keeps its genuine per-second LAFmax.
+    short = compute_region_metrics(data, areas(5, 7), sample_interval_s=1)
+    assert short.coarse_resolution is False
+    assert short.LAFmax_dB == 76
+    fine = compute_region_metrics(data, areas(5, 35), sample_interval_s=1)
+    assert fine.coarse_resolution is False
+    assert fine.coarse_resolution_reason is None
+    assert fine.LAFmax_dB == 104
+    # 300 s data: 20 s and 10 min regions are coarse, 30 min is not.
+    slow = overview_frame(LAeq=[50.0] * 10, LAFmax=[60.0] * 10)
+    for end, expected in ((20, True), (600, True), (1800, False)):
+        got = compute_region_metrics(slow, areas(0, end), resolution="overview", sample_interval_s=300)
+        assert got.coarse_resolution is expected, end
+        assert (got.LAFmax_dB is None) == expected
+
+
+def test_overview_l90_uses_logged_column_not_p10_of_laeq():
+    # Interval LAeq values are all well above the logged L90 of each interval.
+    data = overview_frame(LAeq=[60.0, 62.0, 64.0, 90.0], LAF90=[40.0, 41.0, 42.0, 55.0])
+    result = compute_region_metrics(data, areas(0, 1200), resolution="overview", sample_interval_s=300)
+    assert result.coarse_resolution is False
+    # p10 of LAeq would be 60; the logged duration-weighted median of LAF90 is 41.
+    assert result.LAF90_dB == 41.0
+    assert result.percentile_method.startswith("duration-weighted median of logged LAF90")
+    # Log resolution is unchanged: still the inverse-CDF p10 of the best fast column.
+    log = compute_region_metrics(data, areas(0, 1200), resolution="log", sample_interval_s=300)
+    assert log.LAF90_dB == 60.0
+    assert "p10 of LAeq" in log.percentile_method
+
+
+def test_overview_without_logged_l90_falls_back_to_laeq_p10():
+    data = overview_frame(LAeq=[60.0, 62.0, 64.0, 66.0])
+    result = compute_region_metrics(data, areas(0, 1200), resolution="overview", sample_interval_s=300)
+    assert result.LAF90_dB == 60.0
+    assert "p10 of LAeq" in result.percentile_method
+
+
 def test_no_lafmax_fallback_and_exact_weighted_percentile():
     result = compute_region_metrics(frame([60, 70]), areas(0, 2), sample_interval_s=1)
     assert result.LAFmax_dB is None

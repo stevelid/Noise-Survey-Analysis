@@ -94,7 +94,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const { byId, allIds } = regionsState;
         for (let i = allIds.length - 1; i >= 0; i--) {
             const region = byId[allIds[i]];
-            if (!region || selectRegionMeterState(state, region, positionId) !== METER_PRESENT) continue;
+            // Rejected suggestions are kept in state but cannot be hit on a chart.
+            if (!region || region.status === 'rejected'
+                || selectRegionMeterState(state, region, positionId) !== METER_PRESENT) continue;
             const areas = getRegionAreas(region);
             for (let j = 0; j < areas.length; j++) {
                 const area = areas[j];
