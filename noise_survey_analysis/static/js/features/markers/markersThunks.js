@@ -236,10 +236,13 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 return; // Cannot create a marker without a timestamp
             }
 
-            // 2. Gather extras, determining positionId (Payload > Tap > Single Available Position)
+            // Weather interactions use the current acoustic focus as their annotation origin.
             const extras = {};
+            const focused = payload.useFocusedPosition ? app.layoutRuntime?.resolveFocus?.(state) : null;
             if (typeof payload.positionId === 'string' && payload.positionId.trim()) {
                 extras.positionId = payload.positionId.trim();
+            } else if (focused) {
+                extras.positionId = focused;
             } else if (tapState?.position) {
                 extras.positionId = tapState.position;
             } else {

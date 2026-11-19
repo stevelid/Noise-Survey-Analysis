@@ -163,6 +163,22 @@ Limitations:
 *   Spectrogram charts and spectral parameter workflows are unavailable for generic sources.
 *   Features that expect standard metrics (`LAeq`, `LAFmax`, `LAF90`, etc.) may show blank or `N/A` if those columns are not present in the source.
 
+### Weather in a job config
+
+Choose one CSV when generating the config with `--weather-csv`. The CSV path may be absolute or relative to the survey folder. The dashboard recognises the headers of Venta's PCE export and Visual Crossing hourly exports.
+
+```json
+"weather": {
+  "path": "job PCE weather.csv",
+  "start": "2026-11-04T14:15:00Z",
+  "end": "2026-11-11T14:00:00Z"
+}
+```
+
+`start` and `end` are optional UTC bounds for sample timestamps. The start is exclusive and the end is inclusive. Use them to leave out logger setup and collection readings. For Visual Crossing, set `"units": "metric"` (or `"uk"` / `"us"` to match the export) and `"timezone": "Europe/London"` if its timestamps lack offsets and the CSV lacks `datetimeEpoch`. The corresponding generator options are `--weather-start`, `--weather-end`, `--weather-units` and `--weather-timezone`.
+
+Live dashboards and standalone exports show the selected source below the acoustic charts with compass points, mean wind and gust in m/s, and rainfall in mm per interval. Pan and zoom share the acoustic timeline. Jobs without a weather entry use the acoustic layout alone. To remove weather, delete the `weather` entry.
+
 ## Working with annotations
 
 The Regions / Markers / Classifications sidebar stays beside the charts and scrolls independently. The region list fills the remaining height below selected-item details, with review filters collapsed initially. Less-used operations sit under **Actions and settings**.

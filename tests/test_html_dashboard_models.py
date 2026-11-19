@@ -35,7 +35,10 @@ def test_dashboard_document_contains_html_annotations_without_legacy_widgets():
     content = document.get_model_by_name("chart_content_row")
     assert content.children[0] is page
     assert content.children[1].name == "side_panel_container"
-    assert content.children[1].sizing_mode == "stretch_height"
+    assert content.children[1].styles["position"] == "sticky"
+    assert [section.name for section in content.children[1].children] == [
+        "whole_sidebar_toggle", "side_panel_sections",
+    ]
     assert document.get_model_by_name("annotation_panel_toggle") is not None
     # The frequency slice is docked in the sidebar column (WP1), not below the charts.
     assert document.get_model_by_name("frequency_bar_layout") in content.children[1].references()

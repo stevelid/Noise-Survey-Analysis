@@ -1,11 +1,11 @@
 /* Attached to the Div shadow root. Shared --nsa-* theme tokens inherit here. */
-:host { position: sticky; top: 12px; align-self: start; overflow: visible; }
-.nsa-annotation-panel { width: 340px; max-width: 100%; min-width: 0; color: var(--nsa-text, #0f172a); background: var(--nsa-surface, white); border: 1px solid var(--nsa-border, #e2e8f0); border-radius: var(--nsa-radius, 6px); font: 12px/1.45 var(--nsa-font, 'Segoe UI', sans-serif); box-sizing: border-box; }
+.bk-clearfix { width: 100%; }
+.nsa-annotation-panel { width: 100%; min-width: 0; height: max(0px, calc(var(--nsa-sidebar-height, 85vh) - var(--nsa-dock-height, 0px) - 74px)); display: flex; flex-direction: column; color: var(--nsa-text, #0f172a); background: var(--nsa-surface, white); border: 1px solid var(--nsa-border, #e2e8f0); border-radius: var(--nsa-radius, 6px); font: 12px/1.45 var(--nsa-font, 'Segoe UI', sans-serif); box-sizing: border-box; }
 .nsa-annotation-panel * { box-sizing: border-box; }
 .nsa-annotation-panel nav { display: flex; border-bottom: 1px solid var(--nsa-border, #e2e8f0); padding: 5px; gap: 3px; }
 .nsa-annotation-panel nav button { flex: 1; padding: 7px 3px; border-color: transparent; font-size: 11px; }
 .nsa-annotation-panel nav button[aria-selected="true"] { color: var(--nsa-accent, #2563eb); background: var(--nsa-accent-soft, #eff6ff); font-weight: 600; }
-.nsa-panel-scroll { overflow-y: auto; overflow-x: hidden; height: calc(100vh - 74px); max-height: calc(100vh - 74px); scrollbar-gutter: stable; padding: 8px; overscroll-behavior: contain; display: flex; flex-direction: column; }
+.nsa-panel-scroll { overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; scrollbar-gutter: stable; padding: 8px; overscroll-behavior: contain; display: flex; flex-direction: column; }
 .nsa-colour-status { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--nsa-text-muted, #64748b); }
 .nsa-colour-status label { margin: 0 !important; }
 .nsa-region-view .nsa-selected label { margin: 4px 0; }
@@ -59,17 +59,15 @@
 .nsa-category-editor input:first-child { flex: 1; min-width: 0; }
 .nsa-category-editor button { font-size: 10px; }
 .nsa-confirm { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 4px; padding: 8px; margin: 8px 0; }
-@media (max-width: 700px) { :host { position: static; } .nsa-panel-scroll { max-height: 75vh; } }
 
-/* One compact header; the reopen button floats at the chart edge. */
-.nsa-panel-header { display: flex; align-items: center; border-bottom: 1px solid var(--nsa-border, #e2e8f0); padding-right: 3px; }
+/* Keep the tabs and collapse control above the scrollable panel content. */
+.nsa-panel-header { display: flex; flex: 0 0 auto; align-items: center; border-bottom: 1px solid var(--nsa-border, #e2e8f0); padding-right: 3px; }
 .nsa-panel-header nav { flex: 1; min-width: 0; border-bottom: 0; }
-.nsa-panel-header .nsa-panel-collapse { flex: 0 0 24px; width: 24px; height: 26px; padding: 0; border-color: transparent; font-size: 20px; line-height: 1; }
 /* One panel scroll surface; only the compact list has its own bounded scroll. */
 .nsa-region-view { display: block; min-height: 0; }
 .nsa-region-view .nsa-selected { margin: 0; padding-bottom: 8px; overflow: visible; }
 .nsa-region-view .nsa-region-list-section { margin: 0 0 10px; padding-bottom: 5px; }
-.nsa-region-view .nsa-region-list-section .nsa-annotation-list { max-height: min(28vh, 240px); overflow-y: auto; margin: 4px 0; }
+.nsa-region-view .nsa-region-list-section .nsa-annotation-list { max-height: min(34vh, 300px); overflow-y: auto; margin: 4px 0; }
 .nsa-region-filters .nsa-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 8px; }
 .nsa-region-row { display: flex; align-items: center; gap: 5px; min-height: 32px; padding: 4px 2px; }
 .nsa-region-row > input { flex: 0 0 auto; margin: 0; }

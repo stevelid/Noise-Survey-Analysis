@@ -86,8 +86,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return [];
     }
 
-    function selectRegionByTimestamp(state, positionId, timestamp) {
-        if (!Number.isFinite(timestamp) || !positionId) {
+    function selectRegionByTimestamp(state, positionId, timestamp, { siteWide = false } = {}) {
+        if (!Number.isFinite(timestamp) || (!positionId && !siteWide)) {
             return null;
         }
         const regionsState = selectRegionsState(state);
@@ -96,7 +96,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             const region = byId[allIds[i]];
             // Rejected suggestions are kept in state but cannot be hit on a chart.
             if (!region || region.status === 'rejected'
-                || selectRegionMeterState(state, region, positionId) !== METER_PRESENT) continue;
+                || (!siteWide && selectRegionMeterState(state, region, positionId) !== METER_PRESENT)) continue;
             const areas = getRegionAreas(region);
             for (let j = 0; j < areas.length; j++) {
                 const area = areas[j];

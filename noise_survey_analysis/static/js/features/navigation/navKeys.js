@@ -88,7 +88,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         },
         {
             id: 'layout.frequencyDock', keys: ['f'], ctrl: false, alt: false, shift: false, intent: 'toggleFrequencyDock', group: VIEW,
-            label: 'F', description: 'Show / hide the frequency slice dock',
+            label: 'F', description: 'Show / hide the table and spectrum',
             run: (e, ctx) => thunk('toggleFrequencyDockIntent')(ctx)
         },
         {

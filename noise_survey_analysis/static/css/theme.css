@@ -212,6 +212,11 @@ input[type='radio'] {
   white-space: nowrap;
 }
 
+/* With annotations closed, the three sidebar controls share 102 px. */
+:host(.nsa-annotations-collapsed) {
+  --nsa-dock-available: calc(var(--nsa-sidebar-height, 85vh) - 102px);
+}
+
 /* Frequency copy/paste table inside the sidebar dock: two rows, scrolls sideways */
 .freq-html-table {
   table-layout: auto !important;
@@ -222,11 +227,4 @@ input[type='radio'] {
 .freq-html-table th,
 .freq-html-table td {
   padding: 2px 6px !important;
-}
-
-/* The annotation panel fills the window minus the toolbar and the frequency dock. --nsa-dock-h is set
-   from layoutRenderer.js (measured dock height). */
-.nsa-panel-scroll {
-  height: calc(100vh - 120px - var(--nsa-dock-h, 0px)) !important;
-  max-height: calc(100vh - 120px - var(--nsa-dock-h, 0px)) !important;
 }

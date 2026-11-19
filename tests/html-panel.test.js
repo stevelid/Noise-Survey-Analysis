@@ -4,6 +4,7 @@ import '../noise_survey_analysis/static/js/features/annotations/panelSelectors.j
 import '../noise_survey_analysis/static/js/features/annotations/panelThunks.js';
 import '../noise_survey_analysis/static/js/services/panels/htmlPanelEvents.js';
 import '../noise_survey_analysis/static/js/services/panels/htmlPanelRenderer.js';
+import '../noise_survey_analysis/static/js/services/layout/layoutRenderer.js';
 
 const app = window.NoiseSurveyApp;
 const feature = app.features.annotationPanel;
@@ -444,24 +445,28 @@ describe('HTML annotation panel', () => {
         expect(after.classifications).toEqual(before.classifications);
     });
 
-    it('fits the sticky sidebar below the toolbar across Bokeh shadow boundaries', () => {
+    it('allocates the sticky sidebar space from the toolbar and dock heights', () => {
+        const sidebar = document.createElement('div');
         const toolbar = document.createElement('div');
-        toolbar.className = 'nsa-dashboard-controls';
-        toolbar.getBoundingClientRect = () => ({ top: 0, bottom: 70, height: 70 });
-        document.body.appendChild(toolbar);
+        const dock = document.createElement('div');
+        let dockHeight = 232;
+        toolbar.getBoundingClientRect = () => ({ height: 70 });
+        dock.getBoundingClientRect = () => ({ height: dockHeight });
+        app.registry = { models: { sidePanelContainer: sidebar, sidebarToolbar: toolbar, frequencyDockLayout: dock } };
+        vi.stubGlobal('Bokeh', { index: { find_one: el => ({ el }) } });
         try {
-            setupDom();
-            host.classList.add('nsa-annotation-inner');
-            events.dispose(); events.attach(models);
-            expect(host.style.top).toBe('82px');
-            expect(root.querySelector('[data-scroll-key="panel"]').style.maxHeight)
-                .toBe(`${Math.floor(window.innerHeight - 82 - 12)}px`);
-            toolbar.getBoundingClientRect = () => ({ top: -100, bottom: -30, height: 70 });
-            // Reattachment models a viewport refit without changing Redux.
+            const getSize = name => sidebar.style.getPropertyValue(`--nsa-${name}`);
             const before = app.store.getState();
-            events.dispose(); events.attach(models);
-            expect(host.style.top).toBe('12px');
+            app.layoutRenderer.measureSidebar();
+            expect(getSize('sidebar-top')).toBe('78px');
+            expect(getSize('sidebar-height')).toBe(`${window.innerHeight - 78 - 6}px`);
+            expect(getSize('dock-height')).toBe('232px');
+
+            // Collapsing the dock leaves only its header and frees room for the annotations.
+            dockHeight = 32;
+            app.layoutRenderer.measureSidebar();
+            expect(getSize('dock-height')).toBe('32px');
             expect(app.store.getState()).toBe(before);
-        } finally { toolbar.remove(); }
+        } finally { vi.unstubAllGlobals(); }
     });
 });

@@ -19,15 +19,17 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function handleTapIntent(payload) {
         return function (dispatch, getState) {
             if (!actions) return;
-            const { timestamp, positionId, chartName, modifiers = {} } = payload || {};
-            if (!Number.isFinite(timestamp) || !positionId || !chartName) return;
+            const { timestamp, chartName, weather = false, modifiers = {} } = payload || {};
+            if (!Number.isFinite(timestamp) || !chartName) return;
 
             const state = getState();
+            const positionId = weather ? app.layoutRuntime?.resolveFocus?.(state) : payload.positionId;
+            if (!positionId) return;
             const isCtrl = Boolean(modifiers.ctrl);
             const isShift = Boolean(modifiers.shift);
 
             const selectedRegion = regionSelectors.selectSelectedRegion?.(state);
-            if (!isCtrl && !isShift && !modifiers.alt && !modifiers.meta
+            if (!weather && !isCtrl && !isShift && !modifiers.alt && !modifiers.meta
                 && state?.view?.mode !== 'comparison'
                 && state?.regions?.overlaysVisible !== false
                 && selectedRegion && selectedRegion.positionId !== positionId) {
@@ -72,7 +74,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             }
 
             const regionHit = regionSelectors.selectRegionByTimestamp
-                ? regionSelectors.selectRegionByTimestamp(state, positionId, timestamp)
+                ? regionSelectors.selectRegionByTimestamp(state, positionId, timestamp, { siteWide: weather })
                 : null;
 
             if (isShift) {
@@ -146,7 +148,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 // If Ctrl was pressed but no marker was found, fall through to normal tap
             }
 
-            dispatch(actions.tap(timestamp, positionId, chartName));
+            dispatch(actions.tap(timestamp, weather && regionHit ? regionHit.positionId : positionId, chartName));
+        };
+    }
+
+    function handleWeatherSelectionIntent({ start, end, final }) {
+        return (dispatch, getState) => {
+            const positionId = app.layoutRuntime?.resolveFocus?.(getState());
+            if (!positionId) return;
+            dispatch(app.thunks.updateComparisonSliceIntent({ start, end, positionId, final }));
+            if (final) dispatch(app.thunks.createRegionIntent({ positionId, start, end }));
         };
     }
 
@@ -321,6 +332,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     app.features.interaction = app.features.interaction || {};
     app.features.interaction.thunks = {
         handleTapIntent,
+        handleWeatherSelectionIntent,
         handleKeyboardShortcutIntent,
         nudgeTapLineIntent
     };

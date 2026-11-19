@@ -1052,17 +1052,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         if (!models) return;
         if (models.htmlSidePanel) {
             const collapsed = Boolean(state.view?.sidebarCollapsed);
-            const panel = models.sidePanelContainer;
             const toggle = models.annotationPanelToggle;
-            const expandedWidth = Number(toggle?.tags?.[0]) || 352;
-            if (panel) {
-                panel.width = collapsed ? 0 : expandedWidth;
-                panel.styles = { ...panel.styles, 'border-left': collapsed ? '0' : '1px solid #e2e8f0' };
-                const inner = panel.children?.[0];
-                if (inner) inner.styles = { ...inner.styles, transform: collapsed ? 'translateX(-28px)' : 'none', 'z-index': '5' };
+            const sidebar = models.sidePanelContainer;
+            const collapsedClass = 'nsa-annotations-collapsed';
+            const classes = sidebar?.css_classes || [];
+            if (sidebar && classes.includes(collapsedClass) !== collapsed) {
+                sidebar.css_classes = collapsed ? [...classes, collapsedClass] : classes.filter(name => name !== collapsedClass);
             }
-            if (models.chartContentRow) models.chartContentRow.spacing = collapsed ? 0 : 12;
-            if (toggle) toggle.visible = collapsed;
+            const label = `${collapsed ? '▸' : '▾'} Annotations`;
+            if (toggle && toggle.label !== label) toggle.label = label;
             models.htmlSidePanel.visible = !collapsed;
             app.services.htmlPanelRenderer?.render(state, models, app.dataCache);
             return;
@@ -1227,8 +1225,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function renderActiveTool(state, models) {
         const desired = state?.interaction?.activeDragTool === 'box_select' ? 'box_select' : 'pan';
         const charts = Array.isArray(models?.charts) ? models.charts : [];
+        const weatherPlots = models?.weatherLayout?.children || [];
 
-        charts.forEach(chart => {
+        [...charts, ...weatherPlots].forEach(chart => {
             if (!chart?.toolbar) {
                 return;
             }

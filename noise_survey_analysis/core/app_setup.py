@@ -152,9 +152,9 @@ def load_config_extras(config_path='config.json'):
 
     Returns:
         dict: ``{'positions': {name: {chart_offset_seconds, audio_offset_seconds}},
-        'default_view': {...}}``. Always returns the keys, empty when absent.
+        'default_view': {...}, 'weather': {...} or None}``.
     """
-    empty = {'positions': {}, 'default_view': {}}
+    empty = {'positions': {}, 'default_view': {}, 'weather': None}
 
     current_file = Path(__file__)
     project_root = current_file.parent.parent.parent
@@ -211,4 +211,14 @@ def load_config_extras(config_path='config.json'):
             "Loaded config extras: %d position offset(s), default_view keys=%s",
             len(positions), sorted(default_view) or 'none',
         )
-    return {'positions': positions, 'default_view': default_view}
+    weather = config.get('weather')
+    if isinstance(weather, dict) and isinstance(weather.get('path'), str) and weather['path'].strip():
+        base = config.get('config_base_path')
+        base = Path(base) if isinstance(base, str) and os.path.isdir(base) else config_full_path.parent
+        weather = {**weather, 'path': str(base / weather['path'])}
+    else:
+        if weather is not None:
+            logger.warning("Ignoring weather configuration in %s: expected a CSV path.", config_full_path)
+        weather = None
+
+    return {'positions': positions, 'default_view': default_view, 'weather': weather}

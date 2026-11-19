@@ -107,6 +107,8 @@ describe('layout slice', () => {
             fitToWindow: true,
             wheelZoomLock: false,
             frequencyDockOpen: false,
+            sidePanelCollapsed: false,
+            sidePanelWidth: null,
             soloSaved: null
         });
     });
@@ -121,6 +123,7 @@ describe('layout slice', () => {
         dispatch(app.actions.layoutFitToWindowSet(false));
         dispatch(app.actions.layoutWheelZoomLockSet(true));
         dispatch(app.actions.layoutFrequencyDockOpenSet(true));
+        dispatch(app.actions.layoutSidePanelSet({ collapsed: true, width: 355 }));
         expect(getState().layout).toEqual({
             positionOrder: ['P2', 'P1'],
             spectrogramMode: { P1: 'strip' },
@@ -128,6 +131,8 @@ describe('layout slice', () => {
             fitToWindow: false,
             wheelZoomLock: true,
             frequencyDockOpen: true,
+            sidePanelCollapsed: true,
+            sidePanelWidth: 355,
             soloSaved: null
         });
         dispatch(app.actions.layoutPositionOrderSet(null));

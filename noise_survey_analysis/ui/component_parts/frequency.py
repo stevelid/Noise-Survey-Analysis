@@ -14,7 +14,7 @@ from bokeh.models import (
     Div,
     FactorRange,
     HoverTool,
-    LabelSet,
+    NoOverlap,
     NumeralTickFormatter,
     Range1d,
 )
@@ -103,22 +103,6 @@ class FrequencyBarComponent:
             legend_label="Level" # Simple legend
         )
 
-        # Add labels above bars to show the level
-        labels = LabelSet(
-            x='frequency_labels',
-            y='levels',
-            text='levels',
-            level='glyph',
-            x_offset=0,
-            y_offset=5,
-            source=self.source,
-            text_align='center',
-            text_font_size='8pt',
-            text_color='black',
-            text_baseline='bottom'
-        )
-        p.add_layout(labels)
-
         # Configure y-range
         if not self.settings['auto_y_range']:
             try:
@@ -136,7 +120,8 @@ class FrequencyBarComponent:
         p.add_tools(hover)
 
         # Styling
-        p.xaxis.major_label_orientation = 0.8
+        p.xaxis.major_label_orientation = "vertical"
+        p.xaxis.major_label_policy = NoOverlap(min_distance=2)
         p.xaxis.major_label_text_font_size = "8pt" # Smaller for potentially many labels
         p.grid.grid_line_alpha = 0.3
         p.yaxis.major_label_text_font_size = "8pt"
@@ -308,7 +293,8 @@ class ComparisonFrequencyBarComponent:
 
         p.legend.location = "top_left"
         p.legend.click_policy = "hide"
-        p.xaxis.major_label_orientation = 0.8
+        p.xaxis.major_label_orientation = "vertical"
+        p.xaxis.major_label_policy = NoOverlap(min_distance=2)
         p.xaxis.major_label_text_font_size = "8pt"
         p.yaxis.formatter = NumeralTickFormatter(format="0.0")
 

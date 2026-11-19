@@ -88,13 +88,18 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         return null;
     }
 
+    function isWeatherChart(chartName) {
+        return app.registry?.controllers?.chartsByName?.get?.(chartName)?.siteWide === true;
+    }
+
     // --- Event Handlers ---
 
     function handleTap(cb_obj) {
         const chartName = cb_obj?.origin?.name || cb_obj?.model?.name;
         if (!chartName || chartName === 'frequency_bar') return;
-        const positionId = _getChartPositionByName(chartName);
-        if (!positionId) return;
+        const weather = isWeatherChart(chartName);
+        const positionId = weather ? null : _getChartPositionByName(chartName);
+        if (!positionId && !weather) return;
         const timestamp = cb_obj?.x;
         if (!Number.isFinite(timestamp)) return;
 
@@ -137,7 +142,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             timestamp,
             positionId,
             chartName,
-            modifiers
+            modifiers,
+            ...(weather ? { weather } : {}),
         }));
     }
 
@@ -178,6 +184,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return;
         }
 
+        if (isWeatherChart(chartName)) {
+            dispatch(app.thunks.handleWeatherSelectionIntent({ start: x0, end: x1, final: Boolean(cb_obj.final) }));
+            return;
+        }
+
         const comparisonThunk = app.thunks && app.thunks.updateComparisonSliceIntent;
         if (typeof comparisonThunk === 'function') {
             dispatch(comparisonThunk({
@@ -215,7 +226,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 sourceChartName: chartName,
                 timestamp: geometry.x,
                 spec_y: geometry.y,
-                position: _getChartPositionByName(chartName),
+                position: isWeatherChart(chartName) ? null : _getChartPositionByName(chartName),
             }));
         } else {
             app.store.dispatch(actions.hover({
@@ -245,7 +256,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             return;
         }
     
-        app.store.dispatch(thunkCreator({ timestamp: timestamp, positionId: positionId }));
+        const owner = isWeatherChart(chartName) ? { useFocusedPosition: true } : { positionId };
+        app.store.dispatch(thunkCreator({ timestamp, ...owner }));
     }
 
     function clearAllMarkers() {

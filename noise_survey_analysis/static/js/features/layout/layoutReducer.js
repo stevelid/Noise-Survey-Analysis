@@ -33,6 +33,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         fitToWindow: true,
         wheelZoomLock: false,
         frequencyDockOpen: false,
+        sidePanelCollapsed: false,
+        sidePanelWidth: null,
         soloSaved: null
     };
 
@@ -76,6 +78,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             case actionTypes.LAYOUT_WHEEL_ZOOM_LOCK_SET: {
                 const locked = Boolean(action.payload?.locked);
                 return locked === state.wheelZoomLock ? state : { ...state, wheelZoomLock: locked };
+            }
+
+            case actionTypes.LAYOUT_SIDE_PANEL_SET: {
+                const { collapsed, width } = action.payload || {};
+                const nextCollapsed = typeof collapsed === 'boolean' ? collapsed : state.sidePanelCollapsed;
+                const nextWidth = Number.isFinite(width) && width > 0 ? width : state.sidePanelWidth;
+                return nextCollapsed === state.sidePanelCollapsed && nextWidth === state.sidePanelWidth
+                    ? state : { ...state, sidePanelCollapsed: nextCollapsed, sidePanelWidth: nextWidth };
             }
 
             case actionTypes.LAYOUT_FREQUENCY_DOCK_OPEN_SET: {

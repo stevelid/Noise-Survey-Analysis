@@ -45,6 +45,8 @@ from noise_survey_analysis.core.config import (
 )
 from noise_survey_analysis.js.manifest import JS_LOAD_ORDER
 from noise_survey_analysis.visualization import static_payload
+from noise_survey_analysis.core.weather import load_weather
+from noise_survey_analysis.ui.component_parts.weather import WEATHER_BORDER_RIGHT, build_weather_chart
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +168,8 @@ class DashBuilder:
                      saved_workspace_state=None,
                      job_number=None,
                      server_mode: bool = False,
-                     position_offsets=None):
+                     position_offsets=None,
+                     weather_config=None):
         """
         The main public method that constructs the entire application layout.
         This is the primary entry point for this class.
@@ -178,6 +181,7 @@ class DashBuilder:
             source_configs: List of source configuration dictionaries.
             saved_workspace_state: Optional saved workspace state to restore.
             job_number: Optional job number/identifier to display in the dashboard title.
+            weather_config: Optional site-wide weather CSV and interpretation settings.
         """
         logger.info("DashboardBuilder: Starting UI construction...")
 
@@ -195,7 +199,10 @@ class DashBuilder:
         self._create_components(app_data, prepared_glyph_data, available_params, chart_settings,
                                 position_offsets=position_offsets)
         self._wire_up_interactions()
-        self._assemble_and_add_layout(doc)
+        weather = load_weather(weather_config)
+        x_range = self.shared_components.get('master_x_range')
+        weather_chart = build_weather_chart(weather, x_range) if weather is not None and x_range is not None else None
+        self._assemble_and_add_layout(doc, weather_chart)
         self._initialize_javascript(doc)
 
         logger.info("DashboardBuilder: Build complete.")
@@ -486,6 +493,7 @@ class DashBuilder:
 
         #add callback to x_range ranges
         if master_x_range is not None:
+            self.shared_components['master_x_range'] = master_x_range
             range_update_js = CustomJS(code="""
                 if (window.NoiseSurveyApp && window.NoiseSurveyApp.eventHandlers && window.NoiseSurveyApp.eventHandlers.handleRangeUpdate) {
                     window.NoiseSurveyApp.eventHandlers.handleRangeUpdate(cb_obj);
@@ -499,7 +507,7 @@ class DashBuilder:
             logger.warning("No master_x_range available; skipping range update callback.")
 
 
-    def _assemble_and_add_layout(self, doc):
+    def _assemble_and_add_layout(self, doc, weather_chart=None):
         """Step 4: Gets the .layout() from each component and assembles the final page."""
         logger.info("DashboardBuilder: Assembling final Bokeh layout...")
 
@@ -514,6 +522,8 @@ class DashBuilder:
                 chart.width = None
                 chart.sizing_mode = 'stretch_width'
                 chart.min_width = 300
+                if weather_chart is not None:
+                    chart.min_border_right = WEATHER_BORDER_RIGHT
             for layout in (ts_layout, spec_layout, header['layout']):
                 layout.sizing_mode = 'stretch_width'
                 layout.margin = 0
@@ -562,53 +572,88 @@ class DashBuilder:
         comparison_frequency_layout.visible = False
         self.shared_components['comparison_frequency_layout'] = comparison_frequency_layout
 
-        charts_stack_layout = column(*[position_layouts[name] for name in ordered_names], name="charts_stack_layout")
+        chart_rows = [position_layouts[name] for name in ordered_names]
+        if weather_chart is not None:
+            chart_rows.append(weather_chart)
+            self.shared_components['range_selector'].figure.min_border_right = WEATHER_BORDER_RIGHT
+        self.shared_components['weather_layout'] = weather_chart
+        charts_stack_layout = column(*chart_rows, name="charts_stack_layout")
         charts_stack_layout.sizing_mode = 'stretch_width'
         charts_stack_layout.margin = 0
         charts_stack_layout.styles = {'min-width': '0', 'overflow': 'visible'}
         self.shared_components['charts_stack_layout'] = charts_stack_layout
 
-        panel_toggle = Button(tags=[SIDE_PANEL_WIDTH + 32], label="‹", name="annotation_panel_toggle", width=28, height=32, margin=0, visible=False)
+        panel_toggle = Button(
+            label="▾ Annotations", name="annotation_panel_toggle",
+            sizing_mode="stretch_width", height=32, margin=0,
+        )
         panel_toggle.js_on_click(CustomJS(code="""
             window.NoiseSurveyApp?.store?.dispatch(window.NoiseSurveyApp.actions.sidebarToggle());
         """))
         self.shared_components['annotation_panel_toggle'] = panel_toggle
         panel_body = self.shared_components['html_side_panel'].layout()
-        panel_inner = column(panel_toggle, panel_body, sizing_mode='stretch_width',
-                             css_classes=['nsa-annotation-inner'],
-                             styles={'position': 'sticky', 'top': '52px', 'min-width': '0'})
         summary_layout = self.shared_components['summary_table'].layout()
-        summary_layout.width = None
-        summary_layout.sizing_mode = 'stretch_width'
 
-        # The dock holds the tap-value summary and the frequency slice (or the comparison spectrum;
-        # renderers.js shows one of the two). Toggled with F; the summary stays visible.
+        # Both the tap-value summary and the active spectrum collapse as one group.
+        frequency_dock_toggle = Button(
+            label="▾ Table and spectrum", name="frequency_dock_toggle",
+            sizing_mode="stretch_width", height=32, margin=0,
+        )
+        frequency_dock_toggle.js_on_click(CustomJS(code="""
+            const app = window.NoiseSurveyApp;
+            app?.store?.dispatch(app.features.layout.thunks.toggleFrequencyDockIntent());
+        """))
         frequency_dock_inner = column(
-            freq_bar_layout, comparison_frequency_layout,
+            summary_layout, freq_bar_layout, comparison_frequency_layout,
             name="frequency_dock_inner", sizing_mode='stretch_width', margin=0,
-            styles={'min-width': '0'})
+            styles={
+                'min-width': '0',
+                'max-height': 'max(0px, var(--nsa-dock-available, calc(var(--nsa-sidebar-height, 85vh) * 0.44 - 32px)))',
+                'overflow-y': 'auto',
+                'overscroll-behavior-y': 'contain',
+            },
+        )
         frequency_dock_layout = column(
-            summary_layout, frequency_dock_inner,
-            name="frequency_dock_layout", css_classes=['nsa-dock'], sizing_mode='stretch_width', margin=0,
-            styles={'min-width': '0', 'padding': '4px 0 0 0', 'border-top': '1px solid #e2e8f0'})
+            frequency_dock_toggle, frequency_dock_inner,
+            name="frequency_dock_layout", sizing_mode='stretch_width', margin=0,
+            styles={'min-width': '0'},
+        )
+        self.shared_components['frequency_dock_toggle'] = frequency_dock_toggle
         self.shared_components['frequency_dock_layout'] = frequency_dock_layout
         self.shared_components['frequency_dock_inner'] = frequency_dock_inner
 
-        side_panel_container = column(
-            panel_inner,
+        sidebar_toggle = Button(
+            label="Hide side panel", name="whole_sidebar_toggle",
+            width=116, height=30, margin=0, align="end",
+        )
+        sidebar_toggle.js_on_click(CustomJS(code="""
+            const app = window.NoiseSurveyApp;
+            const collapsed = app?.store?.getState().layout?.sidePanelCollapsed;
+            app?.store?.dispatch(app.actions.layoutSidePanelSet({collapsed: !collapsed}));
+        """))
+        side_panel_sections = column(
+            panel_toggle,
+            panel_body,
             frequency_dock_layout,
+            name="side_panel_sections", sizing_mode="stretch_width",
+            spacing=4, margin=0,
+        )
+        side_panel_container = column(
+            sidebar_toggle, side_panel_sections,
             name="side_panel_container",
-            css_classes=["nsa-annotation-sidebar"],
-            sizing_mode="stretch_height",
             width=SIDE_PANEL_WIDTH + 32,
+            spacing=4,
             styles={
-                "margin-top": "2px",
-                'align-self': 'stretch',
-                'border-left': '1px solid #e2e8f0',
+                'position': 'sticky',
+                'top': 'var(--nsa-sidebar-top, 52px)',
+                'align-self': 'flex-start',
                 'min-width': '0',
                 'overflow': 'visible',
-            }
+            },
         )
+        self.shared_components['whole_sidebar_toggle'] = sidebar_toggle
+        self.shared_components['side_panel_sections'] = side_panel_sections
+        self.shared_components['sidebar_toolbar'] = controls_layout
         for component in ('range_selector', 'freq_bar', 'comparison_frequency'):
             chart = self.shared_components[component].figure
             chart.width = None
@@ -802,8 +847,13 @@ class DashBuilder:
             'comparisonFrequencyPalette': self.shared_components['comparison_frequency'].palette,
             # Layout and navigation (WP1)
             'chartsStackLayout': self.shared_components.get('charts_stack_layout'),
+            'weatherLayout': self.shared_components.get('weather_layout'),
             'positionLayouts': self.shared_components.get('position_layouts', {}),
             'rangeSelectorFigure': self.shared_components['range_selector'].figure,
+            'sidebarToolbar': self.shared_components.get('sidebar_toolbar'),
+            'wholeSidebarToggle': self.shared_components.get('whole_sidebar_toggle'),
+            'sidePanelSections': self.shared_components.get('side_panel_sections'),
+            'frequencyDockToggle': self.shared_components.get('frequency_dock_toggle'),
             'frequencyDockLayout': self.shared_components.get('frequency_dock_layout'),
             'frequencyDockInner': self.shared_components.get('frequency_dock_inner'),
             'layoutControls': self.shared_components['controls'].layout_controls,

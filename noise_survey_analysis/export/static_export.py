@@ -192,6 +192,7 @@ def generate_static_html(
             job_number=job_number,
             server_mode=False,
             position_offsets=offsets,
+            weather_config=extras.get('weather'),
         )
 
         if step_s:

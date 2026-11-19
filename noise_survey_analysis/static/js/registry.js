@@ -44,7 +44,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function initializeRegistry(bokehModels) {
         console.info('[Registry]', 'Initializing models and controllers...');
 
-        const { PositionController } = app.classes;
+        const { PositionController, WeatherChart } = app.classes;
 
         // 1. Populate the 'models' registry
         for (const key in bokehModels) {
@@ -135,6 +135,14 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 controllers.chartsByName.set(chart.name, chart);
             });
         });
+
+        // Register weather for timeline overlays without creating an acoustic position.
+        for (const plot of models.weatherLayout?.children || []) {
+            const hoverLine = plot.center.find(model => model.name === `hoverline_${plot.name}`);
+            const clickLine = plot.center.find(model => model.name === `click_line_${plot.name}`);
+            controllers.chartsByName.set(plot.name, new WeatherChart(plot, hoverLine));
+            if (clickLine) models.clickLines.push(clickLine);
+        }
 
         // 3. Prepare the payload for the INITIALIZE_STATE action
         const chartVisibility = {};

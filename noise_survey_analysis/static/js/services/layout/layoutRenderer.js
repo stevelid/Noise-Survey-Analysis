@@ -9,7 +9,7 @@
  *   - time labels           only under the lowest visible chart of each position
  *   - y auto-fit            auto / shared / locked (layoutMath.nextYRange)
  *   - header strip          status text, chevron, focus accent, loading banner
- *   - frequency dock        visibility and the --nsa-dock-h CSS variable the annotation panel uses
+ *   - frequency dock        visibility and shared sidebar space
  *   - toolbar widgets       fit / y mode / wheel lock mirrors
  *
  * Everything is idempotent: each setter compares before writing, because Bokeh model writes sync
@@ -87,6 +87,8 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         const layouts = models().positionLayouts || {};
         if (!stack || !layouts) return;
         const wanted = orderedPositions(state).map(id => layouts[id]).filter(Boolean);
+        const weather = models().weatherLayout;
+        if (weather) wanted.push(weather);
         const current = stack.children || [];
         const same = wanted.length === current.length && wanted.every((item, index) => item === current[index]);
         if (!same && wanted.length === current.length) {
@@ -386,28 +388,88 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function syncDock(state) {
         const open = app.features.layout.selectors.selectFrequencyDockOpen(state);
         setIfChanged(models().frequencyDockInner, 'visible', open);
-        scheduleDockMeasure();
+        setIfChanged(models().frequencyDockToggle, 'label', `${open ? '▾' : '▸'} Table and spectrum`);
     }
 
-    let dockTimer = null;
-    function scheduleDockMeasure() {
-        clearTimeout(dockTimer);
-        dockTimer = setTimeout(measureDock, 120);
+    function sidebarWidthBounds() {
+        const max = Math.max(160, Math.floor(window.innerWidth * 0.68));
+        return [Math.min(280, max), max];
     }
 
-    function measureDock() {
-        const view = viewOf(models().frequencyDockLayout);
-        const height = view?.el?.getBoundingClientRect?.().height;
-        if (!Number.isFinite(height) || typeof document === 'undefined') return;
-        const value = `${Math.ceil(height)}px`;
-        const root = document.documentElement.style;
-        if (root.getPropertyValue('--nsa-dock-h') !== value) {
-            root.setProperty('--nsa-dock-h', value);
-            scheduleFit();
+    function clampSidebarWidth(width) {
+        const [min, max] = sidebarWidthBounds();
+        return Math.round(Math.max(min, Math.min(max, width)));
+    }
+
+    function syncSidePanel(state) {
+        const sidebar = models().sidePanelContainer;
+        if (!sidebar) return;
+        const collapsed = Boolean(state.layout?.sidePanelCollapsed);
+        const width = clampSidebarWidth(state.layout?.sidePanelWidth || 390);
+        setIfChanged(sidebar, 'width', collapsed ? models().wholeSidebarToggle.width : width);
+        setIfChanged(models().sidePanelSections, 'visible', !collapsed);
+        setIfChanged(models().wholeSidebarToggle, 'label', collapsed ? 'Show side panel' : 'Hide side panel');
+        const grip = viewOf(sidebar)?.el.shadowRoot?.querySelector('[data-nsa-sidebar-grip]');
+        if (grip) {
+            grip.hidden = collapsed;
+            const [min, max] = sidebarWidthBounds();
+            grip.setAttribute('aria-valuemin', min);
+            grip.setAttribute('aria-valuemax', max);
+            grip.setAttribute('aria-valuenow', width);
         }
     }
 
-    let observedDock = null;
+    function mountSidebarGrip() {
+        const sidebar = models().sidePanelContainer;
+        const host = viewOf(sidebar)?.el.shadowRoot;
+        if (!host || host.querySelector('[data-nsa-sidebar-grip]')) return;
+        const grip = document.createElement('div');
+        grip.dataset.nsaSidebarGrip = '';
+        grip.tabIndex = 0;
+        grip.title = 'Drag to resize side panel';
+        grip.setAttribute('role', 'separator');
+        grip.setAttribute('aria-label', 'Resize side panel');
+        grip.setAttribute('aria-orientation', 'vertical');
+        grip.style.cssText = 'position:absolute;inset:0 auto 0 -10px;width:9px;z-index:2;cursor:col-resize;touch-action:none;border-left:2px solid #b6c4d6;';
+        const applyWidth = width => app.store.dispatch(app.actions.layoutSidePanelSet({width: clampSidebarWidth(width)}));
+        let drag = null;
+        grip.addEventListener('pointerdown', event => {
+            if (event.button !== 0) return;
+            grip.focus();
+            drag = { id: event.pointerId, x: event.clientX, width: sidebar.width };
+            grip.setPointerCapture(event.pointerId);
+            event.preventDefault();
+        });
+        grip.addEventListener('pointermove', event => {
+            if (drag?.id === event.pointerId) applyWidth(drag.width + drag.x - event.clientX);
+        });
+        grip.addEventListener('lostpointercapture', () => { drag = null; });
+        grip.addEventListener('keydown', event => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            event.stopPropagation();
+            applyWidth(sidebar.width + (event.key === 'ArrowLeft' ? 24 : -24));
+        });
+        host.append(grip);
+    }
+
+    function measureSidebar() {
+        const sidebar = viewOf(models().sidePanelContainer)?.el;
+        const dock = viewOf(models().frequencyDockLayout)?.el;
+        const toolbar = viewOf(models().sidebarToolbar)?.el;
+        if (!sidebar || !dock || !toolbar) return;
+        const top = Math.ceil(toolbar.getBoundingClientRect().height) + 8;
+        const sizes = {
+            '--nsa-sidebar-top': top,
+            '--nsa-sidebar-height': Math.max(0, window.innerHeight - top - 6),
+            '--nsa-dock-height': Math.ceil(dock.getBoundingClientRect().height),
+        };
+        for (const [key, size] of Object.entries(sizes)) {
+            const value = `${size}px`;
+            if (sidebar.style.getPropertyValue(key) !== value) sidebar.style.setProperty(key, value);
+        }
+    }
+
     function observeLayout() {
         if (typeof ResizeObserver !== 'function') return;
         const stackEl = viewOf(models().chartsStackLayout)?.el;
@@ -417,11 +479,16 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             fitState.observer = new ResizeObserver(() => requestFitFrame());
             fitState.observer.observe(stackEl);
         }
-        const dockEl = viewOf(models().frequencyDockLayout)?.el;
-        if (dockEl && observedDock !== dockEl) {
-            observedDock = dockEl;
-            new ResizeObserver(() => scheduleDockMeasure()).observe(dockEl);
-            scheduleDockMeasure();
+        const toolbar = viewOf(models().sidebarToolbar)?.el;
+        const dock = viewOf(models().frequencyDockLayout)?.el;
+        if (toolbar && dock) {
+            const sidebarObserver = new ResizeObserver(() => {
+                measureSidebar();
+                scheduleFit();
+            });
+            sidebarObserver.observe(toolbar);
+            sidebarObserver.observe(dock);
+            measureSidebar();
         }
     }
 
@@ -433,6 +500,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
             safe('order', () => syncOrder(state));
             safe('toolbar', () => syncToolbar(state));
             safe('dock', () => syncDock(state));
+            safe('sidebar', () => syncSidePanel(state));
         }
         if (all || layoutChanged || visibilityChanged || heavy) {
             safe('spectrogram', () => syncSpectrogramAndAxes(state));
@@ -451,7 +519,11 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
     function start(state) {
         if (started) return;
         started = true;
-        window.addEventListener('resize', () => scheduleFit(true));
+        window.addEventListener('resize', () => {
+            syncSidePanel(app.store.getState());
+            measureSidebar();
+            scheduleFit(true);
+        });
         if (app.layoutRuntime) {
             app.layoutRuntime.focusListeners.push(() => safe('focus', () => syncHeaders(app.store.getState())));
         }
@@ -472,6 +544,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         // in one idle pass. After that the ResizeObserver keeps the fit current.
         whenViewsReady(() => {
             safe('observe', observeLayout);
+            safe('sidebar grip', mountSidebarGrip);
             applyAll(app.store.getState(), app.dataCache, { all: true, yForce: false });
         });
     }
@@ -533,7 +606,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         });
     }
 
-    app.layoutRenderer = { render, applyFit, applyYFit, syncOrder, measureDock, fitState };
+    app.layoutRenderer = { render, applyFit, applyYFit, syncOrder, measureSidebar, fitState };
     if (typeof app.registerRenderHook === 'function') {
         app.registerRenderHook('layout', render);
     }

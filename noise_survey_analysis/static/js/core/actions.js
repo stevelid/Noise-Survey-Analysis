@@ -111,6 +111,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         LAYOUT_Y_AXIS_MODE_SET: 'layout/yAxisModeSet',
         LAYOUT_FIT_TO_WINDOW_SET: 'layout/fitToWindowSet',
         LAYOUT_WHEEL_ZOOM_LOCK_SET: 'layout/wheelZoomLockSet',
+        LAYOUT_SIDE_PANEL_SET: 'layout/sidePanelSet',
         LAYOUT_FREQUENCY_DOCK_OPEN_SET: 'layout/frequencyDockOpenSet',
 
         // History
@@ -452,6 +453,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         layoutWheelZoomLockSet: (locked) => ({
             type: actionTypes.LAYOUT_WHEEL_ZOOM_LOCK_SET, payload: { locked: Boolean(locked) }
         }),
+        layoutSidePanelSet: (payload) => ({ type: actionTypes.LAYOUT_SIDE_PANEL_SET, payload }),
         layoutFrequencyDockOpenSet: (open) => ({
             type: actionTypes.LAYOUT_FREQUENCY_DOCK_OPEN_SET, payload: { open: Boolean(open) }
         }),

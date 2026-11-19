@@ -51,37 +51,9 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         session.details = new Map([...root.querySelectorAll('details[data-key]')].map(element => [element.dataset.key, element.open]));
         session.focus = focusDescriptor(root.activeElement);
     }
-    function fitPanel(session) {
-        const scroll = session.root?.querySelector('[data-scroll-key="panel"]');
-        if (!scroll) return;
-        // Bokeh puts each layout in a separate shadow root. Walk outward to
-        // find the shared sticky toolbar and the sidebar host without relying
-        // on generated model IDs or penetrating unrelated chart shadow roots.
-        const panelHost = session.root.host;
-        let sidebar = panelHost?.closest('.nsa-annotation-sidebar');
-        let inner = null;
-        let toolbar = null;
-        for (let scope = session.root; scope; scope = scope.host?.getRootNode()) {
-            toolbar = toolbar || scope.querySelector('.nsa-dashboard-controls');
-            if (scope.host?.classList.contains('nsa-annotation-sidebar')) sidebar = scope.host;
-            if (scope.host?.classList.contains('nsa-annotation-inner')) inner = scope.host;
-        }
-        const toolbarBounds = toolbar?.getBoundingClientRect();
-        const top = Math.max(12, toolbarBounds?.height > 0 ? toolbarBounds.bottom + 12 : 12);
-        for (const host of [inner]) {
-            if (host && host.style.top !== `${top}px`) host.style.top = `${top}px`;
-        }
-        // The natural chart-row position may still be lower than the toolbar.
-        const chrome = inner ? Math.max(0, scroll.getBoundingClientRect().top - inner.getBoundingClientRect().top) : 0;
-        const height = Math.max(180, window.innerHeight - top - chrome - 12);
-        const value = `${Math.floor(height)}px`;
-        if (scroll.style.maxHeight !== value) scroll.style.maxHeight = value;
-        if (scroll.style.height !== value) scroll.style.height = value;
-    }
     function restore(session) {
         const root = session.root;
         if (!root) return;
-        fitPanel(session);
         for (const element of root.querySelectorAll('[data-key]')) {
             const key = element.dataset.key;
             if (element.matches('input[type="color"][data-picker-colour]') && !session.drafts.has(key)) {
@@ -261,14 +233,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         // retain native activation; only dirty-note Tab needs focus restoration.
         const listeners = { pointerdown, mousedown: pointerdown, click, change, focusout, input, submit, keydown, toggle };
         Object.entries(listeners).forEach(([type, handler]) => root.addEventListener(type, handler, type === 'toggle'));
-        let fitPending = false;
-        const onViewportChange = () => {
-            if (fitPending) return;
-            fitPending = true;
-            requestAnimationFrame(() => { fitPending = false; if (!session.disposed) fitPanel(session); });
-        };
-        window.addEventListener('resize', onViewportChange);
-        window.addEventListener('scroll', onViewportChange, { passive: true });
         const finishPointer = () => {
             if (!session.protectedClick) return;
             clearTimeout(session.clickReleaseTimer);
@@ -287,8 +251,6 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         session.unbind = () => {
             session.observer.disconnect();
             Object.entries(listeners).forEach(([type, handler]) => root.removeEventListener(type, handler, type === 'toggle'));
-            window.removeEventListener('resize', onViewportChange);
-            window.removeEventListener('scroll', onViewportChange);
             window.removeEventListener('pointerup', finishPointer);
             window.removeEventListener('mouseup', finishPointer);
             window.removeEventListener('pointercancel', finishPointer);

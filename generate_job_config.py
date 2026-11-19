@@ -11,10 +11,12 @@ import re
 import argparse
 from datetime import datetime
 from collections import defaultdict
+from pathlib import Path
 
 from noise_survey_analysis.core.config import DEFAULT_BASE_JOB_DIR
 from noise_survey_analysis.core.data_parsers import is_nti_log_filename
 from noise_survey_analysis.core.config_io import merge_config_with_existing, read_config_json
+from noise_survey_analysis.core.weather import parse_weather_csv
 
 
 def find_job_directory(base_dir, job_number):
@@ -108,7 +110,7 @@ def _describe_skip(filename):
     return None
 
 
-def scan_survey_directory(scan_dir, skipped=None):
+def scan_survey_directory(scan_dir, skipped=None, weather_path=None):
     """
     Scan directory and organize files by position.
     Returns: dict with positions as keys, containing lists of files and audio info.
@@ -126,6 +128,8 @@ def scan_survey_directory(scan_dir, skipped=None):
     # Categorize files
     for filename in sorted(all_files):
         file_path = os.path.join(scan_dir, filename)
+        if weather_path is not None and Path(file_path).resolve() == weather_path:
+            continue
 
         # Audio files
         if filename.upper().endswith('.WAV'):
@@ -167,6 +171,8 @@ def scan_survey_directory(scan_dir, skipped=None):
 
             # Check for supported data files in subdirectories
             for subfile in os.listdir(item_path):
+                if weather_path is not None and (Path(item_path) / subfile).resolve() == weather_path:
+                    continue
                 source_type, parser_type = detect_source_type(subfile)
                 if source_type:
                     positions[item]['sources'].append({
@@ -182,10 +188,23 @@ def scan_survey_directory(scan_dir, skipped=None):
     return positions, audio_files
 
 
-def generate_config_file(job_number, scan_dir, config_name=None):
+def generate_config_file(job_number, scan_dir, config_name=None, weather=None):
     """Generate a config file for the requested scan directory."""
+    config_filename = config_name or f"noise_survey_config_{job_number}.json"
+    config_path = os.path.join(scan_dir, config_filename)
+    existing = None
+    if os.path.exists(config_path):
+        try:
+            existing = read_config_json(config_path)
+        except (OSError, ValueError) as exc:
+            print(f"[WARN] Existing config could not be read ({exc}); writing a fresh one.")
+
+    saved_weather = existing.get("weather") if isinstance(existing, dict) else None
+    configured_weather = weather if weather is not None else saved_weather
+    selected_path = configured_weather.get("path") if isinstance(configured_weather, dict) else None
+    weather_path = (Path(scan_dir) / selected_path).resolve() if isinstance(selected_path, str) and selected_path else None
     skipped = []
-    positions, root_audio_files = scan_survey_directory(scan_dir, skipped)
+    positions, root_audio_files = scan_survey_directory(scan_dir, skipped, weather_path)
 
     if not positions and not root_audio_files:
         print(f"No valid data files found in {scan_dir}")
@@ -236,18 +255,10 @@ def generate_config_file(job_number, scan_dir, config_name=None):
             "parser_type": "audio"
         })
 
-    # Save config file
-    config_filename = config_name or f"noise_survey_config_{job_number}.json"
-    config_path = os.path.join(scan_dir, config_filename)
-
-    # Regenerating must not wipe saved setup (positions offsets, default_view, per-source
-    # timezone/columns/profile/y_range/display_title): merge into the existing config.
-    changes = []
-    if os.path.exists(config_path):
-        try:
-            config_data, changes = merge_config_with_existing(read_config_json(config_path), config_data)
-        except (OSError, ValueError) as exc:
-            print(f"[WARN] Existing config could not be read ({exc}); writing a fresh one.")
+    # Keep saved setup, including the weather source unless the user selected a new one.
+    config_data, changes = merge_config_with_existing(existing, config_data)
+    if weather is not None:
+        config_data["weather"] = weather
 
     tmp_path = config_path + '.tmp'
     with open(tmp_path, 'w', encoding='utf-8') as f:
@@ -261,6 +272,8 @@ def generate_config_file(job_number, scan_dir, config_name=None):
     print(f"\nSources included:")
     for source in config_data["sources"]:
         print(f"  - {source['position']}: {source['path']} ({source['type']})")
+    if selected_path:
+        print(f"  - Weather: {selected_path}")
     if changes:
         print("\n" + "Changes vs the existing config:")
         for line in changes:
@@ -292,6 +305,12 @@ def build_parser():
         "--config-name",
         help="Optional output config filename. Defaults to noise_survey_config_<job>.json",
     )
+    parser.add_argument("--weather-csv", help="One weather CSV path, absolute or relative to the scan directory.")
+    parser.add_argument("--weather-units", choices=("metric", "uk", "us"),
+                        help="Visual Crossing export unit group.")
+    parser.add_argument("--weather-timezone", help="Timezone for local Visual Crossing times, e.g. Europe/London.")
+    parser.add_argument("--weather-start", help="Optional exclusive start of the weather sample window (ISO 8601).")
+    parser.add_argument("--weather-end", help="Optional inclusive end of the weather sample window (ISO 8601).")
     return parser
 
 
@@ -316,8 +335,24 @@ def main():
     scan_dir = args.scan_dir if args.scan_dir else get_scan_directory(job_dir, job_number)
     print(f"[OK] Scanning directory: {scan_dir}")
 
-    # Generate config
-    config_path = generate_config_file(job_number, scan_dir, args.config_name)
+    weather = None
+    weather_options = {
+        key: getattr(args, f"weather_{key}") for key in ("units", "timezone", "start", "end")
+        if getattr(args, f"weather_{key}") is not None
+    }
+    if args.weather_csv:
+        path = (Path(scan_dir) / args.weather_csv).resolve()
+        base = Path(scan_dir).resolve()
+        chosen = path.relative_to(base) if path.is_relative_to(base) else path
+        weather = {"path": chosen.as_posix(), **weather_options}
+        try:
+            parse_weather_csv(path, weather)
+        except (OSError, ValueError) as exc:
+            parser.error(f"Cannot load weather CSV: {exc}")
+    elif weather_options:
+        parser.error("Weather options require --weather-csv.")
+
+    config_path = generate_config_file(job_number, scan_dir, args.config_name, weather)
 
     if config_path:
         print(f"\n[OK] Config file ready: {config_path}")

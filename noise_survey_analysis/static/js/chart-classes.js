@@ -618,7 +618,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
                 // Rejected suggestions are not drawn. Proposed ones appear only on the faint dashed overlay.
                 if (region.status === 'rejected') return;
                 if ((region.status === 'proposed') !== (options.proposedOnly === true)) return;
-                const meterState = region.positionId === this.positionId ? METER_PRESENT
+                const meterState = this.siteWide || region.positionId === this.positionId ? METER_PRESENT
                     : ([METER_PRESENT, METER_ABSENT].includes(region.meterStates?.[this.positionId])
                         ? region.meterStates[this.positionId] : METER_UNCHECKED);
                 // A suggestion is shown only where it was marked present (no ghost or absent band).
@@ -1073,6 +1073,15 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
         }
     }
 
+    class WeatherChart extends Chart {
+        constructor(model, hoverLine) {
+            super(model, null, null, hoverLine, null);
+            this.siteWide = true;
+        }
+
+        syncClassifications() {}
+    }
+
     class TimeSeriesChart extends Chart {
         constructor(...args) {
             super(...args);
@@ -1450,6 +1459,7 @@ window.NoiseSurveyApp = window.NoiseSurveyApp || {};
 
     app.classes = {
         Chart: Chart,
+        WeatherChart: WeatherChart,
         TimeSeriesChart: TimeSeriesChart,
         SpectrogramChart: SpectrogramChart,
         PositionController: PositionController
